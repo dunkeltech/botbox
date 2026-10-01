@@ -1,0 +1,292 @@
+# bot.Box UI styleguide
+
+bot.Box is a dunkel.Tech project, and its interface inherits the dunkel.tech look: dark forest greens, mint, the blue hexagon trio from the logo, Lato, 14 px corners and the `//` eyebrow. This guide is the source of truth for the frontend. Machine-readable values live in [`tokens.json`](tokens.json); the screens are in [`README.md`](README.md).
+
+## 1. Principles
+
+1. **Bots are colleagues.** Every bot has a name, a face (its robot avatar) and a visible state. Show what a bot is doing right now, not just what it is configured to do.
+2. **Security is visible.** Secrets, the egress proxy, allowlists and approvals appear in the UI where they act (for example, a "Token added by the egress proxy" note under a tool call). Never hide them in settings only.
+3. **The human stays in charge.** "Take control", "Pause", turn limits and approvals are always one click away.
+4. **Calm, technical, precise.** Light surfaces, one accent family, monospace for anything a machine reads (commands, hosts, models, image names, seeds).
+
+## 2. Brand
+
+- **Wordmark:** `bot` + green `.` + `Box`, Lato 900. The dot is `green` (`#3f9147`) on light surfaces and `green-light` (`#5eab60`) on dark ones. This mirrors `dunkel.Tech`.
+- **Endorsement:** "a dunkel.Tech project" in the footer.
+- **Logo mark:** the dunkel.tech hexagon turned into a robot face: hexagon outline, an antenna with a green tip, two green eyes and a mouth of three blue hexagons. Use it at 30–38 px in headers and 96 px on large surfaces.
+
+```svg
+<svg viewBox="0 0 160 160" aria-hidden="true">
+  <line x1="80" y1="20" x2="80" y2="10" stroke="#1a2a1a" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="80" cy="8" r="7" fill="#49b24d"/>
+  <path d="M49 20.3 111 20.3 142 74 111 127.7 49 127.7 18 74Z" fill="none" stroke="#1a2a1a" stroke-width="6" stroke-linejoin="round"/>
+  <circle cx="60" cy="64" r="12" fill="#49b24d"/>
+  <circle cx="100" cy="64" r="12" fill="#49b24d"/>
+  <polygon points="62,91 68.1,94.5 68.1,101.5 62,105 55.9,101.5 55.9,94.5" fill="#8aa8db"/>
+  <polygon points="80,91 86.1,94.5 86.1,101.5 80,105 73.9,101.5 73.9,94.5" fill="#6d8fce"/>
+  <polygon points="98,91 104.1,94.5 104.1,101.5 98,105 91.9,101.5 91.9,94.5" fill="#3f5f9c"/>
+</svg>
+```
+
+On dark surfaces, the outline and antenna use `#c9d8c9` and the eyes `#5eab60`.
+
+## 3. Colour
+
+### Core palette
+
+| Token | Hex | Use |
+|---|---|---|
+| `ink` | `#182019` | Primary text, outlines of avatars |
+| `ink-2` | `#3a4a3c` | Secondary body text, lead paragraphs |
+| `muted` | `#5d6b60` | Meta text, labels, timestamps (5.6:1 on white) |
+| `paper` | `#ffffff` | Cards, inputs, main chat pane |
+| `paper-2` | `#f5f8f4` | App background, table headers, quiet panels |
+| `line` | `#e3ebe2` | Card borders, dividers, secondary button borders |
+| `line-strong` | `#c9d8c9` | Input borders, dashed placeholders |
+| `green` | `#3f9147` | Accent fills: dots, meters, switches, icons. **Not for small text** (3.9:1) |
+| `green-600` | `#347a3b` | Primary buttons, links, green text (5.3:1 on white) |
+| `green-light` | `#5eab60` | Accent on dark surfaces, unread badges, CTA on dark |
+| `mint` | `#d6fcd0` | Highlights, success fills, avatar tiles, diff lines |
+| `mint-soft` | `#eef8ec` | Selected cards, success chips, system messages |
+| `mint-line` | `#cfe0cf` | Borders of mint surfaces |
+| `dark` | `#2a3c2a` | Footer, selected segmented control, user chat bubble |
+| `dark-2` | `#1f2d1f` | Team chat sidebar |
+| `terminal` | `#14201a` | Terminals, code, log tables, top bar of the team chat |
+
+### Blues (from the logo)
+
+| Token | Hex | Use |
+|---|---|---|
+| `blue` | `#4a5e92` | "Thinking" state, mentions, secondary data (6.3:1 on white) |
+| `blue-tint` | `#edf0f6` | Thinking chip, mention background |
+| `blue-line` | `#d3d9e8` | Border of blue chips |
+| `hex-1` / `hex-2` / `hex-3` | `#8aa8db` / `#6d8fce` / `#3f5f9c` | Logo, avatar palettes, path colour in terminals |
+
+### Warning
+
+bot.Box has no red. Blocked or failed things use amber, so they never rely on red versus green alone.
+
+| Token | Hex | Use |
+|---|---|---|
+| `amber` | `#b45309` | Blocked egress, failed tests, warnings (5.0:1 on white) |
+| `amber-tint` | `#fdf3e7` | Background of warning rows and cards |
+| `amber-line` | `#e8b98a` | Dashed border of blocked items |
+| `amber-on-dark` | `#f0b46a` | Failures inside terminals, "blocked 403" badge |
+
+### Text on dark surfaces
+
+| Token | Hex | Use |
+|---|---|---|
+| `on-dark` | `#c9d8c9` | Body text on `dark`, `dark-2` and `terminal` |
+| `on-dark-muted` | `#a8bda8` | Meta text on dark (5.9:1 on `dark`) |
+| `on-dark-faint` | `#8ea68e` | Comments in code and decorative text only (fails 4.5:1 on `dark`) |
+
+### Semantic: bot status
+
+| Status | Chip background | Chip text | Chip border | Dot | Avatar mood |
+|---|---|---|---|---|---|
+| Working | `mint-soft` | `green-600` | `mint-line` | `green` | `action` |
+| Thinking | `blue-tint` | `blue` | `blue-line` | `blue` | `thinking` |
+| Idle | `paper-2` | `muted` | `line` | `#8ea68e` | `idle` |
+| Stopped | `paper` | `muted` | `line` | `line-strong` | `offline` |
+
+The status label is always written out next to the dot. Colour is never the only signal.
+
+## 4. Typography
+
+- **Sans:** Lato 400, 400 italic, 700, 900 (load via `next/font/google`). Fallback: `system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`.
+- **Mono:** `ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace`. Use it for commands, hostnames, model IDs, image names, seeds, paths and log tables.
+- Headings use weight 900, letter-spacing `-0.01em` and line-height 1.1–1.2.
+
+| Style | Size / line-height | Weight | Use |
+|---|---|---|---|
+| Display | 52 / 1.1 | 900 | Large marketing or spec surfaces only |
+| Page title | 44 / 1.15 | 900 | Top of Fleet and New bot pages |
+| Entity title | 30–36 / 1.15 | 900 | Bot name in workspace and settings |
+| Section | 22 / 1.3 | 900 | Card titles, form sections |
+| Subsection | 18–20 / 1.3 | 900 | Aside cards, chat header |
+| Body | 16 / 1.6 | 400 | Default text |
+| Chat body | 15 / 1.55 | 400 | Messages, sidebar items |
+| Small | 14 / 1.5 | 400–700 | Helper text, meta |
+| Caption | 13 / 1.5 | 400–700 | Chips, timestamps, mono values |
+| Overline | 12–13, uppercase, tracking `.04–.08em` | 700 | Stat labels, sidebar section headers |
+
+**Eyebrow** (from dunkel.tech): 13 px, uppercase, tracking `.06em`, weight 700, `muted`, preceded by `// ` in `green` at weight 900. Use it above page titles (`// Fleet`, `// New bot`).
+
+## 5. Space, size, layout
+
+- **Base unit:** 4 px. Common steps: 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 28, 32, 40, 56, 64.
+- **Page container:** `max-width: 1360px`, side padding 24 px (16 px on phones).
+- **Card padding:** 18–24 px. Gap between cards: 16–22 px. Gap between page sections: 22–28 px.
+- **Touch targets:** at least 44 × 44 px for anything clickable. Icon buttons are 40–44 px squares.
+- **Responsive pattern:** use flex-wrap rows. Main content takes `flex: 999 1 560px; min-width: 0` and the aside `flex: 1 1 300px`, so the aside drops below on narrow screens. Grids use `repeat(auto-fill, minmax(290px, 1fr))`. Wide tables scroll inside an `overflow-x: auto` box.
+
+| Shell | Measurements |
+|---|---|
+| App header (light) | 64 px tall, white, bottom border `line`; current nav item `green-600` with a 2 px `green` underline |
+| Team chat | Dark top bar (`terminal`, ~52 px), sidebar 264 px (`dark-2`), main pane flexible, details pane 280 px (`paper-2`) |
+| Bot workspace | Chat column 380–460 px, computer column flexible, 16:10 desktop viewport |
+
+## 6. Shape and elevation
+
+| Token | Value | Use |
+|---|---|---|
+| `radius` | 14 px | Cards, dialogs, large panels |
+| `radius-md` | 12 px | Inner panels, segmented-control tracks, composer |
+| `radius-sm` | 9 px | Buttons, inputs, icon buttons, small cards |
+| `radius-xs` | 5–8 px | Code chips, nav items, badges |
+| `radius-pill` | 999 px | Status chips, mood chips, unread counters |
+| `shadow` | `0 1px 2px rgba(26,44,26,.06), 0 8px 24px rgba(26,44,26,.07)` | Resting cards |
+| `shadow-hover` | `0 6px 16px rgba(26,44,26,.10), 0 18px 40px rgba(26,44,26,.12)` | Hovered cards, dialogs |
+| `overlay` | `rgba(20,25,20,.45)` | Dialog backdrop |
+
+## 7. Components
+
+### Buttons
+- **Primary:** `green-600` background, white text, weight 700, 44–46 px tall, radius 9, padding 0 18–20 px. Hover: `dark`. An optional trailing arrow `→` moves 3 px right on hover (transition 0.18 s).
+- **Secondary:** white background, 1.5 px `line` border, `green-600` text. Hover: `mint-soft` background and `green-light` border.
+- **On dark surfaces:** `green-light` background with `terminal` text (6:1), or transparent with a `rgba(255,255,255,.25)` border.
+- **Icon button:** 40–44 px square, radius 9, needs an `aria-label`.
+- **Disabled:** `#a8bda8` background, `cursor: not-allowed`, keep the label.
+
+### Form controls
+- **Inputs, selects, textareas:** 44–46 px tall, radius 9, 1.5 px `line-strong` border, white background. Read-only fields use `paper-2` with a `line` border. Technical values are set in mono.
+- The label sits above the field: 14–15 px, weight 700. Helper text goes below in 14 px `muted`.
+- **Segmented control and tabs:** a white or `paper-2` track (radius 12, padding 4). The selected segment is `dark` with white text; the others are transparent with `ink-2` text. Use `aria-pressed`.
+- **Radio card:** a button with a 2 px border. Selected: `green` border, `mint-soft` background and a filled `green` dot. Unselected: `line` border, white background, an empty dot with a `#a8bda8` ring.
+- **Switch:** a `role="switch"` button, 48–52 × 28–30 px. On: `green` track, knob right. Off: `#a8bda8` track, knob left.
+- **Checkbox tiles** (group member picker): a 22 px box. Checked: `green-600` fill with a white tick.
+
+### Data display
+- **Card:** white, 1 px `line` border, radius 14, `shadow`. On hover, interactive cards lift 4 px and switch to `shadow-hover` with a `green-light` border.
+- **Stat tile:** an overline label, the value in 32 px 900 with the unit in 18 px `muted`, then a caption. Meters are 6–8 px tall rounded bars on a `line` track.
+- **Status chip:** a pill with an 8 px dot and the label at 13 px weight 700 (see section 3).
+- **BOT badge:** 11 px, weight 900, tracking `.06em`, `mint-soft` background, `green-600` text, radius 5.
+- **Terminal block:** `terminal` background, `on-dark` text, mono 13 px, radius 9. Prompt user `green-light`, path `hex-1`, failures `amber-on-dark`, cursor block `mint`.
+- **Tool-call block** (in chat): a `paper-2` box with a 1 px `line` border and radius 9. The first row shows a mono command with a terminal icon. The second row shows the result: green text on `mint-soft` for success or for "Token added by the egress proxy", amber on `amber-tint` for failures.
+- **System message** (team chat): a `mint-soft` banner with a `mint-line` border, radius 9, 13 px `dark` text and a bot-to-bot (two arrows) icon.
+- **Attachment card** (merge request, file, approval): a white card with `shadow`, an icon tile in `mint-soft`, the title in 900, mono meta and a status chip.
+- **Tables:** header row in `paper-2` with overline labels, rows separated by 1 px `line`. On dark log tables, rows are separated by `dark`.
+  > When prototyping in the design canvas, build tables as CSS grids with ARIA table roles, because a loop inside `<table>` breaks the template parser. In the React app, real `<table>` elements are fine.
+- **Unread counter:** a 20 px pill, `green-light` background, `terminal` text, weight 900.
+
+### Chat
+- **Message row (Slack style):** a 36 px avatar, then the name (weight 900), a BOT badge for bots and the time in 12 px `muted`. The body is 15/1.55. Consecutive messages from the same sender may later be grouped.
+- **Mentions:** `blue` text on `blue-tint`, weight 700, radius 4, padding 0 3 px.
+- **Workspace chat bubble from the user:** `dark` background, white text, radius `14 14 4 14`, right-aligned.
+- **Typing or working indicator:** a 22–28 px avatar in mood `thinking` plus a `blue` 13–14 px weight-700 line, for example "Ferrit is thinking…".
+- **Composer:** 1.5 px `line-strong` border, radius 12. Toolbar: mention (@), attach and a hint text, with the send button on the right (`green-600`, 44 × 40).
+
+### Navigation
+- **App header nav:** items are 44 px tall, weight 700. The current item is `green-600` with a 2 px `green` inset underline.
+- **Team sidebar:** `dark-2` background. Section headers are overlines in `on-dark-muted`. Items are 44–48 px tall with radius 8. The active item has a `green-600` background and white text. Unread items are white at weight 900 with a counter. Bot items show a 30 px avatar with a presence dot (10 px, 2 px ring in the sidebar colour) and the current activity in 12 px.
+- **Dialog:** a white panel, max-width 620–640 px, radius 14, `shadow-hover`, over the `overlay` backdrop. It has an eyebrow and a title, a close icon button top right, and actions bottom right (secondary first, primary last).
+
+## 8. Robot avatars
+
+Every bot gets a deterministic robot generated from its `avatar_seed`. There are no human faces.
+
+### Algorithm
+1. `h = fnv1a32(seed)`: offset basis `2166136261`, prime `16777619`, unsigned 32-bit. The JavaScript reference iterates over UTF-16 code units (`charCodeAt`). **Seeds are restricted to `[a-z0-9-]`**, so byte-wise and code-unit-wise hashing agree and a Go implementation produces the same robot.
+2. Parts:
+   - `head = h % 4`: rounded rect, hexagon, dome, octagon
+   - `sensors = (h >>> 4) % 4`: dual eyes, visor, cyclops, LED clusters
+   - `antenna = (h >>> 8) % 3`: ball, double, gear
+   - `mouth = (h >>> 12) % 3`: grille, dots, slot
+   - `palette = (h >>> 16) % 6`
+3. Default seeds are `<slug>-<4 hex>`, for example `atlas-005a`. "Reroll" picks a new suffix.
+
+### Palettes
+
+| Name | Body | Shade | Panel | Sensor | Mouth / marks | Accent | Tile |
+|---|---|---|---|---|---|---|---|
+| forest | `#3f9147` | `#347a3b` | `#182019` | `#d6fcd0` | `#182019` | `#3f9147` | `#eef8ec` |
+| night | `#2a3c2a` | `#1f2d1f` | `#14201a` | `#5eab60` | `#5eab60` | `#3f9147` | `#d6fcd0` |
+| steel | `#c9d8c9` | `#a8bda8` | `#1f2d1f` | `#5eab60` | `#1f2d1f` | `#3f9147` | `#f5f8f4` |
+| cobalt | `#4a5e92` | `#3f5f9c` | `#14201a` | `#8aa8db` | `#14201a` | `#4a5e92` | `#e4e9f4` |
+| sky | `#8aa8db` | `#6d8fce` | `#1f2d1f` | `#d6fcd0` | `#1f2d1f` | `#4a5e92` | `#edf0f6` |
+| mint | `#d6fcd0` | `#b5e4ae` | `#2a3c2a` | `#49b24d` | `#2a3c2a` | `#3f9147` | `#e3ebe2` |
+
+All outlines are `ink` at 3 units (viewBox 120). The tile is a rounded square (`rx = 26/120`) and can be switched off (`tile={false}`) for small inline use.
+
+### Moods (driven by bot status)
+
+| Mood | Sensors | Antenna | Extra |
+|---|---|---|---|
+| `idle` | Opacity 1 → .55 → 1 over 3.2 s | Gear 9 s per turn, glow 3.2 s | none |
+| `thinking` | 1 → .4 → 1 over 1.4 s, visor scan 1.4 s | Gear 2.2 s per turn | Thought bubble with three pulsing dots |
+| `action` | Blink `1;1;.25;1;1` over 1 s, visor scan .8 s | Gear .9 s per turn, glow .6 s | Two signal rings expanding from the antenna tip (1.4 s, staggered) |
+| `offline` | Constant .22 | Still | none |
+
+- **Implementation:** pure SVG with SMIL `<animate>`, so no JavaScript runs per frame. With `prefers-reduced-motion: reduce`, render the still pose: the idle mood at full opacity, with no rings and no bubble.
+- **Accessibility:** `role="img"` with an `aria-label` such as "Robot avatar atlas-005a, thinking". When the bot's name is shown next to it, mark the avatar `aria-hidden`.
+- **Sizes in the app:** 22–28 (status lines), 30–36 (chat, sidebar), 64 (cards, bot header), 96–112 (profile, builder).
+
+## 9. Iconography
+- Inline stroke icons on a 24 px grid, `stroke="currentColor"`, width 2–2.4, round caps and joins, `fill="none"`. Sizes 14 / 16 / 18 / 20.
+- The icons in the designs follow Lucide geometry. Use `lucide-react` in the app: bell, user, search, plus, arrow-left, shield, key, ban, terminal, monitor, clipboard, camera, maximize, paperclip, send, trash, rotate-cw, lock, folder, sliders-horizontal, git-merge, info, check, x, pencil.
+- Decorative icons get `aria-hidden="true"`. Icon-only buttons get an `aria-label`.
+- No emoji in the UI.
+
+## 10. Motion
+- **Transitions:** 0.18 s ease for colour, border and transform.
+- **Hover:** buttons lift 1 px, cards lift 4 px with `shadow-hover`, arrows move 3 px.
+- **Live state:** avatar moods (section 8), and a subtle fade for new messages. Do not animate layout or auto-scroll while the user is reading older messages.
+- **Reduced motion:** honour `prefers-reduced-motion: reduce` everywhere: disable transitions and SMIL animations.
+
+## 11. Accessibility
+- **Contrast:** at least 4.5:1 for text, 3:1 for large text (24 px and up) and UI boundaries. The pairs in section 3 are checked; do not put `green` or `on-dark-faint` behind small text.
+- **Focus:** `:focus-visible` gets a 2 px `green` outline with a 2 px offset. Never remove it.
+- **Semantics:** use real `<button>`, `<a href>`, `<input>` + `<label>`, `role="switch"` for switches and `aria-pressed` for toggles. Use `role="log"` for message lists and `role="dialog"` with `aria-modal` for dialogs.
+- **Never colour alone:** statuses always have a text label, and blocked or failed states use amber plus a text label.
+- **Keyboard:** Enter sends and Shift+Enter adds a newline in composers. Escape closes dialogs. Every action is reachable by keyboard.
+
+## 12. Voice and copy
+- **English, sentence case,** short and concrete ("Stop sandbox", "Add secret", "Bot-to-bot on").
+- Bots speak in the first person and in plain words ("Rebased, 25 tests green.").
+- Name the mechanism when it builds trust: "Token added by the egress proxy. Atlas never saw it."
+- Show times as `14:32`, durations as `2 h 14 min` and sizes as `GiB`, formatted via `Intl` for the active locale.
+
+## 13. Internationalisation
+- The UI ships in English first, and every string goes through `next-intl` (`messages/en.json`) from day one.
+- Use ICU messages for plurals and variables. Never concatenate translated fragments.
+- Leave about 30 % extra room for longer languages (German). Avoid fixed widths on labels and buttons.
+- The API returns error **codes**, and the frontend translates them.
+- Bot output is not translated. The reply language is a per-bot setting.
+
+## 14. Implementation notes
+
+Expose the tokens as CSS variables and map them in the Tailwind config, for example:
+
+```ts
+// tailwind.config.ts (excerpt)
+theme: {
+  extend: {
+    colors: {
+      ink: { DEFAULT: "#182019", 2: "#3a4a3c" },
+      muted: "#5d6b60",
+      paper: { DEFAULT: "#ffffff", 2: "#f5f8f4" },
+      line: { DEFAULT: "#e3ebe2", strong: "#c9d8c9" },
+      green: { DEFAULT: "#3f9147", 600: "#347a3b", light: "#5eab60", logo: "#49b24d" },
+      mint: { DEFAULT: "#d6fcd0", soft: "#eef8ec", line: "#cfe0cf" },
+      dark: { DEFAULT: "#2a3c2a", 2: "#1f2d1f" },
+      terminal: "#14201a",
+      blue: { DEFAULT: "#4a5e92", tint: "#edf0f6", line: "#d3d9e8" },
+      hex: { 1: "#8aa8db", 2: "#6d8fce", 3: "#3f5f9c" },
+      amber: { DEFAULT: "#b45309", tint: "#fdf3e7", line: "#e8b98a", "on-dark": "#f0b46a" },
+    },
+    borderRadius: { xs: "6px", sm: "9px", md: "12px", lg: "14px" },
+    boxShadow: {
+      card: "0 1px 2px rgba(26,44,26,.06), 0 8px 24px rgba(26,44,26,.07)",
+      "card-hover": "0 6px 16px rgba(26,44,26,.10), 0 18px 40px rgba(26,44,26,.12)",
+    },
+    fontFamily: {
+      sans: ["var(--font-lato)", "system-ui", "sans-serif"],
+      mono: ["ui-monospace", "SFMono-Regular", "SF Mono", "Menlo", "Consolas", "Liberation Mono", "monospace"],
+    },
+  },
+}
+```
+
+- Port the avatar as a React component (`<BotAvatar seed mood size tile />`) from [`source/Avatar.dc.html`](source/Avatar.dc.html), and write a Go test that checks the hash and part selection against the same fixtures.
+- The `.dc.html` files in [`source/`](source/) are reference markup from the design canvas, with exact inline styles. They need the canvas runtime and are not meant to run in the app.

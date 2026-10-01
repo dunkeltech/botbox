@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>bot.Box · Fleet</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,400;0,700;0,900;1,400&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f5f8f4}
+a{color:#347a3b}a:hover{color:#2a3c2a}
+:focus-visible{outline:2px solid #3f9147;outline-offset:2px}
+</style>
+</helmet>
+<div style="min-height: 100vh; background: #f5f8f4; font-family: Lato, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #182019; font-size: 16px; line-height: 1.6; display: flex; flex-direction: column">
+
+  <header style="background: #ffffff; border-bottom: 1px solid #e3ebe2">
+    <div style="max-width: 1360px; margin: 0 auto; padding: 10px 24px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 28px">
+      <a href="Main.dc.html" aria-label="bot.Box home" style="display: flex; align-items: center; gap: 10px; font-weight: 900; font-size: 21px; color: #182019; text-decoration: none; min-height: 44px">
+        <svg width="38" height="38" viewBox="0 0 160 160" aria-hidden="true">
+          <line x1="80" y1="20" x2="80" y2="10" stroke="#1a2a1a" stroke-width="6" stroke-linecap="round"></line>
+          <circle cx="80" cy="8" r="7" fill="#49b24d"></circle>
+          <path d="M49 20.3 111 20.3 142 74 111 127.7 49 127.7 18 74Z" fill="none" stroke="#1a2a1a" stroke-width="6" stroke-linejoin="round"></path>
+          <circle cx="60" cy="64" r="12" fill="#49b24d"></circle>
+          <circle cx="100" cy="64" r="12" fill="#49b24d"></circle>
+          <polygon points="62,91 68.1,94.5 68.1,101.5 62,105 55.9,101.5 55.9,94.5" fill="#8aa8db"></polygon>
+          <polygon points="80,91 86.1,94.5 86.1,101.5 80,105 73.9,101.5 73.9,94.5" fill="#6d8fce"></polygon>
+          <polygon points="98,91 104.1,94.5 104.1,101.5 98,105 91.9,101.5 91.9,94.5" fill="#3f5f9c"></polygon>
+        </svg>
+        <span>bot<b style="color: #3f9147">.</b>Box</span>
+      </a>
+      <nav aria-label="Main" style="display: flex; flex-wrap: wrap; gap: 2px; flex: 1 1 auto">
+        <a href="Main.dc.html" aria-current="page" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; font-weight: 700; color: #347a3b; text-decoration: none; box-shadow: inset 0 -2px 0 #3f9147">Bots</a>
+        <a href="Team.dc.html" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; font-weight: 700; color: #182019; text-decoration: none">Team</a>
+        <a href="Secrets.dc.html" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; font-weight: 700; color: #182019; text-decoration: none">Secrets</a>
+        <a href="#drivers" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; font-weight: 700; color: #182019; text-decoration: none">Drivers</a>
+        <a href="#settings" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; font-weight: 700; color: #182019; text-decoration: none">Settings</a>
+      </nav>
+      <div style="display: flex; align-items: center; gap: 8px">
+        <button type="button" aria-label="Notifications" style="width: 44px; height: 44px; display: grid; place-items: center; border: 1.5px solid #e3ebe2; border-radius: 9px; background: #ffffff; color: #182019; cursor: pointer">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.7 21a2 2 0 0 1-3.4 0"></path></svg>
+        </button>
+        <button type="button" aria-label="Account" style="width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 9px; background: #2a3c2a; color: #d6fcd0; cursor: pointer">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main style="flex: 1 0 auto; width: 100%; max-width: 1360px; margin: 0 auto; padding: 36px 24px 56px; box-sizing: border-box; display: flex; flex-direction: column; gap: 28px">
+
+    <section style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 20px">
+      <div style="min-width: 0; max-width: 720px">
+        <p style="margin: 0 0 6px; font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #5d6b60"><span style="color: #3f9147; font-weight: 900">// </span>Fleet</p>
+        <h1 style="margin: 0 0 8px; font-size: 44px; line-height: 1.15; font-weight: 900; letter-spacing: -.01em">Your bots</h1>
+        <p style="margin: 0; color: #3a4a3c; font-size: 17px">Every bot pairs a language model with its own sandboxed computer. Watch them work, step in, or hand them the next task.</p>
+      </div>
+      <div style="display: flex; flex-wrap: wrap; gap: 10px">
+        <a href="Secrets.dc.html" style="display: inline-flex; align-items: center; gap: 8px; min-height: 46px; padding: 0 18px; border: 1.5px solid #e3ebe2; border-radius: 9px; background: #ffffff; color: #347a3b; font-weight: 700; text-decoration: none">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"></path></svg>
+          Egress log
+        </a>
+        <a href="Builder.dc.html" style="display: inline-flex; align-items: center; gap: 8px; min-height: 46px; padding: 0 20px; border-radius: 9px; background: #347a3b; color: #ffffff; font-weight: 700; text-decoration: none; box-shadow: 0 1px 2px rgba(26,44,26,.06),0 8px 24px rgba(26,44,26,.07)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+          New bot
+        </a>
+      </div>
+    </section>
+
+    <section aria-label="Overview" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px">
+      <div style="background: #ffffff; border: 1px solid #e3ebe2; border-radius: 14px; padding: 18px 20px">
+        <p style="margin: 0; font-size: 13px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: #5d6b60">Sandboxes up</p>
+        <p style="margin: 4px 0 2px; font-size: 32px; font-weight: 900; line-height: 1.2">5 <span style="font-size: 18px; color: #5d6b60; font-weight: 700">of 6</span></p>
+        <p style="margin: 0; font-size: 14px; color: #5d6b60">3 busy · 2 idle · 1 stopped</p>
+      </div>
+      <div style="background: #ffffff; border: 1px solid #e3ebe2; border-radius: 14px; padding: 18px 20px">
+        <p style="margin: 0; font-size: 13px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: #5d6b60">Compute in use</p>
+        <p style="margin: 4px 0 8px; font-size: 32px; font-weight: 900; line-height: 1.2">5 <span style="font-size: 18px; color: #5d6b60; font-weight: 700">vCPU · 12 GiB</span></p>
+        <div role="img" aria-label="31 percent of quota" style="height: 8px; border-radius: 99px; background: #e3ebe2; overflow: hidden"><div style="width: 31%; height: 100%; background: #3f9147; border-radius: 99px"></div></div>
+        <p style="margin: 6px 0 0; font-size: 14px; color: #5d6b60">Quota 16 vCPU · 32 GiB</p>
+      </div>
+      <div style="background: #ffffff; border: 1px solid #e3ebe2; border-radius: 14px; padding: 18px 20px">
+        <p style="margin: 0; font-size: 13px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: #5d6b60">Tokens injected · 24 h</p>
+        <p style="margin: 4px 0 2px; font-size: 32px; font-weight: 900; line-height: 1.2">412</p>
+        <p style="margin: 0; font-size: 14px; color: #5d6b60">By egress proxies, on 4 domains. No secret ever reached a prompt.</p>
+      </div>
+      <div style="background: #ffffff; border: 1px solid #e3ebe2; border-radius: 14px; padding: 18px 20px">
+        <p style="margin: 0; font-size: 13px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: #5d6b60">Egress blocked · 24 h</p>
+        <p style="margin: 4px 0 2px; font-size: 32px; font-weight: 900; line-height: 1.2; color: #b45309">3</p>
+        <p style="margin: 0; font-size: 14px; color: #5d6b60">Hosts not on an allowlist. <a href="Secrets.dc.html" style="font-weight: 700">Review</a></p>
+      </div>
+    </section>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start">
+
+      <section aria-label="Bots" style="flex: 999 1 620px; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+        <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px">
+          <div role="group" aria-label="Filter by status" style="display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; background: #ffffff; border: 1px solid #e3ebe2; border-radius: 12px">
+            <sc-for list="{{tabs}}" as="tab" hint-placeholder-count="4">
+              <button type="button" aria-pressed="{{tab.pressed}}" onClick="{{tab.pick}}" style="min-height: 40px; padding: 0 14px; border: 0; border-radius: 9px; font: inherit; font-weight: 700; font-size: 15px; cursor: pointer; background: {{tab.bg}}; color: {{tab.fg}}">{{tab.label}} <span style="font-weight: 400; opacity: .8">{{tab.count}}</span></button>
+            </sc-for>
+          </div>
+          <label style="display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; background: #ffffff; border: 1.5px solid #e3ebe2; border-radius: 9px; color: #5d6b60; flex: 0 1 300px; box-sizing: border-box">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+            <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap">Search bots</span>
+            <input type="search" placeholder="Search name, model, driver" style="border: 0; outline: none; font: inherit; font-size: 15px; color: #182019; background: transparent; width: 100%; min-width: 0">
+          </label>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 18px">
+          <sc-for list="{{bots}}" as="bot" hint-placeholder-count="6">
+            <article style="background: #ffffff; border: 1px solid #e3ebe2; border-radius: 14px; box-shadow: 0 1px 2px rgba(26,44,26,.06),0 8px 24px rgba(26,44,26,.07); padding: 18px; display: flex; flex-direction: column; gap: 14px; min-width: 0">
+              <div style="display: flex; gap: 14px; align-items: center">
+                <dc-import name="Avatar" seed="{{bot.seed}}" mood="{{bot.mood}}" size="64" hint-size="64px,64px"></dc-import>
+                <div style="min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; align-items: flex-start">
+                  <h2 style="margin: 0; font-size: 20px; font-weight: 900; line-height: 1.2">{{bot.label}}</h2>
+                  <span style="display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px 2px 8px; border-radius: 99px; font-size: 13px; font-weight: 700; border: 1px solid {{bot.chipLine}}; background: {{bot.chipBg}}; color: {{bot.chipFg}}"><span style="width: 8px; height: 8px; border-radius: 50%; background: {{bot.dot}}"></span>{{bot.statusLabel}}</span>
+                </div>
+                <button type="button" aria-label="More actions for {{bot.label}}" style="align-self: flex-start; width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 9px; background: transparent; color: #5d6b60; cursor: pointer">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="12" cy="19" r="1.8"></circle></svg>
+                </button>
+              </div>
+              <p style="margin: 0; color: #3a4a3c; font-size: 15px; line-height: 1.55; min-height: 46px">{{bot.desc}}</p>
+              <div style="background: #14201a; color: {{bot.termFg}}; border-radius: 9px; padding: 9px 12px; font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{bot.activity}}</div>
+              <dl style="margin: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; font-size: 14px">
+                <dt style="color: #5d6b60; font-weight: 700">Brain</dt>
+                <dd style="margin: 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-top: 1px">{{bot.brain}}</dd>
+                <dt style="color: #5d6b60; font-weight: 700">Computer</dt>
+                <dd style="margin: 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-top: 1px">{{bot.computer}}</dd>
+              </dl>
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 12px; border-top: 1px solid #e3ebe2; margin-top: auto">
+                <span style="font-size: 14px; color: #5d6b60">{{bot.uptime}}</span>
+                <a href="{{bot.href}}" style="display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 16px; border-radius: 9px; font-weight: 700; font-size: 15px; text-decoration: none; background: {{bot.btnBg}}; color: {{bot.btnFg}}; border: 1.5px solid {{bot.btnLine}}">{{bot.action}} <span aria-hidden="true">→</span></a>
+              </div>
+            </article>
+          </sc-for>
+          <a href="Builder.dc.html" style="min-height: 300px; border: 2px dashed #c9d8c9; border-radius: 14px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 24px; text-align: center; color: #347a3b; text-decoration: none; background: #ffffff">
+            <span style="width: 56px; height: 56px; border-radius: 14px; background: #d6fcd0; display: grid; place-items: center; color: #347a3b">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+            </span>
+            <span style="font-size: 19px; font-weight: 900; color: #182019">New bot</span>
+            <span style="font-size: 14px; color: #5d6b60; max-width: 220px">Choose a model, a computer and the secrets it may use.</span>
+          </a>
+        </div>
+      </section>
+
+      <aside style="flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 18px">
+        <section aria-labelledby="act-h" style="background: #ffffff; border: 1px solid #e3ebe2; border-radius: 14px; padding: 18px 20px">
+          <h2 id="act-h" style="margin: 0 0 12px; font-size: 18px; font-weight: 900">Activity</h2>
+          <ol style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column">
+            <sc-for list="{{events}}" as="ev" hint-placeholder-count="6">
+              <li style="display: flex; gap: 12px; padding: 10px 0; border-top: 1px solid {{ev.line}}">
+                <span style="flex: 0 0 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: {{ev.iconBg}}; color: {{ev.iconFg}}">
+                  <sc-if value="{{ev.isKey}}" hint-placeholder-val="{{false}}">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4.5"></circle><path d="M10.7 12.3L21 2M16 7l3 3M14 9l2 2"></path></svg>
+                  </sc-if>
+                  <sc-if value="{{ev.isBlock}}" hint-placeholder-val="{{false}}">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M5.6 5.6l12.8 12.8"></path></svg>
+                  </sc-if>
+                  <sc-if value="{{ev.isBot}}" hint-placeholder-val="{{true}}">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17l6-5-6-5M12 19h8"></path></svg>
+                  </sc-if>
+                </span>
+                <div style="min-width: 0">
+                  <p style="margin: 0; font-size: 14px; line-height: 1.45"><b style="font-weight: 900">{{ev.who}}</b> {{ev.text}}</p>
+                  <p style="margin: 2px 0 0; font-size: 13px; color: #5d6b60; font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace">{{ev.time}}</p>
+                </div>
+              </li>
+            </sc-for>
+          </ol>
+        </section>
+
+        <section id="drivers" aria-labelledby="drv-h" style="background: #ffffff; border: 1px solid #e3ebe2; border-radius: 14px; padding: 18px 20px">
+          <h2 id="drv-h" style="margin: 0 0 12px; font-size: 18px; font-weight: 900">Compute drivers</h2>
+          <div style="display: flex; flex-direction: column; gap: 12px">
+            <div style="display: flex; gap: 12px; align-items: flex-start">
+              <span style="flex: 0 0 36px; height: 36px; border-radius: 9px; background: #eef8ec; color: #347a3b; display: grid; place-items: center">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M21 8l-9-5-9 5v8l9 5 9-5z"></path><path d="M3 8l9 5 9-5M12 13v8"></path></svg>
+              </span>
+              <div style="min-width: 0; flex: 1">
+                <p style="margin: 0; font-weight: 700">Docker · local</p>
+                <p style="margin: 0; font-size: 14px; color: #5d6b60">2 sandboxes · /var/run/docker.sock</p>
+              </div>
+              <span style="font-size: 13px; font-weight: 700; color: #347a3b; display: inline-flex; align-items: center; gap: 6px"><span style="width: 8px; height: 8px; border-radius: 50%; background: #3f9147"></span>Healthy</span>
+            </div>
+            <div style="display: flex; gap: 12px; align-items: flex-start">
+              <span style="flex: 0 0 36px; height: 36px; border-radius: 9px; background: #edf0f6; color: #4a5e92; display: grid; place-items: center">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l8.7 5v10L12 22l-8.7-5V7z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+              </span>
+              <div style="min-width: 0; flex: 1">
+                <p style="margin: 0; font-weight: 700">Kubernetes · prod-eu</p>
+                <p style="margin: 0; font-size: 14px; color: #5d6b60">3 pods running · 1 scaled to zero</p>
+              </div>
+              <span style="font-size: 13px; font-weight: 700; color: #347a3b; display: inline-flex; align-items: center; gap: 6px"><span style="width: 8px; height: 8px; border-radius: 50%; background: #3f9147"></span>Healthy</span>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <footer style="background: #2a3c2a; color: #c9d8c9">
+    <div style="max-width: 1360px; margin: 0 auto; padding: 22px 24px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px 24px; font-size: 14px">
+      <span><b style="color: #ffffff; font-weight: 900">bot<span style="color: #5eab60">.</span>Box</b> · a dunkel<span style="color: #5eab60">.</span>Tech project</span>
+      <span style="color: #a8bda8; font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 13px">api v1 · drivers: docker, kubernetes</span>
+    </div>
+  </footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1660}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var filter = (this.state && this.state.filter) || 'all';
+    var self = this;
+    var STATUS = {
+      working:  { chipBg: '#eef8ec', chipFg: '#347a3b', chipLine: '#cfe0cf', dot: '#3f9147', termFg: '#d6fcd0' },
+      thinking: { chipBg: '#edf0f6', chipFg: '#4a5e92', chipLine: '#d3d9e8', dot: '#4a5e92', termFg: '#c9d8c9' },
+      idle:     { chipBg: '#f5f8f4', chipFg: '#5d6b60', chipLine: '#e3ebe2', dot: '#8ea68e', termFg: '#a8bda8' },
+      stopped:  { chipBg: '#ffffff', chipFg: '#5d6b60', chipLine: '#e3ebe2', dot: '#c9d8c9', termFg: '#8ea68e' }
+    };
+    var BOTS = [
+      { label: 'Atlas',  seed: 'atlas-005a',  mood: 'action',   status: 'working',  statusLabel: 'Working',  group: 'running', desc: 'Maintains the Odoo cron modules: reproduces bugs, writes fixes, opens merge requests.', activity: '$ pytest addons/dt_cron -q', brain: 'claude-cli · claude-opus-5-5', computer: 'k8s · ns bots-atlas', uptime: 'Up 2 h 14 min' },
+      { label: 'Ferrit', seed: 'ferrit-00e5', mood: 'thinking', status: 'thinking', statusLabel: 'Thinking', group: 'running', desc: 'Browser research agent. Reads release notes and summarises what changed.', activity: 'planning › compare three changelogs', brain: 'OpenRouter · claude-sonnet-5-5', computer: 'docker · local', uptime: 'Up 41 min' },
+      { label: 'Kobold', seed: 'kobold-0017', mood: 'action',   status: 'working',  statusLabel: 'Working',  group: 'running', desc: 'Ops helper for the Pterodactyl panel: updates, backups and health checks.', activity: '$ sudo apt-get install -y restic', brain: 'codex-cli · gpt-5-codex', computer: 'k8s · ns bots-kobold', uptime: 'Up 6 h 03 min' },
+      { label: 'Nimbus', seed: 'nimbus-00c3', mood: 'idle',     status: 'idle',     statusLabel: 'Idle',     group: 'idle',    desc: 'Drafts Django migrations and their tests from issue descriptions.', activity: 'waiting for instructions', brain: 'Anthropic API · claude-sonnet-5-5', computer: 'docker · local', uptime: 'Up 1 d 4 h' },
+      { label: 'Relais', seed: 'relais-002c', mood: 'idle',     status: 'idle',     statusLabel: 'Idle',     group: 'idle',    desc: 'Triages new issues on the DPF-Monitor repository every morning.', activity: 'next run 07:00 · cron', brain: 'agy · default model', computer: 'k8s · ns bots-relais', uptime: 'Up 3 d 2 h' },
+      { label: 'Zink',   seed: 'zink-02a7',   mood: 'offline',  status: 'stopped',  statusLabel: 'Stopped',  group: 'stopped', desc: 'Scratch computer for trying out new tools and images.', activity: 'sandbox stopped · home volume kept', brain: 'OpenAI API · gpt-5', computer: 'k8s · ns bots-zink', uptime: 'Stopped 2 days ago' }
+    ];
+    var bots = BOTS.filter(function (b) { return filter === 'all' || b.group === filter; }).map(function (b) {
+      var s = STATUS[b.status];
+      var stopped = b.status === 'stopped';
+      return Object.assign({}, b, s, {
+        href: stopped ? '#start' : 'Workspace.dc.html',
+        action: stopped ? 'Start' : 'Open',
+        btnBg: stopped ? '#ffffff' : '#347a3b',
+        btnFg: stopped ? '#347a3b' : '#ffffff',
+        btnLine: stopped ? '#e3ebe2' : '#347a3b'
+      });
+    });
+    var counts = { all: 6, running: 3, idle: 2, stopped: 1 };
+    var tabs = [['all', 'All'], ['running', 'Running'], ['idle', 'Idle'], ['stopped', 'Stopped']].map(function (t) {
+      var on = filter === t[0];
+      return { label: t[1], count: counts[t[0]], pressed: on ? 'true' : 'false', bg: on ? '#2a3c2a' : 'transparent', fg: on ? '#ffffff' : '#3a4a3c', pick: function () { self.setState({ filter: t[0] }); } };
+    });
+    var KIND = {
+      bot:   { iconBg: '#eef8ec', iconFg: '#347a3b' },
+      key:   { iconBg: '#edf0f6', iconFg: '#4a5e92' },
+      block: { iconBg: '#fdf3e7', iconFg: '#b45309' }
+    };
+    var EVENTS = [
+      { kind: 'bot',   who: 'Atlas',  text: 'opened merge request !41 “Retry IMAP fetch with backoff”.', time: '14:32' },
+      { kind: 'key',   who: 'Proxy',  text: 'injected Authorization for gitlab.com on behalf of Atlas.', time: '14:29' },
+      { kind: 'block', who: 'Proxy',  text: 'blocked Ferrit → paste.example.net: not on the allowlist.', time: '14:12' },
+      { kind: 'bot',   who: 'Kobold', text: 'installed restic 0.17 with apt-get.', time: '13:58' },
+      { kind: 'bot',   who: 'Nimbus', text: 'finished a session after 18 messages.', time: '13:40' },
+      { kind: 'bot',   who: 'Zink',   text: 'was stopped. Home volume (10 GiB) kept.', time: 'Yesterday' }
+    ];
+    var events = EVENTS.map(function (e, i) {
+      return Object.assign({}, e, KIND[e.kind], { isKey: e.kind === 'key', isBlock: e.kind === 'block', isBot: e.kind === 'bot', line: i === 0 ? 'transparent' : '#e3ebe2' });
+    });
+    return { bots: bots, tabs: tabs, events: events };
+  }
+}
+</script>
+</body>
+</html>

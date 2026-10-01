@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Robot avatar</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<svg width="{{size}}" height="{{size}}" viewBox="0 0 120 120" role="img" aria-label="{{alt}}" style="display: block">
+  <rect x="0" y="0" width="120" height="120" rx="26" fill="{{tileFill}}"></rect>
+
+  <g display="{{showWaves}}">
+    <circle cx="60" cy="{{tipY}}" r="6" fill="none" stroke="{{accent}}" stroke-width="2.5" opacity="0">
+      <animate attributeName="r" values="6;24" dur="1.4s" repeatCount="indefinite"></animate>
+      <animate attributeName="opacity" values=".8;0" dur="1.4s" repeatCount="indefinite"></animate>
+    </circle>
+    <circle cx="60" cy="{{tipY}}" r="6" fill="none" stroke="{{accent}}" stroke-width="2.5" opacity="0">
+      <animate attributeName="r" values="6;24" dur="1.4s" begin=".7s" repeatCount="indefinite"></animate>
+      <animate attributeName="opacity" values=".8;0" dur="1.4s" begin=".7s" repeatCount="indefinite"></animate>
+    </circle>
+  </g>
+
+  <g display="{{showBall}}">
+    <line x1="60" y1="{{top}}" x2="60" y2="{{stemEnd}}" stroke="#182019" stroke-width="3" stroke-linecap="round"></line>
+    <circle cx="60" cy="{{tipY}}" r="9" fill="{{accent}}" opacity=".2">
+      <animate attributeName="opacity" values="{{glowVals}}" dur="{{glowDur}}" repeatCount="indefinite"></animate>
+    </circle>
+    <circle cx="60" cy="{{tipY}}" r="5" fill="{{sensor}}" stroke="#182019" stroke-width="2.5"></circle>
+  </g>
+
+  <g display="{{showDouble}}">
+    <line x1="50" y1="{{topIn}}" x2="45" y2="{{dblEnd}}" stroke="#182019" stroke-width="3" stroke-linecap="round"></line>
+    <line x1="70" y1="{{topIn}}" x2="75" y2="{{dblEnd}}" stroke="#182019" stroke-width="3" stroke-linecap="round"></line>
+    <circle cx="45" cy="{{dblTip}}" r="4" fill="{{sensor}}" stroke="#182019" stroke-width="2.5">
+      <animate attributeName="opacity" values="{{eyeVals}}" dur="{{glowDur}}" repeatCount="indefinite"></animate>
+    </circle>
+    <circle cx="75" cy="{{dblTip}}" r="4" fill="{{sensor}}" stroke="#182019" stroke-width="2.5">
+      <animate attributeName="opacity" values="{{eyeVals}}" dur="{{glowDur}}" begin=".3s" repeatCount="indefinite"></animate>
+    </circle>
+  </g>
+
+  <g display="{{showGear}}">
+    <line x1="60" y1="{{top}}" x2="60" y2="{{gearStem}}" stroke="#182019" stroke-width="3" stroke-linecap="round"></line>
+    <g transform="translate(60 {{gearY}})">
+      <g>
+        <animateTransform attributeName="transform" type="rotate" from="0" to="{{spinTo}}" dur="{{spinDur}}" repeatCount="indefinite"></animateTransform>
+        <rect x="-2.5" y="-10.5" width="5" height="6" rx="1" fill="{{shade}}" stroke="#182019" stroke-width="2"></rect>
+        <rect x="-2.5" y="-10.5" width="5" height="6" rx="1" fill="{{shade}}" stroke="#182019" stroke-width="2" transform="rotate(60)"></rect>
+        <rect x="-2.5" y="-10.5" width="5" height="6" rx="1" fill="{{shade}}" stroke="#182019" stroke-width="2" transform="rotate(120)"></rect>
+        <rect x="-2.5" y="-10.5" width="5" height="6" rx="1" fill="{{shade}}" stroke="#182019" stroke-width="2" transform="rotate(180)"></rect>
+        <rect x="-2.5" y="-10.5" width="5" height="6" rx="1" fill="{{shade}}" stroke="#182019" stroke-width="2" transform="rotate(240)"></rect>
+        <rect x="-2.5" y="-10.5" width="5" height="6" rx="1" fill="{{shade}}" stroke="#182019" stroke-width="2" transform="rotate(300)"></rect>
+        <circle cx="0" cy="0" r="7" fill="{{body}}" stroke="#182019" stroke-width="2.5"></circle>
+        <circle cx="0" cy="0" r="2.5" fill="{{panel}}"></circle>
+      </g>
+    </g>
+  </g>
+
+  <rect x="50" y="90" width="20" height="12" rx="2" fill="{{shade}}" stroke="#182019" stroke-width="3"></rect>
+  <rect x="38" y="100" width="44" height="8" rx="4" fill="{{body}}" stroke="#182019" stroke-width="3"></rect>
+  <rect x="{{earL}}" y="56" width="9" height="20" rx="3" fill="{{shade}}" stroke="#182019" stroke-width="3"></rect>
+  <rect x="{{earR}}" y="56" width="9" height="20" rx="3" fill="{{shade}}" stroke="#182019" stroke-width="3"></rect>
+
+  <rect display="{{headRect}}" x="26" y="38" width="68" height="56" rx="14" fill="{{body}}" stroke="#182019" stroke-width="3"></rect>
+  <polygon display="{{headHex}}" points="42,36 78,36 96,66 78,96 42,96 24,66" fill="{{body}}" stroke="#182019" stroke-width="3" stroke-linejoin="round"></polygon>
+  <path display="{{headDome}}" d="M26 92 V64 A34 34 0 0 1 94 64 V92 Q94 94 92 94 H28 Q26 94 26 92 Z" fill="{{body}}" stroke="#182019" stroke-width="3" stroke-linejoin="round"></path>
+  <polygon display="{{headOct}}" points="37,38 83,38 94,49 94,83 83,94 37,94 26,83 26,49" fill="{{body}}" stroke="#182019" stroke-width="3" stroke-linejoin="round"></polygon>
+
+  <path d="M40 45 H52" stroke="#ffffff" stroke-opacity=".45" stroke-width="3" stroke-linecap="round"></path>
+  <rect x="{{panelX}}" y="50" width="{{panelW}}" height="30" rx="8" fill="{{panel}}"></rect>
+
+  <g display="{{eyesDual}}">
+    <g>
+      <animate attributeName="opacity" values="{{eyeVals}}" dur="{{eyeDur}}" repeatCount="indefinite"></animate>
+      <circle cx="48" cy="65" r="6.5" fill="{{sensor}}"></circle>
+      <circle cx="72" cy="65" r="6.5" fill="{{sensor}}"></circle>
+    </g>
+    <circle cx="46" cy="63" r="2" fill="#ffffff" opacity=".75"></circle>
+    <circle cx="70" cy="63" r="2" fill="#ffffff" opacity=".75"></circle>
+  </g>
+
+  <g display="{{eyesVisor}}">
+    <rect x="42" y="60" width="36" height="10" rx="5" fill="{{sensor}}" opacity=".3"></rect>
+    <rect x="42" y="60" width="12" height="10" rx="5" fill="{{sensor}}">
+      <animate attributeName="x" values="{{scanVals}}" dur="{{scanDur}}" repeatCount="indefinite"></animate>
+      <animate attributeName="opacity" values="{{eyeVals}}" dur="{{eyeDur}}" repeatCount="indefinite"></animate>
+    </rect>
+  </g>
+
+  <g display="{{eyesCyclops}}">
+    <circle cx="60" cy="65" r="11" fill="none" stroke="{{sensor}}" stroke-width="2" opacity=".45"></circle>
+    <circle cx="60" cy="65" r="7" fill="{{sensor}}">
+      <animate attributeName="opacity" values="{{eyeVals}}" dur="{{eyeDur}}" repeatCount="indefinite"></animate>
+    </circle>
+    <circle cx="60" cy="65" r="2.5" fill="{{panel}}"></circle>
+  </g>
+
+  <g display="{{eyesLed}}">
+    <g fill="{{sensor}}">
+      <animate attributeName="opacity" values="{{eyeVals}}" dur="{{eyeDur}}" repeatCount="indefinite"></animate>
+      <rect x="43" y="58" width="5" height="5" rx="1"></rect>
+      <rect x="50" y="58" width="5" height="5" rx="1"></rect>
+      <rect x="43" y="65" width="5" height="5" rx="1"></rect>
+      <rect x="50" y="65" width="5" height="5" rx="1" opacity=".5"></rect>
+    </g>
+    <g fill="{{sensor}}">
+      <animate attributeName="opacity" values="{{eyeVals}}" dur="{{eyeDur}}" begin=".4s" repeatCount="indefinite"></animate>
+      <rect x="65" y="58" width="5" height="5" rx="1"></rect>
+      <rect x="72" y="58" width="5" height="5" rx="1"></rect>
+      <rect x="65" y="65" width="5" height="5" rx="1" opacity=".5"></rect>
+      <rect x="72" y="65" width="5" height="5" rx="1"></rect>
+    </g>
+  </g>
+
+  <g display="{{mouthGrille}}" stroke="{{mark}}" stroke-width="2.5" stroke-linecap="round">
+    <line x1="51" y1="84" x2="51" y2="89"></line>
+    <line x1="57" y1="84" x2="57" y2="89"></line>
+    <line x1="63" y1="84" x2="63" y2="89"></line>
+    <line x1="69" y1="84" x2="69" y2="89"></line>
+  </g>
+  <g display="{{mouthDots}}" fill="{{mark}}">
+    <circle cx="52" cy="87" r="2"></circle>
+    <circle cx="60" cy="87" r="2"></circle>
+    <circle cx="68" cy="87" r="2"></circle>
+  </g>
+  <rect display="{{mouthSlot}}" x="47" y="85" width="26" height="4" rx="2" fill="{{mark}}"></rect>
+
+  <g display="{{showDots}}">
+    <rect x="82" y="10" width="30" height="15" rx="7.5" fill="#ffffff" stroke="#182019" stroke-width="2"></rect>
+    <circle cx="90" cy="17.5" r="2.2" fill="#182019">
+      <animate attributeName="opacity" values=".25;1;.25" dur="1.2s" repeatCount="indefinite"></animate>
+    </circle>
+    <circle cx="97" cy="17.5" r="2.2" fill="#182019">
+      <animate attributeName="opacity" values=".25;1;.25" dur="1.2s" begin=".2s" repeatCount="indefinite"></animate>
+    </circle>
+    <circle cx="104" cy="17.5" r="2.2" fill="#182019">
+      <animate attributeName="opacity" values=".25;1;.25" dur="1.2s" begin=".4s" repeatCount="indefinite"></animate>
+    </circle>
+  </g>
+</svg>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"seed":{"editor":"text","default":"atlas-005a"},"mood":{"editor":"enum","options":["idle","thinking","action","offline"],"default":"idle"},"size":{"editor":"int","default":120,"min":24,"max":480,"unit":"px"},"tile":{"editor":"boolean","default":true},"$preview":{"width":120,"height":120}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var seed = String(this.props.seed ?? 'atlas-005a');
+    var mood = String(this.props.mood ?? 'idle');
+    var size = Number(this.props.size ?? 120) || 120;
+    var tileProp = this.props.tile;
+    var showTile = !(tileProp === false || tileProp === 'false');
+
+    var h = 2166136261 >>> 0;
+    for (var i = 0; i < seed.length; i++) { h ^= seed.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+    var head = h % 4, eyes = (h >>> 4) % 4, ant = (h >>> 8) % 3, mouth = (h >>> 12) % 3, pal = (h >>> 16) % 6;
+
+    var PAL = [
+      { name: 'forest', body: '#3f9147', shade: '#347a3b', panel: '#182019', sensor: '#d6fcd0', mark: '#182019', accent: '#3f9147', tile: '#eef8ec' },
+      { name: 'night',  body: '#2a3c2a', shade: '#1f2d1f', panel: '#14201a', sensor: '#5eab60', mark: '#5eab60', accent: '#3f9147', tile: '#d6fcd0' },
+      { name: 'steel',  body: '#c9d8c9', shade: '#a8bda8', panel: '#1f2d1f', sensor: '#5eab60', mark: '#1f2d1f', accent: '#3f9147', tile: '#f5f8f4' },
+      { name: 'cobalt', body: '#4a5e92', shade: '#3f5f9c', panel: '#14201a', sensor: '#8aa8db', mark: '#14201a', accent: '#4a5e92', tile: '#e4e9f4' },
+      { name: 'sky',    body: '#8aa8db', shade: '#6d8fce', panel: '#1f2d1f', sensor: '#d6fcd0', mark: '#1f2d1f', accent: '#4a5e92', tile: '#edf0f6' },
+      { name: 'mint',   body: '#d6fcd0', shade: '#b5e4ae', panel: '#2a3c2a', sensor: '#49b24d', mark: '#2a3c2a', accent: '#3f9147', tile: '#e3ebe2' }
+    ];
+    var p = PAL[pal];
+
+    var MOOD = {
+      idle:     { eyeVals: '1;.55;1', eyeDur: '3.2s', scanVals: '42;66;42', scanDur: '4.8s', spinTo: 360, spinDur: '9s',  glowVals: '.12;.4;.12', glowDur: '3.2s', waves: false, dots: false },
+      thinking: { eyeVals: '1;.4;1',  eyeDur: '1.4s', scanVals: '42;66;42', scanDur: '1.4s', spinTo: 360, spinDur: '2.2s', glowVals: '.2;.7;.2',  glowDur: '1.4s', waves: false, dots: true },
+      action:   { eyeVals: '1;1;.25;1;1', eyeDur: '1s', scanVals: '42;66;42', scanDur: '.8s', spinTo: 360, spinDur: '.9s', glowVals: '.5;.9;.5', glowDur: '.6s', waves: true, dots: false },
+      offline:  { eyeVals: '.22;.22', eyeDur: '1s',   scanVals: '54;54',    scanDur: '1s',   spinTo: 0,   spinDur: '1s',  glowVals: '0;0',       glowDur: '1s',   waves: false, dots: false }
+    };
+    var m = MOOD[mood] || MOOD.idle;
+
+    var TOPS = [38, 36, 30, 38];
+    var top = TOPS[head];
+    var tipY = ant === 0 ? top - 16 : ant === 1 ? top - 13 : top - 15;
+    var show = function (on) { return on ? 'inline' : 'none'; };
+
+    return {
+      size: size,
+      alt: 'Robot avatar ' + seed + ', ' + mood,
+      tileFill: showTile ? p.tile : 'none',
+      body: p.body, shade: p.shade, panel: p.panel, sensor: p.sensor, mark: p.mark, accent: p.accent,
+      headRect: show(head === 0), headHex: show(head === 1), headDome: show(head === 2), headOct: show(head === 3),
+      earL: head === 1 ? 16 : 18, earR: head === 1 ? 95 : 93,
+      panelX: head === 1 ? 38 : 36, panelW: head === 1 ? 44 : 48,
+      eyesDual: show(eyes === 0), eyesVisor: show(eyes === 1), eyesCyclops: show(eyes === 2), eyesLed: show(eyes === 3),
+      showBall: show(ant === 0), showDouble: show(ant === 1), showGear: show(ant === 2),
+      mouthGrille: show(mouth === 0), mouthDots: show(mouth === 1), mouthSlot: show(mouth === 2),
+      top: top, topIn: top + 2, stemEnd: top - 11, tipY: tipY,
+      dblEnd: top - 10, dblTip: top - 13,
+      gearStem: top - 7, gearY: top - 15,
+      eyeVals: m.eyeVals, eyeDur: m.eyeDur, scanVals: m.scanVals, scanDur: m.scanDur,
+      spinTo: m.spinTo, spinDur: m.spinDur, glowVals: m.glowVals, glowDur: m.glowDur,
+      showWaves: show(m.waves), showDots: show(m.dots)
+    };
+  }
+}
+</script>
+</body>
+</html>

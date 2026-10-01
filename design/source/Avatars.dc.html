@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>bot.Box · Robot avatars</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,400;0,700;0,900;1,400&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f5f8f4}
+a{color:#347a3b}a:hover{color:#2a3c2a}
+</style>
+</helmet>
+<div style="width: 1440px; height: 1400px; box-sizing: border-box; padding: 64px 72px; background: #f5f8f4; font-family: Lato, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #182019; font-size: 16px; line-height: 1.6; display: flex; flex-direction: column; gap: 40px">
+
+  <div style="display: flex; justify-content: space-between; align-items: flex-end; gap: 40px">
+    <div style="max-width: 820px">
+      <p style="margin: 0 0 8px; font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #5d6b60"><span style="color: #3f9147; font-weight: 900">// </span>Avatars</p>
+      <h1 style="margin: 0 0 10px; font-size: 52px; line-height: 1.1; font-weight: 900; letter-spacing: -.01em">Every bot gets a robot</h1>
+      <p style="margin: 0; font-size: 18px; color: #3a4a3c">The avatar seed picks one of 4 heads, 4 sensor types, 3 antennas, 3 mouths and 6 palettes: 864 robots, no human faces. What the bot is doing drives the motion.</p>
+    </div>
+    <svg width="96" height="96" viewBox="0 0 160 160" aria-hidden="true">
+      <line x1="80" y1="20" x2="80" y2="10" stroke="#1a2a1a" stroke-width="6" stroke-linecap="round"></line>
+      <circle cx="80" cy="8" r="7" fill="#49b24d"></circle>
+      <path d="M49 20.3 111 20.3 142 74 111 127.7 49 127.7 18 74Z" fill="none" stroke="#1a2a1a" stroke-width="6" stroke-linejoin="round"></path>
+      <circle cx="60" cy="64" r="12" fill="#49b24d"></circle>
+      <circle cx="100" cy="64" r="12" fill="#49b24d"></circle>
+      <polygon points="62,91 68.1,94.5 68.1,101.5 62,105 55.9,101.5 55.9,94.5" fill="#8aa8db"></polygon>
+      <polygon points="80,91 86.1,94.5 86.1,101.5 80,105 73.9,101.5 73.9,94.5" fill="#6d8fce"></polygon>
+      <polygon points="98,91 104.1,94.5 104.1,101.5 98,105 91.9,101.5 91.9,94.5" fill="#3f5f9c"></polygon>
+    </svg>
+  </div>
+
+  <section aria-labelledby="st-h" style="display: flex; flex-direction: column; gap: 16px">
+    <h2 id="st-h" style="margin: 0; font-size: 24px; font-weight: 900">States</h2>
+    <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px">
+      <div style="background: #ffffff; border: 1px solid #e3ebe2; border-radius: 14px; padding: 22px; display: flex; flex-direction: column; gap: 12px">
+        <dc-import name="Avatar" seed="{{demoSeed}}" mood="idle" size="132" hint-size="132px,132px"></dc-import>
+        <p style="margin: 0; display: flex; align-items: center; gap: 8px; font-size: 19px; font-weight: 900"><span style="width: 10px; height: 10px; border-radius: 50%; background: #8ea68e"></span>Idle</p>
+        <p style="margin: 0; font-size: 15px; color: #5d6b60">Waiting for a task. Sensors breathe every 3 s, the gear turns slowly.</p>
+      </div>
+      <div style="background: #ffffff; border: 1px solid #e3ebe2; border-radius: 14px; padding: 22px; display: flex; flex-direction: column; gap: 12px">
+        <dc-import name="Avatar" seed="{{demoSeed}}" mood="thinking" size="132" hint-size="132px,132px"></dc-import>
+        <p style="margin: 0; display: flex; align-items: center; gap: 8px; font-size: 19px; font-weight: 900"><span style="width: 10px; height: 10px; border-radius: 50%; background: #4a5e92"></span>Thinking</p>
+        <p style="margin: 0; font-size: 15px; color: #5d6b60">The model is planning. Visor scans, gear spins up, a thought bubble pulses.</p>
+      </div>
+      <div style="background: #ffffff; border: 1px solid #e3ebe2; border-radius: 14px; padding: 22px; display: flex; flex-direction: column; gap: 12px">
+        <dc-import name="Avatar" seed="{{demoSeed}}" mood="action" size="132" hint-size="132px,132px"></dc-import>
+        <p style="margin: 0; display: flex; align-items: center; gap: 8px; font-size: 19px; font-weight: 900"><span style="width: 10px; height: 10px; border-radius: 50%; background: #3f9147"></span>Action</p>
+        <p style="margin: 0; font-size: 15px; color: #5d6b60">Running commands or driving the desktop. Fast blink, signal rings from the antenna.</p>
+      </div>
+      <div style="background: #ffffff; border: 1px solid #e3ebe2; border-radius: 14px; padding: 22px; display: flex; flex-direction: column; gap: 12px">
+        <dc-import name="Avatar" seed="{{demoSeed}}" mood="offline" size="132" hint-size="132px,132px"></dc-import>
+        <p style="margin: 0; display: flex; align-items: center; gap: 8px; font-size: 19px; font-weight: 900"><span style="width: 10px; height: 10px; border-radius: 50%; background: #c9d8c9; box-shadow: inset 0 0 0 1.5px #8ea68e"></span>Offline</p>
+        <p style="margin: 0; font-size: 15px; color: #5d6b60">Sandbox stopped. Sensors dimmed, everything still.</p>
+      </div>
+    </div>
+  </section>
+
+  <div style="display: flex; gap: 40px; align-items: flex-start">
+    <section aria-labelledby="sd-h" style="flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+      <h2 id="sd-h" style="margin: 0; font-size: 24px; font-weight: 900">Seeds</h2>
+      <div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 16px 12px">
+        <sc-for list="{{seeds}}" as="s" hint-placeholder-count="12">
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 6px">
+            <dc-import name="Avatar" seed="{{s.seed}}" mood="idle" size="96" hint-size="96px,96px"></dc-import>
+            <span style="font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 13px; color: #3a4a3c">{{s.seed}}</span>
+          </div>
+        </sc-for>
+      </div>
+    </section>
+
+    <section aria-labelledby="pl-h" style="flex: 0 0 470px; display: flex; flex-direction: column; gap: 16px">
+      <h2 id="pl-h" style="margin: 0; font-size: 24px; font-weight: 900">Palettes</h2>
+      <div style="background: #ffffff; border: 1px solid #e3ebe2; border-radius: 14px; padding: 6px 18px">
+        <sc-for list="{{palettes}}" as="p" hint-placeholder-count="6">
+          <div style="display: flex; align-items: center; gap: 14px; padding: 8px 0; border-top: 1px solid {{p.line}}">
+            <span style="flex: 0 0 70px; font-weight: 900">{{p.name}}</span>
+            <span style="display: flex; gap: 6px">
+              <span title="body" style="width: 30px; height: 30px; border-radius: 8px; border: 1px solid rgba(24,32,25,.15); background: {{p.body}}"></span>
+              <span title="shade" style="width: 30px; height: 30px; border-radius: 8px; border: 1px solid rgba(24,32,25,.15); background: {{p.shade}}"></span>
+              <span title="sensor" style="width: 30px; height: 30px; border-radius: 8px; border: 1px solid rgba(24,32,25,.15); background: {{p.sensor}}"></span>
+              <span title="tile" style="width: 30px; height: 30px; border-radius: 8px; border: 1px solid rgba(24,32,25,.15); background: {{p.tile}}"></span>
+            </span>
+            <span style="margin-left: auto; font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 13px; color: #5d6b60">{{p.hex}}</span>
+          </div>
+        </sc-for>
+      </div>
+      <p style="margin: 0; font-size: 14px; color: #5d6b60">Body · shade · sensor · tile. All taken from the dunkel.tech palette; outlines are ink #182019.</p>
+    </section>
+  </div>
+
+  <div style="display: flex; gap: 40px; align-items: stretch">
+    <section aria-labelledby="sz-h" style="flex: 1 1 0; min-width: 0; background: #ffffff; border: 1px solid #e3ebe2; border-radius: 14px; padding: 22px 26px; display: flex; flex-direction: column; gap: 14px">
+      <h2 id="sz-h" style="margin: 0; font-size: 20px; font-weight: 900">Sizes in the app</h2>
+      <div style="display: flex; align-items: flex-end; gap: 36px">
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px"><dc-import name="Avatar" seed="atlas-005a" mood="idle" size="28" tile="false" hint-size="28px,28px"></dc-import><span style="font-size: 13px; color: #5d6b60">28 · status</span></div>
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px"><dc-import name="Avatar" seed="atlas-005a" mood="idle" size="32" hint-size="32px,32px"></dc-import><span style="font-size: 13px; color: #5d6b60">32 · chat</span></div>
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px"><dc-import name="Avatar" seed="atlas-005a" mood="idle" size="64" hint-size="64px,64px"></dc-import><span style="font-size: 13px; color: #5d6b60">64 · cards, header</span></div>
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px"><dc-import name="Avatar" seed="atlas-005a" mood="idle" size="112" hint-size="112px,112px"></dc-import><span style="font-size: 13px; color: #5d6b60">112 · builder</span></div>
+      </div>
+    </section>
+
+    <section aria-labelledby="im-h" style="flex: 0 0 470px; background: #14201a; color: #c9d8c9; border-radius: 14px; padding: 22px 26px; display: flex; flex-direction: column; gap: 10px">
+      <h2 id="im-h" style="margin: 0; font-size: 20px; font-weight: 900; color: #ffffff">How it’s built</h2>
+      <div style="font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 13px; line-height: 1.7; white-space: pre"><div style="color: #8ea68e">// h = fnv1a32(avatar_seed)</div><div>head    = h % 4         <span style="color: #8ea68e">// rect hex dome oct</span></div><div>sensors = (h &gt;&gt; 4) % 4  <span style="color: #8ea68e">// dual visor eye led</span></div><div>antenna = (h &gt;&gt; 8) % 3  <span style="color: #8ea68e">// ball double gear</span></div><div>mouth   = (h &gt;&gt; 12) % 3 <span style="color: #8ea68e">// grille dots slot</span></div><div>palette = (h &gt;&gt; 16) % 6</div></div>
+      <p style="margin: 0; font-size: 14px; color: #a8bda8">Pure SVG with SMIL animation, no script at runtime. Honour prefers-reduced-motion by rendering the still pose.</p>
+    </section>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"demoSeed":{"editor":"text","default":"ferrit-00e5"},"$preview":{"width":1440,"height":1400}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var SEEDS = ['atlas-005a', 'ferrit-00e5', 'kobold-0017', 'nimbus-00c3', 'relais-002c', 'zink-02a7', 'orbit', 'pixel', 'rost', 'quark', 'cobalt', 'kilo'];
+    var PAL = [
+      { name: 'forest', body: '#3f9147', shade: '#347a3b', sensor: '#d6fcd0', tile: '#eef8ec' },
+      { name: 'night',  body: '#2a3c2a', shade: '#1f2d1f', sensor: '#5eab60', tile: '#d6fcd0' },
+      { name: 'steel',  body: '#c9d8c9', shade: '#a8bda8', sensor: '#5eab60', tile: '#f5f8f4' },
+      { name: 'cobalt', body: '#4a5e92', shade: '#3f5f9c', sensor: '#8aa8db', tile: '#e4e9f4' },
+      { name: 'sky',    body: '#8aa8db', shade: '#6d8fce', sensor: '#d6fcd0', tile: '#edf0f6' },
+      { name: 'mint',   body: '#d6fcd0', shade: '#b5e4ae', sensor: '#49b24d', tile: '#e3ebe2' }
+    ];
+    return {
+      demoSeed: this.props.demoSeed ?? 'ferrit-00e5',
+      seeds: SEEDS.map(function (s) { return { seed: s }; }),
+      palettes: PAL.map(function (p, i) { return Object.assign({}, p, { hex: p.body, line: i === 0 ? 'transparent' : '#e3ebe2' }); })
+    };
+  }
+}
+</script>
+</body>
+</html>

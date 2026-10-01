@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>bot.Box · Atlas workspace</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,400;0,700;0,900;1,400&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f5f8f4}
+a{color:#347a3b}a:hover{color:#2a3c2a}
+:focus-visible{outline:2px solid #3f9147;outline-offset:2px}
+</style>
+</helmet>
+<div style="min-height: 100vh; background: #f5f8f4; font-family: Lato, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #182019; font-size: 16px; line-height: 1.6">
+
+  <header style="background: #ffffff; border-bottom: 1px solid #e3ebe2">
+    <div style="max-width: 1360px; margin: 0 auto; padding: 10px 24px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 28px">
+      <a href="Main.dc.html" aria-label="bot.Box home" style="display: flex; align-items: center; gap: 10px; font-weight: 900; font-size: 21px; color: #182019; text-decoration: none; min-height: 44px">
+        <svg width="38" height="38" viewBox="0 0 160 160" aria-hidden="true">
+          <line x1="80" y1="20" x2="80" y2="10" stroke="#1a2a1a" stroke-width="6" stroke-linecap="round"></line>
+          <circle cx="80" cy="8" r="7" fill="#49b24d"></circle>
+          <path d="M49 20.3 111 20.3 142 74 111 127.7 49 127.7 18 74Z" fill="none" stroke="#1a2a1a" stroke-width="6" stroke-linejoin="round"></path>
+          <circle cx="60" cy="64" r="12" fill="#49b24d"></circle>
+          <circle cx="100" cy="64" r="12" fill="#49b24d"></circle>
+          <polygon points="62,91 68.1,94.5 68.1,101.5 62,105 55.9,101.5 55.9,94.5" fill="#8aa8db"></polygon>
+          <polygon points="80,91 86.1,94.5 86.1,101.5 80,105 73.9,101.5 73.9,94.5" fill="#6d8fce"></polygon>
+          <polygon points="98,91 104.1,94.5 104.1,101.5 98,105 91.9,101.5 91.9,94.5" fill="#3f5f9c"></polygon>
+        </svg>
+        <span>bot<b style="color: #3f9147">.</b>Box</span>
+      </a>
+      <nav aria-label="Main" style="display: flex; flex-wrap: wrap; gap: 2px; flex: 1 1 auto">
+        <a href="Main.dc.html" aria-current="page" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; font-weight: 700; color: #347a3b; text-decoration: none; box-shadow: inset 0 -2px 0 #3f9147">Bots</a>
+        <a href="Team.dc.html" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; font-weight: 700; color: #182019; text-decoration: none">Team</a>
+        <a href="Secrets.dc.html" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; font-weight: 700; color: #182019; text-decoration: none">Secrets</a>
+        <a href="#drivers" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; font-weight: 700; color: #182019; text-decoration: none">Drivers</a>
+        <a href="#settings" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; font-weight: 700; color: #182019; text-decoration: none">Settings</a>
+      </nav>
+      <button type="button" aria-label="Account" style="width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 9px; background: #2a3c2a; color: #d6fcd0; cursor: pointer">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg>
+      </button>
+    </div>
+  </header>
+
+  <section aria-label="Bot" style="background: #ffffff; border-bottom: 1px solid #e3ebe2">
+    <div style="max-width: 1360px; margin: 0 auto; padding: 14px 24px 18px; display: flex; flex-wrap: wrap; align-items: center; gap: 14px 20px">
+      <a href="Main.dc.html" style="display: inline-flex; align-items: center; gap: 6px; min-height: 44px; font-weight: 700; font-size: 15px; text-decoration: none; color: #347a3b; flex: 0 0 100%">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+        All bots
+      </a>
+      <dc-import name="Avatar" seed="atlas-005a" mood="action" size="64" hint-size="64px,64px"></dc-import>
+      <div style="min-width: 0; flex: 1 1 360px; display: flex; flex-direction: column; gap: 6px">
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px">
+          <h1 style="margin: 0; font-size: 30px; line-height: 1.15; font-weight: 900; letter-spacing: -.01em">Atlas</h1>
+          <span style="display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px 2px 8px; border-radius: 99px; font-size: 13px; font-weight: 700; border: 1px solid #cfe0cf; background: #eef8ec; color: #347a3b"><span style="width: 8px; height: 8px; border-radius: 50%; background: #3f9147"></span>Working</span>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px; font-size: 13px">
+          <span style="display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 7px; background: #f5f8f4; border: 1px solid #e3ebe2; font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace">claude-cli · claude-opus-5-5</span>
+          <span style="display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 7px; background: #f5f8f4; border: 1px solid #e3ebe2; font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace">k8s · prod-eu / bots-atlas</span>
+          <span style="display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 7px; background: #eef8ec; border: 1px solid #cfe0cf; color: #347a3b; font-weight: 700">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"></path></svg>
+            Egress proxy · 2 secrets
+          </span>
+        </div>
+      </div>
+      <div style="display: flex; flex-wrap: wrap; gap: 8px">
+        <button type="button" style="display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px; border: 1.5px solid #e3ebe2; border-radius: 9px; background: #ffffff; color: #182019; font: inherit; font-weight: 700; font-size: 15px; cursor: pointer">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16" rx="1"></rect><rect x="14" y="4" width="4" height="16" rx="1"></rect></svg>
+          Pause
+        </button>
+        <button type="button" style="display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px; border: 1.5px solid #e3ebe2; border-radius: 9px; background: #ffffff; color: #182019; font: inherit; font-weight: 700; font-size: 15px; cursor: pointer">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"></rect></svg>
+          Stop sandbox
+        </button>
+        <a href="Secrets.dc.html" style="display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px; border: 1.5px solid #e3ebe2; border-radius: 9px; background: #ffffff; color: #182019; font-weight: 700; font-size: 15px; text-decoration: none">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"></path></svg>
+          Settings
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <main style="max-width: 1360px; margin: 0 auto; padding: 22px 24px 40px; box-sizing: border-box; display: flex; flex-wrap: wrap; gap: 22px; align-items: stretch">
+
+    <section aria-label="Chat with Atlas" style="flex: 1 1 380px; max-width: 100%; min-width: 0; height: 800px; background: #ffffff; border: 1px solid #e3ebe2; border-radius: 14px; display: flex; flex-direction: column; overflow: hidden">
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 16px; border-bottom: 1px solid #e3ebe2">
+        <div style="min-width: 0">
+          <h2 style="margin: 0; font-size: 16px; font-weight: 900">Session</h2>
+          <p style="margin: 0; font-size: 13px; color: #5d6b60">Started 14:02 · 9 messages</p>
+        </div>
+        <button type="button" style="display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 12px; border: 1.5px solid #e3ebe2; border-radius: 9px; background: #ffffff; color: #347a3b; font: inherit; font-weight: 700; font-size: 14px; cursor: pointer">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+          New session
+        </button>
+      </div>
+
+      <div style="flex: 1 1 auto; overflow-y: auto; padding: 18px 16px; display: flex; flex-direction: column; gap: 16px; font-size: 15px">
+
+        <div style="align-self: flex-end; max-width: 88%; background: #2a3c2a; color: #ffffff; padding: 11px 14px; border-radius: 14px 14px 4px 14px; line-height: 1.5">The IMAP cron in dt_cron fails whenever the mail server times out. Add a retry with backoff, cover it with a test and open a merge request.</div>
+
+        <div style="display: flex; gap: 10px; align-items: flex-start">
+          <dc-import name="Avatar" seed="atlas-005a" mood="idle" size="32" hint-size="32px,32px"></dc-import>
+          <div style="min-width: 0; flex: 1; line-height: 1.55">
+            <p style="margin: 0 0 6px"><b style="font-weight: 900">Atlas</b> <span style="color: #5d6b60; font-size: 13px">14:02</span></p>
+            <p style="margin: 0 0 6px">On it. Plan:</p>
+            <ol style="margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 2px">
+              <li>Clone the repository and reproduce the failure.</li>
+              <li>Wrap the fetch in a retry with exponential backoff.</li>
+              <li>Add a regression test for the timeout.</li>
+              <li>Push a branch and open the merge request.</li>
+            </ol>
+          </div>
+        </div>
+
+        <div style="margin-left: 42px; border: 1px solid #e3ebe2; border-radius: 9px; background: #f5f8f4; overflow: hidden; font-size: 13px">
+          <div style="display: flex; align-items: center; gap: 8px; padding: 7px 10px; font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; color: #182019">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#347a3b" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17l6-5-6-5M12 19h8"></path></svg>
+            <span style="min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">git clone https://gitlab.com/dunkel/dt_cron.git</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-top: 1px solid #e3ebe2; background: #eef8ec; color: #347a3b; font-weight: 700">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4.5"></circle><path d="M10.7 12.3L21 2M16 7l3 3M14 9l2 2"></path></svg>
+            Token added by the egress proxy. Atlas never saw it.
+          </div>
+        </div>
+
+        <div style="margin-left: 42px; border: 1px solid #e3ebe2; border-radius: 9px; background: #f5f8f4; overflow: hidden; font-size: 13px">
+          <div style="display: flex; align-items: center; gap: 8px; padding: 7px 10px; font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#347a3b" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17l6-5-6-5M12 19h8"></path></svg>
+            <span>pytest addons/dt_cron -q</span>
+          </div>
+          <div style="padding: 6px 10px; border-top: 1px solid #e3ebe2; background: #fdf3e7; color: #b45309; font-weight: 700; font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace">1 failed, 23 passed in 4.81s</div>
+        </div>
+
+        <div style="display: flex; gap: 10px; align-items: flex-start">
+          <dc-import name="Avatar" seed="atlas-005a" mood="idle" size="32" hint-size="32px,32px"></dc-import>
+          <div style="min-width: 0; flex: 1; line-height: 1.55">
+            <p style="margin: 0 0 6px"><b style="font-weight: 900">Atlas</b> <span style="color: #5d6b60; font-size: 13px">14:21</span></p>
+            <p style="margin: 0">Reproduced. <code style="font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 13px; background: #f5f8f4; border: 1px solid #e3ebe2; border-radius: 5px; padding: 1px 5px">_fetch_mail()</code> raises <code style="font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 13px; background: #f5f8f4; border: 1px solid #e3ebe2; border-radius: 5px; padding: 1px 5px">socket.timeout</code> and the scheduled action is marked failed. Adding a retry decorator in <code style="font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 13px; background: #f5f8f4; border: 1px solid #e3ebe2; border-radius: 5px; padding: 1px 5px">models/fetchmail.py</code> now. You can watch on the right.</p>
+          </div>
+        </div>
+
+        <sc-for list="{{sent}}" as="msg" hint-placeholder-count="0">
+          <div style="align-self: flex-end; max-width: 88%; background: #2a3c2a; color: #ffffff; padding: 11px 14px; border-radius: 14px 14px 4px 14px; line-height: 1.5; white-space: pre-wrap">{{msg.text}}</div>
+        </sc-for>
+
+        <div style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 9px; background: #edf0f6; color: #4a5e92; font-size: 14px; font-weight: 700">
+          <dc-import name="Avatar" seed="atlas-005a" mood="thinking" size="28" tile="false" hint-size="28px,28px"></dc-import>
+          <span style="min-width: 0; flex: 1">Step 2 of 4 · editing models/fetchmail.py</span>
+        </div>
+      </div>
+
+      <form onSubmit="{{onSend}}" style="border-top: 1px solid #e3ebe2; padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 8px">
+        <label for="composer" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap">Message Atlas</label>
+        <div style="display: flex; align-items: flex-end; gap: 8px; border: 1.5px solid #c9d8c9; border-radius: 12px; padding: 6px 6px 6px 12px; background: #ffffff">
+          <textarea id="composer" rows="2" placeholder="Message Atlas…" value="{{draft}}" onChange="{{onDraft}}" onKeyDown="{{onKey}}" style="flex: 1; min-width: 0; border: 0; outline: none; resize: none; font: inherit; font-size: 15px; line-height: 1.5; color: #182019; background: transparent; padding: 6px 0"></textarea>
+          <button type="button" aria-label="Attach file" style="width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 9px; background: transparent; color: #5d6b60; cursor: pointer">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.5l-8.5 8.5a6 6 0 0 1-8.5-8.5l9-9a4 4 0 0 1 5.7 5.7l-9 9a2 2 0 0 1-2.8-2.8l8.5-8.5"></path></svg>
+          </button>
+          <button type="submit" aria-label="Send" style="width: 44px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 9px; background: #347a3b; color: #ffffff; cursor: pointer">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"></path></svg>
+          </button>
+        </div>
+        <p style="margin: 0; font-size: 13px; color: #5d6b60">Atlas has root in its sandbox. Secrets stay in the proxy.</p>
+      </form>
+    </section>
+
+    <section aria-label="Atlas’s computer" style="flex: 999 1 620px; min-width: 0; display: flex; flex-direction: column; gap: 14px">
+      <div style="background: #ffffff; border: 1px solid #e3ebe2; border-radius: 14px; overflow: hidden; display: flex; flex-direction: column">
+        <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-bottom: 1px solid #e3ebe2">
+          <div role="group" aria-label="View" style="display: flex; gap: 4px">
+            <sc-for list="{{tabs}}" as="t" hint-placeholder-count="3">
+              <button type="button" aria-pressed="{{t.pressed}}" onClick="{{t.pick}}" style="display: inline-flex; align-items: center; gap: 7px; min-height: 40px; padding: 0 12px; border: 0; border-radius: 9px; font: inherit; font-weight: 700; font-size: 14px; cursor: pointer; background: {{t.bg}}; color: {{t.fg}}">{{t.label}}</button>
+            </sc-for>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px">
+            <div role="group" aria-label="Input" style="display: flex; padding: 3px; border-radius: 10px; background: #f5f8f4; border: 1px solid #e3ebe2">
+              <button type="button" aria-pressed="{{viewPressed}}" onClick="{{viewOnly}}" style="min-height: 36px; padding: 0 12px; border: 0; border-radius: 7px; font: inherit; font-weight: 700; font-size: 13px; cursor: pointer; background: {{viewBg}}; color: {{viewFg}}">View only</button>
+              <button type="button" aria-pressed="{{ctrlPressed}}" onClick="{{takeControl}}" style="min-height: 36px; padding: 0 12px; border: 0; border-radius: 7px; font: inherit; font-weight: 700; font-size: 13px; cursor: pointer; background: {{ctrlBg}}; color: {{ctrlFg}}">Take control</button>
+            </div>
+            <button type="button" aria-label="Copy clipboard from sandbox" style="width: 40px; height: 40px; display: grid; place-items: center; border: 1.5px solid #e3ebe2; border-radius: 9px; background: #ffffff; color: #3a4a3c; cursor: pointer">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"></rect><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path></svg>
+            </button>
+            <button type="button" aria-label="Take screenshot" style="width: 40px; height: 40px; display: grid; place-items: center; border: 1.5px solid #e3ebe2; border-radius: 9px; background: #ffffff; color: #3a4a3c; cursor: pointer">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+            </button>
+            <button type="button" aria-label="Full screen" style="width: 40px; height: 40px; display: grid; place-items: center; border: 1.5px solid #e3ebe2; border-radius: 9px; background: #ffffff; color: #3a4a3c; cursor: pointer">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H3v5M21 8V3h-5M3 16v5h5M16 21h5v-5"></path></svg>
+            </button>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; padding: 7px 14px; background: #f5f8f4; border-bottom: 1px solid #e3ebe2; font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 12px; color: #3a4a3c">
+          <span style="display: inline-flex; align-items: center; gap: 6px; color: #347a3b; font-weight: 700"><span style="width: 8px; height: 8px; border-radius: 50%; background: #3f9147"></span>connected</span>
+          <span>noVNC over WebSocket</span>
+          <span>1280 × 800</span>
+          <span>28 ms</span>
+          <span>{{inputMode}}</span>
+        </div>
+
+        <sc-if value="{{isDesktop}}" hint-placeholder-val="{{true}}">
+          <div style="position: relative; aspect-ratio: 16 / 10; background: #1f2d1f; overflow: hidden; font-family: Lato, system-ui, sans-serif">
+            <svg width="100%" height="100%" viewBox="0 0 1280 800" preserveAspectRatio="xMidYMid slice" aria-hidden="true" style="position: absolute; inset: 0">
+              <path d="M840 160 1040 160 1140 333 1040 506 840 506 740 333Z" fill="none" stroke="#2a3c2a" stroke-width="18" stroke-linejoin="round"></path>
+              <polygon points="930,560 975,586 975,638 930,664 885,638 885,586" fill="#2a3c2a"></polygon>
+              <polygon points="1030,560 1075,586 1075,638 1030,664 985,638 985,586" fill="#263726"></polygon>
+            </svg>
+
+            <div style="position: absolute; left: 0; right: 0; top: 0; height: 26px; background: #14201a; color: #c9d8c9; display: flex; align-items: center; gap: 16px; padding: 0 12px; font-size: 12px">
+              <span style="font-weight: 700; color: #ffffff">Applications</span>
+              <span style="padding: 2px 8px; border-radius: 4px; background: #2a3c2a">fetchmail.py</span>
+              <span>Terminal</span>
+              <span style="margin-left: auto; font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace">14:33</span>
+            </div>
+
+            <div style="position: absolute; left: 3%; top: 9%; width: 60%; height: 66%; background: #ffffff; border-radius: 7px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,.35); display: flex; flex-direction: column">
+              <div style="height: 26px; flex: 0 0 26px; background: #e3ebe2; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; font-size: 12px; color: #3a4a3c; font-weight: 700">
+                <span>fetchmail.py · Mousepad</span>
+                <span style="letter-spacing: 6px; font-weight: 400">– □ ×</span>
+              </div>
+              <div style="flex: 1; padding: 8px 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 12px; line-height: 1.75; color: #182019; white-space: pre; overflow: hidden"><div style="padding: 0 12px"><span style="color: #5d6b60">12  </span><span style="color: #3f5f9c; font-weight: 700">import</span> socket</div><div style="padding: 0 12px"><span style="color: #5d6b60">13  </span><span style="color: #3f5f9c; font-weight: 700">from</span> odoo.addons.dt_cron.tools <span style="color: #3f5f9c; font-weight: 700">import</span> retry</div><div style="padding: 0 12px"><span style="color: #5d6b60">14  </span></div><div style="padding: 0 12px"><span style="color: #5d6b60">15  </span><span style="color: #3f5f9c; font-weight: 700">class</span> FetchmailServer(models.Model):</div><div style="padding: 0 12px"><span style="color: #5d6b60">16  </span>    _inherit = <span style="color: #347a3b">"fetchmail.server"</span></div><div style="padding: 0 12px"><span style="color: #5d6b60">17  </span></div><div style="padding: 0 12px; background: #d6fcd0"><span style="color: #347a3b; font-weight: 700">18 +</span>    <span style="color: #b45309">@retry</span>(on=socket.timeout, tries=4, backoff=2.0)</div><div style="padding: 0 12px"><span style="color: #5d6b60">19  </span>    <span style="color: #3f5f9c; font-weight: 700">def</span> _fetch_mail(self):</div><div style="padding: 0 12px"><span style="color: #5d6b60">20  </span>        <span style="color: #3f5f9c; font-weight: 700">with</span> self.connect() <span style="color: #3f5f9c; font-weight: 700">as</span> conn:</div><div style="padding: 0 12px"><span style="color: #5d6b60">21  </span>            <span style="color: #3f5f9c; font-weight: 700">return</span> conn.fetch_unseen()</div></div>
+            </div>
+
+            <div style="position: absolute; right: 3%; bottom: 6%; width: 50%; height: 52%; background: #14201a; border-radius: 7px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,.45); display: flex; flex-direction: column; border: 1px solid #2a3c2a">
+              <div style="height: 26px; flex: 0 0 26px; background: #2a3c2a; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; font-size: 12px; color: #c9d8c9; font-weight: 700">
+                <span>bot@atlas: ~/dt_cron</span>
+                <span style="letter-spacing: 6px; font-weight: 400">– □ ×</span>
+              </div>
+              <div style="flex: 1; padding: 8px 12px; font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 12px; line-height: 1.7; color: #c9d8c9; white-space: pre; overflow: hidden"><div><span style="color: #5eab60">bot@atlas</span>:<span style="color: #8aa8db">~/dt_cron</span>$ git checkout -b fix/imap-retry</div><div>Switched to a new branch 'fix/imap-retry'</div><div><span style="color: #5eab60">bot@atlas</span>:<span style="color: #8aa8db">~/dt_cron</span>$ pytest addons/dt_cron -q</div><div>.......................<span style="color: #f0b46a">F</span>          [100%]</div><div style="color: #f0b46a">FAILED tests/test_fetch.py::test_timeout_is_retried</div><div>1 failed, 23 passed in 4.81s</div><div><span style="color: #5eab60">bot@atlas</span>:<span style="color: #8aa8db">~/dt_cron</span>$ <span style="display: inline-block; width: 8px; height: 14px; background: #d6fcd0; vertical-align: -2px"></span></div></div>
+            </div>
+
+            <div style="position: absolute; left: 41%; top: 50%; display: flex; align-items: flex-start; gap: 2px; pointer-events: none">
+              <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l7 18 2.5-7.5L20 11z" fill="#5eab60" stroke="#14201a" stroke-width="1.5" stroke-linejoin="round"></path></svg>
+              <span style="margin-top: 14px; padding: 2px 8px; border-radius: 6px; background: #5eab60; color: #14201a; font-size: 12px; font-weight: 900">Atlas</span>
+            </div>
+
+            <sc-if value="{{control}}" hint-placeholder-val="{{false}}">
+              <div style="position: absolute; left: 50%; top: 40px; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-radius: 99px; background: #d6fcd0; color: #182019; font-size: 13px; font-weight: 700; box-shadow: 0 6px 16px rgba(0,0,0,.25); white-space: nowrap">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l7 18 2.5-7.5L20 11z"></path></svg>
+                You have control. Atlas is paused.
+              </div>
+            </sc-if>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{isTerminal}}" hint-placeholder-val="{{false}}">
+          <div style="aspect-ratio: 16 / 10; background: #14201a; padding: 16px 18px; box-sizing: border-box; overflow: auto; font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 13px; line-height: 1.75; color: #c9d8c9; white-space: pre"><div style="color: #8ea68e"># exec session · sidecar gRPC · uid 0 available via sudo</div><div><span style="color: #5eab60">bot@atlas</span>:<span style="color: #8aa8db">~</span>$ git clone https://gitlab.com/dunkel/dt_cron.git</div><div>Cloning into 'dt_cron'...</div><div>remote: Enumerating objects: 1184, done.</div><div>Receiving objects: 100% (1184/1184), 412.06 KiB, done.</div><div><span style="color: #5eab60">bot@atlas</span>:<span style="color: #8aa8db">~</span>$ cd dt_cron &amp;&amp; git checkout -b fix/imap-retry</div><div>Switched to a new branch 'fix/imap-retry'</div><div><span style="color: #5eab60">bot@atlas</span>:<span style="color: #8aa8db">~/dt_cron</span>$ pytest addons/dt_cron -q</div><div>.......................<span style="color: #f0b46a">F</span>          [100%]</div><div style="color: #f0b46a">FAILED tests/test_fetch.py::test_timeout_is_retried</div><div>1 failed, 23 passed in 4.81s</div><div><span style="color: #5eab60">bot@atlas</span>:<span style="color: #8aa8db">~/dt_cron</span>$ <span style="display: inline-block; width: 8px; height: 15px; background: #d6fcd0; vertical-align: -2px"></span></div></div>
+        </sc-if>
+
+        <sc-if value="{{isFiles}}" hint-placeholder-val="{{false}}">
+          <div style="aspect-ratio: 16 / 10; overflow: auto; padding: 8px 0; box-sizing: border-box; font-size: 14px">
+            <p style="margin: 0; padding: 8px 18px; font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 13px; color: #5d6b60">/home/bot/dt_cron · persistent volume</p>
+            <sc-for list="{{files}}" as="f" hint-placeholder-count="6">
+              <div style="display: flex; align-items: center; gap: 12px; padding: 9px 18px; border-top: 1px solid #e3ebe2">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5d6b60" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+                <span style="flex: 1; min-width: 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 13px">{{f.path}}</span>
+                <span style="font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 99px; background: {{f.bg}}; color: {{f.fg}}">{{f.state}}</span>
+                <span style="flex: 0 0 64px; text-align: right; color: #5d6b60; font-size: 13px">{{f.when}}</span>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px">
+        <div style="background: #ffffff; border: 1px solid #e3ebe2; border-radius: 14px; padding: 12px 14px">
+          <p style="margin: 0; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #5d6b60">Image</p>
+          <p style="margin: 2px 0 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 13px; overflow-wrap: anywhere">botbox/desktop-xfce:bookworm</p>
+        </div>
+        <div style="background: #ffffff; border: 1px solid #e3ebe2; border-radius: 14px; padding: 12px 14px">
+          <p style="margin: 0; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #5d6b60">CPU</p>
+          <p style="margin: 2px 0 6px; font-weight: 900">38 % <span style="font-weight: 400; color: #5d6b60; font-size: 14px">of 2 vCPU</span></p>
+          <div style="height: 6px; border-radius: 99px; background: #e3ebe2; overflow: hidden"><div style="width: 38%; height: 100%; background: #3f9147"></div></div>
+        </div>
+        <div style="background: #ffffff; border: 1px solid #e3ebe2; border-radius: 14px; padding: 12px 14px">
+          <p style="margin: 0; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #5d6b60">Memory</p>
+          <p style="margin: 2px 0 6px; font-weight: 900">1.3 GiB <span style="font-weight: 400; color: #5d6b60; font-size: 14px">of 4 GiB</span></p>
+          <div style="height: 6px; border-radius: 99px; background: #e3ebe2; overflow: hidden"><div style="width: 33%; height: 100%; background: #4a5e92"></div></div>
+        </div>
+        <div style="background: #ffffff; border: 1px solid #e3ebe2; border-radius: 14px; padding: 12px 14px">
+          <p style="margin: 0; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #5d6b60">Home volume</p>
+          <p style="margin: 2px 0 6px; font-weight: 900">3.1 GiB <span style="font-weight: 400; color: #5d6b60; font-size: 14px">of 10 GiB</span></p>
+          <div style="height: 6px; border-radius: 99px; background: #e3ebe2; overflow: hidden"><div style="width: 31%; height: 100%; background: #2a3c2a"></div></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1080}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var self = this;
+    var st = this.state || {};
+    var tab = st.tab || 'desktop';
+    var control = !!st.control;
+    var draft = st.draft || '';
+    var sent = st.sent || [];
+    var send = function () {
+      var t = String((self.state && self.state.draft) || '').trim();
+      if (!t) return;
+      var prev = (self.state && self.state.sent) || [];
+      self.setState({ sent: prev.concat([{ text: t }]), draft: '' });
+    };
+    var tabs = [['desktop', 'Desktop'], ['terminal', 'Terminal'], ['files', 'Files']].map(function (t) {
+      var on = tab === t[0];
+      return { label: t[1], pressed: on ? 'true' : 'false', bg: on ? '#2a3c2a' : 'transparent', fg: on ? '#ffffff' : '#3a4a3c', pick: function () { self.setState({ tab: t[0] }); } };
+    });
+    var FILES = [
+      { path: 'addons/dt_cron/models/fetchmail.py', state: 'modified', when: '14:31' },
+      { path: 'addons/dt_cron/tools/retry.py', state: 'new', when: '14:28' },
+      { path: 'addons/dt_cron/tests/test_fetch.py', state: 'modified', when: '14:26' },
+      { path: 'addons/dt_cron/__manifest__.py', state: 'unchanged', when: '09:12' },
+      { path: 'README.md', state: 'unchanged', when: 'Oct 25' },
+      { path: '.gitlab-ci.yml', state: 'unchanged', when: 'Oct 25' }
+    ];
+    var files = FILES.map(function (f) {
+      var c = f.state === 'new' ? ['#d6fcd0', '#2a3c2a'] : f.state === 'modified' ? ['#edf0f6', '#4a5e92'] : ['#f5f8f4', '#5d6b60'];
+      return Object.assign({}, f, { bg: c[0], fg: c[1] });
+    });
+    return {
+      tabs: tabs,
+      isDesktop: tab === 'desktop', isTerminal: tab === 'terminal', isFiles: tab === 'files',
+      control: control,
+      inputMode: control ? 'input: you' : 'input: Atlas · you are watching',
+      viewPressed: control ? 'false' : 'true', ctrlPressed: control ? 'true' : 'false',
+      viewBg: control ? 'transparent' : '#ffffff', viewFg: control ? '#5d6b60' : '#182019',
+      ctrlBg: control ? '#347a3b' : 'transparent', ctrlFg: control ? '#ffffff' : '#5d6b60',
+      viewOnly: function () { self.setState({ control: false }); },
+      takeControl: function () { self.setState({ control: true }); },
+      files: files,
+      draft: draft,
+      sent: sent,
+      onDraft: function (e) { self.setState({ draft: e.target.value }); },
+      onKey: function (e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } },
+      onSend: function (e) { if (e && e.preventDefault) e.preventDefault(); send(); }
+    };
+  }
+}
+</script>
+</body>
+</html>

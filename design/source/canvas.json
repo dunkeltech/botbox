@@ -1,0 +1,144 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "Avatar.dc.html": {
+      "h": 120,
+      "title": "Avatar (component)",
+      "w": 120,
+      "x": 1520,
+      "y": 4590
+    },
+    "Avatars.dc.html": {
+      "h": 1400,
+      "title": "Avatar system",
+      "w": 1440,
+      "x": 0,
+      "y": 4590
+    },
+    "Builder.dc.html": {
+      "expand": "fill",
+      "h": 2350,
+      "is_interactive": true,
+      "title": "New bot",
+      "w": 1440,
+      "x": 0,
+      "y": 1860
+    },
+    "Main.dc.html": {
+      "expand": "fill",
+      "h": 1740,
+      "is_interactive": true,
+      "title": "Fleet dashboard",
+      "w": 1440,
+      "x": 0,
+      "y": 0
+    },
+    "Secrets.dc.html": {
+      "expand": "fill",
+      "h": 1630,
+      "is_interactive": true,
+      "title": "Secrets & egress proxy",
+      "w": 1440,
+      "x": 1520,
+      "y": 1860
+    },
+    "Team.dc.html": {
+      "expand": "fill",
+      "h": 960,
+      "is_interactive": true,
+      "title": "Team chat · group with bot-to-bot talk",
+      "w": 1440,
+      "x": 0,
+      "y": 6370
+    },
+    "TeamDirect.dc.html": {
+      "expand": "fill",
+      "h": 960,
+      "is_interactive": true,
+      "title": "Team chat · direct message",
+      "w": 1440,
+      "x": 1520,
+      "y": 6370
+    },
+    "TeamNewGroup.dc.html": {
+      "expand": "fill",
+      "h": 960,
+      "is_interactive": true,
+      "title": "Team chat · new group",
+      "w": 1440,
+      "x": 3040,
+      "y": 6370
+    },
+    "Workspace.dc.html": {
+      "expand": "fill",
+      "h": 1090,
+      "is_interactive": true,
+      "title": "Bot workspace: chat + live computer",
+      "w": 1440,
+      "x": 1520,
+      "y": 0
+    }
+  },
+  "createdOnFiles": {
+    "at": "2026-11-13T10:00:00Z",
+    "v": 1
+  },
+  "designSystems": [],
+  "launch": {
+    "view": "canvas"
+  },
+  "noteOrder": [
+    "screens",
+    "avatars",
+    "team",
+    "brand"
+  ],
+  "notes": {
+    "avatars": {
+      "kind": "title1",
+      "maxW": 2960,
+      "text": "Robot avatars",
+      "w": 240,
+      "x": 0,
+      "y": 4330
+    },
+    "brand": {
+      "fill": "green",
+      "size": 24,
+      "text": "Colours, Lato type, 14 px radii and the // eyebrow come from dunkel.tech.\n\nAvatar.dc.html is the shared robot component. Every screen imports it with a seed and a mood (idle · thinking · action · offline).",
+      "w": 380,
+      "x": 1720,
+      "y": 4590
+    },
+    "screens": {
+      "kind": "title1",
+      "maxW": 2960,
+      "text": "bot.Box · product screens",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    },
+    "team": {
+      "kind": "title1",
+      "maxW": 4480,
+      "text": "Team chat · bots as colleagues",
+      "w": 240,
+      "x": 0,
+      "y": 6110
+    }
+  },
+  "order": [
+    "Main.dc.html",
+    "Avatar.dc.html",
+    "Team.dc.html",
+    "Workspace.dc.html",
+    "Builder.dc.html",
+    "Secrets.dc.html",
+    "Avatars.dc.html",
+    "TeamDirect.dc.html",
+    "TeamNewGroup.dc.html"
+  ],
+  "pages": [],
+  "title": "BotBox"
+}
