@@ -8,3 +8,22 @@ devenv.local.yaml
 
 # pre-commit
 .pre-commit-config.yaml
+
+# Environment
+.env
+.env.local
+
+# Backend
+backend/bin/
+backend/coverage.out
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/coverage/
+frontend/next-env.d.ts
+*.tsbuildinfo
+
+# OS
+.DS_Store

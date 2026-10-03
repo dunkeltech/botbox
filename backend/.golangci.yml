@@ -1,0 +1,27 @@
+version: "2"
+
+linters:
+  enable:
+    - bodyclose
+    - contextcheck
+    - errcheck
+    - gosec
+    - govet
+    - ineffassign
+    - revive
+    - staticcheck
+    - unused
+  settings:
+    revive:
+      rules:
+        - name: exported
+  exclusions:
+    paths:
+      - internal/gen/
+
+formatters:
+  enable:
+    - gofmt
+  exclusions:
+    paths:
+      - internal/gen/

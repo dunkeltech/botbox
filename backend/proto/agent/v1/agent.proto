@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package agent.v1;
+
+option go_package = "github.com/dunkeltech/botbox/backend/internal/gen/proto/agent/v1;agentv1";
+
+// AgentService runs inside each sandbox container to handle health checks
+// and host-driven computer-use actions added in later phases.
+service AgentService {
+  // Ping verifies gRPC reachability and reports the sandbox hostname.
+  rpc Ping(PingRequest) returns (PingResponse);
+}
+
+message PingRequest {
+  string caller = 1;
+}
+
+message PingResponse {
+  string status = 1;
+  string hostname = 2;
+}

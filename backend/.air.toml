@@ -1,0 +1,9 @@
+root = "."
+tmp_dir = "bin/tmp"
+
+[build]
+  cmd = "go build -o ./bin/api ./cmd/api"
+  bin = "./bin/api"
+  include_ext = ["go"]
+  exclude_dir = ["bin", "internal/gen", "db", "proto"]
+  delay = 300

@@ -1,35 +1,67 @@
 { pkgs, lib, config, inputs, ... }:
 
 {
-      # golangci-lint for `make lint`, the linter CI runs (.github/workflows/ci.yml).
-      packages = [ pkgs.git pkgs.gh pkgs.golangci-lint ];
+  packages = [
+    pkgs.git
+    pkgs.gh
+    pkgs.golangci-lint
+    pkgs.sqlc
+    pkgs.goose
+    pkgs.buf
+    pkgs.protobuf
+    pkgs.protoc-gen-go
+    pkgs.protoc-gen-go-grpc
+    pkgs.oapi-codegen
+    pkgs.air
+    pkgs.docker-client
+    pkgs.kubectl
+    pkgs.kind
+    # nixpkgs names the Kubernetes package manager "kubernetes-helm" ("helm" is a synthesizer).
+    pkgs.kubernetes-helm
+    pkgs.caddy
+    pkgs.jq
+    pkgs.playwright-driver.browsers
+  ];
 
-      # Enable Go support
-      languages.go.enable = true;
+  languages.go.enable = true;
 
-      # Node.js, for the frontend
-      languages.javascript.enable = true;
-      languages.javascript.npm.enable = true;
-      languages.javascript.package = pkgs.nodejs_24;
+  languages.javascript.enable = true;
+  languages.javascript.npm.enable = true;
+  languages.javascript.package = pkgs.nodejs_24;
 
-      services.nats.enable = true;
+  env = {
+    PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
+    DATABASE_URL = "postgres://botbox:botbox@127.0.0.1:5432/botbox?sslmode=disable";
+    NATS_URL = "nats://127.0.0.1:4222";
+    API_LISTEN_ADDR = "127.0.0.1:8080";
+    FRONTEND_URL = "http://127.0.0.1:3000";
+    PUBLIC_BASE_URL = "http://127.0.0.1:8000";
+  };
 
-      services.postgres = {
-            enable = true;
-            initialDatabases = [
-                  {
-                        name = "botbox";
-                        user = "botbox";
-                        pass = "botbox";
-                  }
-            ];
-            initialScript = "CREATE ROLE myuser WITH LOGIN PASSWORD 'mypassword';";
-      };
+  services.nats = {
+    enable = true;
+    jetstream.enable = true;
+  };
 
+  services.postgres = {
+    enable = true;
+    initialDatabases = [
+      {
+        name = "botbox";
+        user = "botbox";
+        pass = "botbox";
+      }
+    ];
+  };
 
-      # A short greeting when entering the environment
-      enterShell = ''
-        echo "🚀 BotBox Dev-Umgebung gestartet!"
-        go version
-      '';
+  processes = {
+    api.exec = "cd backend && exec air -c .air.toml";
+    frontend.exec = "exec npm --prefix frontend run dev";
+    caddy.exec = "exec caddy run --config Caddyfile --adapter caddyfile";
+  };
+
+  enterShell = ''
+    echo "bot.Box dev environment ready"
+    go version
+  '';
 }

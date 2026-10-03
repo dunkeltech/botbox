@@ -1,0 +1,139 @@
+{
+  "metadata": {
+    "title": "bot.Box",
+    "description": "Multi-user workspace for bot computer agents with isolated Linux desktops."
+  },
+  "common": {
+    "brandLeft": "bot",
+    "brandDot": ".",
+    "brandRight": "Box",
+    "endorsement": "a dunkel.Tech project"
+  },
+  "home": {
+    "eyebrow": "Phase 0 · Foundation",
+    "title": "bot.Box control plane",
+    "lead": "The repository, devenv environment, Go API skeleton, and Next.js frontend shell are running.",
+    "styleguideCta": "Open living styleguide",
+    "architectureLabel": "Target architecture",
+    "architectureDesc": "Auth, isolated workspaces, sandboxes, egress proxy, team chat, and computer use ship across phases 1 through 8."
+  },
+  "styleguide": {
+    "eyebrow": "Design system",
+    "title": "Living styleguide",
+    "lead": "Rendered tokens and base UI primitives sourced from tokens.json and STYLEGUIDE.md.",
+    "sections": {
+      "palette": {
+        "eyebrow": "Colour",
+        "title": "Palette & warning discipline",
+        "lead": "Light paper surfaces paired with forest greens, logo blues, and amber for warnings or blocked actions. Never use red.",
+        "groups": {
+          "core": "Core surfaces & forest greens",
+          "blues": "Logo blues (thinking & mentions)",
+          "amber": "Amber warnings & budget caps (no red)",
+          "dark": "Text on dark surfaces"
+        },
+        "tokens": {
+          "ink": "ink — Primary text & avatar outlines",
+          "ink-2": "ink-2 — Secondary body & leads",
+          "muted": "muted — Labels & timestamps (5.6:1)",
+          "paper": "paper — Cards & active inputs",
+          "paper-2": "paper-2 — App canvas & table headers",
+          "line": "line — Dividers & secondary borders",
+          "line-strong": "line-strong — Input borders",
+          "green": "green — Dots, switches, meters",
+          "green-600": "green-600 — Primary buttons & links (5.3:1)",
+          "green-light": "green-light — Dark surface CTA & unread pills",
+          "mint": "mint — Highlights & avatar tiles",
+          "mint-soft": "mint-soft — Selected cards & success chips",
+          "mint-line": "mint-line — Mint borders",
+          "dark": "dark — Footer & active segments",
+          "dark-2": "dark-2 — Team chat sidebar",
+          "terminal": "terminal — Terminals, logs & team header",
+          "blue": "blue — Thinking status & mentions (6.3:1)",
+          "blue-tint": "blue-tint — Thinking chip & mention bg",
+          "blue-line": "blue-line — Blue chip border",
+          "hex-1": "hex-1 — Logo hex & path colour",
+          "hex-2": "hex-2 — Logo hex medium",
+          "hex-3": "hex-3 — Logo hex deep",
+          "amber": "amber — Blocked egress & 80 %+ spend (5.0:1)",
+          "amber-tint": "amber-tint — Warning row & card bg",
+          "amber-line": "amber-line — Dashed border for blocked items",
+          "amber-on-dark": "amber-on-dark — Terminal errors & 403 badges",
+          "on-dark": "on-dark — Body text on dark",
+          "on-dark-muted": "on-dark-muted — Meta text on dark (5.9:1)",
+          "on-dark-faint": "on-dark-faint — Comments & decorative only"
+        }
+      },
+      "typography": {
+        "eyebrow": "Typography",
+        "title": "Lato scale & technical monospace",
+        "lead": "Lato 400 / 700 / 900 for human copy and system monospace for seeds, models, hosts, and commands.",
+        "samples": {
+          "pageTitleLabel": "Page title · 44 px / 900",
+          "pageTitleSample": "Fleet overview",
+          "entityTitleLabel": "Entity title · 30 px / 900",
+          "entityTitleSample": "Atlas · atlas-005a",
+          "sectionTitleLabel": "Section title · 22 px / 900",
+          "sectionTitleSample": "Outbound allowlist",
+          "bodyLabel": "Body · 16 px / 400",
+          "bodySample": "Token added by the egress proxy. Atlas never saw it.",
+          "monoLabel": "Monospace · 13 px",
+          "monoSample": "claude -p --input-format stream-json · paste.example.net · 1280×800"
+        }
+      },
+      "eyebrowSection": {
+        "eyebrow": "Eyebrow",
+        "title": "Eyebrow markers",
+        "sampleOne": "Fleet",
+        "sampleTwo": "desktop_actions · 7d screenshot retention",
+        "sampleThree": "RBAC permission matrix"
+      },
+      "buttons": {
+        "eyebrow": "Actions",
+        "title": "Buttons & touch targets (≥ 44 px)",
+        "primary": "Save workspace settings",
+        "primaryArrow": "Hand back to Atlas",
+        "secondary": "Take control",
+        "onDark": "Start sandbox",
+        "disabled": "Budget exhausted (stopped)",
+        "iconLabel": "Open notifications"
+      },
+      "inputs": {
+        "eyebrow": "Form controls",
+        "title": "Inputs, read-only & amber warnings",
+        "defaultLabel": "Display name",
+        "defaultPlaceholder": "Mara Lindqvist",
+        "defaultHelper": "Shown next to messages and takeover indicators.",
+        "monoLabel": "Allowed host pattern",
+        "monoValue": "api.anthropic.com",
+        "monoHelper": "Matches outbound CONNECT requests on the egress proxy.",
+        "readonlyLabel": "Invited email address",
+        "readonlyValue": "mara@dunkel.tech",
+        "readonlyHelper": "Locked to the invitation token.",
+        "warningLabel": "Daily spend limit (EUR)",
+        "warningValue": "10.00",
+        "warningMessage": "Daily spend at 84 % (€ 8.40 of € 10.00). Requests stop at 100 % with 429 BudgetExceeded."
+      },
+      "cards": {
+        "eyebrow": "Containers",
+        "title": "Cards & elevation",
+        "standardTitle": "Standard card",
+        "standardBody": "Used for settings forms, secrets tables, and detail panels with 14 px corners and soft forest shadow.",
+        "interactiveTitle": "Interactive card (hover or focus)",
+        "interactiveBody": "Lifts 4 px on hover with green-light border for clickable fleet bots and workspace switchers."
+      },
+      "chips": {
+        "eyebrow": "Semantic state",
+        "title": "Status & budget chips",
+        "lead": "Status is never conveyed by colour alone: every indicator dot pairs with an explicit text label.",
+        "working": "Working",
+        "thinking": "Thinking",
+        "idle": "Idle",
+        "stopped": "Stopped",
+        "budgetOk": "Spend 61 % · OK",
+        "budgetWarning": "Spend 84 % · Warning",
+        "budgetExceeded": "Spend 100 % · Stopped"
+      }
+    }
+  }
+}
