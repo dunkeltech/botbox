@@ -37,11 +37,19 @@ a{color:#347a3b}a:hover{color:#2a3c2a}
         <a href="Team.dc.html" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; font-weight: 700; color: #182019; text-decoration: none">Team</a>
         <a href="Secrets.dc.html" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; font-weight: 700; color: #182019; text-decoration: none">Secrets</a>
         <a href="#drivers" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; font-weight: 700; color: #182019; text-decoration: none">Drivers</a>
-        <a href="#settings" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; font-weight: 700; color: #182019; text-decoration: none">Settings</a>
+        <a href="Settings.dc.html" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; font-weight: 700; color: #182019; text-decoration: none">Settings</a>
       </nav>
-      <button type="button" aria-label="Account" style="width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 9px; background: #2a3c2a; color: #d6fcd0; cursor: pointer">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg>
-      </button>
+      <div style="display: flex; align-items: center; gap: 8px">
+        <a href="Auth.dc.html" aria-label="Switch workspace: dunkel.Tech, role Owner" style="display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px; border: 1.5px solid #e3ebe2; border-radius: 9px; background: #f5f8f4; color: #182019; text-decoration: none; font-size: 14px; font-weight: 700; white-space: nowrap">
+          <span style="width: 8px; height: 8px; border-radius: 50%; background: #3f9147"></span>
+          <span>dunkel.Tech</span>
+          <span style="padding: 2px 7px; border-radius: 99px; background: #eef8ec; color: #347a3b; border: 1px solid #cfe0cf; font-size: 11px; font-weight: 700">Owner</span>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5d6b60" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
+        </a>
+        <a href="Auth.dc.html" aria-label="Account" style="width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 9px; background: #2a3c2a; color: #d6fcd0; text-decoration: none">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg>
+        </a>
+      </div>
     </div>
   </header>
 
@@ -63,6 +71,10 @@ a{color:#347a3b}a:hover{color:#2a3c2a}
           <span style="display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 7px; background: #eef8ec; border: 1px solid #cfe0cf; color: #347a3b; font-weight: 700">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"></path></svg>
             Egress proxy · 2 secrets
+          </span>
+          <span style="display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 7px; background: #edf0f6; border: 1px solid #d3d9e8; color: #4a5e92; font-weight: 700">
+            <span style="width: 7px; height: 7px; border-radius: 50%; background: #4a5e92"></span>
+            {{watcherLabel}}
           </span>
         </div>
       </div>
@@ -171,7 +183,7 @@ a{color:#347a3b}a:hover{color:#2a3c2a}
       <div style="background: #ffffff; border: 1px solid #e3ebe2; border-radius: 14px; overflow: hidden; display: flex; flex-direction: column">
         <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-bottom: 1px solid #e3ebe2">
           <div role="group" aria-label="View" style="display: flex; gap: 4px">
-            <sc-for list="{{tabs}}" as="t" hint-placeholder-count="3">
+            <sc-for list="{{tabs}}" as="t" hint-placeholder-count="4">
               <button type="button" aria-pressed="{{t.pressed}}" onClick="{{t.pick}}" style="display: inline-flex; align-items: center; gap: 7px; min-height: 40px; padding: 0 12px; border: 0; border-radius: 9px; font: inherit; font-weight: 700; font-size: 14px; cursor: pointer; background: {{t.bg}}; color: {{t.fg}}">{{t.label}}</button>
             </sc-for>
           </div>
@@ -199,6 +211,22 @@ a{color:#347a3b}a:hover{color:#2a3c2a}
           <span>28 ms</span>
           <span>{{inputMode}}</span>
         </div>
+
+        <sc-if value="{{control}}" hint-placeholder-val="{{true}}">
+          <div role="region" aria-label="Takeover active" style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; padding: 10px 14px; background: #eef8ec; border-bottom: 1px solid #cfe0cf">
+            <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #182019; flex: 1 1 240px">
+              <span style="display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 7px; background: #d6fcd0; color: #2a3c2a; flex: 0 0 26px">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l7 18 2.5-7.5L20 11z"></path></svg>
+              </span>
+              <span><strong>You have control · Atlas is paused.</strong> <span style="color: #3a4a3c">Click actions return 409 until you hand back.</span></span>
+            </div>
+            <label style="display: inline-flex; align-items: center; flex: 1 1 210px">
+              <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0)">Optional hand-back note to Atlas</span>
+              <input type="text" value="{{handbackNote}}" onInput="{{onHandbackNote}}" placeholder="Hand-back note (e.g. Logged into staging Odoo)" style="width: 100%; min-height: 36px; padding: 0 11px; border: 1.5px solid #cfe0cf; border-radius: 8px; background: #ffffff; color: #182019; font: inherit; font-size: 13px">
+            </label>
+            <button type="button" onClick="{{handBack}}" style="display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 14px; border: 0; border-radius: 9px; background: #2a3c2a; color: #ffffff; font: inherit; font-weight: 700; font-size: 13px; cursor: pointer; white-space: nowrap">Hand back to Atlas →</button>
+          </div>
+        </sc-if>
 
         <sc-if value="{{isDesktop}}" hint-placeholder-val="{{true}}">
           <div style="position: relative; aspect-ratio: 16 / 10; background: #1f2d1f; overflow: hidden; font-family: Lato, system-ui, sans-serif">
@@ -231,17 +259,38 @@ a{color:#347a3b}a:hover{color:#2a3c2a}
               <div style="flex: 1; padding: 8px 12px; font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 12px; line-height: 1.7; color: #c9d8c9; white-space: pre; overflow: hidden"><div><span style="color: #5eab60">bot@atlas</span>:<span style="color: #8aa8db">~/dt_cron</span>$ git checkout -b fix/imap-retry</div><div>Switched to a new branch 'fix/imap-retry'</div><div><span style="color: #5eab60">bot@atlas</span>:<span style="color: #8aa8db">~/dt_cron</span>$ pytest addons/dt_cron -q</div><div>.......................<span style="color: #f0b46a">F</span>          [100%]</div><div style="color: #f0b46a">FAILED tests/test_fetch.py::test_timeout_is_retried</div><div>1 failed, 23 passed in 4.81s</div><div><span style="color: #5eab60">bot@atlas</span>:<span style="color: #8aa8db">~/dt_cron</span>$ <span style="display: inline-block; width: 8px; height: 14px; background: #d6fcd0; vertical-align: -2px"></span></div></div>
             </div>
 
-            <div style="position: absolute; left: 41%; top: 50%; display: flex; align-items: flex-start; gap: 2px; pointer-events: none">
-              <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l7 18 2.5-7.5L20 11z" fill="#5eab60" stroke="#14201a" stroke-width="1.5" stroke-linejoin="round"></path></svg>
-              <span style="margin-top: 14px; padding: 2px 8px; border-radius: 6px; background: #5eab60; color: #14201a; font-size: 12px; font-weight: 900">Atlas</span>
-            </div>
-
-            <sc-if value="{{control}}" hint-placeholder-val="{{false}}">
-              <div style="position: absolute; left: 50%; top: 40px; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-radius: 99px; background: #d6fcd0; color: #182019; font-size: 13px; font-weight: 700; box-shadow: 0 6px 16px rgba(0,0,0,.25); white-space: nowrap">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l7 18 2.5-7.5L20 11z"></path></svg>
-                You have control. Atlas is paused.
+            <sc-if value="{{notControl}}" hint-placeholder-val="{{false}}">
+              <div style="position: absolute; left: 41%; top: 50%; display: flex; align-items: flex-start; gap: 2px; pointer-events: none">
+                <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l7 18 2.5-7.5L20 11z" fill="#5eab60" stroke="#14201a" stroke-width="1.5" stroke-linejoin="round"></path></svg>
+                <span style="margin-top: 14px; padding: 2px 8px; border-radius: 6px; background: #5eab60; color: #14201a; font-size: 12px; font-weight: 900">Atlas</span>
               </div>
             </sc-if>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{isActions}}" hint-placeholder-val="{{false}}">
+          <div style="aspect-ratio: 16 / 10; overflow: auto; padding: 12px 16px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; background: #f5f8f4">
+            <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px">
+              <span style="font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 12px; font-weight: 700; color: #3a4a3c">desktop_actions · turn #14 · 1280×800</span>
+              <span style="font-size: 12px; color: #5d6b60">Screenshots kept 7 days · excluded from logs</span>
+            </div>
+            <sc-for list="{{actions}}" as="a" hint-placeholder-count="5">
+              <div style="display: grid; grid-template-columns: 72px 175px 1fr auto; align-items: center; gap: 12px; padding: 9px 12px; border-radius: 10px; background: {{a.rowBg}}; border: 1px solid {{a.rowBorder}}">
+                <div style="width: 72px; height: 45px; border-radius: 6px; background: {{a.thumbBg}}; border: 1px solid {{a.thumbBorder}}; padding: 5px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between">
+                  <div style="height: 5px; width: 70%; border-radius: 2px; background: {{a.thumbBar}}"></div>
+                  <div style="height: 16px; border-radius: 3px; background: {{a.thumbInner}}; border: 1px solid {{a.thumbAccent}}"></div>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 3px">
+                  <span style="display: inline-flex; width: fit-content; padding: 2px 7px; border-radius: 6px; background: {{a.chipBg}}; border: 1px solid {{a.chipBorder}}; color: {{a.chipFg}}; font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 12px; font-weight: 700">{{a.kind}}</span>
+                  <span style="font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 11px; color: #5d6b60">{{a.coord}}</span>
+                </div>
+                <div style="min-width: 0; font-size: 13px; color: #182019">{{a.summary}}</div>
+                <div style="text-align: right; font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 12px; color: {{a.statusFg}}; font-weight: 700">
+                  <div>{{a.when}}</div>
+                  <div style="font-size: 11px; font-weight: 400">{{a.duration}}</div>
+                </div>
+              </div>
+            </sc-for>
           </div>
         </sc-if>
 
@@ -285,18 +334,51 @@ a{color:#347a3b}a:hover{color:#2a3c2a}
           <div style="height: 6px; border-radius: 99px; background: #e3ebe2; overflow: hidden"><div style="width: 31%; height: 100%; background: #2a3c2a"></div></div>
         </div>
       </div>
+
+      <section aria-labelledby="act-h" style="background: #ffffff; border: 1px solid #e3ebe2; border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px">
+        <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px">
+          <div>
+            <p style="margin: 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #347a3b">// desktop_actions</p>
+            <h2 id="act-h" style="margin: 2px 0 0; font-size: 17px; font-weight: 900">Action timeline · 14 actions this turn</h2>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px">
+            <span style="padding: 3px 9px; border-radius: 7px; background: #f5f8f4; border: 1px solid #e3ebe2; font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 12px; color: #3a4a3c">1280×800</span>
+            <span style="padding: 3px 9px; border-radius: 99px; background: #f5f8f4; border: 1px solid #e3ebe2; font-size: 12px; font-weight: 700; color: #5d6b60">Screenshots kept 7 days · excluded from logs</span>
+          </div>
+        </div>
+        <div role="table" aria-label="Computer-use actions" style="display: flex; flex-direction: column; gap: 8px">
+          <sc-for list="{{actions}}" as="a" hint-placeholder-count="5">
+            <div role="row" style="display: grid; grid-template-columns: 72px 175px 1fr auto; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 10px; background: {{a.rowBg}}; border: 1px solid {{a.rowBorder}}">
+              <div role="cell" style="width: 72px; height: 45px; border-radius: 6px; background: {{a.thumbBg}}; border: 1px solid {{a.thumbBorder}}; padding: 5px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between" aria-label="16 by 10 screenshot thumbnail">
+                <div style="height: 5px; width: 70%; border-radius: 2px; background: {{a.thumbBar}}"></div>
+                <div style="height: 16px; border-radius: 3px; background: {{a.thumbInner}}; border: 1px solid {{a.thumbAccent}}"></div>
+              </div>
+              <div role="cell" style="display: flex; flex-direction: column; gap: 3px">
+                <span style="display: inline-flex; width: fit-content; padding: 2px 7px; border-radius: 6px; background: {{a.chipBg}}; border: 1px solid {{a.chipBorder}}; color: {{a.chipFg}}; font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 12px; font-weight: 700">{{a.kind}}</span>
+                <span style="font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 11px; color: #5d6b60">{{a.coord}}</span>
+              </div>
+              <div role="cell" style="min-width: 0; font-size: 13px; color: #182019">{{a.summary}}</div>
+              <div role="cell" style="text-align: right; font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 12px; color: {{a.statusFg}}; font-weight: 700; white-space: nowrap">
+                <div>{{a.when}}</div>
+                <div style="font-size: 11px; font-weight: 400">{{a.duration}}</div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </section>
     </section>
   </main>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1080}}'>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1460}}'>
 class Component extends DCLogic {
   renderVals() {
     var self = this;
     var st = this.state || {};
     var tab = st.tab || 'desktop';
-    var control = !!st.control;
+    var control = st.control === undefined ? true : !!st.control;
     var draft = st.draft || '';
+    var handbackNote = st.handbackNote !== undefined ? st.handbackNote : 'Logged into staging Odoo — continue verifying the cron retry.';
     var sent = st.sent || [];
     var send = function () {
       var t = String((self.state && self.state.draft) || '').trim();
@@ -304,7 +386,7 @@ class Component extends DCLogic {
       var prev = (self.state && self.state.sent) || [];
       self.setState({ sent: prev.concat([{ text: t }]), draft: '' });
     };
-    var tabs = [['desktop', 'Desktop'], ['terminal', 'Terminal'], ['files', 'Files']].map(function (t) {
+    var tabs = [['desktop', 'Desktop'], ['actions', 'Actions · 14'], ['terminal', 'Terminal'], ['files', 'Files']].map(function (t) {
       var on = tab === t[0];
       return { label: t[1], pressed: on ? 'true' : 'false', bg: on ? '#2a3c2a' : 'transparent', fg: on ? '#ffffff' : '#3a4a3c', pick: function () { self.setState({ tab: t[0] }); } };
     });
@@ -320,11 +402,54 @@ class Component extends DCLogic {
       var c = f.state === 'new' ? ['#d6fcd0', '#2a3c2a'] : f.state === 'modified' ? ['#edf0f6', '#4a5e92'] : ['#f5f8f4', '#5d6b60'];
       return Object.assign({}, f, { bg: c[0], fg: c[1] });
     });
+    var actions = [
+      {
+        when: '14:32:41', kind: 'left_click', coord: 'x=842, y=316',
+        summary: 'Clicked Save in Mousepad after updating _fetch_mail() backoff', duration: '180 ms · ok',
+        rowBg: '#ffffff', rowBorder: '#e3ebe2', chipBg: '#eef8ec', chipBorder: '#cfe0cf', chipFg: '#347a3b', statusFg: '#3a4a3c',
+        thumbBg: '#1f2d1f', thumbBorder: '#2a3c2a', thumbBar: '#5eab60', thumbInner: '#ffffff', thumbAccent: '#3f9147'
+      },
+      {
+        when: '14:32:44', kind: 'type', coord: 'terminal · 27 chars',
+        summary: 'Typed "pytest addons/dt_cron -q" + Return in bot@atlas shell', duration: '240 ms · ok',
+        rowBg: '#ffffff', rowBorder: '#e3ebe2', chipBg: '#f5f8f4', chipBorder: '#e3ebe2', chipFg: '#182019', statusFg: '#3a4a3c',
+        thumbBg: '#14201a', thumbBorder: '#2a3c2a', thumbBar: '#2a3c2a', thumbInner: '#1f2d1f', thumbAccent: '#5eab60'
+      },
+      {
+        when: '14:32:51', kind: 'screenshot', coord: '1280×800 · post-test',
+        summary: 'Captured post-test framebuffer · 142 KB PNG · pruned in 7d', duration: '95 ms · ok',
+        rowBg: '#ffffff', rowBorder: '#e3ebe2', chipBg: '#edf0f6', chipBorder: '#d3d9e8', chipFg: '#4a5e92', statusFg: '#3a4a3c',
+        thumbBg: '#1f2d1f', thumbBorder: '#2a3c2a', thumbBar: '#4a5e92', thumbInner: '#f5f8f4', thumbAccent: '#d3d9e8'
+      },
+      {
+        when: '14:32:54', kind: 'key', coord: 'Ctrl+S',
+        summary: 'Synced editor buffer before inspecting test_timeout_is_retried', duration: '110 ms · ok',
+        rowBg: '#ffffff', rowBorder: '#e3ebe2', chipBg: '#f5f8f4', chipBorder: '#e3ebe2', chipFg: '#182019', statusFg: '#3a4a3c',
+        thumbBg: '#1f2d1f', thumbBorder: '#2a3c2a', thumbBar: '#8ea68e', thumbInner: '#ffffff', thumbAccent: '#e3ebe2'
+      },
+      {
+        when: '14:33:02', kind: 'click rejected · 409', coord: 'x=612, y=408',
+        summary: 'Human took control (Jan) · synthetic click blocked during takeover', duration: '409 Conflict',
+        rowBg: '#fdf3e7', rowBorder: '#f0b46a', chipBg: '#ffffff', chipBorder: '#f0b46a', chipFg: '#b45309', statusFg: '#b45309',
+        thumbBg: '#fdf3e7', thumbBorder: '#f0b46a', thumbBar: '#b45309', thumbInner: '#ffffff', thumbAccent: '#f0b46a'
+      }
+    ];
     return {
       tabs: tabs,
-      isDesktop: tab === 'desktop', isTerminal: tab === 'terminal', isFiles: tab === 'files',
+      watcherLabel: 'Watching: Jan, Mara',
+      isDesktop: tab === 'desktop', isActions: tab === 'actions', isTerminal: tab === 'terminal', isFiles: tab === 'files',
       control: control,
-      inputMode: control ? 'input: you' : 'input: Atlas · you are watching',
+      notControl: !control,
+      handbackNote: handbackNote,
+      onHandbackNote: function (e) { self.setState({ handbackNote: e.target.value }); },
+      handBack: function () {
+        var note = String((self.state && self.state.handbackNote !== undefined ? self.state.handbackNote : handbackNote) || '').trim();
+        var prev = (self.state && self.state.sent) || [];
+        var msg = note ? 'Handed control back to Atlas: ' + note : 'Handed control back to Atlas.';
+        self.setState({ control: false, sent: prev.concat([{ text: msg }]) });
+      },
+      actions: actions,
+      inputMode: control ? 'input: you (takeover active)' : 'input: Atlas · you are watching',
       viewPressed: control ? 'false' : 'true', ctrlPressed: control ? 'true' : 'false',
       viewBg: control ? 'transparent' : '#ffffff', viewFg: control ? '#5d6b60' : '#182019',
       ctrlBg: control ? '#347a3b' : 'transparent', ctrlFg: control ? '#ffffff' : '#5d6b60',

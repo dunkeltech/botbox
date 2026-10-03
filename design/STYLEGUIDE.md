@@ -92,6 +92,14 @@ bot.Box has no red. Blocked or failed things use amber, so they never rely on re
 
 The status label is always written out next to the dot. Colour is never the only signal.
 
+### Semantic: budget thresholds
+
+| Threshold | Track fill | Banner / badge bg | Text | Border | Meaning |
+|---|---|---|---|---|---|
+| 0–79 % (`ok`) | `green` | `mint-soft` | `green-600` | `mint-line` | Normal spend within daily or monthly cap |
+| 80–99 % (`warning`) | `amber` | `amber-tint` | `amber` | `amber-line` | Warning threshold reached; alert surfaced |
+| 100 % (`exceeded`) | `amber` | `amber-tint` | `amber` | Dashed `amber-line` | Hard stop (`429 BudgetExceeded`); `amber-on-dark` in terminal logs |
+
 ## 4. Typography
 
 - **Sans:** Lato 400, 400 italic, 700, 900 (load via `next/font/google`). Fallback: `system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`.
@@ -123,9 +131,10 @@ The status label is always written out next to the dot. Colour is never the only
 
 | Shell | Measurements |
 |---|---|
-| App header (light) | 64 px tall, white, bottom border `line`; current nav item `green-600` with a 2 px `green` underline |
+| App header (light) | 64 px tall, white, bottom border `line`; current nav item `green-600` with a 2 px `green` underline; workspace switcher pill `<workspace> · <role>` on the right |
 | Team chat | Dark top bar (`terminal`, ~52 px), sidebar 264 px (`dark-2`), main pane flexible, details pane 280 px (`paper-2`) |
 | Bot workspace | Chat column 380–460 px, computer column flexible, 16:10 desktop viewport |
+| Phone shell (390 px) | 16 px side gutters, ≥ 44 × 44 px header and noVNC touch controls (`Tap / Pan`), sticky bottom composer, and a slide-over `dark-2` team sidebar drawer with `overlay` scrim |
 
 ## 6. Shape and elevation
 
@@ -166,20 +175,24 @@ The status label is always written out next to the dot. Colour is never the only
 - **Tool-call block** (in chat): a `paper-2` box with a 1 px `line` border and radius 9. The first row shows a mono command with a terminal icon. The second row shows the result: green text on `mint-soft` for success or for "Token added by the egress proxy", amber on `amber-tint` for failures.
 - **System message** (team chat): a `mint-soft` banner with a `mint-line` border, radius 9, 13 px `dark` text and a bot-to-bot (two arrows) icon.
 - **Attachment card** (merge request, file, approval): a white card with `shadow`, an icon tile in `mint-soft`, the title in 900, mono meta and a status chip.
+- **Budget meter:** 6–8 px bar on a `line` track with tick markers at 80 % (warn) and 100 % (stop). Switches from `green` to `amber` at 80 % and pairs with a dashed `amber-line` / `amber-tint` kill-switch notice at 100 %.
+- **Action timeline row (`desktop_actions`):** grouped timeline row inside the Bot Workspace Actions tab showing action verb, viewport coordinates (`1280×800`), 7-day screenshot retention policy ("Screenshots kept 7 days · excluded from logs"), and an amber `409` conflict pill when computer-use is rejected during human takeover.
 - **Tables:** header row in `paper-2` with overline labels, rows separated by 1 px `line`. On dark log tables, rows are separated by `dark`.
   > When prototyping in the design canvas, build tables as CSS grids with ARIA table roles, because a loop inside `<table>` breaks the template parser. In the React app, real `<table>` elements are fine.
 - **Unread counter:** a 20 px pill, `green-light` background, `terminal` text, weight 900.
 
 ### Chat
-- **Message row (Slack style):** a 36 px avatar, then the name (weight 900), a BOT badge for bots and the time in 12 px `muted`. The body is 15/1.55. Consecutive messages from the same sender may later be grouped.
-- **Mentions:** `blue` text on `blue-tint`, weight 700, radius 4, padding 0 3 px.
+- **Message row (Slack style):** a 36 px avatar, then the name (weight 900), a BOT badge for bots (or role tag for human teammates with initials avatar and presence dot), and the time in 12 px `muted`. The body is 15/1.55. Consecutive messages from the same sender may later be grouped.
+- **Mentions & `@` autocomplete:** `blue` text on `blue-tint`, weight 700, radius 4, padding 0 3 px. Typing `@` opens a keyboard-navigable `role="listbox"` popover directly above the composer (in flow, without occluding messages) listing bots and humans with presence and role metadata.
+- **Approval request card:** inline `amber-tint` card with dashed `amber-line` border in group chat (`new_host`, `raise_budget`, `push_protected`) plus Pending / Approved / Denied filter tabs in the dedicated Approvals inbox (`Approvals 3` counter in sidebar).
 - **Workspace chat bubble from the user:** `dark` background, white text, radius `14 14 4 14`, right-aligned.
 - **Typing or working indicator:** a 22–28 px avatar in mood `thinking` plus a `blue` 13–14 px weight-700 line, for example "Ferrit is thinking…".
 - **Composer:** 1.5 px `line-strong` border, radius 12. Toolbar: mention (@), attach and a hint text, with the send button on the right (`green-600`, 44 × 40).
 
 ### Navigation
 - **App header nav:** items are 44 px tall, weight 700. The current item is `green-600` with a 2 px `green` inset underline.
-- **Team sidebar:** `dark-2` background. Section headers are overlines in `on-dark-muted`. Items are 44–48 px tall with radius 8. The active item has a `green-600` background and white text. Unread items are white at weight 900 with a counter. Bot items show a 30 px avatar with a presence dot (10 px, 2 px ring in the sidebar colour) and the current activity in 12 px.
+- **Workspace switcher pill:** header pill showing `<workspace> · <role>` (e.g. `dunkel.Tech · Owner`), switching workspaces with strict `workspace_id` isolation (cross-workspace resource IDs return `404`).
+- **Team sidebar:** `dark-2` background (`264 px` on desktop; slide-over drawer over an `overlay` scrim at `390 px`). Section headers are overlines in `on-dark-muted`. Items are 44–48 px tall with radius 8. The active item has a `green-600` background and white text. Unread items are white at weight 900 with a counter. Bot items show a 30 px avatar with a presence dot (10 px, 2 px ring in the sidebar colour) and the current activity in 12 px; human items show initials badges, role labels (`Owner`, `Reviewer`, `Viewer`), and online/away state.
 - **Dialog:** a white panel, max-width 620–640 px, radius 14, `shadow-hover`, over the `overlay` backdrop. It has an eyebrow and a title, a close icon button top right, and actions bottom right (secondary first, primary last).
 
 ## 8. Robot avatars

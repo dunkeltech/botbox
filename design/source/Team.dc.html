@@ -33,51 +33,57 @@ body{margin:0}
       <a href="Main.dc.html" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 12px; font-weight: 700; color: #c9d8c9; text-decoration: none">Bots</a>
       <a href="Team.dc.html" aria-current="page" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 12px; font-weight: 700; color: #ffffff; text-decoration: none; box-shadow: inset 0 -2px 0 #5eab60">Team</a>
       <a href="Secrets.dc.html" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 12px; font-weight: 700; color: #c9d8c9; text-decoration: none">Secrets</a>
+      <a href="Settings.dc.html" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 12px; font-weight: 700; color: #c9d8c9; text-decoration: none">Settings</a>
     </nav>
-    <label style="flex: 1 1 240px; max-width: 560px; margin: 0 auto; display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border-radius: 9px; background: #2a3c2a; color: #a8bda8">
+    <label style="flex: 1 1 220px; max-width: 520px; margin: 0 auto; display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border-radius: 9px; background: #2a3c2a; color: #a8bda8">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
       <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap">Search</span>
       <input type="search" placeholder="Search messages, bots and groups" style="flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: #ffffff; font: inherit; font-size: 14px">
     </label>
-    <button type="button" aria-label="Account" style="width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 9px; background: #2a3c2a; color: #d6fcd0; cursor: pointer">
+    <a href="Auth.dc.html" aria-label="Switch workspace: dunkel.Tech" style="display: inline-flex; align-items: center; gap: 7px; min-height: 36px; padding: 0 10px; border-radius: 9px; background: #2a3c2a; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: 700; white-space: nowrap">
+      <span style="width: 7px; height: 7px; border-radius: 50%; background: #5eab60"></span>
+      <span>dunkel.Tech</span>
+      <span style="padding: 1px 6px; border-radius: 99px; background: #1f2d1f; color: #d6fcd0; font-size: 11px">Owner</span>
+    </a>
+    <a href="Auth.dc.html" aria-label="Account" style="width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 9px; background: #2a3c2a; color: #d6fcd0; text-decoration: none">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg>
-    </button>
+    </a>
   </header>
 
   <div style="flex: 1 1 auto; min-height: 0; display: flex; flex-wrap: wrap; overflow-y: auto">
 
-    <nav aria-label="Conversations" style="flex: 1 1 264px; max-width: 100%; height: 100%; overflow-y: auto; box-sizing: border-box; background: #1f2d1f; color: #c9d8c9; padding: 12px 10px 20px; display: flex; flex-direction: column; gap: 14px">
+    <nav aria-label="Conversations" style="flex: 1 1 264px; max-width: 100%; height: 100%; overflow-y: auto; box-sizing: border-box; background: #1f2d1f; color: #c9d8c9; padding: 10px 10px 14px; display: flex; flex-direction: column; gap: 8px">
       <div style="display: flex; align-items: center; gap: 8px; padding: 0 6px">
         <div style="min-width: 0; flex: 1">
           <p style="margin: 0; font-weight: 900; font-size: 17px; color: #ffffff">dunkel<span style="color: #5eab60">.</span>Tech</p>
-          <p style="margin: 0; font-size: 13px; color: #a8bda8">6 bots · you</p>
+          <p style="margin: 0; font-size: 13px; color: #a8bda8">6 bots · 3 humans</p>
         </div>
         <button type="button" onClick="{{openNew}}" aria-label="New group chat" style="width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 9px; background: #ffffff; color: #1f2d1f; cursor: pointer">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>
         </button>
       </div>
 
-      <div style="display: flex; flex-direction: column; gap: 2px">
-        <a href="#approvals" style="display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 10px; border-radius: 8px; color: #ffffff; font-weight: 900; text-decoration: none">
+      <div style="display: flex; flex-direction: column; gap: 1px">
+        <a href="Approvals.dc.html" style="display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 0 10px; border-radius: 8px; color: #ffffff; font-weight: 900; text-decoration: none">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5eab60" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"></path><path d="M9 12l2 2 4-4"></path></svg>
           <span style="flex: 1">Approvals</span>
-          <span style="min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box; border-radius: 99px; background: #5eab60; color: #14201a; font-size: 12px; font-weight: 900; display: grid; place-items: center">1</span>
+          <span style="min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box; border-radius: 99px; background: #f0b46a; color: #14201a; font-size: 12px; font-weight: 900; display: grid; place-items: center">3</span>
         </a>
-        <a href="#activity" style="display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 10px; border-radius: 8px; color: #c9d8c9; font-weight: 700; text-decoration: none">
+        <a href="#activity" style="display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 0 10px; border-radius: 8px; color: #c9d8c9; font-weight: 700; text-decoration: none">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.7 21a2 2 0 0 1-3.4 0"></path></svg>
           <span>Activity</span>
         </a>
       </div>
 
-      <section aria-labelledby="grp-h" style="display: flex; flex-direction: column; gap: 2px">
+      <section aria-labelledby="grp-h" style="display: flex; flex-direction: column; gap: 1px">
         <div style="display: flex; align-items: center; justify-content: space-between; padding: 0 6px 0 10px">
           <h2 id="grp-h" style="margin: 0; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #a8bda8">Group chats</h2>
-          <button type="button" onClick="{{openNew}}" aria-label="New group chat" style="width: 32px; height: 32px; display: grid; place-items: center; border: 0; border-radius: 7px; background: transparent; color: #c9d8c9; cursor: pointer">
+          <button type="button" onClick="{{openNew}}" aria-label="New group chat" style="width: 28px; height: 28px; display: grid; place-items: center; border: 0; border-radius: 7px; background: transparent; color: #c9d8c9; cursor: pointer">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
           </button>
         </div>
         <sc-for list="{{groupItems}}" as="g" hint-placeholder-count="3">
-          <button type="button" onClick="{{g.pick}}" aria-current="{{g.current}}" style="width: 100%; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 10px; border: 0; border-radius: 8px; font: inherit; font-size: 15px; text-align: left; cursor: pointer; background: {{g.bg}}; color: {{g.fg}}; font-weight: {{g.fw}}">
+          <button type="button" onClick="{{g.pick}}" aria-current="{{g.current}}" style="width: 100%; display: flex; align-items: center; gap: 10px; min-height: 38px; padding: 0 10px; border: 0; border-radius: 8px; font: inherit; font-size: 15px; text-align: left; cursor: pointer; background: {{g.bg}}; color: {{g.fg}}; font-weight: {{g.fw}}">
             <span aria-hidden="true" style="width: 18px; text-align: center; font-weight: 900; opacity: .8">#</span>
             <span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{g.name}}</span>
             <sc-if value="{{g.hasUnread}}" hint-placeholder-val="{{false}}">
@@ -85,27 +91,27 @@ body{margin:0}
             </sc-if>
           </button>
         </sc-for>
-        <button type="button" onClick="{{openNew}}" style="width: 100%; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 10px; border: 0; border-radius: 8px; font: inherit; font-size: 15px; text-align: left; cursor: pointer; background: transparent; color: #a8bda8">
+        <button type="button" onClick="{{openNew}}" style="width: 100%; display: flex; align-items: center; gap: 10px; min-height: 38px; padding: 0 10px; border: 0; border-radius: 8px; font: inherit; font-size: 15px; text-align: left; cursor: pointer; background: transparent; color: #a8bda8">
           <span aria-hidden="true" style="width: 18px; height: 18px; border-radius: 5px; background: #2a3c2a; display: grid; place-items: center"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg></span>
           New group chat
         </button>
       </section>
 
-      <section aria-labelledby="col-h" style="display: flex; flex-direction: column; gap: 2px">
+      <section aria-labelledby="col-h" style="display: flex; flex-direction: column; gap: 1px">
         <div style="display: flex; align-items: center; justify-content: space-between; padding: 0 6px 0 10px">
           <h2 id="col-h" style="margin: 0; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #a8bda8">Colleagues</h2>
-          <a href="Builder.dc.html" aria-label="Hire a new bot" style="width: 32px; height: 32px; display: grid; place-items: center; border-radius: 7px; color: #c9d8c9">
+          <a href="Builder.dc.html" aria-label="Hire a new bot" style="width: 28px; height: 28px; display: grid; place-items: center; border-radius: 7px; color: #c9d8c9">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
           </a>
         </div>
         <sc-for list="{{botItems}}" as="b" hint-placeholder-count="6">
-          <button type="button" onClick="{{b.pick}}" aria-current="{{b.current}}" style="width: 100%; display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 4px 10px; border: 0; border-radius: 8px; font: inherit; text-align: left; cursor: pointer; background: {{b.bg}}; color: {{b.fg}}">
-            <span style="position: relative; flex: 0 0 30px; height: 30px">
-              <dc-import name="Avatar" seed="{{b.seed}}" mood="{{b.mood}}" size="30" hint-size="30px,30px"></dc-import>
+          <button type="button" onClick="{{b.pick}}" aria-current="{{b.current}}" style="width: 100%; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 2px 10px; border: 0; border-radius: 8px; font: inherit; text-align: left; cursor: pointer; background: {{b.bg}}; color: {{b.fg}}">
+            <span style="position: relative; flex: 0 0 28px; height: 28px">
+              <dc-import name="Avatar" seed="{{b.seed}}" mood="{{b.mood}}" size="28" hint-size="28px,28px"></dc-import>
               <span style="position: absolute; right: -3px; bottom: -3px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid {{b.dotRing}}; background: {{b.dot}}"></span>
             </span>
-            <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.25">
-              <span style="font-size: 15px; font-weight: {{b.fw}}">{{b.label}}</span>
+            <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.2">
+              <span style="font-size: 14px; font-weight: {{b.fw}}">{{b.label}}</span>
               <span style="font-size: 12px; color: {{b.subFg}}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{b.status}}</span>
             </span>
             <sc-if value="{{b.hasUnread}}" hint-placeholder-val="{{false}}">
@@ -113,10 +119,31 @@ body{margin:0}
             </sc-if>
           </button>
         </sc-for>
-        <a href="Builder.dc.html" style="display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 10px; border-radius: 8px; color: #a8bda8; text-decoration: none">
-          <span aria-hidden="true" style="width: 30px; height: 30px; border-radius: 8px; border: 1.5px dashed #5d6b60; display: grid; place-items: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg></span>
+        <a href="Builder.dc.html" style="display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 0 10px; border-radius: 8px; color: #a8bda8; text-decoration: none; font-size: 14px">
+          <span aria-hidden="true" style="width: 28px; height: 28px; border-radius: 8px; border: 1.5px dashed #5d6b60; display: grid; place-items: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg></span>
           Hire a bot
         </a>
+      </section>
+
+      <section aria-labelledby="hum-h" style="display: flex; flex-direction: column; gap: 1px">
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 0 6px 0 10px">
+          <h2 id="hum-h" style="margin: 0; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #a8bda8">Humans</h2>
+          <a href="Settings.dc.html" aria-label="Manage workspace members" style="width: 28px; height: 28px; display: grid; place-items: center; border-radius: 7px; color: #c9d8c9">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+          </a>
+        </div>
+        <sc-for list="{{humanItems}}" as="h" hint-placeholder-count="3">
+          <div style="width: 100%; box-sizing: border-box; display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 2px 10px; border-radius: 8px; color: #c9d8c9">
+            <span style="position: relative; flex: 0 0 28px; height: 28px">
+              <span style="width: 28px; height: 28px; border-radius: 8px; background: {{h.tileBg}}; color: #d6fcd0; font-size: 11px; font-weight: 900; display: grid; place-items: center">{{h.initials}}</span>
+              <span style="position: absolute; right: -3px; bottom: -3px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid #1f2d1f; background: {{h.dot}}"></span>
+            </span>
+            <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.2">
+              <span style="font-size: 14px; font-weight: 700; color: #ffffff">{{h.name}}</span>
+              <span style="font-size: 12px; color: #a8bda8">{{h.role}} · {{h.presence}}</span>
+            </span>
+          </div>
+        </sc-for>
       </section>
     </nav>
 
@@ -134,9 +161,10 @@ body{margin:0}
                   <dc-import name="Avatar" seed="{{s.seed}}" mood="{{s.mood}}" size="28" hint-size="28px,28px"></dc-import>
                 </span>
               </sc-for>
-              <span style="display: inline-grid; place-items: center; width: 28px; height: 28px; margin-left: -8px; border: 2px solid #ffffff; border-radius: 9px; background: #2a3c2a; color: #d6fcd0"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg></span>
+              <span style="display: inline-grid; place-items: center; width: 28px; height: 28px; margin-left: -8px; border: 2px solid #ffffff; border-radius: 9px; background: #3f5f9c; color: #ffffff; font-size: 11px; font-weight: 900">ML</span>
+              <span style="display: inline-grid; place-items: center; width: 28px; height: 28px; margin-left: -8px; border: 2px solid #ffffff; border-radius: 9px; background: #2a3c2a; color: #d6fcd0; font-size: 11px; font-weight: 900">JR</span>
             </div>
-            <span style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 99px; font-size: 13px; font-weight: 700; border: 1px solid {{talkLine}}; background: {{talkBg}}; color: {{talkFg}}">
+            <span style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 99px; font-size: 13px; font-weight: 700; border: 1px solid {{talkLine}}; background: {{talkBg}}; color: {{talkFg}}; white-space: nowrap">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7h11l-3-3M17 17H6l3 3"></path></svg>
               {{talkLabel}}
             </span>
@@ -179,12 +207,15 @@ body{margin:0}
                 <sc-if value="{{m.isBot}}" hint-placeholder-val="{{true}}">
                   <dc-import name="Avatar" seed="{{m.seed}}" mood="idle" size="36" hint-size="36px,36px"></dc-import>
                 </sc-if>
+                <sc-if value="{{m.isHuman}}" hint-placeholder-val="{{false}}">
+                  <span style="width: 36px; height: 36px; border-radius: 9px; background: #3f5f9c; color: #ffffff; font-size: 13px; font-weight: 900; display: grid; place-items: center">{{m.initials}}</span>
+                </sc-if>
                 <sc-if value="{{m.isYou}}" hint-placeholder-val="{{false}}">
                   <span style="width: 36px; height: 36px; border-radius: 9px; background: #2a3c2a; color: #d6fcd0; display: grid; place-items: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg></span>
                 </sc-if>
               </div>
               <div style="min-width: 0; flex: 1">
-                <p style="margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px"><b style="font-weight: 900; font-size: 15px">{{m.name}}</b><sc-if value="{{m.isBot}}" hint-placeholder-val="{{true}}"><span style="font-size: 11px; font-weight: 900; letter-spacing: .06em; padding: 1px 6px; border-radius: 5px; background: #eef8ec; color: #347a3b">BOT</span></sc-if><span style="font-size: 12px; color: #5d6b60">{{m.time}}</span></p>
+                <p style="margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px"><b style="font-weight: 900; font-size: 15px">{{m.name}}</b><sc-if value="{{m.isBot}}" hint-placeholder-val="{{true}}"><span style="font-size: 11px; font-weight: 900; letter-spacing: .06em; padding: 1px 6px; border-radius: 5px; background: #eef8ec; color: #347a3b">BOT</span></sc-if><sc-if value="{{m.isHuman}}" hint-placeholder-val="{{false}}"><span style="font-size: 11px; font-weight: 900; letter-spacing: .06em; padding: 1px 6px; border-radius: 5px; background: #edf0f6; color: #4a5e92">HUMAN</span></sc-if><span style="font-size: 12px; color: #5d6b60">{{m.time}}</span></p>
                 <p style="margin: 2px 0 0; font-size: 15px; line-height: 1.55; overflow-wrap: anywhere; white-space: pre-wrap"><sc-for list="{{m.parts}}" as="p" hint-placeholder-count="1"><span style="border-radius: 4px; background: {{p.bg}}; color: {{p.fg}}; font-weight: {{p.fw}}; padding: {{p.pad}}">{{p.t}}</span></sc-for></p>
                 <sc-if value="{{m.hasTool}}" hint-placeholder-val="{{false}}">
                   <div style="margin-top: 8px; max-width: 560px; border: 1px solid #e3ebe2; border-radius: 9px; background: #f5f8f4; overflow: hidden; font-size: 13px">
@@ -208,6 +239,25 @@ body{margin:0}
                     </div>
                   </div>
                 </sc-if>
+                <sc-if value="{{m.hasApproval}}" hint-placeholder-val="{{false}}">
+                  <div style="margin-top: 8px; max-width: 560px; display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border: 1.5px solid #f0b46a; border-radius: 12px; background: #fdf3e7">
+                    <span style="flex: 0 0 36px; height: 36px; border-radius: 9px; background: #ffffff; border: 1px solid #f0b46a; color: #b45309; display: grid; place-items: center">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"></path><path d="M12 8v4M12 16h.01"></path></svg>
+                    </span>
+                    <div style="min-width: 0; flex: 1">
+                      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px">
+                        <p style="margin: 0; font-weight: 900; color: #182019">{{m.appTitle}}</p>
+                        <span style="padding: 1px 7px; border-radius: 99px; background: #ffffff; border: 1px solid #e8b98a; color: #b45309; font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 11px; font-weight: 700">{{m.appKind}}</span>
+                      </div>
+                      <p style="margin: 2px 0 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 12px; color: #b45309; font-weight: 700">{{m.appHost}}</p>
+                      <p style="margin: 4px 0 0; font-size: 13px; color: #3a4a3c">{{m.appDetail}}</p>
+                      <div style="margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px">
+                        <a href="Approvals.dc.html" style="display: inline-flex; align-items: center; min-height: 40px; padding: 0 14px; border-radius: 9px; background: #347a3b; color: #ffffff; font-weight: 700; font-size: 13px; text-decoration: none">Approve host →</a>
+                        <a href="Approvals.dc.html" style="display: inline-flex; align-items: center; min-height: 40px; padding: 0 14px; border: 1.5px solid #e8b98a; border-radius: 9px; background: #ffffff; color: #b45309; font-weight: 700; font-size: 13px; text-decoration: none">Deny</a>
+                      </div>
+                    </div>
+                  </div>
+                </sc-if>
                 <sc-if value="{{m.hasCta}}" hint-placeholder-val="{{false}}">
                   <a href="{{m.ctaHref}}" style="margin-top: 8px; display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px; border-radius: 9px; background: #347a3b; color: #ffffff; font-weight: 700; font-size: 14px; text-decoration: none">{{m.ctaLabel}} <span aria-hidden="true">→</span></a>
                 </sc-if>
@@ -223,12 +273,25 @@ body{margin:0}
         </sc-if>
       </div>
 
-      <form onSubmit="{{onSend}}" style="flex: 0 0 auto; padding: 0 20px 16px">
+      <form onSubmit="{{onSend}}" style="position: relative; flex: 0 0 auto; padding: 0 20px 16px">
+        <sc-if value="{{showMention}}" hint-placeholder-val="{{false}}">
+          <div role="listbox" aria-label="Mention suggestions" style="margin-bottom: 8px; background: #ffffff; border: 1.5px solid #cfe0cf; border-radius: 12px; box-shadow: 0 1px 2px rgba(26,44,26,.06),0 8px 24px rgba(26,44,26,.12); overflow: hidden">
+            <div style="padding: 6px 12px; background: #f5f8f4; border-bottom: 1px solid #e3ebe2; font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #5d6b60">Mention teammate or bot · Tab or click</div>
+            <sc-for list="{{mentions}}" as="mt" hint-placeholder-count="3">
+              <button type="button" role="option" aria-selected="{{mt.selected}}" onClick="{{mt.pick}}" style="width: 100%; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 12px; border: 0; border-top: 1px solid #e3ebe2; font: inherit; text-align: left; cursor: pointer; background: {{mt.bg}}; color: #182019">
+                <span style="width: 28px; height: 28px; border-radius: 7px; background: {{mt.avatarBg}}; color: {{mt.avatarFg}}; font-size: 11px; font-weight: 900; display: grid; place-items: center">{{mt.tag}}</span>
+                <span style="font-weight: 900">@{{mt.name}}</span>
+                <span style="font-size: 11px; font-weight: 900; padding: 1px 6px; border-radius: 5px; background: {{mt.badgeBg}}; color: {{mt.badgeFg}}">{{mt.kind}}</span>
+                <span style="margin-left: auto; font-size: 12px; color: #5d6b60">{{mt.sub}}</span>
+              </button>
+            </sc-for>
+          </div>
+        </sc-if>
         <label for="composer" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap">{{placeholder}}</label>
         <div style="border: 1.5px solid #c9d8c9; border-radius: 12px; background: #ffffff; overflow: hidden">
           <textarea id="composer" rows="2" placeholder="{{placeholder}}" value="{{draft}}" onChange="{{onDraft}}" onKeyDown="{{onKey}}" style="display: block; width: 100%; box-sizing: border-box; border: 0; outline: none; resize: none; padding: 12px 14px 4px; font: inherit; font-size: 15px; line-height: 1.5; color: #182019; background: transparent"></textarea>
           <div style="display: flex; align-items: center; gap: 4px; padding: 4px 6px 6px">
-            <button type="button" onClick="{{insertAt}}" aria-label="Mention a bot" style="width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 9px; background: transparent; color: #3a4a3c; cursor: pointer; font: inherit; font-weight: 900; font-size: 18px">@</button>
+            <button type="button" onClick="{{insertAt}}" aria-label="Mention a bot or teammate" style="width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 9px; background: transparent; color: #3a4a3c; cursor: pointer; font: inherit; font-weight: 900; font-size: 18px">@</button>
             <button type="button" aria-label="Attach file" style="width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 9px; background: transparent; color: #3a4a3c; cursor: pointer">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.5l-8.5 8.5a6 6 0 0 1-8.5-8.5l9-9a4 4 0 0 1 5.7 5.7l-9 9a2 2 0 0 1-2.8-2.8l8.5-8.5"></path></svg>
             </button>
@@ -250,7 +313,7 @@ body{margin:0}
           </section>
 
           <section style="display: flex; flex-direction: column; gap: 8px">
-            <h2 style="margin: 0; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #5d6b60">Members</h2>
+            <h2 style="margin: 0; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #5d6b60">Members · bots &amp; humans</h2>
             <sc-for list="{{members}}" as="mb" hint-placeholder-count="2">
               <div style="display: flex; align-items: center; gap: 10px">
                 <dc-import name="Avatar" seed="{{mb.seed}}" mood="{{mb.mood}}" size="34" hint-size="34px,34px"></dc-import>
@@ -260,13 +323,18 @@ body{margin:0}
                 </div>
               </div>
             </sc-for>
-            <div style="display: flex; align-items: center; gap: 10px">
-              <span style="width: 34px; height: 34px; border-radius: 9px; background: #2a3c2a; color: #d6fcd0; display: grid; place-items: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg></span>
-              <div style="line-height: 1.3"><p style="margin: 0; font-weight: 900">You</p><p style="margin: 0; font-size: 13px; color: #5d6b60">Human · approves merges</p></div>
-            </div>
+            <sc-for list="{{detailsHumans}}" as="dh" hint-placeholder-count="2">
+              <div style="display: flex; align-items: center; gap: 10px">
+                <span style="width: 34px; height: 34px; border-radius: 9px; background: {{dh.tileBg}}; color: #ffffff; font-size: 12px; font-weight: 900; display: grid; place-items: center">{{dh.initials}}</span>
+                <div style="min-width: 0; flex: 1; line-height: 1.3">
+                  <p style="margin: 0; font-weight: 900">{{dh.name}} <span style="margin-left: 4px; font-size: 11px; font-weight: 700; padding: 1px 5px; border-radius: 5px; background: #edf0f6; color: #4a5e92">HUMAN</span></p>
+                  <p style="margin: 0; font-size: 13px; color: #5d6b60">{{dh.sub}}</p>
+                </div>
+              </div>
+            </sc-for>
             <button type="button" style="align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 12px; border: 1.5px solid #e3ebe2; border-radius: 9px; background: #ffffff; color: #347a3b; font: inherit; font-weight: 700; font-size: 14px; cursor: pointer">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
-              Add bot
+              Add member
             </button>
           </section>
 
@@ -366,12 +434,12 @@ body{margin:0}
           </div>
           <div style="display: flex; flex-direction: column; gap: 6px">
             <label for="ng-goal" style="font-weight: 700; font-size: 14px">Goal</label>
-            <textarea id="ng-goal" rows="2" placeholder="What should they get done together?" value="{{nGoal}}" onChange="{{onNGoal}}" style="padding: 9px 12px; border: 1.5px solid #c9d8c9; border-radius: 9px; font: inherit; font-size: 14px; line-height: 1.45; color: #182019; resize: vertical; box-sizing: border-box"></textarea>
+            <textarea id="ng-goal" rows="3" placeholder="What should they get done together?" value="{{nGoal}}" onChange="{{onNGoal}}" style="padding: 9px 12px; border: 1.5px solid #c9d8c9; border-radius: 9px; font: inherit; font-size: 14px; line-height: 1.45; color: #182019; resize: vertical; box-sizing: border-box"></textarea>
           </div>
         </div>
 
-        <fieldset style="border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px">
-          <legend style="padding: 0; margin-bottom: 8px; font-weight: 700; font-size: 14px">Members <span style="font-weight: 400; color: #5d6b60">· {{nCount}} selected</span></legend>
+        <fieldset style="border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px">
+          <legend style="padding: 0; margin-bottom: 6px; font-weight: 700; font-size: 14px">Members <span style="font-weight: 400; color: #5d6b60">· {{nCount}} bots · {{nhCount}} humans selected</span></legend>
           <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px">
             <sc-for list="{{pickBots}}" as="pb" hint-placeholder-count="6">
               <button type="button" aria-pressed="{{pb.pressed}}" onClick="{{pb.toggle}}" style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; font: inherit; text-align: left; cursor: pointer; color: #182019; border: 1.5px solid {{pb.line}}; background: {{pb.bg}}">
@@ -382,6 +450,20 @@ body{margin:0}
                 </span>
                 <span style="flex: 0 0 22px; height: 22px; box-sizing: border-box; border-radius: 6px; display: grid; place-items: center; border: 2px solid {{pb.boxLine}}; background: {{pb.boxBg}}">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="{{pb.check}}" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"></path></svg>
+                </span>
+              </button>
+            </sc-for>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px">
+            <sc-for list="{{pickHumans}}" as="ph" hint-placeholder-count="3">
+              <button type="button" aria-pressed="{{ph.pressed}}" onClick="{{ph.toggle}}" style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; font: inherit; text-align: left; cursor: pointer; color: #182019; border: 1.5px solid {{ph.line}}; background: {{ph.bg}}">
+                <span style="flex: 0 0 34px; height: 34px; border-radius: 8px; background: {{ph.tileBg}}; color: #ffffff; font-size: 12px; font-weight: 900; display: grid; place-items: center">{{ph.initials}}</span>
+                <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.3">
+                  <span style="font-weight: 900">{{ph.name}} <span style="font-size: 10px; padding: 1px 5px; border-radius: 4px; background: #edf0f6; color: #4a5e92">HUMAN</span></span>
+                  <span style="font-size: 12px; color: #5d6b60">{{ph.role}}</span>
+                </span>
+                <span style="flex: 0 0 22px; height: 22px; box-sizing: border-box; border-radius: 6px; display: grid; place-items: center; border: 2px solid {{ph.boxLine}}; background: {{ph.boxBg}}">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="{{ph.check}}" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"></path></svg>
                 </span>
               </button>
             </sc-for>
@@ -420,7 +502,7 @@ body{margin:0}
   </sc-if>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"startChat":{"editor":"enum","options":["g:odoo","g:infra","g:radar","d:atlas","d:ferrit","d:kobold","d:nimbus","d:relais","d:zink"],"default":"g:odoo"},"startDialog":{"editor":"boolean","default":false},"$preview":{"width":1440,"height":960}}'>
+<script type="text/x-dc" data-dc-script data-props='{"startChat":{"editor":"enum","options":["g:odoo","g:infra","g:radar","d:atlas","d:ferrit","d:kobold","d:nimbus","d:relais","d:zink"],"default":"g:odoo"},"startDialog":{"editor":"boolean","default":false},"$preview":{"width":1440,"height":1290}}'>
 class Component extends DCLogic {
   renderVals() {
     var self = this;
@@ -437,6 +519,12 @@ class Component extends DCLogic {
       relais: { label: 'Relais', seed: 'relais-002c', mood: 'idle',     status: 'next run 07:00',           dot: '#a8bda8', chipDot: '#8ea68e', brain: 'agy · default model',             computer: 'k8s · bots-relais', desc: 'Triages new issues on the DPF-Monitor repository every morning.' },
       zink:   { label: 'Zink',   seed: 'zink-02a7',   mood: 'offline',  status: 'sandbox stopped',          dot: '#1f2d1f', chipDot: '#c9d8c9', brain: 'OpenAI API · gpt-5',                computer: 'k8s · bots-zink',   desc: 'Scratch computer for trying out new tools and images.' }
     };
+    var HUMANS = {
+      jan:  { name: 'Jan (You)', shortName: 'Jan',  initials: 'JR', role: 'Owner',    presence: 'online', dot: '#5eab60', tileBg: '#2a3c2a', sub: 'Human · Owner · approves merges' },
+      mara: { name: 'Mara',      shortName: 'Mara', initials: 'ML', role: 'Reviewer', presence: 'online', dot: '#5eab60', tileBg: '#3f5f9c', sub: 'Human · Reviewer · Python & migrations' },
+      sam:  { name: 'Sam',       shortName: 'Sam',  initials: 'SK', role: 'Viewer',   presence: 'away',   dot: '#f0b46a', tileBg: '#5d6b60', sub: 'Human · Viewer · read-only access' }
+    };
+    var HUMAN_ORDER = ['jan', 'mara', 'sam'];
     var ORDER = ['atlas', 'ferrit', 'kobold', 'nimbus', 'relais', 'zink'];
     var DM_UNREAD = { ferrit: 1 };
     var ROLES = {
@@ -445,9 +533,9 @@ class Component extends DCLogic {
       radar: { ferrit: 'Lead · reads release notes', nimbus: 'Checks impact on our code', relais: 'Files follow-up issues' }
     };
     var GROUPS = [
-      { id: 'odoo',  name: 'odoo-maintenance', members: ['atlas', 'nimbus'], lead: 'atlas', goal: 'Ship the IMAP retry fix and its migration.', unread: 0, turns: '20' },
-      { id: 'infra', name: 'infra-nightshift', members: ['relais', 'kobold'], lead: 'relais', goal: 'Keep the Pterodactyl panel healthy overnight.', unread: 3, turns: '50' },
-      { id: 'radar', name: 'release-radar', members: ['ferrit', 'nimbus', 'relais'], lead: 'ferrit', goal: 'Watch upstream releases and flag what affects our modules.', unread: 0, turns: '20' }
+      { id: 'odoo',  name: 'odoo-maintenance', members: ['atlas', 'nimbus'], humans: ['jan', 'mara'], lead: 'atlas', goal: 'Ship the IMAP retry fix and its migration.', unread: 0, turns: '20' },
+      { id: 'infra', name: 'infra-nightshift', members: ['relais', 'kobold'], humans: ['jan'], lead: 'relais', goal: 'Keep the Pterodactyl panel healthy overnight.', unread: 3, turns: '50' },
+      { id: 'radar', name: 'release-radar', members: ['ferrit', 'nimbus', 'relais'], humans: ['jan', 'mara'], lead: 'ferrit', goal: 'Watch upstream releases and flag what affects our modules.', unread: 0, turns: '20' }
     ];
     var extra = st.extra || [];
     var groups = GROUPS.concat(extra);
@@ -478,14 +566,13 @@ class Component extends DCLogic {
     var CONV = {
       'g:odoo': [
         { day: 'Today' },
-        { sys: 'Atlas and Nimbus can @mention each other here. They check in with you after 20 turns, and always before pushing to main.' },
+        { sys: 'Atlas, Nimbus, Mara and Jan are in #odoo-maintenance. Bots check in after 20 turns, and always before risky egress or pushing to main.' },
         M('you', '14:40', '@Atlas the retry fix looks good. @Nimbus can you check whether it needs a migration, then hand back to Atlas?'),
         M('atlas', '14:41', 'On it. Context for @Nimbus: new field retry_count on fetchmail.server, default 0, branch fix/imap-retry.'),
         M('nimbus', '14:43', 'It needs one. Adding migration 17.0.1.3 that backfills retry_count = 0.', { tool: 'git push origin fix/imap-retry', toolNote: 'Token added by the egress proxy' }),
-        M('nimbus', '14:44', 'Pushed. @Atlas over to you: please rebase and update the merge request.'),
         M('atlas', '14:46', 'Rebased, 25 tests green. Merge request updated.', { card: { title: '!41 Retry IMAP fetch with backoff', meta: 'fix/imap-retry → main · 4 files · +96 −12', status: 'Pipeline passed', href: '#mr-41' } }),
-        { sys: 'Turn 6 of 20 · paused, waiting for you' },
-        M('atlas', '14:46', 'Ready for your review. I won’t merge to main without your OK.')
+        M('mara', '14:47', '@Atlas reviewed 17.0.1.3 — backfill query and retry backoff look solid.', { human: 'mara' }),
+        M('atlas', '14:48', 'Thanks @Mara! Next I need to upload anonymised IMAP crash logs to our diagnostic host.', { approval: { kind: 'new_host', title: 'Approval required · New outbound host', host: 'paste.example.net · port 443 · requested by Atlas', detail: 'Proxy blocked POST /api/paste (403). Approve to allow paste.example.net for #odoo-maintenance.' } })
       ],
       'g:infra': [
         { day: 'Last night' },
@@ -556,12 +643,16 @@ class Component extends DCLogic {
       if (m.day) return { isDay: true, isSys: false, isMsg: false, day: m.day };
       if (m.sys) return { isDay: false, isSys: true, isMsg: false, sys: m.sys };
       var you = m.from === 'you';
-      var b = BOT[m.from];
+      var hum = m.human ? HUMANS[m.human] : null;
+      var b = !you && !hum ? BOT[m.from] : null;
       return {
-        isDay: false, isSys: false, isMsg: true, isYou: you, isBot: !you,
-        name: you ? 'You' : b.label, seed: b ? b.seed : 'atlas-005a', time: m.time, parts: parts(m.text),
+        isDay: false, isSys: false, isMsg: true, isYou: you, isHuman: !!hum, isBot: !you && !hum,
+        initials: hum ? hum.initials : '',
+        name: you ? 'Jan (You)' : (hum ? hum.name : b.label),
+        seed: b ? b.seed : 'atlas-005a', time: m.time, parts: parts(m.text),
         hasTool: !!m.tool, tool: m.tool || '', toolNote: m.toolNote || '',
         hasCard: !!m.card, cardTitle: m.card ? m.card.title : '', cardMeta: m.card ? m.card.meta : '', cardStatus: m.card ? m.card.status : '', cardHref: m.card ? m.card.href : '#',
+        hasApproval: !!m.approval, appTitle: m.approval ? m.approval.title : '', appKind: m.approval ? m.approval.kind : '', appHost: m.approval ? m.approval.host : '', appDetail: m.approval ? m.approval.detail : '',
         hasCta: !!m.cta, ctaLabel: m.cta ? m.cta.label : '', ctaHref: m.cta ? m.cta.href : '#'
       };
     });
@@ -592,6 +683,9 @@ class Component extends DCLogic {
         hasUnread: unread > 0, unread: unread, pick: open(key, 'd' + id)
       };
     });
+    var humanItems = HUMAN_ORDER.map(function (id) {
+      return HUMANS[id];
+    });
 
     var gTalk = group ? talkOn(group) : false;
     var members = group ? group.members.map(function (m) {
@@ -599,12 +693,14 @@ class Component extends DCLogic {
       var role = (ROLES[group.id] && ROLES[group.id][m]) || (m === group.lead ? 'Lead' : 'Member');
       return { label: b.label, seed: b.seed, mood: b.mood, role: role, dot: b.chipDot, computer: b.computer };
     }) : [];
+    var detailsHumans = group ? (group.humans || ['jan']).map(function (hid) { return HUMANS[hid]; }) : [];
     var stack = group ? group.members.map(function (m, i) { return { seed: BOT[m].seed, mood: BOT[m].mood, ml: i ? '-8px' : '0' }; }) : [];
 
     var dmGroups = dmBot ? groups.filter(function (g) { return g.members.indexOf(cid) >= 0; }).map(function (g) { return { name: g.name, pick: open('g:' + g.id, g.id) }; }) : [];
 
     var showNew = st.showNew == null ? startDialog : st.showNew;
     var nSel = st.nSel == null ? (startDialog ? ['atlas', 'kobold'] : []) : st.nSel;
+    var nhSel = st.nhSel == null ? (startDialog ? ['jan', 'mara'] : ['jan']) : st.nhSel;
     var nName = st.nName == null ? (startDialog ? 'docs-sprint' : '') : st.nName;
     var nGoal = st.nGoal == null ? (startDialog ? 'Write install and backup docs for the Pterodactyl panel, with every command tested.' : '') : st.nGoal;
     var nLead = st.nLead && nSel.indexOf(st.nLead) >= 0 ? st.nLead : (nSel[0] || null);
@@ -623,6 +719,19 @@ class Component extends DCLogic {
         }
       };
     });
+    var pickHumans = HUMAN_ORDER.map(function (id) {
+      var h = HUMANS[id], on = nhSel.indexOf(id) >= 0;
+      return {
+        name: h.shortName, initials: h.initials, tileBg: h.tileBg, role: h.role,
+        pressed: on ? 'true' : 'false', line: on ? '#4a5e92' : '#e3ebe2', bg: on ? '#edf0f6' : '#ffffff',
+        boxLine: on ? '#4a5e92' : '#a8bda8', boxBg: on ? '#4a5e92' : '#ffffff', check: on ? '#ffffff' : 'transparent',
+        toggle: function () {
+          var cur = nhSel.slice(), i = cur.indexOf(id);
+          if (i >= 0) cur.splice(i, 1); else cur.push(id);
+          self.setState({ nhSel: cur });
+        }
+      };
+    });
     var leadChips = nSel.map(function (id) {
       var on = id === nLead;
       return { label: BOT[id].label, pressed: on ? 'true' : 'false', line: on ? '#2a3c2a' : '#e3ebe2', bg: on ? '#2a3c2a' : '#ffffff', fg: on ? '#ffffff' : '#3a4a3c', pick: function () { self.setState({ nLead: id }); } };
@@ -632,13 +741,36 @@ class Component extends DCLogic {
       var name = String(nName).trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'new-group';
       var ex = extra.slice();
       var gid = 'n' + (ex.length + 1);
-      ex.push({ id: gid, name: name, members: nSel.slice(), lead: nLead || nSel[0], goal: String(nGoal).trim() || 'Not set yet', unread: 0, talk: nTalk, turns: nTurns });
+      ex.push({ id: gid, name: name, members: nSel.slice(), humans: nhSel.slice(), lead: nLead || nSel[0], goal: String(nGoal).trim() || 'Not set yet', unread: 0, talk: nTalk, turns: nTurns });
       self.setState({ extra: ex, active: 'g:' + gid, showNew: false, nSel: [], nName: '', nGoal: '', nLead: null, draft: '' });
     };
 
+    var draft = st.draft != null ? st.draft : (!showNew && active === 'g:odoo' && startChat === 'g:odoo' ? 'Thanks @ma' : '');
+    var atMatch = /(^|\s)@([A-Za-z]*)$/.exec(draft);
+    var showMention = isGroup && !showNew && !!atMatch;
+    var query = atMatch ? atMatch[2].toLowerCase() : '';
+    var ALL_MENTIONS = [
+      { name: 'Mara', kind: 'HUMAN', sub: 'Reviewer · online', tag: 'ML', avatarBg: '#3f5f9c', avatarFg: '#ffffff', badgeBg: '#edf0f6', badgeFg: '#4a5e92' },
+      { name: 'Atlas', kind: 'BOT', sub: 'Lead · running pytest', tag: 'AT', avatarBg: '#2a3c2a', avatarFg: '#d6fcd0', badgeBg: '#eef8ec', badgeFg: '#347a3b' },
+      { name: 'Nimbus', kind: 'BOT', sub: 'Migrations · idle', tag: 'NB', avatarBg: '#2a3c2a', avatarFg: '#d6fcd0', badgeBg: '#eef8ec', badgeFg: '#347a3b' }
+    ];
+    var mentions = ALL_MENTIONS.filter(function (mt) {
+      return !query || mt.name.toLowerCase().indexOf(query) === 0 || ALL_MENTIONS.length <= 3;
+    }).map(function (mt, idx) {
+      var sel = idx === 0;
+      return Object.assign({}, mt, {
+        selected: sel ? 'true' : 'false',
+        bg: sel ? '#eef8ec' : '#ffffff',
+        pick: function () {
+          var next = draft.replace(/@([A-Za-z]*)$/, '@' + mt.name + ' ');
+          self.setState({ draft: next });
+        }
+      });
+    });
+
     var send = function () {
       var s = self.state || {};
-      var t = String(s.draft || '').trim();
+      var t = String(s.draft != null ? s.draft : draft).trim();
       if (!t) return;
       var all = Object.assign({}, s.sent || {});
       all[active] = (all[active] || []).concat([t]);
@@ -646,11 +778,11 @@ class Component extends DCLogic {
     };
 
     return {
-      groupItems: groupItems, botItems: botItems,
+      groupItems: groupItems, botItems: botItems, humanItems: humanItems,
       isGroup: isGroup, isDm: !isGroup,
       title: group ? group.name : '', topic: group ? group.goal : '',
-      memberSummary: group ? group.members.length + ' bots and you' : '',
-      stack: stack, members: members,
+      memberSummary: group ? group.members.length + ' bots, ' + (group.humans ? group.humans.length : 1) + ' humans' : '',
+      stack: stack, members: members, detailsHumans: detailsHumans,
       talkLabel: gTalk ? 'Bot-to-bot on' : 'Bots answer only you',
       talkBg: gTalk ? '#eef8ec' : '#f5f8f4', talkFg: gTalk ? '#347a3b' : '#5d6b60', talkLine: gTalk ? '#cfe0cf' : '#e3ebe2',
       talkChecked: gTalk ? 'true' : 'false', talkTrack: gTalk ? '#3f9147' : '#a8bda8', talkJustify: gTalk ? 'flex-end' : 'flex-start',
@@ -661,13 +793,14 @@ class Component extends DCLogic {
       showDetails: showDetails,
       detailsPressed: showDetails ? 'true' : 'false', detailsBg: showDetails ? '#2a3c2a' : '#ffffff', detailsFg: showDetails ? '#ffffff' : '#3a4a3c',
       toggleDetails: function () { self.setState({ showDetails: !showDetails }); },
+      showMention: showMention, mentions: mentions,
       placeholder: isGroup ? 'Message #' + group.name : 'Message ' + dmBot.label,
-      hint: isGroup ? 'Everyone here sees this. @mention a bot to hand it the task.' : 'Only ' + dmBot.label + ' sees this.',
-      draft: (st.draft || ''),
+      hint: isGroup ? 'Everyone here sees this. @mention a bot or human teammate.' : 'Only ' + dmBot.label + ' sees this.',
+      draft: draft,
       onDraft: function (e) { self.setState({ draft: e.target.value }); },
       onKey: function (e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } },
       onSend: function (e) { if (e && e.preventDefault) e.preventDefault(); send(); },
-      insertAt: function () { self.setState({ draft: String((self.state && self.state.draft) || '') + '@' }); },
+      insertAt: function () { self.setState({ draft: String(draft) + '@' }); },
       showNew: showNew,
       openNew: function () { self.setState({ showNew: true }); },
       openNewWithDm: function () { self.setState({ showNew: true, nSel: dmBot ? [cid] : [] }); },
@@ -676,8 +809,8 @@ class Component extends DCLogic {
       onNName: function (e) { self.setState({ nName: e.target.value }); },
       onNGoal: function (e) { self.setState({ nGoal: e.target.value }); },
       onNTurns: function (e) { self.setState({ nTurns: e.target.value }); },
-      nCount: nSel.length, hasSel: nSel.length > 0,
-      pickBots: pickBots, leadChips: leadChips,
+      nCount: nSel.length, nhCount: nhSel.length, hasSel: nSel.length > 0,
+      pickBots: pickBots, pickHumans: pickHumans, leadChips: leadChips,
       nTalkChecked: nTalk ? 'true' : 'false', nTalkTrack: nTalk ? '#3f9147' : '#a8bda8', nTalkJustify: nTalk ? 'flex-end' : 'flex-start',
       toggleNTalk: function () { self.setState({ nTalk: !nTalk }); },
       createDisabled: nSel.length === 0, createBg: nSel.length ? '#347a3b' : '#a8bda8',

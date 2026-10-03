@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>bot.Box · Approvals inbox</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,400;0,700;0,900;1,400&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="position: relative; height: 100vh; min-height: 760px; display: flex; flex-direction: column; overflow: hidden; background: #ffffff; font-family: Lato, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #182019; font-size: 15px; line-height: 1.5">
+
+  <header style="flex: 0 0 auto; background: #14201a; color: #c9d8c9; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 20px; padding: 6px 16px">
+    <a href="Main.dc.html" aria-label="bot.Box home" style="display: flex; align-items: center; gap: 8px; min-height: 44px; font-weight: 900; font-size: 18px; color: #ffffff; text-decoration: none">
+      <svg width="30" height="30" viewBox="0 0 160 160" aria-hidden="true">
+        <line x1="80" y1="20" x2="80" y2="10" stroke="#c9d8c9" stroke-width="7" stroke-linecap="round"></line>
+        <circle cx="80" cy="8" r="7" fill="#5eab60"></circle>
+        <path d="M49 20.3 111 20.3 142 74 111 127.7 49 127.7 18 74Z" fill="none" stroke="#c9d8c9" stroke-width="7" stroke-linejoin="round"></path>
+        <circle cx="60" cy="64" r="12" fill="#5eab60"></circle>
+        <circle cx="100" cy="64" r="12" fill="#5eab60"></circle>
+        <polygon points="62,91 68.1,94.5 68.1,101.5 62,105 55.9,101.5 55.9,94.5" fill="#8aa8db"></polygon>
+        <polygon points="80,91 86.1,94.5 86.1,101.5 80,105 73.9,101.5 73.9,94.5" fill="#6d8fce"></polygon>
+        <polygon points="98,91 104.1,94.5 104.1,101.5 98,105 91.9,101.5 91.9,94.5" fill="#3f5f9c"></polygon>
+      </svg>
+      <span>bot<span style="color: #5eab60">.</span>Box</span>
+    </a>
+    <nav aria-label="Main" style="display: flex; flex-wrap: wrap; gap: 2px">
+      <a href="Main.dc.html" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 12px; font-weight: 700; color: #c9d8c9; text-decoration: none">Bots</a>
+      <a href="Team.dc.html" aria-current="page" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 12px; font-weight: 700; color: #ffffff; text-decoration: none; box-shadow: inset 0 -2px 0 #5eab60">Team</a>
+      <a href="Secrets.dc.html" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 12px; font-weight: 700; color: #c9d8c9; text-decoration: none">Secrets</a>
+      <a href="Settings.dc.html" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 12px; font-weight: 700; color: #c9d8c9; text-decoration: none">Settings</a>
+    </nav>
+    <label style="flex: 1 1 220px; max-width: 520px; margin: 0 auto; display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border-radius: 9px; background: #2a3c2a; color: #a8bda8">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+      <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap">Search</span>
+      <input type="search" placeholder="Search approvals, bots and hosts" style="flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: #ffffff; font: inherit; font-size: 14px">
+    </label>
+    <a href="Auth.dc.html" aria-label="Switch workspace: dunkel.Tech" style="display: inline-flex; align-items: center; gap: 7px; min-height: 36px; padding: 0 10px; border-radius: 9px; background: #2a3c2a; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: 700; white-space: nowrap">
+      <span style="width: 7px; height: 7px; border-radius: 50%; background: #5eab60"></span>
+      <span>dunkel.Tech</span>
+      <span style="padding: 1px 6px; border-radius: 99px; background: #1f2d1f; color: #d6fcd0; font-size: 11px">Owner</span>
+    </a>
+    <a href="Auth.dc.html" aria-label="Account" style="width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 9px; background: #2a3c2a; color: #d6fcd0; text-decoration: none">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg>
+    </a>
+  </header>
+
+  <div style="flex: 1 1 auto; min-height: 0; display: flex; flex-wrap: wrap; overflow-y: auto">
+
+    <nav aria-label="Conversations" style="flex: 0 0 264px; height: 100%; overflow-y: auto; box-sizing: border-box; background: #1f2d1f; color: #c9d8c9; padding: 12px 10px 20px; display: flex; flex-direction: column; gap: 14px">
+      <div style="display: flex; align-items: center; gap: 8px; padding: 0 6px">
+        <div style="min-width: 0; flex: 1">
+          <p style="margin: 0; font-weight: 900; font-size: 17px; color: #ffffff">dunkel<span style="color: #5eab60">.</span>Tech</p>
+          <p style="margin: 0; font-size: 13px; color: #a8bda8">6 bots · 3 humans</p>
+        </div>
+        <a href="TeamNewGroup.dc.html" aria-label="New group chat" style="width: 40px; height: 40px; display: grid; place-items: center; border-radius: 9px; background: #ffffff; color: #1f2d1f; text-decoration: none">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>
+        </a>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 2px">
+        <a href="Approvals.dc.html" aria-current="page" style="display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 10px; border-radius: 8px; background: #347a3b; color: #ffffff; font-weight: 900; text-decoration: none">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d6fcd0" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"></path><path d="M9 12l2 2 4-4"></path></svg>
+          <span style="flex: 1">Approvals</span>
+          <span style="min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box; border-radius: 99px; background: #f0b46a; color: #14201a; font-size: 12px; font-weight: 900; display: grid; place-items: center">{{pendingCount}}</span>
+        </a>
+        <a href="Team.dc.html" style="display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 10px; border-radius: 8px; color: #c9d8c9; font-weight: 700; text-decoration: none">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.7 21a2 2 0 0 1-3.4 0"></path></svg>
+          <span>Activity</span>
+        </a>
+      </div>
+
+      <section aria-labelledby="grp-h" style="display: flex; flex-direction: column; gap: 2px">
+        <h2 id="grp-h" style="margin: 0; padding: 0 10px 4px; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #a8bda8">Group chats</h2>
+        <a href="Team.dc.html" style="display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 10px; border-radius: 8px; color: #c9d8c9; font-weight: 700; text-decoration: none"><span style="width: 18px; text-align: center; font-weight: 900">#</span><span>odoo-maintenance</span></a>
+        <a href="Team.dc.html" style="display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 10px; border-radius: 8px; color: #ffffff; font-weight: 900; text-decoration: none"><span style="width: 18px; text-align: center; font-weight: 900">#</span><span style="flex: 1">infra-nightshift</span><span style="min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box; border-radius: 99px; background: #5eab60; color: #14201a; font-size: 12px; font-weight: 900; display: grid; place-items: center">3</span></a>
+        <a href="Team.dc.html" style="display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 10px; border-radius: 8px; color: #c9d8c9; font-weight: 700; text-decoration: none"><span style="width: 18px; text-align: center; font-weight: 900">#</span><span>release-radar</span></a>
+      </section>
+
+      <section aria-labelledby="col-h" style="display: flex; flex-direction: column; gap: 2px">
+        <h2 id="col-h" style="margin: 0; padding: 0 10px 4px; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #a8bda8">Colleagues</h2>
+        <sc-for list="{{bots}}" as="b" hint-placeholder-count="4">
+          <a href="TeamDirect.dc.html" style="display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 4px 10px; border-radius: 8px; color: #c9d8c9; text-decoration: none">
+            <span style="position: relative; flex: 0 0 28px; height: 28px">
+              <dc-import name="Avatar" seed="{{b.seed}}" mood="{{b.mood}}" size="28" hint-size="28px,28px"></dc-import>
+              <span style="position: absolute; right: -2px; bottom: -2px; width: 9px; height: 9px; border-radius: 50%; border: 2px solid #1f2d1f; background: {{b.dot}}"></span>
+            </span>
+            <span style="flex: 1; min-width: 0; line-height: 1.2">
+              <span style="display: block; font-size: 14px; font-weight: 700; color: #ffffff">{{b.label}}</span>
+              <span style="display: block; font-size: 12px; color: #a8bda8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{b.status}}</span>
+            </span>
+          </a>
+        </sc-for>
+      </section>
+
+      <section aria-labelledby="hum-h" style="display: flex; flex-direction: column; gap: 2px">
+        <h2 id="hum-h" style="margin: 0; padding: 0 10px 4px; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #a8bda8">Humans</h2>
+        <sc-for list="{{humans}}" as="h" hint-placeholder-count="3">
+          <div style="display: flex; align-items: center; gap: 10px; min-height: 42px; padding: 3px 10px">
+            <span style="position: relative; flex: 0 0 28px; height: 28px">
+              <span style="width: 28px; height: 28px; border-radius: 8px; background: {{h.tileBg}}; color: #d6fcd0; font-size: 11px; font-weight: 900; display: grid; place-items: center">{{h.initials}}</span>
+              <span style="position: absolute; right: -2px; bottom: -2px; width: 9px; height: 9px; border-radius: 50%; border: 2px solid #1f2d1f; background: {{h.dot}}"></span>
+            </span>
+            <span style="flex: 1; min-width: 0; line-height: 1.2">
+              <span style="display: block; font-size: 14px; font-weight: 700; color: #ffffff">{{h.name}}</span>
+              <span style="display: block; font-size: 12px; color: #a8bda8">{{h.role}} · {{h.presence}}</span>
+            </span>
+          </div>
+        </sc-for>
+      </section>
+    </nav>
+
+    <main style="flex: 1 1 560px; min-width: 0; height: 100%; overflow-y: auto; padding: 24px 28px 40px; box-sizing: border-box; display: flex; flex-direction: column; gap: 18px; background: #ffffff">
+
+      <div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid #e3ebe2">
+        <div>
+          <p style="margin: 0 0 2px; font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #347a3b">// Governance · §4.8 Approvals</p>
+          <h1 style="margin: 0; font-size: 28px; line-height: 1.15; font-weight: 900">Approvals inbox</h1>
+          <p style="margin: 4px 0 0; font-size: 14px; color: #5d6b60">Blocked actions pause the requesting bot until a human approves or denies.</p>
+        </div>
+
+        <div role="group" aria-label="Approval status filter" style="display: inline-flex; padding: 3px; border-radius: 10px; background: #f5f8f4; border: 1px solid #e3ebe2; gap: 2px">
+          <sc-for list="{{tabs}}" as="t" hint-placeholder-count="3">
+            <button type="button" aria-pressed="{{t.pressed}}" onClick="{{t.pick}}" style="min-height: 40px; padding: 0 14px; border: 0; border-radius: 8px; font: inherit; font-weight: 700; font-size: 14px; cursor: pointer; background: {{t.bg}}; color: {{t.fg}}">{{t.label}}</button>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 14px">
+        <sc-for list="{{items}}" as="ap" hint-placeholder-count="4">
+          <article style="border-radius: 14px; border: 1.5px solid {{ap.border}}; background: {{ap.cardBg}}; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 1px 2px rgba(26,44,26,.05)">
+            <div style="display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px">
+              <div style="display: flex; align-items: center; gap: 12px">
+                <dc-import name="Avatar" seed="{{ap.seed}}" mood="{{ap.mood}}" size="40" hint-size="40px,40px"></dc-import>
+                <div>
+                  <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px">
+                    <span style="padding: 2px 8px; border-radius: 6px; background: #ffffff; border: 1px solid {{ap.kindBorder}}; color: {{ap.kindFg}}; font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 12px; font-weight: 700">{{ap.kind}}</span>
+                    <span style="font-size: 13px; color: #5d6b60">Requested by <b style="color: #182019">{{ap.bot}}</b> in <b style="color: #182019">{{ap.where}}</b> · {{ap.when}}</span>
+                  </div>
+                  <h2 style="margin: 4px 0 0; font-size: 18px; font-weight: 900; color: #182019">{{ap.title}}</h2>
+                </div>
+              </div>
+              <span style="display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 99px; background: {{ap.statBg}}; border: 1px solid {{ap.statBorder}}; color: {{ap.statFg}}; font-size: 12px; font-weight: 700; white-space: nowrap">
+                <span style="width: 7px; height: 7px; border-radius: 50%; background: {{ap.statDot}}"></span>
+                {{ap.statusLabel}}
+              </span>
+            </div>
+
+            <div style="padding: 10px 12px; border-radius: 9px; background: #ffffff; border: 1px solid #e3ebe2; display: flex; flex-direction: column; gap: 4px">
+              <p style="margin: 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 13px; font-weight: 700; color: #182019">{{ap.payload}}</p>
+              <p style="margin: 0; font-size: 14px; color: #3a4a3c">{{ap.detail}}</p>
+            </div>
+
+            <sc-if value="{{ap.isPending}}" hint-placeholder-val="{{true}}">
+              <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px">
+                <span style="font-size: 13px; color: #5d6b60">{{ap.permHint}}</span>
+                <div style="display: flex; flex-wrap: wrap; gap: 8px">
+                  <button type="button" onClick="{{ap.deny}}" style="min-height: 44px; padding: 0 16px; border: 1.5px solid #e8b98a; border-radius: 9px; background: #ffffff; color: #b45309; font: inherit; font-weight: 700; font-size: 14px; cursor: pointer">Deny</button>
+                  <button type="button" onClick="{{ap.approve}}" style="min-height: 44px; padding: 0 18px; border: 0; border-radius: 9px; background: #347a3b; color: #ffffff; font: inherit; font-weight: 700; font-size: 14px; cursor: pointer">{{ap.approveLabel}}</button>
+                </div>
+              </div>
+            </sc-if>
+          </article>
+        </sc-for>
+      </div>
+    </main>
+
+    <aside aria-label="Approval rules and audit log" style="flex: 0 0 310px; height: 100%; overflow-y: auto; box-sizing: border-box; border-left: 1px solid #e3ebe2; background: #f5f8f4; padding: 20px 18px; display: flex; flex-direction: column; gap: 20px">
+      <section style="display: flex; flex-direction: column; gap: 8px">
+        <h2 style="margin: 0; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #5d6b60">Who can decide</h2>
+        <div style="background: #ffffff; border: 1px solid #e3ebe2; border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; font-size: 13px">
+          <div><b style="color: #182019">Owner · Admin</b><br><span style="color: #5d6b60">All approval types including <span style="font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace">raise_budget</span></span></div>
+          <div style="border-top: 1px solid #e3ebe2; padding-top: 8px"><b style="color: #182019">Member</b><br><span style="color: #5d6b60"><span style="font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace">new_host</span>, <span style="font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace">push_protected</span>, <span style="font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace">custom</span></span></div>
+          <div style="border-top: 1px solid #e3ebe2; padding-top: 8px"><b style="color: #182019">Viewer</b><br><span style="color: #5d6b60">Read-only (POST returns 403 Forbidden)</span></div>
+        </div>
+      </section>
+
+      <section style="display: flex; flex-direction: column; gap: 10px">
+        <h2 style="margin: 0; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #5d6b60">Recent decisions</h2>
+        <sc-for list="{{recent}}" as="r" hint-placeholder-count="3">
+          <div style="background: #ffffff; border: 1px solid #e3ebe2; border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px">
+              <span style="font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 5px; background: #f5f8f4; border: 1px solid #e3ebe2; color: #3a4a3c">{{r.kind}}</span>
+              <span style="font-size: 11px; font-weight: 700; color: {{r.verdictFg}}">{{r.verdict}}</span>
+            </div>
+            <p style="margin: 0; font-size: 13px; font-weight: 700; color: #182019">{{r.summary}}</p>
+            <p style="margin: 0; font-size: 12px; color: #5d6b60">{{r.by}} · {{r.when}}</p>
+          </div>
+        </sc-for>
+      </section>
+    </aside>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":980}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var self = this;
+    var st = this.state || {};
+    var filter = st.filter || 'pending';
+    var decisions = st.decisions || {};
+
+    var RAW = [
+      {
+        id: 'a1', kind: 'new_host', bot: 'Atlas', seed: 'atlas-005a', mood: 'action',
+        where: '#odoo-maintenance', when: '2 min ago', status: 'pending',
+        title: 'Allow outbound HTTPS to paste.example.net',
+        payload: 'POST https://paste.example.net/api/paste · port 443 · blocked 403',
+        detail: 'Atlas paused while uploading anonymised IMAP crash logs for issue #58 verification.',
+        permHint: 'Eligible: Owner, Admin or Member (workspace egress allowlist)',
+        approveLabel: 'Approve host →'
+      },
+      {
+        id: 'a2', kind: 'raise_budget', bot: 'Atlas', seed: 'atlas-005a', mood: 'action',
+        where: 'Bot settings · Atlas', when: '14 min ago', status: 'pending',
+        title: 'Raise daily spending cap (€ 10.00 → € 20.00 / day)',
+        payload: 'daily_spend: € 8.40 / € 10.00 (84 %) · requested new_daily_eur: € 20.00',
+        detail: 'Heavy multi-file migration run triggered 80 % threshold warning in team chat.',
+        permHint: 'Requires Owner or Admin (Member clicks return 403)',
+        approveLabel: 'Approve budget raise →'
+      },
+      {
+        id: 'a3', kind: 'push_protected', bot: 'Nimbus', seed: 'nimbus-00c3', mood: 'idle',
+        where: '#odoo-maintenance', when: '28 min ago', status: 'pending',
+        title: 'Merge branch fix/imap-retry into protected main',
+        payload: 'git push origin main · MR !41 · 4 files (+96 −12) · 25 pytest passed',
+        detail: 'Mara reviewed migration 17.0.1.3; branch pipeline is green on GitLab.',
+        permHint: 'Eligible: Owner, Admin or Member',
+        approveLabel: 'Approve push to main →'
+      },
+      {
+        id: 'a4', kind: 'custom', bot: 'Kobold', seed: 'kobold-0017', mood: 'idle',
+        where: '#infra-nightshift', when: '1 h ago', status: 'approved',
+        title: 'Restart systemd worker botbox-imap-sync on staging-eu',
+        payload: 'custom gate · service restart on panel-node-2 (maintenance window)',
+        detail: 'Decided by Jan Richter (Owner). Rollback checksum verified.',
+        permHint: '', approveLabel: 'Approve action →'
+      },
+      {
+        id: 'a5', kind: 'new_host', bot: 'Ferrit', seed: 'ferrit-00e5', mood: 'thinking',
+        where: '#release-radar', when: '3 h ago', status: 'approved',
+        title: 'Allow GET on files.pythonhosted.org for wheel verification',
+        payload: 'GET https://files.pythonhosted.org/packages/... · port 443',
+        detail: 'Decided by Mara Lindner (Member). Added to workspace allowlist.',
+        permHint: '', approveLabel: 'Approve host →'
+      },
+      {
+        id: 'a6', kind: 'new_host', bot: 'Atlas', seed: 'atlas-005a', mood: 'idle',
+        where: 'DM · Atlas', when: 'Yesterday', status: 'denied',
+        title: 'Allow outbound upload to transfer.example.org',
+        payload: 'PUT https://transfer.example.org/upload/notes.txt · blocked 403',
+        detail: 'Denied by Alex Becker (Admin). Unvetted third-party file host stays blocked.',
+        permHint: '', approveLabel: 'Approve host →'
+      }
+    ];
+
+    var withState = RAW.map(function (item) {
+      var stVal = decisions[item.id] || item.status;
+      var isP = stVal === 'pending';
+      var isA = stVal === 'approved';
+      return Object.assign({}, item, {
+        effectiveStatus: stVal,
+        isPending: isP,
+        border: isP ? '#f0b46a' : (isA ? '#cfe0cf' : '#e8b98a'),
+        cardBg: isP ? '#fdf3e7' : '#ffffff',
+        kindBorder: isP ? '#e8b98a' : '#e3ebe2',
+        kindFg: isP ? '#b45309' : '#3a4a3c',
+        statBg: isP ? '#ffffff' : (isA ? '#eef8ec' : '#fdf3e7'),
+        statBorder: isP ? '#e8b98a' : (isA ? '#cfe0cf' : '#f0b46a'),
+        statFg: isP ? '#b45309' : (isA ? '#347a3b' : '#b45309'),
+        statDot: isP ? '#b45309' : (isA ? '#3f9147' : '#b45309'),
+        statusLabel: isP ? 'Pending decision' : (isA ? 'Approved' : 'Denied'),
+        approve: function () { var d = Object.assign({}, decisions); d[item.id] = 'approved'; self.setState({ decisions: d }); },
+        deny: function () { var d = Object.assign({}, decisions); d[item.id] = 'denied'; self.setState({ decisions: d }); }
+      });
+    });
+
+    var counts = { pending: 0, approved: 0, denied: 0 };
+    withState.forEach(function (x) { counts[x.effectiveStatus]++; });
+
+    var items = withState.filter(function (x) {
+      return x.effectiveStatus === filter;
+    });
+
+    var tabs = [
+      ['pending', 'Pending (' + counts.pending + ')'],
+      ['approved', 'Approved (' + counts.approved + ')'],
+      ['denied', 'Denied (' + counts.denied + ')']
+    ].map(function (t) {
+      var on = filter === t[0];
+      return { label: t[1], pressed: on ? 'true' : 'false', bg: on ? '#2a3c2a' : 'transparent', fg: on ? '#ffffff' : '#3a4a3c', pick: function () { self.setState({ filter: t[0] }); } };
+    });
+
+    var bots = [
+      { label: 'Atlas', seed: 'atlas-005a', mood: 'action', status: 'waiting · new_host', dot: '#f0b46a' },
+      { label: 'Ferrit', seed: 'ferrit-00e5', mood: 'thinking', status: 'thinking…', dot: '#8aa8db' },
+      { label: 'Kobold', seed: 'kobold-0017', mood: 'action', status: 'apt-get install restic', dot: '#5eab60' },
+      { label: 'Nimbus', seed: 'nimbus-00c3', mood: 'idle', status: 'waiting · MR !41', dot: '#f0b46a' }
+    ];
+    var humans = [
+      { name: 'Jan (You)', role: 'Owner', presence: 'online', initials: 'JR', tileBg: '#2a3c2a', dot: '#5eab60' },
+      { name: 'Mara', role: 'Member', presence: 'online', initials: 'ML', tileBg: '#3f5f9c', dot: '#5eab60' },
+      { name: 'Sam', role: 'Viewer', presence: 'away', initials: 'SK', tileBg: '#5d6b60', dot: '#f0b46a' }
+    ];
+    var recent = [
+      { kind: 'custom', verdict: 'Approved', verdictFg: '#347a3b', summary: 'Restart IMAP worker on staging', by: 'Jan · Owner', when: '1 h ago' },
+      { kind: 'new_host', verdict: 'Approved', verdictFg: '#347a3b', summary: 'files.pythonhosted.org (443)', by: 'Mara · Member', when: '3 h ago' },
+      { kind: 'new_host', verdict: 'Denied', verdictFg: '#b45309', summary: 'transfer.example.org (upload)', by: 'Alex · Admin', when: 'Yesterday' }
+    ];
+
+    return {
+      pendingCount: counts.pending,
+      tabs: tabs,
+      items: items,
+      bots: bots,
+      humans: humans,
+      recent: recent
+    };
+  }
+}
+</script>
+</body>
+</html>

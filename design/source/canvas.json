@@ -2,6 +2,24 @@
   "v": 3,
   "attachments": {},
   "boards": {
+    "Approvals.dc.html": {
+      "expand": "fill",
+      "h": 980,
+      "is_interactive": true,
+      "title": "Team chat · approvals inbox",
+      "w": 1440,
+      "x": 4560,
+      "y": 6370
+    },
+    "Auth.dc.html": {
+      "expand": "fill",
+      "h": 980,
+      "is_interactive": true,
+      "title": "Sign in, invitation & workspace switcher",
+      "w": 1440,
+      "x": 3040,
+      "y": 0
+    },
     "Avatar.dc.html": {
       "h": 120,
       "title": "Avatar (component)",
@@ -27,25 +45,43 @@
     },
     "Main.dc.html": {
       "expand": "fill",
-      "h": 1740,
+      "h": 1761,
       "is_interactive": true,
       "title": "Fleet dashboard",
       "w": 1440,
       "x": 0,
       "y": 0
     },
+    "Mobile.dc.html": {
+      "expand": "fill",
+      "h": 1088,
+      "is_interactive": true,
+      "title": "Phone layouts (390 px)",
+      "w": 1440,
+      "x": 0,
+      "y": 8040
+    },
     "Secrets.dc.html": {
       "expand": "fill",
-      "h": 1630,
+      "h": 2420,
       "is_interactive": true,
       "title": "Secrets & egress proxy",
       "w": 1440,
       "x": 1520,
       "y": 1860
     },
+    "Settings.dc.html": {
+      "expand": "fill",
+      "h": 1288,
+      "is_interactive": true,
+      "title": "Workspace members, roles & budgets",
+      "w": 1440,
+      "x": 3040,
+      "y": 1120
+    },
     "Team.dc.html": {
       "expand": "fill",
-      "h": 960,
+      "h": 1290,
       "is_interactive": true,
       "title": "Team chat · group with bot-to-bot talk",
       "w": 1440,
@@ -63,7 +99,7 @@
     },
     "TeamNewGroup.dc.html": {
       "expand": "fill",
-      "h": 960,
+      "h": 1060,
       "is_interactive": true,
       "title": "Team chat · new group",
       "w": 1440,
@@ -72,7 +108,7 @@
     },
     "Workspace.dc.html": {
       "expand": "fill",
-      "h": 1090,
+      "h": 1582,
       "is_interactive": true,
       "title": "Bot workspace: chat + live computer",
       "w": 1440,
@@ -92,6 +128,7 @@
     "screens",
     "avatars",
     "team",
+    "mobile",
     "brand"
   ],
   "notes": {
@@ -111,9 +148,17 @@
       "x": 1720,
       "y": 4590
     },
+    "mobile": {
+      "kind": "title1",
+      "maxW": 1440,
+      "text": "Phone layouts · 390 px",
+      "w": 240,
+      "x": 0,
+      "y": 7780
+    },
     "screens": {
       "kind": "title1",
-      "maxW": 2960,
+      "maxW": 4480,
       "text": "bot.Box · product screens",
       "w": 240,
       "x": 0,
@@ -121,7 +166,7 @@
     },
     "team": {
       "kind": "title1",
-      "maxW": 4480,
+      "maxW": 6000,
       "text": "Team chat · bots as colleagues",
       "w": 240,
       "x": 0,
@@ -137,7 +182,11 @@
     "Secrets.dc.html",
     "Avatars.dc.html",
     "TeamDirect.dc.html",
-    "TeamNewGroup.dc.html"
+    "TeamNewGroup.dc.html",
+    "Auth.dc.html",
+    "Settings.dc.html",
+    "Approvals.dc.html",
+    "Mobile.dc.html"
   ],
   "pages": [],
   "title": "BotBox"
