@@ -19,7 +19,11 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AgentService_Ping_FullMethodName = "/agent.v1.AgentService/Ping"
+	AgentService_Ping_FullMethodName       = "/agent.v1.AgentService/Ping"
+	AgentService_Screenshot_FullMethodName = "/agent.v1.AgentService/Screenshot"
+	AgentService_Click_FullMethodName      = "/agent.v1.AgentService/Click"
+	AgentService_Type_FullMethodName       = "/agent.v1.AgentService/Type"
+	AgentService_Key_FullMethodName        = "/agent.v1.AgentService/Key"
 )
 
 // AgentServiceClient is the client API for AgentService service.
@@ -27,10 +31,18 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
 // AgentService runs inside each sandbox container to handle health checks
-// and host-driven computer-use actions added in later phases.
+// and host-driven computer-use actions.
 type AgentServiceClient interface {
 	// Ping verifies gRPC reachability and reports the sandbox hostname.
 	Ping(ctx context.Context, in *PingRequest, opts ...grpc.CallOption) (*PingResponse, error)
+	// Screenshot captures the current :0 X11 framebuffer as a PNG image.
+	Screenshot(ctx context.Context, in *ScreenshotRequest, opts ...grpc.CallOption) (*ScreenshotResponse, error)
+	// Click moves the cursor to (x, y) on the 1280x800 desktop and clicks button.
+	Click(ctx context.Context, in *ClickRequest, opts ...grpc.CallOption) (*ClickResponse, error)
+	// Type enters text on the active X11 window via xdotool.
+	Type(ctx context.Context, in *TypeRequest, opts ...grpc.CallOption) (*TypeResponse, error)
+	// Key presses a key or key chord (for example "Return" or "ctrl+l") via xdotool.
+	Key(ctx context.Context, in *KeyRequest, opts ...grpc.CallOption) (*KeyResponse, error)
 }
 
 type agentServiceClient struct {
@@ -51,15 +63,63 @@ func (c *agentServiceClient) Ping(ctx context.Context, in *PingRequest, opts ...
 	return out, nil
 }
 
+func (c *agentServiceClient) Screenshot(ctx context.Context, in *ScreenshotRequest, opts ...grpc.CallOption) (*ScreenshotResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ScreenshotResponse)
+	err := c.cc.Invoke(ctx, AgentService_Screenshot_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) Click(ctx context.Context, in *ClickRequest, opts ...grpc.CallOption) (*ClickResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ClickResponse)
+	err := c.cc.Invoke(ctx, AgentService_Click_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) Type(ctx context.Context, in *TypeRequest, opts ...grpc.CallOption) (*TypeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TypeResponse)
+	err := c.cc.Invoke(ctx, AgentService_Type_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) Key(ctx context.Context, in *KeyRequest, opts ...grpc.CallOption) (*KeyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(KeyResponse)
+	err := c.cc.Invoke(ctx, AgentService_Key_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AgentServiceServer is the server API for AgentService service.
 // All implementations must embed UnimplementedAgentServiceServer
 // for forward compatibility.
 //
 // AgentService runs inside each sandbox container to handle health checks
-// and host-driven computer-use actions added in later phases.
+// and host-driven computer-use actions.
 type AgentServiceServer interface {
 	// Ping verifies gRPC reachability and reports the sandbox hostname.
 	Ping(context.Context, *PingRequest) (*PingResponse, error)
+	// Screenshot captures the current :0 X11 framebuffer as a PNG image.
+	Screenshot(context.Context, *ScreenshotRequest) (*ScreenshotResponse, error)
+	// Click moves the cursor to (x, y) on the 1280x800 desktop and clicks button.
+	Click(context.Context, *ClickRequest) (*ClickResponse, error)
+	// Type enters text on the active X11 window via xdotool.
+	Type(context.Context, *TypeRequest) (*TypeResponse, error)
+	// Key presses a key or key chord (for example "Return" or "ctrl+l") via xdotool.
+	Key(context.Context, *KeyRequest) (*KeyResponse, error)
 	mustEmbedUnimplementedAgentServiceServer()
 }
 
@@ -72,6 +132,18 @@ type UnimplementedAgentServiceServer struct{}
 
 func (UnimplementedAgentServiceServer) Ping(context.Context, *PingRequest) (*PingResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Ping not implemented")
+}
+func (UnimplementedAgentServiceServer) Screenshot(context.Context, *ScreenshotRequest) (*ScreenshotResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Screenshot not implemented")
+}
+func (UnimplementedAgentServiceServer) Click(context.Context, *ClickRequest) (*ClickResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Click not implemented")
+}
+func (UnimplementedAgentServiceServer) Type(context.Context, *TypeRequest) (*TypeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Type not implemented")
+}
+func (UnimplementedAgentServiceServer) Key(context.Context, *KeyRequest) (*KeyResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Key not implemented")
 }
 func (UnimplementedAgentServiceServer) mustEmbedUnimplementedAgentServiceServer() {}
 func (UnimplementedAgentServiceServer) testEmbeddedByValue()                      {}
@@ -112,6 +184,78 @@ func _AgentService_Ping_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AgentService_Screenshot_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ScreenshotRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).Screenshot(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_Screenshot_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).Screenshot(ctx, req.(*ScreenshotRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_Click_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ClickRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).Click(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_Click_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).Click(ctx, req.(*ClickRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_Type_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TypeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).Type(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_Type_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).Type(ctx, req.(*TypeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_Key_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(KeyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).Key(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_Key_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).Key(ctx, req.(*KeyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AgentService_ServiceDesc is the grpc.ServiceDesc for AgentService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -122,6 +266,22 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Ping",
 			Handler:    _AgentService_Ping_Handler,
+		},
+		{
+			MethodName: "Screenshot",
+			Handler:    _AgentService_Screenshot_Handler,
+		},
+		{
+			MethodName: "Click",
+			Handler:    _AgentService_Click_Handler,
+		},
+		{
+			MethodName: "Type",
+			Handler:    _AgentService_Type_Handler,
+		},
+		{
+			MethodName: "Key",
+			Handler:    _AgentService_Key_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

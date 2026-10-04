@@ -17,6 +17,20 @@
     "architectureLabel": "Target architecture",
     "architectureDesc": "Auth, isolated workspaces, sandboxes, egress proxy, team chat, and computer use ship across phases 1 through 8."
   },
+  "workspace": {
+    "vnc": {
+      "eyebrow": "Live computer · 1280×800",
+      "title": "Sandbox XFCE desktop",
+      "connectedInControl": "You have control",
+      "connectedViewOnly": "View only",
+      "connecting": "Connecting…",
+      "disconnected": "Disconnected",
+      "missingTicket": "Missing signed stream ticket. Request a new ticket to open the desktop stream.",
+      "takeControl": "Take control",
+      "releaseControl": "Hand back to bot",
+      "resolution": "1280×800"
+    }
+  },
   "styleguide": {
     "eyebrow": "Design system",
     "title": "Living styleguide",

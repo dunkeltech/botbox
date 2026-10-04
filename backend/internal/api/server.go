@@ -15,6 +15,13 @@ import (
 // ReadinessCheck validates downstream dependencies such as Postgres and NATS.
 type ReadinessCheck func(ctx context.Context) error
 
+// Config configures the HTTP control plane handler.
+type Config struct {
+	Logger         *slog.Logger
+	ReadinessCheck ReadinessCheck
+	VNCRelay       http.Handler
+}
+
 type healthResponse struct {
 	Status string `json:"status"`
 }
@@ -32,6 +39,15 @@ type errorEnvelope struct {
 // If logger is nil, slog.Default() is used. If readinessCheck is nil, /api/healthz
 // treats local process liveliness as ready.
 func NewHandler(logger *slog.Logger, readinessCheck ReadinessCheck) http.Handler {
+	return NewHandlerWithConfig(Config{
+		Logger:         logger,
+		ReadinessCheck: readinessCheck,
+	})
+}
+
+// NewHandlerWithConfig constructs the HTTP handler with optional WebSocket relays.
+func NewHandlerWithConfig(cfg Config) http.Handler {
+	logger := cfg.Logger
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -48,7 +64,10 @@ func NewHandler(logger *slog.Logger, readinessCheck ReadinessCheck) http.Handler
 		writeError(w, logger, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
 	})
 
-	r.Get("/api/healthz", healthHandler(logger, readinessCheck))
+	r.Get("/api/healthz", healthHandler(logger, cfg.ReadinessCheck))
+	if cfg.VNCRelay != nil {
+		r.Method(http.MethodGet, "/ws/bots/{workspaceID}/{botID}/vnc", cfg.VNCRelay)
+	}
 
 	return r
 }

@@ -5,10 +5,22 @@ package agent.v1;
 option go_package = "github.com/dunkeltech/botbox/backend/internal/gen/proto/agent/v1;agentv1";
 
 // AgentService runs inside each sandbox container to handle health checks
-// and host-driven computer-use actions added in later phases.
+// and host-driven computer-use actions.
 service AgentService {
   // Ping verifies gRPC reachability and reports the sandbox hostname.
   rpc Ping(PingRequest) returns (PingResponse);
+
+  // Screenshot captures the current :0 X11 framebuffer as a PNG image.
+  rpc Screenshot(ScreenshotRequest) returns (ScreenshotResponse);
+
+  // Click moves the cursor to (x, y) on the 1280x800 desktop and clicks button.
+  rpc Click(ClickRequest) returns (ClickResponse);
+
+  // Type enters text on the active X11 window via xdotool.
+  rpc Type(TypeRequest) returns (TypeResponse);
+
+  // Key presses a key or key chord (for example "Return" or "ctrl+l") via xdotool.
+  rpc Key(KeyRequest) returns (KeyResponse);
 }
 
 message PingRequest {
@@ -19,3 +31,31 @@ message PingResponse {
   string status = 1;
   string hostname = 2;
 }
+
+message ScreenshotRequest {}
+
+message ScreenshotResponse {
+  bytes image_png = 1;
+  int32 width = 2;
+  int32 height = 3;
+}
+
+message ClickRequest {
+  int32 x = 1;
+  int32 y = 2;
+  string button = 3;
+}
+
+message ClickResponse {}
+
+message TypeRequest {
+  string text = 1;
+}
+
+message TypeResponse {}
+
+message KeyRequest {
+  string key = 1;
+}
+
+message KeyResponse {}

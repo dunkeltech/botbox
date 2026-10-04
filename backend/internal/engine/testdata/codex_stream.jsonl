@@ -1,0 +1,6 @@
+{"type":"thread.started","thread_id":"th-codex-01"}
+{"type":"turn.started"}
+{"type":"item.started","item":{"id":"item_01","type":"command_execution","command":"go test ./..."}}
+{"type":"item.completed","item":{"id":"item_01","type":"command_execution","command":"go test ./...","aggregated_output":"ok all packages","exit_code":0}}
+{"type":"item.completed","item":{"id":"item_02","type":"agent_message","text":"All Go tests pass."}}
+{"type":"turn.completed","usage":{"input_tokens":200,"output_tokens":60,"cached_input_tokens":400}}

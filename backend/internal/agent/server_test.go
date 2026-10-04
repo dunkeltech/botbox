@@ -2,8 +2,11 @@ package agent_test
 
 import (
 	"context"
+	"errors"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -71,4 +74,72 @@ func TestServerPing(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestServerDesktopRPCs(t *testing.T) {
+	t.Parallel()
+
+	pngBytes := []byte("\x89PNG\r\n\x1a\ngrpc")
+
+	t.Run("happy path Screenshot Click Type Key", func(t *testing.T) {
+		t.Parallel()
+
+		runner := &fakeCmdRunner{out: pngBytes}
+		srv := agent.NewServerWithDesktop("desk-1", agent.NewDesktopService(runner))
+
+		shot, err := srv.Screenshot(context.Background(), &agentv1.ScreenshotRequest{})
+		if err != nil {
+			t.Fatalf("Screenshot failed: %v", err)
+		}
+		if !slices.Equal(shot.ImagePng, pngBytes) || shot.Width != agent.DesktopWidth || shot.Height != agent.DesktopHeight {
+			t.Fatalf("unexpected screenshot response: width=%d height=%d len=%d", shot.Width, shot.Height, len(shot.ImagePng))
+		}
+		if _, err := srv.Click(context.Background(), &agentv1.ClickRequest{X: 100, Y: 200, Button: "left"}); err != nil {
+			t.Fatalf("Click failed: %v", err)
+		}
+		if _, err := srv.Type(context.Background(), &agentv1.TypeRequest{Text: "hello"}); err != nil {
+			t.Fatalf("Type failed: %v", err)
+		}
+		if _, err := srv.Key(context.Background(), &agentv1.KeyRequest{Key: "Return"}); err != nil {
+			t.Fatalf("Key failed: %v", err)
+		}
+	})
+
+	t.Run("negative cases map to expected gRPC status codes", func(t *testing.T) {
+		t.Parallel()
+
+		srv := agent.NewServerWithDesktop("desk-1", agent.NewDesktopService(&fakeCmdRunner{out: pngBytes}))
+		failingSrv := agent.NewServerWithDesktop("desk-err", agent.NewDesktopService(&fakeCmdRunner{err: errors.New("X11 socket gone")}))
+
+		if _, err := srv.Screenshot(context.Background(), nil); status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("nil Screenshot code = %v, want InvalidArgument", status.Code(err))
+		}
+		if _, err := srv.Click(context.Background(), &agentv1.ClickRequest{X: 2000, Y: 10}); status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("oob Click code = %v, want InvalidArgument", status.Code(err))
+		}
+		if _, err := srv.Type(context.Background(), &agentv1.TypeRequest{Text: ""}); status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("empty Type code = %v, want InvalidArgument", status.Code(err))
+		}
+		if _, err := srv.Key(context.Background(), &agentv1.KeyRequest{Key: "bad key"}); status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("invalid Key code = %v, want InvalidArgument", status.Code(err))
+		}
+		if _, err := failingSrv.Click(context.Background(), &agentv1.ClickRequest{X: 1, Y: 1}); status.Code(err) != codes.Internal {
+			t.Fatalf("runner failure code = %v, want Internal", status.Code(err))
+		}
+
+		expiredCtx, cancel := context.WithDeadline(context.Background(), time.Unix(0, 0))
+		defer cancel()
+		if _, err := srv.Type(expiredCtx, &agentv1.TypeRequest{Text: "hi"}); status.Code(err) != codes.DeadlineExceeded {
+			t.Fatalf("expired context code = %v, want DeadlineExceeded", status.Code(err))
+		}
+		if _, err := srv.Click(context.Background(), nil); status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("nil Click code = %v, want InvalidArgument", status.Code(err))
+		}
+		if _, err := srv.Type(context.Background(), nil); status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("nil Type code = %v, want InvalidArgument", status.Code(err))
+		}
+		if _, err := srv.Key(context.Background(), nil); status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("nil Key code = %v, want InvalidArgument", status.Code(err))
+		}
+	})
 }

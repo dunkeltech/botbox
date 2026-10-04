@@ -117,6 +117,358 @@ func (x *PingResponse) GetHostname() string {
 	return ""
 }
 
+type ScreenshotRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScreenshotRequest) Reset() {
+	*x = ScreenshotRequest{}
+	mi := &file_agent_v1_agent_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScreenshotRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScreenshotRequest) ProtoMessage() {}
+
+func (x *ScreenshotRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_agent_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScreenshotRequest.ProtoReflect.Descriptor instead.
+func (*ScreenshotRequest) Descriptor() ([]byte, []int) {
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{2}
+}
+
+type ScreenshotResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ImagePng      []byte                 `protobuf:"bytes,1,opt,name=image_png,json=imagePng,proto3" json:"image_png,omitempty"`
+	Width         int32                  `protobuf:"varint,2,opt,name=width,proto3" json:"width,omitempty"`
+	Height        int32                  `protobuf:"varint,3,opt,name=height,proto3" json:"height,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScreenshotResponse) Reset() {
+	*x = ScreenshotResponse{}
+	mi := &file_agent_v1_agent_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScreenshotResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScreenshotResponse) ProtoMessage() {}
+
+func (x *ScreenshotResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_agent_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScreenshotResponse.ProtoReflect.Descriptor instead.
+func (*ScreenshotResponse) Descriptor() ([]byte, []int) {
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ScreenshotResponse) GetImagePng() []byte {
+	if x != nil {
+		return x.ImagePng
+	}
+	return nil
+}
+
+func (x *ScreenshotResponse) GetWidth() int32 {
+	if x != nil {
+		return x.Width
+	}
+	return 0
+}
+
+func (x *ScreenshotResponse) GetHeight() int32 {
+	if x != nil {
+		return x.Height
+	}
+	return 0
+}
+
+type ClickRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	X             int32                  `protobuf:"varint,1,opt,name=x,proto3" json:"x,omitempty"`
+	Y             int32                  `protobuf:"varint,2,opt,name=y,proto3" json:"y,omitempty"`
+	Button        string                 `protobuf:"bytes,3,opt,name=button,proto3" json:"button,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClickRequest) Reset() {
+	*x = ClickRequest{}
+	mi := &file_agent_v1_agent_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClickRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClickRequest) ProtoMessage() {}
+
+func (x *ClickRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_agent_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClickRequest.ProtoReflect.Descriptor instead.
+func (*ClickRequest) Descriptor() ([]byte, []int) {
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ClickRequest) GetX() int32 {
+	if x != nil {
+		return x.X
+	}
+	return 0
+}
+
+func (x *ClickRequest) GetY() int32 {
+	if x != nil {
+		return x.Y
+	}
+	return 0
+}
+
+func (x *ClickRequest) GetButton() string {
+	if x != nil {
+		return x.Button
+	}
+	return ""
+}
+
+type ClickResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClickResponse) Reset() {
+	*x = ClickResponse{}
+	mi := &file_agent_v1_agent_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClickResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClickResponse) ProtoMessage() {}
+
+func (x *ClickResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_agent_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClickResponse.ProtoReflect.Descriptor instead.
+func (*ClickResponse) Descriptor() ([]byte, []int) {
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{5}
+}
+
+type TypeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Text          string                 `protobuf:"bytes,1,opt,name=text,proto3" json:"text,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TypeRequest) Reset() {
+	*x = TypeRequest{}
+	mi := &file_agent_v1_agent_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TypeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TypeRequest) ProtoMessage() {}
+
+func (x *TypeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_agent_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TypeRequest.ProtoReflect.Descriptor instead.
+func (*TypeRequest) Descriptor() ([]byte, []int) {
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *TypeRequest) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+type TypeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TypeResponse) Reset() {
+	*x = TypeResponse{}
+	mi := &file_agent_v1_agent_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TypeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TypeResponse) ProtoMessage() {}
+
+func (x *TypeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_agent_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TypeResponse.ProtoReflect.Descriptor instead.
+func (*TypeResponse) Descriptor() ([]byte, []int) {
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{7}
+}
+
+type KeyRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *KeyRequest) Reset() {
+	*x = KeyRequest{}
+	mi := &file_agent_v1_agent_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *KeyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KeyRequest) ProtoMessage() {}
+
+func (x *KeyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_agent_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KeyRequest.ProtoReflect.Descriptor instead.
+func (*KeyRequest) Descriptor() ([]byte, []int) {
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *KeyRequest) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+type KeyResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *KeyResponse) Reset() {
+	*x = KeyResponse{}
+	mi := &file_agent_v1_agent_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *KeyResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KeyResponse) ProtoMessage() {}
+
+func (x *KeyResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_agent_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KeyResponse.ProtoReflect.Descriptor instead.
+func (*KeyResponse) Descriptor() ([]byte, []int) {
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{9}
+}
+
 var File_agent_v1_agent_proto protoreflect.FileDescriptor
 
 const file_agent_v1_agent_proto_rawDesc = "" +
@@ -126,9 +478,31 @@ const file_agent_v1_agent_proto_rawDesc = "" +
 	"\x06caller\x18\x01 \x01(\tR\x06caller\"B\n" +
 	"\fPingResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12\x1a\n" +
-	"\bhostname\x18\x02 \x01(\tR\bhostname2E\n" +
+	"\bhostname\x18\x02 \x01(\tR\bhostname\"\x13\n" +
+	"\x11ScreenshotRequest\"_\n" +
+	"\x12ScreenshotResponse\x12\x1b\n" +
+	"\timage_png\x18\x01 \x01(\fR\bimagePng\x12\x14\n" +
+	"\x05width\x18\x02 \x01(\x05R\x05width\x12\x16\n" +
+	"\x06height\x18\x03 \x01(\x05R\x06height\"B\n" +
+	"\fClickRequest\x12\f\n" +
+	"\x01x\x18\x01 \x01(\x05R\x01x\x12\f\n" +
+	"\x01y\x18\x02 \x01(\x05R\x01y\x12\x16\n" +
+	"\x06button\x18\x03 \x01(\tR\x06button\"\x0f\n" +
+	"\rClickResponse\"!\n" +
+	"\vTypeRequest\x12\x12\n" +
+	"\x04text\x18\x01 \x01(\tR\x04text\"\x0e\n" +
+	"\fTypeResponse\"\x1e\n" +
+	"\n" +
+	"KeyRequest\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\"\r\n" +
+	"\vKeyResponse2\xb3\x02\n" +
 	"\fAgentService\x125\n" +
-	"\x04Ping\x12\x15.agent.v1.PingRequest\x1a\x16.agent.v1.PingResponseBJZHgithub.com/dunkeltech/botbox/backend/internal/gen/proto/agent/v1;agentv1b\x06proto3"
+	"\x04Ping\x12\x15.agent.v1.PingRequest\x1a\x16.agent.v1.PingResponse\x12G\n" +
+	"\n" +
+	"Screenshot\x12\x1b.agent.v1.ScreenshotRequest\x1a\x1c.agent.v1.ScreenshotResponse\x128\n" +
+	"\x05Click\x12\x16.agent.v1.ClickRequest\x1a\x17.agent.v1.ClickResponse\x125\n" +
+	"\x04Type\x12\x15.agent.v1.TypeRequest\x1a\x16.agent.v1.TypeResponse\x122\n" +
+	"\x03Key\x12\x14.agent.v1.KeyRequest\x1a\x15.agent.v1.KeyResponseBJZHgithub.com/dunkeltech/botbox/backend/internal/gen/proto/agent/v1;agentv1b\x06proto3"
 
 var (
 	file_agent_v1_agent_proto_rawDescOnce sync.Once
@@ -142,16 +516,32 @@ func file_agent_v1_agent_proto_rawDescGZIP() []byte {
 	return file_agent_v1_agent_proto_rawDescData
 }
 
-var file_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_agent_v1_agent_proto_goTypes = []any{
-	(*PingRequest)(nil),  // 0: agent.v1.PingRequest
-	(*PingResponse)(nil), // 1: agent.v1.PingResponse
+	(*PingRequest)(nil),        // 0: agent.v1.PingRequest
+	(*PingResponse)(nil),       // 1: agent.v1.PingResponse
+	(*ScreenshotRequest)(nil),  // 2: agent.v1.ScreenshotRequest
+	(*ScreenshotResponse)(nil), // 3: agent.v1.ScreenshotResponse
+	(*ClickRequest)(nil),       // 4: agent.v1.ClickRequest
+	(*ClickResponse)(nil),      // 5: agent.v1.ClickResponse
+	(*TypeRequest)(nil),        // 6: agent.v1.TypeRequest
+	(*TypeResponse)(nil),       // 7: agent.v1.TypeResponse
+	(*KeyRequest)(nil),         // 8: agent.v1.KeyRequest
+	(*KeyResponse)(nil),        // 9: agent.v1.KeyResponse
 }
 var file_agent_v1_agent_proto_depIdxs = []int32{
 	0, // 0: agent.v1.AgentService.Ping:input_type -> agent.v1.PingRequest
-	1, // 1: agent.v1.AgentService.Ping:output_type -> agent.v1.PingResponse
-	1, // [1:2] is the sub-list for method output_type
-	0, // [0:1] is the sub-list for method input_type
+	2, // 1: agent.v1.AgentService.Screenshot:input_type -> agent.v1.ScreenshotRequest
+	4, // 2: agent.v1.AgentService.Click:input_type -> agent.v1.ClickRequest
+	6, // 3: agent.v1.AgentService.Type:input_type -> agent.v1.TypeRequest
+	8, // 4: agent.v1.AgentService.Key:input_type -> agent.v1.KeyRequest
+	1, // 5: agent.v1.AgentService.Ping:output_type -> agent.v1.PingResponse
+	3, // 6: agent.v1.AgentService.Screenshot:output_type -> agent.v1.ScreenshotResponse
+	5, // 7: agent.v1.AgentService.Click:output_type -> agent.v1.ClickResponse
+	7, // 8: agent.v1.AgentService.Type:output_type -> agent.v1.TypeResponse
+	9, // 9: agent.v1.AgentService.Key:output_type -> agent.v1.KeyResponse
+	5, // [5:10] is the sub-list for method output_type
+	0, // [0:5] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
@@ -168,7 +558,7 @@ func file_agent_v1_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agent_v1_agent_proto_rawDesc), len(file_agent_v1_agent_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

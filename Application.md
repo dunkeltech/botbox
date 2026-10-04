@@ -514,7 +514,8 @@ Each phase is a GitHub issue with a detailed task list, designs and acceptance c
 
 | Topic | Decided in |
 |---|---|
-| How `agy` authenticates without credentials in the sandbox (undocumented key path, proxy-held refresh token, or a flagged exception) | Spike S2, [#2](https://github.com/dunkeltech/botbox/issues/2) |
+| How `agy` authenticates without credentials in the sandbox | [ADR-0003](docs/adr/0003-cli-auth-without-secrets.md) — proxy-held OAuth refresh token exchange (`llmproxy`), disabled-by-default workspace opt-in fallback |
 | Kubernetes egress topology (init container with iptables vs. separate proxy pod) | ADR in [#9](https://github.com/dunkeltech/botbox/issues/9) |
-| Whether the agent supports MCP for `agy` | Spike S4, [#2](https://github.com/dunkeltech/botbox/issues/2) |
-| Concrete capacity targets (desktops per host) | Spike S1, [#2](https://github.com/dunkeltech/botbox/issues/2) |
+| Whether the agent supports MCP for `agy` | [ADR-0005](docs/adr/0005-computer-use-protocol.md) — **Yes**, via `~/.gemini/config/mcp_config.json` (Stdio & Streamable HTTP `2025-03-26`) |
+| Concrete capacity targets (desktops per host) | [ADR-0002](docs/adr/0002-desktop-streaming.md) — `2 vCPU` / `2 GiB RAM` default per sandbox; **8 active desktops per 16 GB / 8 vCPU host** (16–20 per 32 GB / 16 vCPU host) |
+| Selective TLS interception vs. full MITM & CLI stream normalization | [ADR-0006](docs/adr/0006-selective-tls-interception.md) (per-bot ECDSA CA + secret-only MITM) & [ADR-0004](docs/adr/0004-cli-stream-formats.md) (`engine.Event` unified parser) |

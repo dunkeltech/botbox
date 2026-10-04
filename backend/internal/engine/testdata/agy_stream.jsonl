@@ -1,0 +1,6 @@
+{"type":"init","conversation_id":"conv-agy-01","model":"gemini-2.5-pro"}
+{"type":"step_update","text_delta":{"text":"Running test suite. "}}
+{"type":"step_update","tool_info":{"id":"call_01","name":"run_command","status":"running","input":{"command":"go test ./..."}}}
+{"type":"step_update","tool_info":{"id":"call_01","name":"run_command","status":"completed","output":"ok all packages","is_error":false}}
+{"type":"step_update","subagent_info":{"role":"verifier","status":"completed"}}
+{"type":"result","status":"success","usage":{"input_tokens":300,"output_tokens":95,"cache_tokens":150}}

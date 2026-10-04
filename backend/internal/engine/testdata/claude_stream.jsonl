@@ -1,0 +1,6 @@
+{"type":"system","subtype":"init","session_id":"sess-claude-01","model":"claude-sonnet-4-5"}
+{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Checking repository status. "}}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_01","name":"Bash","input":{"command":"git status --short"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_01","content":"M backend/internal/api/server.go","is_error":false}]}}
+{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Working tree checked."}}}
+{"type":"result","subtype":"success","is_error":false,"usage":{"input_tokens":120,"output_tokens":45,"cache_read_input_tokens":800}}
