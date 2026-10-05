@@ -192,6 +192,7 @@ The status label is always written out next to the dot. Colour is never the only
 ### Navigation
 - **App header nav:** items are 44 px tall, weight 700. The current item is `green-600` with a 2 px `green` inset underline.
 - **Workspace switcher pill:** header pill showing `<workspace> · <role>` (e.g. `dunkel.Tech · Owner`), switching workspaces with strict `workspace_id` isolation (cross-workspace resource IDs return `404`).
+- **First-run setup wizard:** displayed when zero users exist, pairing a 3-step main form (`01 · Server setup secret`, `02 · Initial Owner account`, `03 · First workspace`) with an `Uninitialized instance` amber status pill, amber rate-limit callout, and a right-hand `terminal` stdout reference block + completion invariants list.
 - **Team sidebar:** `dark-2` background (`264 px` on desktop; slide-over drawer over an `overlay` scrim at `390 px`). Section headers are overlines in `on-dark-muted`. Items are 44–48 px tall with radius 8. The active item has a `green-600` background and white text. Unread items are white at weight 900 with a counter. Bot items show a 30 px avatar with a presence dot (10 px, 2 px ring in the sidebar colour) and the current activity in 12 px; human items show initials badges, role labels (`Owner`, `Reviewer`, `Viewer`), and online/away state.
 - **Dialog:** a white panel, max-width 620–640 px, radius 14, `shadow-hover`, over the `overlay` backdrop. It has an eyebrow and a title, a close icon button top right, and actions bottom right (secondary first, primary last).
 

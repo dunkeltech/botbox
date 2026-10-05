@@ -106,6 +106,7 @@ type AuthProvider interface {
 ```
 
 - **Local provider (first):**
+  - **First-run setup wizard:** when the database has zero users, the server generates a cryptographically random single-use setup secret on startup (or reads `BOTBOX_SETUP_SECRET` when explicitly configured), stores only its SHA-256 digest, and prints the secret once to server stdout. The browser redirects to `/setup` where an operator enters that secret (constant-time comparison, rate-limited per IP) to create the initial `owner` user and first workspace (`POST /api/setup/complete`). Once complete, the setup digest is cleared and `/api/setup/*` permanently returns `404`.
   - Passwords are hashed with Argon2id, and the hash is upgraded on login when the parameters change.
   - JWT access token (EdDSA, 15 min) plus an opaque refresh token. The refresh token is rotated on every use, stored hashed, and **reuse revokes the whole token family**.
   - Cookies are `HttpOnly`, `Secure` and `SameSite=Lax`. Mutating requests are protected against CSRF.

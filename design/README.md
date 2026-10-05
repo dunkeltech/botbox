@@ -14,6 +14,7 @@ The interactive canvas (clickable prototype with live avatars) lives in Claude: 
 | Screen | File | Used in |
 |---|---|---|
 | Fleet dashboard | [`fleet-dashboard.png`](screens/fleet-dashboard.png) | Phase 1, 4, 7 |
+| First-run setup wizard | [`setup-wizard.png`](screens/setup-wizard.png) | Phase 1 |
 | Sign in, invitation & workspace switcher | [`auth-login-invite.png`](screens/auth-login-invite.png) | Phase 1 |
 | Workspace members, roles & budgets | [`workspace-settings.png`](screens/workspace-settings.png) | Phase 1, 4 |
 | Bot workspace: chat + live computer + action timeline | [`bot-workspace.png`](screens/bot-workspace.png) | Phase 2, 4, 5 |
@@ -30,6 +31,11 @@ The interactive canvas (clickable prototype with live avatars) lives in Claude: 
 Bots as cards with live robot avatars, status, current activity, brain and computer. Includes the workspace switcher pill, a "Spend today" overview tile (€ 18.40 of € 30.00, 61 %, token and subscription CLI counts), activity feed and driver health.
 
 ![Fleet dashboard](screens/fleet-dashboard.png)
+
+### First-run setup wizard
+Displayed automatically while the server has zero registered users (`setupRequired: true`). Shows the one-time server setup secret prompt (with constant-time SHA-256 verification and rate-limit notice), initial `Owner` account fields, first workspace setup (slug, Docker/Kubernetes default driver, reply language), live server stdout terminal preview, and completion invariants (`/api/setup/*` locks to `404` permanently once finished).
+
+![First-run setup wizard](screens/setup-wizard.png)
 
 ### Sign in, invitation & workspace switcher
 Active workspace switcher bar with cross-workspace 404 isolation notice, password sign-in with rate-limit notice and session security footer (Argon2id, EdDSA, CSRF), paired side by side with invitation acceptance for a locked invitee email.

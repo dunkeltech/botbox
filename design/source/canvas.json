@@ -79,6 +79,15 @@
       "x": 3040,
       "y": 1120
     },
+    "Setup.dc.html": {
+      "expand": "fill",
+      "h": 1188,
+      "is_interactive": true,
+      "title": "First-run setup wizard",
+      "w": 1440,
+      "x": 4560,
+      "y": 0
+    },
     "Team.dc.html": {
       "expand": "fill",
       "h": 1290,
@@ -186,7 +195,8 @@
     "Auth.dc.html",
     "Settings.dc.html",
     "Approvals.dc.html",
-    "Mobile.dc.html"
+    "Mobile.dc.html",
+    "Setup.dc.html"
   ],
   "pages": [],
   "title": "BotBox"
