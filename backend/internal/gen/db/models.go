@@ -8,8 +8,84 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AuditLog struct {
+	ID          pgtype.UUID        `json:"id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	ActorUserID pgtype.UUID        `json:"actor_user_id"`
+	Action      string             `json:"action"`
+	TargetType  pgtype.Text        `json:"target_type"`
+	TargetID    pgtype.UUID        `json:"target_id"`
+	Metadata    []byte             `json:"metadata"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type Bot struct {
+	ID            pgtype.UUID        `json:"id"`
+	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
+	OwnerUserID   pgtype.UUID        `json:"owner_user_id"`
+	Name          string             `json:"name"`
+	Description   string             `json:"description"`
+	AvatarSeed    string             `json:"avatar_seed"`
+	LlmMode       string             `json:"llm_mode"`
+	LlmProvider   string             `json:"llm_provider"`
+	LlmModel      string             `json:"llm_model"`
+	DriverType    string             `json:"driver_type"`
+	ReplyLanguage string             `json:"reply_language"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
+type Invitation struct {
+	ID          pgtype.UUID        `json:"id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	Email       pgtype.Text        `json:"email"`
+	Role        string             `json:"role"`
+	TokenHash   []byte             `json:"token_hash"`
+	CreatedBy   pgtype.UUID        `json:"created_by"`
+	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
+	AcceptedAt  pgtype.Timestamptz `json:"accepted_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type RefreshToken struct {
+	ID         pgtype.UUID        `json:"id"`
+	UserID     pgtype.UUID        `json:"user_id"`
+	FamilyID   pgtype.UUID        `json:"family_id"`
+	TokenHash  []byte             `json:"token_hash"`
+	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+	RevokedAt  pgtype.Timestamptz `json:"revoked_at"`
+	ReplacedBy pgtype.UUID        `json:"replaced_by"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
 type SystemInfo struct {
 	Key       string             `json:"key"`
 	Value     string             `json:"value"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+type User struct {
+	ID           pgtype.UUID        `json:"id"`
+	Email        string             `json:"email"`
+	PasswordHash string             `json:"password_hash"`
+	DisplayName  string             `json:"display_name"`
+	Locale       string             `json:"locale"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+}
+
+type Workspace struct {
+	ID            pgtype.UUID        `json:"id"`
+	Name          string             `json:"name"`
+	Slug          string             `json:"slug"`
+	DefaultDriver string             `json:"default_driver"`
+	DefaultLocale string             `json:"default_locale"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+type WorkspaceMember struct {
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	Role        string             `json:"role"`
+	JoinedAt    pgtype.Timestamptz `json:"joined_at"`
 }

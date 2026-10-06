@@ -3,51 +3,130 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
 	"errors"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
+	migrations "github.com/dunkeltech/botbox/backend/db"
 	"github.com/dunkeltech/botbox/backend/internal/api"
+	"github.com/dunkeltech/botbox/backend/internal/auth"
+	"github.com/dunkeltech/botbox/backend/internal/gen/db"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	if err := run(logger); err != nil {
+		logger.Error("api server exited with error", "err", err)
+		os.Exit(1)
+	}
+}
+
+func run(logger *slog.Logger) error {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
 	addr := envOrDefault("API_LISTEN_ADDR", "127.0.0.1:8080")
+	publicBaseURL := envOrDefault("PUBLIC_BASE_URL", "http://127.0.0.1:3000")
+	cookieSecure := strings.HasPrefix(strings.ToLower(publicBaseURL), "https://")
+	if strings.EqualFold(os.Getenv("BOTBOX_COOKIE_SECURE"), "true") {
+		cookieSecure = true
+	} else if strings.EqualFold(os.Getenv("BOTBOX_COOKIE_SECURE"), "false") {
+		cookieSecure = false
+	}
+
+	cfg := api.Config{
+		Logger:        logger,
+		CookieSecure:  cookieSecure,
+		PublicBaseURL: publicBaseURL,
+	}
+
+	var pool *pgxpool.Pool
+	if dbURL := strings.TrimSpace(os.Getenv("DATABASE_URL")); dbURL != "" {
+		var err error
+		pool, err = pgxpool.New(ctx, dbURL)
+		if err != nil {
+			return err
+		}
+		defer pool.Close()
+
+		pingCtx, pingCancel := context.WithTimeout(ctx, 10*time.Second)
+		err = pool.Ping(pingCtx)
+		pingCancel()
+		if err != nil {
+			return err
+		}
+
+		if err := migrations.MigrateUp(ctx, pool); err != nil {
+			return err
+		}
+
+		queries := db.New(pool)
+		userCount, err := queries.CountUsers(ctx)
+		if err != nil {
+			return err
+		}
+
+		setupMgr := auth.NewSetupManager(os.Stdout)
+		if _, _, err := setupMgr.EnsureSetupSecret(ctx, userCount, os.Getenv("BOTBOX_SETUP_SECRET"), logger); err != nil {
+			return err
+		}
+
+		jwtKey, err := loadSigningKey(logger, os.Getenv("BOTBOX_JWT_PRIVATE_KEY"))
+		if err != nil {
+			return err
+		}
+		jwtSvc, err := auth.NewJWTService(jwtKey, auth.DefaultAccessTokenTTL, time.Now)
+		if err != nil {
+			return err
+		}
+
+		cfg.Pool = pool
+		cfg.Setup = setupMgr
+		cfg.JWT = jwtSvc
+		cfg.ReadinessCheck = func(checkCtx context.Context) error {
+			return pool.Ping(checkCtx)
+		}
+	}
 
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           api.NewHandler(logger, nil),
+		Handler:           api.NewHandlerWithConfig(cfg),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
 	errCh := make(chan error, 1)
 	go func() {
-		logger.Info("api server listening", slog.String("addr", addr))
-		errCh <- srv.ListenAndServe()
+		logger.Info("listening", "addr", addr)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errCh <- err
+			return
+		}
+		errCh <- nil
 	}()
 
 	select {
 	case err := <-errCh:
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Error("api server failed", slog.Any("error", err))
-			os.Exit(1)
-		}
+		return err
 	case <-ctx.Done():
-		logger.Info("shutting down api server")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if err := srv.Shutdown(shutdownCtx); err != nil {
-			logger.Error("api server shutdown failed", slog.Any("error", err))
-			os.Exit(1)
-		}
+		return srv.Shutdown(shutdownCtx)
 	}
+}
+
+func loadSigningKey(logger *slog.Logger, encodedSeed string) (ed25519.PrivateKey, error) {
+	if strings.TrimSpace(encodedSeed) != "" {
+		return auth.ParseEd25519Seed(encodedSeed)
+	}
+	logger.Warn("BOTBOX_JWT_PRIVATE_KEY is unset; using ephemeral signing key")
+	return auth.GenerateEd25519Key()
 }
 
 func envOrDefault(key, fallback string) string {

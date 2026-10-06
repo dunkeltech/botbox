@@ -7,6 +7,7 @@ gen:
 	cd backend && buf lint
 	cd backend && buf generate
 	cd backend && sqlc generate
+	cd backend && oapi-codegen -config api/oapi-codegen.yaml api/openapi.yaml
 
 lint:
 	cd backend && golangci-lint run ./...

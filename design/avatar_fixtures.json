@@ -1,0 +1,343 @@
+[
+  {
+    "seed": "atlas-005a",
+    "hash": 2198533825,
+    "headIndex": 1,
+    "head": "hex",
+    "eyesIndex": 0,
+    "eyes": "dual",
+    "antennaIndex": 0,
+    "antenna": "ball",
+    "mouthIndex": 0,
+    "mouth": "grille",
+    "paletteIndex": 0,
+    "palette": {
+      "name": "forest",
+      "body": "#3f9147",
+      "shade": "#347a3b",
+      "panel": "#182019",
+      "sensor": "#d6fcd0",
+      "mark": "#182019",
+      "accent": "#3f9147",
+      "tile": "#eef8ec"
+    },
+    "geometry": {
+      "top": 36,
+      "tipY": 20,
+      "earL": 16,
+      "earR": 95,
+      "panelX": 38,
+      "panelW": 44
+    }
+  },
+  {
+    "seed": "ferrit-00e5",
+    "hash": 1735877150,
+    "headIndex": 2,
+    "head": "dome",
+    "eyesIndex": 1,
+    "eyes": "visor",
+    "antennaIndex": 2,
+    "antenna": "gear",
+    "mouthIndex": 0,
+    "mouth": "grille",
+    "paletteIndex": 3,
+    "palette": {
+      "name": "cobalt",
+      "body": "#4a5e92",
+      "shade": "#3f5f9c",
+      "panel": "#14201a",
+      "sensor": "#8aa8db",
+      "mark": "#14201a",
+      "accent": "#4a5e92",
+      "tile": "#e4e9f4"
+    },
+    "geometry": {
+      "top": 30,
+      "tipY": 15,
+      "earL": 18,
+      "earR": 93,
+      "panelX": 36,
+      "panelW": 48
+    }
+  },
+  {
+    "seed": "kobold-0017",
+    "hash": 2043705279,
+    "headIndex": 3,
+    "head": "oct",
+    "eyesIndex": 3,
+    "eyes": "led",
+    "antennaIndex": 1,
+    "antenna": "double",
+    "mouthIndex": 0,
+    "mouth": "grille",
+    "paletteIndex": 2,
+    "palette": {
+      "name": "steel",
+      "body": "#c9d8c9",
+      "shade": "#a8bda8",
+      "panel": "#1f2d1f",
+      "sensor": "#5eab60",
+      "mark": "#1f2d1f",
+      "accent": "#3f9147",
+      "tile": "#f5f8f4"
+    },
+    "geometry": {
+      "top": 38,
+      "tipY": 25,
+      "earL": 18,
+      "earR": 93,
+      "panelX": 36,
+      "panelW": 48
+    }
+  },
+  {
+    "seed": "nimbus-00c3",
+    "hash": 541365604,
+    "headIndex": 0,
+    "head": "rect",
+    "eyesIndex": 2,
+    "eyes": "cyclops",
+    "antennaIndex": 0,
+    "antenna": "ball",
+    "mouthIndex": 1,
+    "mouth": "dots",
+    "paletteIndex": 4,
+    "palette": {
+      "name": "sky",
+      "body": "#8aa8db",
+      "shade": "#6d8fce",
+      "panel": "#1f2d1f",
+      "sensor": "#d6fcd0",
+      "mark": "#1f2d1f",
+      "accent": "#4a5e92",
+      "tile": "#edf0f6"
+    },
+    "geometry": {
+      "top": 38,
+      "tipY": 22,
+      "earL": 18,
+      "earR": 93,
+      "panelX": 36,
+      "panelW": 48
+    }
+  },
+  {
+    "seed": "relais-002c",
+    "hash": 1032584081,
+    "headIndex": 1,
+    "head": "hex",
+    "eyesIndex": 1,
+    "eyes": "visor",
+    "antennaIndex": 1,
+    "antenna": "double",
+    "mouthIndex": 2,
+    "mouth": "slot",
+    "paletteIndex": 5,
+    "palette": {
+      "name": "mint",
+      "body": "#d6fcd0",
+      "shade": "#b5e4ae",
+      "panel": "#2a3c2a",
+      "sensor": "#49b24d",
+      "mark": "#2a3c2a",
+      "accent": "#3f9147",
+      "tile": "#e3ebe2"
+    },
+    "geometry": {
+      "top": 36,
+      "tipY": 23,
+      "earL": 16,
+      "earR": 95,
+      "panelX": 38,
+      "panelW": 44
+    }
+  },
+  {
+    "seed": "zink-02a7",
+    "hash": 1830136836,
+    "headIndex": 0,
+    "head": "rect",
+    "eyesIndex": 0,
+    "eyes": "dual",
+    "antennaIndex": 2,
+    "antenna": "gear",
+    "mouthIndex": 2,
+    "mouth": "slot",
+    "paletteIndex": 1,
+    "palette": {
+      "name": "night",
+      "body": "#2a3c2a",
+      "shade": "#1f2d1f",
+      "panel": "#14201a",
+      "sensor": "#5eab60",
+      "mark": "#5eab60",
+      "accent": "#3f9147",
+      "tile": "#d6fcd0"
+    },
+    "geometry": {
+      "top": 38,
+      "tipY": 23,
+      "earL": 18,
+      "earR": 93,
+      "panelX": 36,
+      "panelW": 48
+    }
+  },
+  {
+    "seed": "atlas-b99a",
+    "hash": 31308636,
+    "headIndex": 0,
+    "head": "rect",
+    "eyesIndex": 1,
+    "eyes": "visor",
+    "antennaIndex": 1,
+    "antenna": "double",
+    "mouthIndex": 2,
+    "mouth": "slot",
+    "paletteIndex": 3,
+    "palette": {
+      "name": "cobalt",
+      "body": "#4a5e92",
+      "shade": "#3f5f9c",
+      "panel": "#14201a",
+      "sensor": "#8aa8db",
+      "mark": "#14201a",
+      "accent": "#4a5e92",
+      "tile": "#e4e9f4"
+    },
+    "geometry": {
+      "top": 38,
+      "tipY": 25,
+      "earL": 18,
+      "earR": 93,
+      "panelX": 36,
+      "panelW": 48
+    }
+  },
+  {
+    "seed": "atlas-7ab1",
+    "hash": 2958345338,
+    "headIndex": 2,
+    "head": "dome",
+    "eyesIndex": 3,
+    "eyes": "led",
+    "antennaIndex": 0,
+    "antenna": "ball",
+    "mouthIndex": 2,
+    "mouth": "slot",
+    "paletteIndex": 2,
+    "palette": {
+      "name": "steel",
+      "body": "#c9d8c9",
+      "shade": "#a8bda8",
+      "panel": "#1f2d1f",
+      "sensor": "#5eab60",
+      "mark": "#1f2d1f",
+      "accent": "#3f9147",
+      "tile": "#f5f8f4"
+    },
+    "geometry": {
+      "top": 30,
+      "tipY": 14,
+      "earL": 18,
+      "earR": 93,
+      "panelX": 36,
+      "panelW": 48
+    }
+  },
+  {
+    "seed": "atlas-977a",
+    "hash": 1840947119,
+    "headIndex": 3,
+    "head": "oct",
+    "eyesIndex": 2,
+    "eyes": "cyclops",
+    "antennaIndex": 1,
+    "antenna": "double",
+    "mouthIndex": 1,
+    "mouth": "dots",
+    "paletteIndex": 4,
+    "palette": {
+      "name": "sky",
+      "body": "#8aa8db",
+      "shade": "#6d8fce",
+      "panel": "#1f2d1f",
+      "sensor": "#d6fcd0",
+      "mark": "#1f2d1f",
+      "accent": "#4a5e92",
+      "tile": "#edf0f6"
+    },
+    "geometry": {
+      "top": 38,
+      "tipY": 25,
+      "earL": 18,
+      "earR": 93,
+      "panelX": 36,
+      "panelW": 48
+    }
+  },
+  {
+    "seed": "atlas-0226",
+    "hash": 2418351805,
+    "headIndex": 1,
+    "head": "hex",
+    "eyesIndex": 3,
+    "eyes": "led",
+    "antennaIndex": 1,
+    "antenna": "double",
+    "mouthIndex": 2,
+    "mouth": "slot",
+    "paletteIndex": 1,
+    "palette": {
+      "name": "night",
+      "body": "#2a3c2a",
+      "shade": "#1f2d1f",
+      "panel": "#14201a",
+      "sensor": "#5eab60",
+      "mark": "#5eab60",
+      "accent": "#3f9147",
+      "tile": "#d6fcd0"
+    },
+    "geometry": {
+      "top": 36,
+      "tipY": 23,
+      "earL": 16,
+      "earR": 95,
+      "panelX": 38,
+      "panelW": 44
+    }
+  },
+  {
+    "seed": "atlas-f99e",
+    "hash": 4165702796,
+    "headIndex": 0,
+    "head": "rect",
+    "eyesIndex": 0,
+    "eyes": "dual",
+    "antennaIndex": 0,
+    "antenna": "ball",
+    "mouthIndex": 2,
+    "mouth": "slot",
+    "paletteIndex": 5,
+    "palette": {
+      "name": "mint",
+      "body": "#d6fcd0",
+      "shade": "#b5e4ae",
+      "panel": "#2a3c2a",
+      "sensor": "#49b24d",
+      "mark": "#2a3c2a",
+      "accent": "#3f9147",
+      "tile": "#e3ebe2"
+    },
+    "geometry": {
+      "top": 38,
+      "tipY": 22,
+      "earL": 18,
+      "earR": 93,
+      "panelX": 36,
+      "panelW": 48
+    }
+  }
+]

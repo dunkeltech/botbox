@@ -7,9 +7,12 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"time"
 
+	"github.com/dunkeltech/botbox/backend/internal/auth"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // ReadinessCheck validates downstream dependencies such as Postgres and NATS.
@@ -17,9 +20,21 @@ type ReadinessCheck func(ctx context.Context) error
 
 // Config configures the HTTP control plane handler.
 type Config struct {
-	Logger         *slog.Logger
-	ReadinessCheck ReadinessCheck
-	VNCRelay       http.Handler
+	Logger                *slog.Logger
+	ReadinessCheck        ReadinessCheck
+	VNCRelay              http.Handler
+	Pool                  *pgxpool.Pool
+	JWT                   *auth.JWTService
+	AuthProvider          auth.Provider
+	Argon2Params          auth.Argon2Params
+	Setup                 *auth.SetupManager
+	SetupRateLimiter      *auth.RateLimiter
+	LoginIPRateLimiter    *auth.RateLimiter
+	LoginEmailRateLimiter *auth.RateLimiter
+	RefreshRateLimiter    *auth.RateLimiter
+	CookieSecure          bool
+	PublicBaseURL         string
+	Now                   func() time.Time
 }
 
 type healthResponse struct {
@@ -68,6 +83,9 @@ func NewHandlerWithConfig(cfg Config) http.Handler {
 	if cfg.VNCRelay != nil {
 		r.Method(http.MethodGet, "/ws/bots/{workspaceID}/{botID}/vnc", cfg.VNCRelay)
 	}
+
+	srv := newServer(cfg, logger)
+	srv.mountRoutes(r)
 
 	return r
 }
