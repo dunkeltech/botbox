@@ -13,6 +13,16 @@
     outline: 2px solid #3f9147;
     outline-offset: 2px;
   }
+
+  dialog:modal {
+    overscroll-behavior: contain;
+  }
+
+  dialog::backdrop {
+    background-color: rgba(20, 25, 20, 0.45);
+    overflow: hidden;
+    overscroll-behavior: contain;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

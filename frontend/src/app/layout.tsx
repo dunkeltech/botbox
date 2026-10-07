@@ -5,6 +5,7 @@ import { getMessages, getTranslations } from 'next-intl/server';
 import { type ReactNode } from 'react';
 
 import { QueryProvider } from '@/components/providers/QueryProvider';
+import { AuthProvider } from '@/context/AuthContext';
 import './globals.css';
 
 const lato = Lato({
@@ -35,7 +36,9 @@ export default async function RootLayout({ children }: RootLayoutProps) {
     <html lang="en" className={lato.variable}>
       <body className="min-h-screen bg-paper-2 font-sans text-ink antialiased">
         <NextIntlClientProvider messages={messages}>
-          <QueryProvider>{children}</QueryProvider>
+          <QueryProvider>
+            <AuthProvider>{children}</AuthProvider>
+          </QueryProvider>
         </NextIntlClientProvider>
       </body>
     </html>
