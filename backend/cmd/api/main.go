@@ -56,10 +56,7 @@ func run(logger *slog.Logger) error {
 		}
 		defer pool.Close()
 
-		pingCtx, pingCancel := context.WithTimeout(ctx, 10*time.Second)
-		err = pool.Ping(pingCtx)
-		pingCancel()
-		if err != nil {
+		if err := waitForPostgres(ctx, pool); err != nil {
 			return err
 		}
 
@@ -118,6 +115,32 @@ func run(logger *slog.Logger) error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		return srv.Shutdown(shutdownCtx)
+	}
+}
+
+func waitForPostgres(ctx context.Context, pool *pgxpool.Pool) error {
+	pingCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	lastErr := pool.Ping(pingCtx)
+	if lastErr == nil {
+		return nil
+	}
+
+	// devenv up starts postgres and api concurrently, so retry briefly until TCP 127.0.0.1:5432 binds.
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-pingCtx.Done():
+			return lastErr
+		case <-ticker.C:
+			lastErr = pool.Ping(pingCtx)
+			if lastErr == nil {
+				return nil
+			}
+		}
 	}
 }
 
