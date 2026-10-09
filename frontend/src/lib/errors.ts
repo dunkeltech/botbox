@@ -21,6 +21,12 @@ export type ErrorTranslationKey =
   | 'invitationNotFound'
   | 'invitationEmailMismatch'
   | 'botNotFound'
+  | 'controlLocked'
+  | 'environmentNotRunning'
+  | 'environmentNotFound'
+  | 'fileNotFound'
+  | 'securityViolation'
+  | 'sandboxUnavailable'
   | 'unknownError';
 
 const ERROR_CODE_TO_KEY: Record<string, ErrorTranslationKey> = {
@@ -44,6 +50,12 @@ const ERROR_CODE_TO_KEY: Record<string, ErrorTranslationKey> = {
   'invitation.not_found': 'invitationNotFound',
   'invitation.email_mismatch': 'invitationEmailMismatch',
   'bot.not_found': 'botNotFound',
+  'control.locked': 'controlLocked',
+  'environment.not_running': 'environmentNotRunning',
+  'environment.not_found': 'environmentNotFound',
+  'file.not_found': 'fileNotFound',
+  security_violation: 'securityViolation',
+  sandbox_unavailable: 'sandboxUnavailable',
 };
 
 /**

@@ -26,6 +26,15 @@ export function canManageBot(
 }
 
 /**
+ * Returns true when the role can claim interactive desktop control on workspace bots.
+ */
+export function canTakeDesktopControl(
+  role: WorkspaceRole | undefined,
+): boolean {
+  return role === 'owner' || role === 'admin' || role === 'member';
+}
+
+/**
  * Returns true when the role can invite teammates, change member roles, or revoke invitations.
  */
 export function canManageMembers(role: WorkspaceRole | undefined): boolean {

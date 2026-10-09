@@ -22,11 +22,22 @@ export interface VncViewportProps {
   wsUrl: string;
   /** Short-lived HMAC ticket required by the Go relay. */
   ticket: string;
-  /** Whether the user currently holds the interactive control lock. */
+  /** Initial interactive control state when used uncontrolled. */
   initialControl?: boolean;
+  /** Controlled interactive control state synchronized with the backend control lock. */
+  inControl?: boolean;
+  /** Whether the current user is permitted to take or release control. */
+  canTakeControl?: boolean;
+  /** Disables the control toggle while a control lock request is in flight. */
+  controlBusy?: boolean;
+  /** Hide the standalone header when embedded inside the tabbed workspace panel. */
+  hideHeader?: boolean;
   /** Optional custom RFB connector for deterministic unit tests. */
   connectRFB?: RFBConnector;
   onControlChange?: (inControl: boolean) => void;
+  onConnectionChange?: (connected: boolean) => void;
+  /** Optional handler invoked instead of mutating local state in controlled mode. */
+  onRequestControlToggle?: (nextControl: boolean) => void | Promise<void>;
 }
 
 async function defaultConnectRFB(
@@ -45,29 +56,40 @@ export function VncViewport({
   wsUrl,
   ticket,
   initialControl = false,
+  inControl: controlledInControl,
+  canTakeControl = true,
+  controlBusy = false,
+  hideHeader = false,
   connectRFB = defaultConnectRFB,
   onControlChange,
+  onConnectionChange,
+  onRequestControlToggle,
 }: VncViewportProps) {
   const t = useTranslations('workspace.vnc');
   const stageRef = useRef<HTMLDivElement | null>(null);
   const clientRef = useRef<RFBClient | null>(null);
-  const [inControl, setInControl] = useState(initialControl);
-  const inControlRef = useRef(inControl);
+  const [internalControl, setInternalControl] = useState(initialControl);
+  const effectiveControl = controlledInControl ?? internalControl;
+  const inControlRef = useRef(effectiveControl);
+  const onConnectionChangeRef = useRef(onConnectionChange);
   const [connected, setConnected] = useState(false);
+
+  onConnectionChangeRef.current = onConnectionChange;
 
   const hasValidEndpoint = wsUrl.trim().length > 0 && ticket.trim().length > 0;
 
   useEffect(() => {
-    inControlRef.current = inControl;
+    inControlRef.current = effectiveControl;
     if (clientRef.current) {
-      clientRef.current.viewOnly = !inControl;
+      clientRef.current.viewOnly = !effectiveControl;
     }
-  }, [inControl]);
+  }, [effectiveControl]);
 
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage || !hasValidEndpoint) {
       setConnected(false);
+      onConnectionChangeRef.current?.(false);
       return;
     }
 
@@ -82,8 +104,14 @@ export function VncViewport({
       }
       client.viewOnly = !inControlRef.current;
       client.scaleViewport = true;
-      client.addEventListener('connect', () => setConnected(true));
-      client.addEventListener('disconnect', () => setConnected(false));
+      client.addEventListener('connect', () => {
+        setConnected(true);
+        onConnectionChangeRef.current?.(true);
+      });
+      client.addEventListener('disconnect', () => {
+        setConnected(false);
+        onConnectionChangeRef.current?.(false);
+      });
       clientRef.current = client;
     });
 
@@ -91,12 +119,17 @@ export function VncViewport({
       cancelled = true;
       clientRef.current?.disconnect();
       clientRef.current = null;
+      onConnectionChangeRef.current?.(false);
     };
   }, [wsUrl, ticket, hasValidEndpoint, connectRFB]);
 
   const handleToggleControl = () => {
-    const next = !inControl;
-    setInControl(next);
+    const next = !effectiveControl;
+    if (onRequestControlToggle) {
+      void onRequestControlToggle(next);
+      return;
+    }
+    setInternalControl(next);
     onControlChange?.(next);
   };
 
@@ -104,9 +137,33 @@ export function VncViewport({
     ? { status: 'stopped' as const, label: t('disconnected') }
     : !connected
       ? { status: 'thinking' as const, label: t('connecting') }
-      : inControl
+      : effectiveControl
         ? { status: 'budgetWarning' as const, label: t('connectedInControl') }
         : { status: 'working' as const, label: t('connectedViewOnly') };
+
+  const body = (
+    <>
+      {!hasValidEndpoint ? (
+        <p
+          role="alert"
+          className="rounded-sm border border-dashed border-amber-line bg-amber-tint px-3.5 py-2.5 text-[14px] font-bold text-amber"
+        >
+          {t('missingTicket')}
+        </p>
+      ) : null}
+
+      <div
+        ref={stageRef}
+        data-testid="vnc-stage"
+        aria-label={t('resolution')}
+        className={`aspect-[16/10] w-full overflow-hidden bg-terminal ${hideHeader ? '' : 'rounded-md border border-line'}`.trim()}
+      />
+    </>
+  );
+
+  if (hideHeader) {
+    return <div className="flex flex-col">{body}</div>;
+  }
 
   return (
     <section className="flex flex-col gap-3 rounded-lg border border-line bg-paper p-4 shadow-card">
@@ -121,31 +178,21 @@ export function VncViewport({
         <div className="flex flex-wrap items-center gap-3">
           <StatusChip status={statusChip.status} label={statusChip.label} />
           <Button
-            variant={inControl ? 'primary' : 'secondary'}
-            aria-pressed={inControl}
-            disabled={!hasValidEndpoint}
+            variant={effectiveControl ? 'primary' : 'secondary'}
+            aria-pressed={effectiveControl}
+            disabled={
+              !hasValidEndpoint ||
+              controlBusy ||
+              (!effectiveControl && !canTakeControl)
+            }
             onClick={handleToggleControl}
           >
-            {inControl ? t('releaseControl') : t('takeControl')}
+            {effectiveControl ? t('releaseControl') : t('takeControl')}
           </Button>
         </div>
       </div>
 
-      {!hasValidEndpoint ? (
-        <p
-          role="alert"
-          className="rounded-sm border border-dashed border-amber-line bg-amber-tint px-3.5 py-2.5 text-[14px] font-bold text-amber"
-        >
-          {t('missingTicket')}
-        </p>
-      ) : null}
-
-      <div
-        ref={stageRef}
-        data-testid="vnc-stage"
-        aria-label={t('resolution')}
-        className="aspect-[16/10] w-full overflow-hidden rounded-md border border-line bg-terminal"
-      />
+      {body}
     </section>
   );
 }

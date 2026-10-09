@@ -188,3 +188,89 @@ export interface UpdateBotRequest {
   driverType?: DriverType;
   replyLanguage?: string;
 }
+
+export type EnvironmentStatus = 'creating' | 'running' | 'stopped' | 'error';
+
+export interface EnvironmentStats {
+  cpuPercent: number;
+  memoryUsedMiB: number;
+  memoryLimitMiB: number;
+  volumeUsedMiB: number;
+  volumeLimitMiB: number;
+}
+
+export interface ControlHolder {
+  userId: string;
+  displayName: string;
+  email: string;
+}
+
+export interface WatcherUser {
+  userId: string;
+  displayName: string;
+}
+
+export interface EnvironmentStateResponse {
+  botId: string;
+  workspaceId: string;
+  driver: string;
+  envId: string;
+  status: EnvironmentStatus;
+  image: string;
+  cpuMillis: number;
+  memoryMiB: number;
+  volumeRef: string;
+  controlHolder: ControlHolder | null;
+  controlNote: string;
+  stats: EnvironmentStats;
+  watchers: WatcherUser[];
+  startedAt: string | null;
+  updatedAt: string;
+}
+
+export interface ReleaseControlRequest {
+  note?: string;
+}
+
+export interface StreamTicketResponse {
+  ticket: string;
+  wsPath: string;
+  canControl: boolean;
+  expiresAt: string;
+}
+
+export interface TerminalExecRequest {
+  command: string;
+  workdir?: string;
+}
+
+export interface TerminalExecResponse {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+  cwd: string;
+}
+
+export interface FileEntry {
+  name: string;
+  path: string;
+  isDir: boolean;
+  sizeBytes: number;
+  updatedAt: string;
+}
+
+export interface FileListResponse {
+  path: string;
+  entries: FileEntry[];
+}
+
+export interface FileContentResponse {
+  path: string;
+  content: string;
+  sizeBytes: number;
+}
+
+export interface WriteFileContentRequest {
+  path: string;
+  content: string;
+}

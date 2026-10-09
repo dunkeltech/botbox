@@ -152,15 +152,19 @@ export function BotBuilderForm({ mode, workspace, bot }: BotBuilderFormProps) {
 
   const effectiveSeed = avatarSeed.trim() || 'botbox-001a';
 
+  const backHref = mode === 'edit' && bot ? `/bots/${bot.id}` : '/';
+  const backLabel =
+    mode === 'edit' && bot ? t('backToWorkspace') : t('backToFleet');
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-3">
         <Link
-          href="/"
+          href={backHref}
           className="inline-flex min-h-[44px] w-fit items-center gap-2 rounded-sm px-2 text-[14px] font-bold text-green-600 transition duration-150 hover:bg-mint-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-          <span>{t('backToFleet')}</span>
+          <span>{backLabel}</span>
         </Link>
 
         <Eyebrow>

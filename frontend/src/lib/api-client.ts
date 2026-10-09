@@ -7,19 +7,27 @@ import type {
   CreatedInvitationResponse,
   CreateInvitationRequest,
   CreateWorkspaceRequest,
+  EnvironmentStateResponse,
   ErrorEnvelope,
+  FileContentResponse,
+  FileListResponse,
   InvitationListResponse,
   InvitationPreviewResponse,
   LoginRequest,
   MeResponse,
+  ReleaseControlRequest,
   SetupCompleteRequest,
   SetupStatusResponse,
+  StreamTicketResponse,
+  TerminalExecRequest,
+  TerminalExecResponse,
   UpdateBotRequest,
   UpdateMemberRoleRequest,
   WorkspaceListResponse,
   WorkspaceMember,
   WorkspaceMemberListResponse,
   WorkspaceSummary,
+  WriteFileContentRequest,
 } from '@/types/api';
 
 /**
@@ -452,6 +460,149 @@ export function deleteBot(workspaceId: string, botId: string): Promise<void> {
     `/api/workspaces/${encodeURIComponent(workspaceId)}/bots/${encodeURIComponent(botId)}`,
     {
       method: 'DELETE',
+    },
+  );
+}
+
+/** Fetches the sandbox environment state, resource metrics, and control lock for a bot. */
+export function getBotEnvironment(
+  workspaceId: string,
+  botId: string,
+): Promise<EnvironmentStateResponse> {
+  return requestJson<EnvironmentStateResponse>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/bots/${encodeURIComponent(botId)}/environment`,
+  );
+}
+
+/** Starts (and creates on demand) the sandbox environment for a bot. */
+export function startBotEnvironment(
+  workspaceId: string,
+  botId: string,
+): Promise<EnvironmentStateResponse> {
+  return requestJson<EnvironmentStateResponse>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/bots/${encodeURIComponent(botId)}/environment/start`,
+    {
+      method: 'POST',
+    },
+  );
+}
+
+/** Stops the running sandbox environment while preserving /home/bot volume state. */
+export function stopBotEnvironment(
+  workspaceId: string,
+  botId: string,
+): Promise<EnvironmentStateResponse> {
+  return requestJson<EnvironmentStateResponse>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/bots/${encodeURIComponent(botId)}/environment/stop`,
+    {
+      method: 'POST',
+    },
+  );
+}
+
+/** Restarts the sandbox environment for a bot. */
+export function restartBotEnvironment(
+  workspaceId: string,
+  botId: string,
+): Promise<EnvironmentStateResponse> {
+  return requestJson<EnvironmentStateResponse>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/bots/${encodeURIComponent(botId)}/environment/restart`,
+    {
+      method: 'POST',
+    },
+  );
+}
+
+/** Claims exclusive desktop control lock for the signed-in user. */
+export function takeBotControl(
+  workspaceId: string,
+  botId: string,
+): Promise<EnvironmentStateResponse> {
+  return requestJson<EnvironmentStateResponse>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/bots/${encodeURIComponent(botId)}/control/take`,
+    {
+      method: 'POST',
+    },
+  );
+}
+
+/** Releases desktop control lock and optionally records a hand-back note. */
+export function releaseBotControl(
+  workspaceId: string,
+  botId: string,
+  body?: ReleaseControlRequest,
+): Promise<EnvironmentStateResponse> {
+  return requestJson<EnvironmentStateResponse>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/bots/${encodeURIComponent(botId)}/control/release`,
+    {
+      method: 'POST',
+      body: body ?? {},
+    },
+  );
+}
+
+/** Requests a short-lived signed WebSocket ticket to stream the bot desktop over VNC. */
+export function createBotVncTicket(
+  workspaceId: string,
+  botId: string,
+): Promise<StreamTicketResponse> {
+  return requestJson<StreamTicketResponse>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/bots/${encodeURIComponent(botId)}/vnc-ticket`,
+    {
+      method: 'POST',
+    },
+  );
+}
+
+/** Executes a shell command inside the running bot sandbox terminal. */
+export function execBotTerminal(
+  workspaceId: string,
+  botId: string,
+  body: TerminalExecRequest,
+): Promise<TerminalExecResponse> {
+  return requestJson<TerminalExecResponse>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/bots/${encodeURIComponent(botId)}/terminal/exec`,
+    {
+      method: 'POST',
+      body,
+    },
+  );
+}
+
+/** Lists files and directories inside the bot /home/bot filesystem. */
+export function listBotFiles(
+  workspaceId: string,
+  botId: string,
+  path?: string,
+): Promise<FileListResponse> {
+  const query = path ? `?path=${encodeURIComponent(path)}` : '';
+  return requestJson<FileListResponse>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/bots/${encodeURIComponent(botId)}/files${query}`,
+  );
+}
+
+/** Reads the UTF-8 contents of a file inside the bot /home/bot filesystem. */
+export function readBotFile(
+  workspaceId: string,
+  botId: string,
+  path: string,
+): Promise<FileContentResponse> {
+  return requestJson<FileContentResponse>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/bots/${encodeURIComponent(botId)}/files/content?path=${encodeURIComponent(path)}`,
+  );
+}
+
+/** Writes UTF-8 contents to a file inside the bot /home/bot filesystem. */
+export function writeBotFile(
+  workspaceId: string,
+  botId: string,
+  body: WriteFileContentRequest,
+): Promise<FileContentResponse> {
+  return requestJson<FileContentResponse>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/bots/${encodeURIComponent(botId)}/files/content`,
+    {
+      method: 'PUT',
+      body,
     },
   );
 }

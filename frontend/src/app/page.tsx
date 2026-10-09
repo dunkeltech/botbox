@@ -1,6 +1,6 @@
 'use client';
 
-import { Plus } from 'lucide-react';
+import { Play, Plus, Square } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
@@ -9,6 +9,7 @@ import { AppShell } from '@/components/shell/AppShell';
 import {
   Alert,
   BotAvatar,
+  Button,
   Card,
   type ChipStatus,
   Eyebrow,
@@ -16,7 +17,11 @@ import {
   StatusChip,
 } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
-import { listBots } from '@/lib/api-client';
+import {
+  listBots,
+  startBotEnvironment,
+  stopBotEnvironment,
+} from '@/lib/api-client';
 import { type ErrorTranslationKey, resolveErrorKey } from '@/lib/errors';
 import { canCreateBot, canManageBot } from '@/lib/rbac';
 import type { Bot, BotStatus } from '@/types/api';
@@ -38,6 +43,7 @@ function FleetContent() {
   const [loading, setLoading] = useState(true);
   const [errorKey, setErrorKey] = useState<ErrorTranslationKey | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [sandboxBusyId, setSandboxBusyId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!activeWorkspace) {
@@ -89,6 +95,39 @@ function FleetContent() {
 
   const canCreate =
     activeWorkspace !== null && canCreateBot(activeWorkspace.role);
+
+  async function handleSandboxToggle(bot: Bot) {
+    if (
+      !activeWorkspace ||
+      !canManageBot(activeWorkspace.role, user?.id, bot)
+    ) {
+      return;
+    }
+    setErrorKey(null);
+    setSandboxBusyId(bot.id);
+    const isRunning = bot.status !== 'stopped';
+    try {
+      const updated = isRunning
+        ? await stopBotEnvironment(activeWorkspace.id, bot.id)
+        : await startBotEnvironment(activeWorkspace.id, bot.id);
+      const nextRunning = updated.status === 'running';
+      setBots((prev) =>
+        prev.map((item) =>
+          item.id === bot.id
+            ? {
+                ...item,
+                status: nextRunning ? 'idle' : 'stopped',
+                mood: nextRunning ? 'idle' : 'offline',
+              }
+            : item,
+        ),
+      );
+    } catch (err) {
+      setErrorKey(resolveErrorKey(err));
+    } finally {
+      setSandboxBusyId(null);
+    }
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -165,15 +204,22 @@ function FleetContent() {
         </Card>
       ) : (
         <div className="grid gap-5 md:grid-cols-2">
-          {filteredBots.map((bot) => (
-            <Link
-              key={bot.id}
-              href={`/bots/${bot.id}`}
-              className="block rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
-            >
-              <Card interactive className="flex h-full flex-col gap-4 p-5">
+          {filteredBots.map((bot) => {
+            const canManage = canManageBot(
+              activeWorkspace?.role,
+              user?.id,
+              bot,
+            );
+            const isRunning = bot.status !== 'stopped';
+            const isBusy = sandboxBusyId === bot.id;
+
+            return (
+              <Card key={bot.id} className="flex h-full flex-col gap-4 p-5">
                 <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-center gap-4">
+                  <Link
+                    href={`/bots/${bot.id}`}
+                    className="group flex min-w-0 items-center gap-4 rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+                  >
                     <BotAvatar
                       seed={bot.avatarSeed}
                       mood={bot.mood}
@@ -181,15 +227,15 @@ function FleetContent() {
                       tile
                       decorative
                     />
-                    <div className="flex flex-col gap-1">
-                      <h2 className="text-[20px] font-black leading-[1.25] text-ink">
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <h2 className="text-[20px] font-black leading-[1.25] text-ink transition duration-150 group-hover:text-green-600">
                         {bot.name}
                       </h2>
-                      <p className="font-mono text-[12px] text-muted">
+                      <p className="truncate font-mono text-[12px] text-muted">
                         {`${bot.llmProvider} · ${bot.llmModel}`}
                       </p>
                     </div>
-                  </div>
+                  </Link>
 
                   <StatusChip
                     status={mapBotStatusToChip(bot.status)}
@@ -203,7 +249,7 @@ function FleetContent() {
                   </p>
                 ) : null}
 
-                <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
+                <div className="mt-auto flex flex-col gap-3 border-t border-line pt-3">
                   <div className="flex flex-wrap gap-2 font-mono text-[12px] text-ink-2">
                     <span className="rounded-xs border border-line bg-paper-2 px-2 py-0.5">
                       {`${t('driverPrefix')}${bot.driverType}`}
@@ -215,15 +261,58 @@ function FleetContent() {
                       {`${t('seedPrefix')}${bot.avatarSeed}`}
                     </span>
                   </div>
-                  <span className="text-[13px] font-bold text-green-600">
-                    {canManageBot(activeWorkspace?.role, user?.id, bot)
-                      ? t('editAction')
-                      : t('inspectAction')}
-                  </span>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    {canManage ? (
+                      <>
+                        <Button
+                          variant="secondary"
+                          disabled={isBusy}
+                          onClick={() => void handleSandboxToggle(bot)}
+                        >
+                          {isRunning ? (
+                            <Square className="h-4 w-4" aria-hidden="true" />
+                          ) : (
+                            <Play className="h-4 w-4" aria-hidden="true" />
+                          )}
+                          <span>
+                            {isRunning
+                              ? isBusy
+                                ? t('stoppingSandbox')
+                                : t('stopSandbox')
+                              : isBusy
+                                ? t('startingSandbox')
+                                : t('startSandbox')}
+                          </span>
+                        </Button>
+                        <div className="flex flex-wrap items-center gap-1">
+                          <Link
+                            href={`/bots/${bot.id}/settings`}
+                            className="inline-flex min-h-[44px] items-center rounded-sm px-2.5 text-[13px] font-bold text-ink-2 transition duration-150 hover:bg-mint-soft hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+                          >
+                            {t('editAction')}
+                          </Link>
+                          <Link
+                            href={`/bots/${bot.id}`}
+                            className="inline-flex min-h-[44px] items-center rounded-sm px-2.5 text-[13px] font-bold text-green-600 transition duration-150 hover:bg-mint-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+                          >
+                            {t('openWorkspace')}
+                          </Link>
+                        </div>
+                      </>
+                    ) : (
+                      <Link
+                        href={`/bots/${bot.id}`}
+                        className="inline-flex min-h-[44px] items-center rounded-sm px-2.5 text-[13px] font-bold text-green-600 transition duration-150 hover:bg-mint-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+                      >
+                        {t('inspectAction')}
+                      </Link>
+                    )}
+                  </div>
                 </div>
               </Card>
-            </Link>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
