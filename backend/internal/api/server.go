@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/dunkeltech/botbox/backend/internal/auth"
+	"github.com/dunkeltech/botbox/backend/internal/compute"
+	"github.com/dunkeltech/botbox/backend/internal/compute/vncrelay"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -23,6 +25,8 @@ type Config struct {
 	Logger                *slog.Logger
 	ReadinessCheck        ReadinessCheck
 	VNCRelay              http.Handler
+	Compute               compute.Driver
+	TicketSigner          *vncrelay.Signer
 	Pool                  *pgxpool.Pool
 	JWT                   *auth.JWTService
 	AuthProvider          auth.Provider
@@ -79,12 +83,23 @@ func NewHandlerWithConfig(cfg Config) http.Handler {
 		writeError(w, logger, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
 	})
 
+	srv := newServer(cfg, logger)
+
 	r.Get("/api/healthz", healthHandler(logger, cfg.ReadinessCheck))
 	if cfg.VNCRelay != nil {
 		r.Method(http.MethodGet, "/ws/bots/{workspaceID}/{botID}/vnc", cfg.VNCRelay)
+	} else {
+		r.Method(http.MethodGet, "/ws/bots/{workspaceID}/{botID}/vnc", vncrelay.NewRelayHandler(
+			srv.ticketSigner,
+			srv.resolveVNCUpstream,
+			logger,
+			&vncrelay.RelayOptions{
+				Now:                    srv.now,
+				InsecureSkipOriginWait: true,
+			},
+		))
 	}
 
-	srv := newServer(cfg, logger)
 	srv.mountRoutes(r)
 
 	return r

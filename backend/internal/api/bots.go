@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/dunkeltech/botbox/backend/internal/bots"
+	"github.com/dunkeltech/botbox/backend/internal/compute"
 	"github.com/dunkeltech/botbox/backend/internal/gen/api"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
 	"github.com/dunkeltech/botbox/backend/internal/workspaces"
@@ -27,9 +28,22 @@ func (s *server) handleListBots(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	envRows, envErr := s.queries.ListEnvironmentsByWorkspace(r.Context(), wsRow.ID)
+	envByBot := make(map[uuid.UUID]db.Environment, len(envRows))
+	if envErr == nil {
+		for _, env := range envRows {
+			envByBot[fromPGUUID(env.BotID)] = env
+		}
+	}
+
 	out := make([]api.Bot, 0, len(rows))
 	for _, b := range rows {
-		out = append(out, toAPIBot(b))
+		var envPtr *db.Environment
+		if env, exists := envByBot[fromPGUUID(b.ID)]; exists {
+			envCopy := env
+			envPtr = &envCopy
+		}
+		out = append(out, toAPIBotWithEnv(b, envPtr))
 	}
 	writeJSON(w, s.logger, http.StatusOK, api.BotListResponse{Bots: out})
 }
@@ -164,7 +178,29 @@ func (s *server) handleGetBot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, s.logger, http.StatusOK, toAPIBot(botRow))
+	var envPtr *db.Environment
+	if envRow, envErr := s.queries.GetEnvironmentByWorkspaceAndBot(r.Context(), db.GetEnvironmentByWorkspaceAndBotParams{
+		WorkspaceID: wsRow.ID,
+		ID:          botRow.ID,
+	}); envErr == nil {
+		envCopy := db.Environment{
+			BotID:               envRow.BotID,
+			Driver:              envRow.Driver,
+			EnvID:               envRow.EnvID,
+			Status:              envRow.Status,
+			Image:               envRow.Image,
+			CpuMillis:           envRow.CpuMillis,
+			MemoryMib:           envRow.MemoryMib,
+			VolumeRef:           envRow.VolumeRef,
+			ControlHolderUserID: envRow.ControlHolderUserID,
+			ControlNote:         envRow.ControlNote,
+			StartedAt:           envRow.StartedAt,
+			UpdatedAt:           envRow.UpdatedAt,
+		}
+		envPtr = &envCopy
+	}
+
+	writeJSON(w, s.logger, http.StatusOK, toAPIBotWithEnv(botRow, envPtr))
 }
 
 func (s *server) handleUpdateBot(w http.ResponseWriter, r *http.Request) {
@@ -294,6 +330,28 @@ func (s *server) handleUpdateBot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var envPtr *db.Environment
+	if envRow, envErr := txq.GetEnvironmentByWorkspaceAndBot(r.Context(), db.GetEnvironmentByWorkspaceAndBotParams{
+		WorkspaceID: wsRow.ID,
+		ID:          existing.ID,
+	}); envErr == nil {
+		envCopy := db.Environment{
+			BotID:               envRow.BotID,
+			Driver:              envRow.Driver,
+			EnvID:               envRow.EnvID,
+			Status:              envRow.Status,
+			Image:               envRow.Image,
+			CpuMillis:           envRow.CpuMillis,
+			MemoryMib:           envRow.MemoryMib,
+			VolumeRef:           envRow.VolumeRef,
+			ControlHolderUserID: envRow.ControlHolderUserID,
+			ControlNote:         envRow.ControlNote,
+			StartedAt:           envRow.StartedAt,
+			UpdatedAt:           envRow.UpdatedAt,
+		}
+		envPtr = &envCopy
+	}
+
 	wsUUID := fromPGUUID(wsRow.ID)
 	actorUUID := claims.Subject
 	if err := recordAudit(r.Context(), txq, &wsUUID, &actorUUID, "bot.updated", "bot", &botID, map[string]any{
@@ -310,7 +368,7 @@ func (s *server) handleUpdateBot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, s.logger, http.StatusOK, toAPIBot(updated))
+	writeJSON(w, s.logger, http.StatusOK, toAPIBotWithEnv(updated, envPtr))
 }
 
 func (s *server) handleDeleteBot(w http.ResponseWriter, r *http.Request) {
@@ -352,6 +410,15 @@ func (s *server) handleDeleteBot(w http.ResponseWriter, r *http.Request) {
 	if !workspaces.Can(actorRole, workspaces.ActionManageBot, isBotOwner) {
 		writeError(w, s.logger, http.StatusForbidden, "auth.forbidden", "insufficient permissions to delete this bot")
 		return
+	}
+
+	if envRow, envErr := txq.GetEnvironmentByWorkspaceAndBot(r.Context(), db.GetEnvironmentByWorkspaceAndBotParams{
+		WorkspaceID: wsRow.ID,
+		ID:          existing.ID,
+	}); envErr == nil && strings.TrimSpace(envRow.EnvID) != "" && s.compute != nil {
+		if destroyErr := s.compute.DestroyEnvironment(r.Context(), compute.EnvID(envRow.EnvID)); destroyErr != nil && !errors.Is(destroyErr, compute.ErrEnvironmentNotFound) {
+			s.logger.Warn("failed to destroy sandbox container during bot deletion", "err", destroyErr, "env_id", envRow.EnvID)
+		}
 	}
 
 	affected, err := txq.DeleteBotByWorkspaceAndID(r.Context(), db.DeleteBotByWorkspaceAndIDParams{

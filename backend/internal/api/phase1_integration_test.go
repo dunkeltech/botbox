@@ -15,6 +15,7 @@ import (
 
 	"github.com/dunkeltech/botbox/backend/internal/api"
 	"github.com/dunkeltech/botbox/backend/internal/auth"
+	"github.com/dunkeltech/botbox/backend/internal/compute"
 	apigen "github.com/dunkeltech/botbox/backend/internal/gen/api"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
 	"github.com/dunkeltech/botbox/backend/internal/testutil/pgtest"
@@ -45,17 +46,18 @@ func (c *testClock) Advance(d time.Duration) {
 }
 
 type testHarness struct {
-	t        *testing.T
-	pool     *pgxpool.Pool
-	queries  *db.Queries
-	clock    *testClock
-	setupMgr *auth.SetupManager
-	setupOut *bytes.Buffer
-	logs     *bytes.Buffer
-	logger   *slog.Logger
-	handler  http.Handler
-	jwtKey   []byte
-	secret   string
+	t          *testing.T
+	pool       *pgxpool.Pool
+	queries    *db.Queries
+	clock      *testClock
+	setupMgr   *auth.SetupManager
+	setupOut   *bytes.Buffer
+	logs       *bytes.Buffer
+	logger     *slog.Logger
+	computeDrv *compute.MemoryDriver
+	handler    http.Handler
+	jwtKey     []byte
+	secret     string
 }
 
 type harnessOpts struct {
@@ -112,10 +114,17 @@ func newTestHarness(t *testing.T, existingPool *pgxpool.Pool, opts harnessOpts) 
 		t.Fatalf("NewJWTService: %v", err)
 	}
 
+	computeDrv, err := compute.NewMemoryDriver(compute.MemoryDriverOptions{RootDir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("NewMemoryDriver: %v", err)
+	}
+	t.Cleanup(computeDrv.Close)
+
 	handler := api.NewHandlerWithConfig(api.Config{
-		Logger: logger,
-		Pool:   pool,
-		JWT:    jwtSvc,
+		Logger:  logger,
+		Pool:    pool,
+		JWT:     jwtSvc,
+		Compute: computeDrv,
 		Argon2Params: auth.Argon2Params{
 			MemoryKiB:   1024,
 			Iterations:  opts.argon2Iterations,
@@ -133,17 +142,18 @@ func newTestHarness(t *testing.T, existingPool *pgxpool.Pool, opts harnessOpts) 
 	})
 
 	return &testHarness{
-		t:        t,
-		pool:     pool,
-		queries:  queries,
-		clock:    clock,
-		setupMgr: setupMgr,
-		setupOut: &setupOut,
-		logs:     &logs,
-		logger:   logger,
-		handler:  handler,
-		jwtKey:   privKey,
-		secret:   secret,
+		t:          t,
+		pool:       pool,
+		queries:    queries,
+		clock:      clock,
+		setupMgr:   setupMgr,
+		setupOut:   &setupOut,
+		logs:       &logs,
+		logger:     logger,
+		computeDrv: computeDrv,
+		handler:    handler,
+		jwtKey:     privKey,
+		secret:     secret,
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -12,23 +13,50 @@ import (
 	agentv1 "github.com/dunkeltech/botbox/backend/internal/gen/proto/agent/v1"
 )
 
-const maxCallerLength = 128
+const (
+	maxCallerLength     = 128
+	defaultAgentVersion = "0.2.0"
+)
 
-// Server implements agentv1.AgentServiceServer for sandbox health and desktop control.
+// ServerOptions configures sandbox agent runtime settings.
+type ServerOptions struct {
+	Hostname  string
+	Desktop   *DesktopService
+	HomeDir   string
+	Version   string
+	StartedAt time.Time
+	Now       func() time.Time
+}
+
+// Server implements agentv1.AgentServiceServer for sandbox health, desktop control,
+// command execution, and /home/bot file access.
 type Server struct {
 	agentv1.UnimplementedAgentServiceServer
-	hostname string
-	desktop  *DesktopService
+	hostname  string
+	desktop   *DesktopService
+	homeDir   string
+	version   string
+	startedAt time.Time
+	now       func() time.Time
 }
 
 // NewServer creates an AgentService gRPC server using the provided hostname.
 // If hostname is empty, os.Hostname() is used with a "sandbox" fallback.
 func NewServer(hostname string) *Server {
-	return NewServerWithDesktop(hostname, NewDesktopService(nil))
+	return NewServerWithOptions(ServerOptions{Hostname: hostname})
 }
 
 // NewServerWithDesktop creates an AgentService gRPC server backed by desktop.
 func NewServerWithDesktop(hostname string, desktop *DesktopService) *Server {
+	return NewServerWithOptions(ServerOptions{
+		Hostname: hostname,
+		Desktop:  desktop,
+	})
+}
+
+// NewServerWithOptions creates an AgentService gRPC server using opts.
+func NewServerWithOptions(opts ServerOptions) *Server {
+	hostname := opts.Hostname
 	if hostname == "" {
 		if resolved, err := os.Hostname(); err == nil && resolved != "" {
 			hostname = resolved
@@ -36,13 +64,34 @@ func NewServerWithDesktop(hostname string, desktop *DesktopService) *Server {
 			hostname = "sandbox"
 		}
 	}
+	desktop := opts.Desktop
 	if desktop == nil {
 		desktop = NewDesktopService(nil)
 	}
+	homeDir := opts.HomeDir
+	if homeDir == "" {
+		homeDir = DefaultHomeDir
+	}
+	version := opts.Version
+	if version == "" {
+		version = defaultAgentVersion
+	}
+	nowFn := opts.Now
+	if nowFn == nil {
+		nowFn = time.Now
+	}
+	startedAt := opts.StartedAt
+	if startedAt.IsZero() {
+		startedAt = nowFn()
+	}
 
 	return &Server{
-		hostname: hostname,
-		desktop:  desktop,
+		hostname:  hostname,
+		desktop:   desktop,
+		homeDir:   homeDir,
+		version:   version,
+		startedAt: startedAt,
+		now:       nowFn,
 	}
 }
 

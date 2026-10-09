@@ -20,21 +20,28 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	AgentService_Ping_FullMethodName       = "/agent.v1.AgentService/Ping"
+	AgentService_GetInfo_FullMethodName    = "/agent.v1.AgentService/GetInfo"
 	AgentService_Screenshot_FullMethodName = "/agent.v1.AgentService/Screenshot"
 	AgentService_Click_FullMethodName      = "/agent.v1.AgentService/Click"
 	AgentService_Type_FullMethodName       = "/agent.v1.AgentService/Type"
 	AgentService_Key_FullMethodName        = "/agent.v1.AgentService/Key"
+	AgentService_Exec_FullMethodName       = "/agent.v1.AgentService/Exec"
+	AgentService_ListFiles_FullMethodName  = "/agent.v1.AgentService/ListFiles"
+	AgentService_ReadFile_FullMethodName   = "/agent.v1.AgentService/ReadFile"
+	AgentService_WriteFile_FullMethodName  = "/agent.v1.AgentService/WriteFile"
 )
 
 // AgentServiceClient is the client API for AgentService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// AgentService runs inside each sandbox container to handle health checks
-// and host-driven computer-use actions.
+// AgentService runs inside each sandbox container to handle health checks,
+// host-driven computer-use actions, command execution, and /home/bot file access.
 type AgentServiceClient interface {
 	// Ping verifies gRPC reachability and reports the sandbox hostname.
 	Ping(ctx context.Context, in *PingRequest, opts ...grpc.CallOption) (*PingResponse, error)
+	// GetInfo returns runtime capabilities and uptime of the sandbox agent.
+	GetInfo(ctx context.Context, in *GetInfoRequest, opts ...grpc.CallOption) (*GetInfoResponse, error)
 	// Screenshot captures the current :0 X11 framebuffer as a PNG image.
 	Screenshot(ctx context.Context, in *ScreenshotRequest, opts ...grpc.CallOption) (*ScreenshotResponse, error)
 	// Click moves the cursor to (x, y) on the 1280x800 desktop and clicks button.
@@ -43,6 +50,14 @@ type AgentServiceClient interface {
 	Type(ctx context.Context, in *TypeRequest, opts ...grpc.CallOption) (*TypeResponse, error)
 	// Key presses a key or key chord (for example "Return" or "ctrl+l") via xdotool.
 	Key(ctx context.Context, in *KeyRequest, opts ...grpc.CallOption) (*KeyResponse, error)
+	// Exec executes a bounded command inside the sandbox under /home/bot.
+	Exec(ctx context.Context, in *ExecRequest, opts ...grpc.CallOption) (*ExecResponse, error)
+	// ListFiles lists entries inside a directory scoped strictly under /home/bot.
+	ListFiles(ctx context.Context, in *ListFilesRequest, opts ...grpc.CallOption) (*ListFilesResponse, error)
+	// ReadFile reads file bytes strictly under /home/bot.
+	ReadFile(ctx context.Context, in *ReadFileRequest, opts ...grpc.CallOption) (*ReadFileResponse, error)
+	// WriteFile writes file bytes strictly under /home/bot.
+	WriteFile(ctx context.Context, in *WriteFileRequest, opts ...grpc.CallOption) (*WriteFileResponse, error)
 }
 
 type agentServiceClient struct {
@@ -57,6 +72,16 @@ func (c *agentServiceClient) Ping(ctx context.Context, in *PingRequest, opts ...
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(PingResponse)
 	err := c.cc.Invoke(ctx, AgentService_Ping_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) GetInfo(ctx context.Context, in *GetInfoRequest, opts ...grpc.CallOption) (*GetInfoResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetInfoResponse)
+	err := c.cc.Invoke(ctx, AgentService_GetInfo_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -103,15 +128,57 @@ func (c *agentServiceClient) Key(ctx context.Context, in *KeyRequest, opts ...gr
 	return out, nil
 }
 
+func (c *agentServiceClient) Exec(ctx context.Context, in *ExecRequest, opts ...grpc.CallOption) (*ExecResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ExecResponse)
+	err := c.cc.Invoke(ctx, AgentService_Exec_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) ListFiles(ctx context.Context, in *ListFilesRequest, opts ...grpc.CallOption) (*ListFilesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListFilesResponse)
+	err := c.cc.Invoke(ctx, AgentService_ListFiles_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) ReadFile(ctx context.Context, in *ReadFileRequest, opts ...grpc.CallOption) (*ReadFileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReadFileResponse)
+	err := c.cc.Invoke(ctx, AgentService_ReadFile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) WriteFile(ctx context.Context, in *WriteFileRequest, opts ...grpc.CallOption) (*WriteFileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WriteFileResponse)
+	err := c.cc.Invoke(ctx, AgentService_WriteFile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AgentServiceServer is the server API for AgentService service.
 // All implementations must embed UnimplementedAgentServiceServer
 // for forward compatibility.
 //
-// AgentService runs inside each sandbox container to handle health checks
-// and host-driven computer-use actions.
+// AgentService runs inside each sandbox container to handle health checks,
+// host-driven computer-use actions, command execution, and /home/bot file access.
 type AgentServiceServer interface {
 	// Ping verifies gRPC reachability and reports the sandbox hostname.
 	Ping(context.Context, *PingRequest) (*PingResponse, error)
+	// GetInfo returns runtime capabilities and uptime of the sandbox agent.
+	GetInfo(context.Context, *GetInfoRequest) (*GetInfoResponse, error)
 	// Screenshot captures the current :0 X11 framebuffer as a PNG image.
 	Screenshot(context.Context, *ScreenshotRequest) (*ScreenshotResponse, error)
 	// Click moves the cursor to (x, y) on the 1280x800 desktop and clicks button.
@@ -120,6 +187,14 @@ type AgentServiceServer interface {
 	Type(context.Context, *TypeRequest) (*TypeResponse, error)
 	// Key presses a key or key chord (for example "Return" or "ctrl+l") via xdotool.
 	Key(context.Context, *KeyRequest) (*KeyResponse, error)
+	// Exec executes a bounded command inside the sandbox under /home/bot.
+	Exec(context.Context, *ExecRequest) (*ExecResponse, error)
+	// ListFiles lists entries inside a directory scoped strictly under /home/bot.
+	ListFiles(context.Context, *ListFilesRequest) (*ListFilesResponse, error)
+	// ReadFile reads file bytes strictly under /home/bot.
+	ReadFile(context.Context, *ReadFileRequest) (*ReadFileResponse, error)
+	// WriteFile writes file bytes strictly under /home/bot.
+	WriteFile(context.Context, *WriteFileRequest) (*WriteFileResponse, error)
 	mustEmbedUnimplementedAgentServiceServer()
 }
 
@@ -133,6 +208,9 @@ type UnimplementedAgentServiceServer struct{}
 func (UnimplementedAgentServiceServer) Ping(context.Context, *PingRequest) (*PingResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Ping not implemented")
 }
+func (UnimplementedAgentServiceServer) GetInfo(context.Context, *GetInfoRequest) (*GetInfoResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetInfo not implemented")
+}
 func (UnimplementedAgentServiceServer) Screenshot(context.Context, *ScreenshotRequest) (*ScreenshotResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Screenshot not implemented")
 }
@@ -144,6 +222,18 @@ func (UnimplementedAgentServiceServer) Type(context.Context, *TypeRequest) (*Typ
 }
 func (UnimplementedAgentServiceServer) Key(context.Context, *KeyRequest) (*KeyResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Key not implemented")
+}
+func (UnimplementedAgentServiceServer) Exec(context.Context, *ExecRequest) (*ExecResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Exec not implemented")
+}
+func (UnimplementedAgentServiceServer) ListFiles(context.Context, *ListFilesRequest) (*ListFilesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListFiles not implemented")
+}
+func (UnimplementedAgentServiceServer) ReadFile(context.Context, *ReadFileRequest) (*ReadFileResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReadFile not implemented")
+}
+func (UnimplementedAgentServiceServer) WriteFile(context.Context, *WriteFileRequest) (*WriteFileResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method WriteFile not implemented")
 }
 func (UnimplementedAgentServiceServer) mustEmbedUnimplementedAgentServiceServer() {}
 func (UnimplementedAgentServiceServer) testEmbeddedByValue()                      {}
@@ -180,6 +270,24 @@ func _AgentService_Ping_Handler(srv interface{}, ctx context.Context, dec func(i
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(AgentServiceServer).Ping(ctx, req.(*PingRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_GetInfo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetInfoRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).GetInfo(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_GetInfo_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).GetInfo(ctx, req.(*GetInfoRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -256,6 +364,78 @@ func _AgentService_Key_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AgentService_Exec_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ExecRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).Exec(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_Exec_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).Exec(ctx, req.(*ExecRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_ListFiles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListFilesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).ListFiles(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_ListFiles_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).ListFiles(ctx, req.(*ListFilesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_ReadFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReadFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).ReadFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_ReadFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).ReadFile(ctx, req.(*ReadFileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_WriteFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WriteFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).WriteFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_WriteFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).WriteFile(ctx, req.(*WriteFileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AgentService_ServiceDesc is the grpc.ServiceDesc for AgentService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -266,6 +446,10 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Ping",
 			Handler:    _AgentService_Ping_Handler,
+		},
+		{
+			MethodName: "GetInfo",
+			Handler:    _AgentService_GetInfo_Handler,
 		},
 		{
 			MethodName: "Screenshot",
@@ -282,6 +466,22 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Key",
 			Handler:    _AgentService_Key_Handler,
+		},
+		{
+			MethodName: "Exec",
+			Handler:    _AgentService_Exec_Handler,
+		},
+		{
+			MethodName: "ListFiles",
+			Handler:    _AgentService_ListFiles_Handler,
+		},
+		{
+			MethodName: "ReadFile",
+			Handler:    _AgentService_ReadFile_Handler,
+		},
+		{
+			MethodName: "WriteFile",
+			Handler:    _AgentService_WriteFile_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -26,5 +26,11 @@ build:
 	cd backend && go build -o bin/egress-proxy ./cmd/egress-proxy
 	npm --prefix frontend run build
 
+GIT_SHA := $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
+SANDBOX_IMAGE_MAX_BYTES ?= 2147483648
+
 sandbox-image:
-	docker build -t botbox/sandbox:dev images/sandbox
+	docker build -f images/sandbox/Dockerfile -t botbox/sandbox:dev -t botbox/sandbox:$(GIT_SHA) .
+	@size=$$(docker image inspect botbox/sandbox:dev --format='{{.Size}}'); \
+	echo "botbox/sandbox:dev size=$${size} bytes (budget=$(SANDBOX_IMAGE_MAX_BYTES))"; \
+	test "$${size}" -le "$(SANDBOX_IMAGE_MAX_BYTES)"

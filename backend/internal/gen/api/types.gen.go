@@ -75,6 +75,30 @@ func (e DriverType) Valid() bool {
 	}
 }
 
+// Defines values for EnvironmentStatus.
+const (
+	EnvironmentStatusCreating EnvironmentStatus = "creating"
+	EnvironmentStatusError    EnvironmentStatus = "error"
+	EnvironmentStatusRunning  EnvironmentStatus = "running"
+	EnvironmentStatusStopped  EnvironmentStatus = "stopped"
+)
+
+// Valid indicates whether the value is a known member of the EnvironmentStatus enum.
+func (e EnvironmentStatus) Valid() bool {
+	switch e {
+	case EnvironmentStatusCreating:
+		return true
+	case EnvironmentStatusError:
+		return true
+	case EnvironmentStatusRunning:
+		return true
+	case EnvironmentStatusStopped:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for LlmMode.
 const (
 	Api LlmMode = "api"
@@ -162,6 +186,13 @@ type BotListResponse struct {
 // BotStatus defines model for BotStatus.
 type BotStatus string
 
+// ControlHolder defines model for ControlHolder.
+type ControlHolder struct {
+	DisplayName string              `json:"displayName"`
+	Email       openapi_types.Email `json:"email"`
+	UserId      openapi_types.UUID  `json:"userId"`
+}
+
 // CreateBotRequest defines model for CreateBotRequest.
 type CreateBotRequest struct {
 	AvatarSeed    string      `json:"avatarSeed"`
@@ -198,6 +229,37 @@ type CreatedInvitationResponse struct {
 // DriverType defines model for DriverType.
 type DriverType string
 
+// EnvironmentStateResponse defines model for EnvironmentStateResponse.
+type EnvironmentStateResponse struct {
+	BotId         openapi_types.UUID `json:"botId"`
+	ControlHolder *ControlHolder     `json:"controlHolder"`
+	ControlNote   string             `json:"controlNote"`
+	CpuMillis     int                `json:"cpuMillis"`
+	Driver        string             `json:"driver"`
+	EnvId         string             `json:"envId"`
+	Image         string             `json:"image"`
+	MemoryMiB     int                `json:"memoryMiB"`
+	StartedAt     *time.Time         `json:"startedAt"`
+	Stats         EnvironmentStats   `json:"stats"`
+	Status        EnvironmentStatus  `json:"status"`
+	UpdatedAt     time.Time          `json:"updatedAt"`
+	VolumeRef     string             `json:"volumeRef"`
+	Watchers      []WatcherUser      `json:"watchers"`
+	WorkspaceId   openapi_types.UUID `json:"workspaceId"`
+}
+
+// EnvironmentStats defines model for EnvironmentStats.
+type EnvironmentStats struct {
+	CpuPercent     float64 `json:"cpuPercent"`
+	MemoryLimitMiB int     `json:"memoryLimitMiB"`
+	MemoryUsedMiB  int     `json:"memoryUsedMiB"`
+	VolumeLimitMiB int     `json:"volumeLimitMiB"`
+	VolumeUsedMiB  int     `json:"volumeUsedMiB"`
+}
+
+// EnvironmentStatus defines model for EnvironmentStatus.
+type EnvironmentStatus string
+
 // ErrorBody defines model for ErrorBody.
 type ErrorBody struct {
 	Code    string `json:"code"`
@@ -207,6 +269,28 @@ type ErrorBody struct {
 // ErrorEnvelope defines model for ErrorEnvelope.
 type ErrorEnvelope struct {
 	Error ErrorBody `json:"error"`
+}
+
+// FileContentResponse defines model for FileContentResponse.
+type FileContentResponse struct {
+	Content   string `json:"content"`
+	Path      string `json:"path"`
+	SizeBytes int64  `json:"sizeBytes"`
+}
+
+// FileEntry defines model for FileEntry.
+type FileEntry struct {
+	IsDir     bool      `json:"isDir"`
+	Name      string    `json:"name"`
+	Path      string    `json:"path"`
+	SizeBytes int64     `json:"sizeBytes"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// FileListResponse defines model for FileListResponse.
+type FileListResponse struct {
+	Entries []FileEntry `json:"entries"`
+	Path    string      `json:"path"`
 }
 
 // HealthResponse defines model for HealthResponse.
@@ -261,6 +345,11 @@ type RefreshRequest struct {
 	RefreshToken *string `json:"refreshToken,omitempty"`
 }
 
+// ReleaseControlRequest defines model for ReleaseControlRequest.
+type ReleaseControlRequest struct {
+	Note *string `json:"note,omitempty"`
+}
+
 // SetupCompleteRequest defines model for SetupCompleteRequest.
 type SetupCompleteRequest struct {
 	DefaultDriver *DriverType         `json:"defaultDriver,omitempty"`
@@ -276,6 +365,28 @@ type SetupCompleteRequest struct {
 // SetupStatusResponse defines model for SetupStatusResponse.
 type SetupStatusResponse struct {
 	SetupRequired bool `json:"setupRequired"`
+}
+
+// StreamTicketResponse defines model for StreamTicketResponse.
+type StreamTicketResponse struct {
+	CanControl bool      `json:"canControl"`
+	ExpiresAt  time.Time `json:"expiresAt"`
+	Ticket     string    `json:"ticket"`
+	WsPath     string    `json:"wsPath"`
+}
+
+// TerminalExecRequest defines model for TerminalExecRequest.
+type TerminalExecRequest struct {
+	Command string  `json:"command"`
+	Workdir *string `json:"workdir,omitempty"`
+}
+
+// TerminalExecResponse defines model for TerminalExecResponse.
+type TerminalExecResponse struct {
+	Cwd      string `json:"cwd"`
+	ExitCode int    `json:"exitCode"`
+	Stderr   string `json:"stderr"`
+	Stdout   string `json:"stdout"`
 }
 
 // UpdateBotRequest defines model for UpdateBotRequest.
@@ -302,6 +413,12 @@ type User struct {
 	Email       openapi_types.Email `json:"email"`
 	Id          openapi_types.UUID  `json:"id"`
 	Locale      string              `json:"locale"`
+}
+
+// WatcherUser defines model for WatcherUser.
+type WatcherUser struct {
+	DisplayName string             `json:"displayName"`
+	UserId      openapi_types.UUID `json:"userId"`
 }
 
 // WorkspaceListResponse defines model for WorkspaceListResponse.
@@ -339,6 +456,12 @@ type WorkspaceSummary struct {
 	Slug          string             `json:"slug"`
 }
 
+// WriteFileContentRequest defines model for WriteFileContentRequest.
+type WriteFileContentRequest struct {
+	Content string `json:"content"`
+	Path    string `json:"path"`
+}
+
 // BotID defines model for BotID.
 type BotID = openapi_types.UUID
 
@@ -353,6 +476,16 @@ type UserID = openapi_types.UUID
 
 // WorkspaceID defines model for WorkspaceID.
 type WorkspaceID = openapi_types.UUID
+
+// ListBotFilesParams defines parameters for ListBotFiles.
+type ListBotFilesParams struct {
+	Path *string `form:"path,omitempty" json:"path,omitempty"`
+}
+
+// ReadBotFileParams defines parameters for ReadBotFile.
+type ReadBotFileParams struct {
+	Path string `form:"path" json:"path"`
+}
 
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody = LoginRequest
@@ -374,6 +507,15 @@ type CreateBotJSONRequestBody = CreateBotRequest
 
 // UpdateBotJSONRequestBody defines body for UpdateBot for application/json ContentType.
 type UpdateBotJSONRequestBody = UpdateBotRequest
+
+// ReleaseBotControlJSONRequestBody defines body for ReleaseBotControl for application/json ContentType.
+type ReleaseBotControlJSONRequestBody = ReleaseControlRequest
+
+// WriteBotFileJSONRequestBody defines body for WriteBotFile for application/json ContentType.
+type WriteBotFileJSONRequestBody = WriteFileContentRequest
+
+// ExecBotTerminalJSONRequestBody defines body for ExecBotTerminal for application/json ContentType.
+type ExecBotTerminalJSONRequestBody = TerminalExecRequest
 
 // CreateInvitationJSONRequestBody defines body for CreateInvitation for application/json ContentType.
 type CreateInvitationJSONRequestBody = CreateInvitationRequest

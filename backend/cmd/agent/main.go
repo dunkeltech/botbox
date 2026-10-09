@@ -1,5 +1,5 @@
-// Command agent runs inside each sandbox container to expose desktop and
-// container diagnostics to the control plane over gRPC.
+// Command agent runs inside each sandbox container to expose desktop,
+// command execution, and /home/bot file access to the control plane over gRPC.
 package main
 
 import (
@@ -19,6 +19,8 @@ import (
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	addr := envOrDefault("AGENT_GRPC_ADDR", "127.0.0.1:9090")
+	homeDir := envOrDefault("BOTBOX_HOME_DIR", agent.DefaultHomeDir)
+	agentToken := os.Getenv("BOTBOX_AGENT_TOKEN")
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -30,12 +32,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	grpcServer := grpc.NewServer()
-	agentv1.RegisterAgentServiceServer(grpcServer, agent.NewServer(""))
+	grpcServer := grpc.NewServer(
+		grpc.UnaryInterceptor(agent.TokenAuthInterceptor(agentToken)),
+		grpc.StreamInterceptor(agent.TokenStreamInterceptor(agentToken)),
+	)
+	agentv1.RegisterAgentServiceServer(grpcServer, agent.NewServerWithOptions(agent.ServerOptions{
+		HomeDir: homeDir,
+	}))
 
 	errCh := make(chan error, 1)
 	go func() {
-		logger.Info("agent gRPC server listening", slog.String("addr", addr))
+		logger.Info("agent gRPC server listening", slog.String("addr", addr), slog.Bool("token_auth", agentToken != ""))
 		errCh <- grpcServer.Serve(lis)
 	}()
 

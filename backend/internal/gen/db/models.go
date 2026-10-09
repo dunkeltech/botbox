@@ -35,6 +35,21 @@ type Bot struct {
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
+type Environment struct {
+	BotID               pgtype.UUID        `json:"bot_id"`
+	Driver              string             `json:"driver"`
+	EnvID               string             `json:"env_id"`
+	Status              string             `json:"status"`
+	Image               string             `json:"image"`
+	CpuMillis           int32              `json:"cpu_millis"`
+	MemoryMib           int32              `json:"memory_mib"`
+	VolumeRef           string             `json:"volume_ref"`
+	ControlHolderUserID pgtype.UUID        `json:"control_holder_user_id"`
+	ControlNote         string             `json:"control_note"`
+	StartedAt           pgtype.Timestamptz `json:"started_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Invitation struct {
 	ID          pgtype.UUID        `json:"id"`
 	WorkspaceID pgtype.UUID        `json:"workspace_id"`

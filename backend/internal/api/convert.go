@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dunkeltech/botbox/backend/internal/compute"
 	"github.com/dunkeltech/botbox/backend/internal/gen/api"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
 	"github.com/google/uuid"
@@ -234,10 +235,33 @@ func toAPIInvitationSummary(inv db.Invitation) api.InvitationSummary {
 }
 
 func toAPIBot(b db.Bot) api.Bot {
+	return toAPIBotWithEnv(b, nil)
+}
+
+func toAPIBotWithEnv(b db.Bot, env *db.Environment) api.Bot {
 	var ownerID *uuid.UUID
 	if b.OwnerUserID.Valid {
 		id := fromPGUUID(b.OwnerUserID)
 		ownerID = &id
+	}
+	status := api.BotStatusStopped
+	mood := api.AvatarMoodOffline
+	if env != nil {
+		switch env.Status {
+		case string(compute.StatusRunning):
+			status = api.BotStatusIdle
+			if env.ControlHolderUserID.Valid {
+				mood = api.AvatarMoodThinking
+			} else {
+				mood = api.AvatarMoodIdle
+			}
+		case string(compute.StatusCreating):
+			status = api.BotStatusThinking
+			mood = api.AvatarMoodThinking
+		default:
+			status = api.BotStatusStopped
+			mood = api.AvatarMoodOffline
+		}
 	}
 	return api.Bot{
 		Id:            fromPGUUID(b.ID),
@@ -251,8 +275,8 @@ func toAPIBot(b db.Bot) api.Bot {
 		LlmModel:      b.LlmModel,
 		DriverType:    api.DriverType(b.DriverType),
 		ReplyLanguage: b.ReplyLanguage,
-		Status:        api.BotStatusStopped,
-		Mood:          api.AvatarMoodOffline,
+		Status:        status,
+		Mood:          mood,
 		CreatedAt:     b.CreatedAt.Time.UTC(),
 		UpdatedAt:     b.UpdatedAt.Time.UTC(),
 	}

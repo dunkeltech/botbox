@@ -3,11 +3,15 @@ package api
 import (
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/dunkeltech/botbox/backend/internal/auth"
+	"github.com/dunkeltech/botbox/backend/internal/compute"
+	"github.com/dunkeltech/botbox/backend/internal/compute/vncrelay"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -23,6 +27,10 @@ type server struct {
 	loginIPRL     *auth.RateLimiter
 	loginEmailRL  *auth.RateLimiter
 	refreshRL     *auth.RateLimiter
+	compute       compute.Driver
+	ticketSigner  *vncrelay.Signer
+	watchersMu    sync.RWMutex
+	watchers      map[uuid.UUID]map[uuid.UUID]watcherEntry
 	cookieSecure  bool
 	publicBaseURL string
 	now           func() time.Time
@@ -82,6 +90,20 @@ func newServer(cfg Config, logger *slog.Logger) *server {
 		refreshRL = auth.NewRateLimiter(30, time.Minute, now)
 	}
 
+	computeDrv := cfg.Compute
+	if computeDrv == nil {
+		if memDrv, err := compute.NewMemoryDriver(); err != nil {
+			logger.Error("failed to initialize fallback memory compute driver", "err", err)
+		} else {
+			computeDrv = memDrv
+		}
+	}
+
+	ticketSigner := cfg.TicketSigner
+	if ticketSigner == nil {
+		ticketSigner = mustEphemeralTicketSigner()
+	}
+
 	return &server{
 		logger:        logger,
 		pool:          cfg.Pool,
@@ -94,6 +116,9 @@ func newServer(cfg Config, logger *slog.Logger) *server {
 		loginIPRL:     loginIPRL,
 		loginEmailRL:  loginEmailRL,
 		refreshRL:     refreshRL,
+		compute:       computeDrv,
+		ticketSigner:  ticketSigner,
+		watchers:      make(map[uuid.UUID]map[uuid.UUID]watcherEntry),
 		cookieSecure:  cfg.CookieSecure,
 		publicBaseURL: cfg.PublicBaseURL,
 		now:           now,
@@ -144,6 +169,18 @@ func (s *server) mountRoutes(r chi.Router) {
 			r.Get("/bots/{botID}", s.handleGetBot)
 			r.Patch("/bots/{botID}", s.handleUpdateBot)
 			r.Delete("/bots/{botID}", s.handleDeleteBot)
+
+			r.Get("/bots/{botID}/environment", s.handleGetBotEnvironment)
+			r.Post("/bots/{botID}/environment/start", s.handleStartBotEnvironment)
+			r.Post("/bots/{botID}/environment/stop", s.handleStopBotEnvironment)
+			r.Post("/bots/{botID}/environment/restart", s.handleRestartBotEnvironment)
+			r.Post("/bots/{botID}/control/take", s.handleTakeBotControl)
+			r.Post("/bots/{botID}/control/release", s.handleReleaseBotControl)
+			r.Post("/bots/{botID}/vnc-ticket", s.handleCreateVNCTicket)
+			r.Post("/bots/{botID}/terminal/exec", s.handleExecBotTerminal)
+			r.Get("/bots/{botID}/files", s.handleListBotFiles)
+			r.Get("/bots/{botID}/files/content", s.handleReadBotFile)
+			r.Put("/bots/{botID}/files/content", s.handleWriteBotFile)
 		})
 	})
 }

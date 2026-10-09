@@ -16,6 +16,9 @@ import (
 	migrations "github.com/dunkeltech/botbox/backend/db"
 	"github.com/dunkeltech/botbox/backend/internal/api"
 	"github.com/dunkeltech/botbox/backend/internal/auth"
+	"github.com/dunkeltech/botbox/backend/internal/compute"
+	"github.com/dunkeltech/botbox/backend/internal/compute/docker"
+	"github.com/dunkeltech/botbox/backend/internal/compute/vncrelay"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -90,6 +93,32 @@ func run(logger *slog.Logger) error {
 		cfg.ReadinessCheck = func(checkCtx context.Context) error {
 			return pool.Ping(checkCtx)
 		}
+
+		computeDrv, closeCompute, drvErr := initComputeDriver(logger)
+		if drvErr != nil {
+			return drvErr
+		}
+		if closeCompute != nil {
+			defer closeCompute()
+		}
+		cfg.Compute = computeDrv
+
+		if vncSecret := strings.TrimSpace(os.Getenv("BOTBOX_VNC_SECRET")); len(vncSecret) >= 16 {
+			signer, signErr := vncrelay.NewSigner([]byte(vncSecret))
+			if signErr != nil {
+				return signErr
+			}
+			cfg.TicketSigner = signer
+		} else if len(jwtKey) >= 32 {
+			signer, signErr := vncrelay.NewSigner(jwtKey.Seed())
+			if signErr == nil {
+				cfg.TicketSigner = signer
+			}
+		}
+
+		if recErr := api.ReconcileEnvironments(ctx, pool, computeDrv, logger); recErr != nil {
+			logger.Warn("environment startup reconcile reported error", "err", recErr)
+		}
 	}
 
 	srv := &http.Server{
@@ -157,4 +186,23 @@ func envOrDefault(key, fallback string) string {
 		return val
 	}
 	return fallback
+}
+
+func initComputeDriver(logger *slog.Logger) (compute.Driver, func(), error) {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("BOTBOX_COMPUTE_DRIVER")), compute.DefaultDriverDocker) {
+		drv, err := docker.NewDriver(docker.Options{
+			SocketPath: os.Getenv("DOCKER_SOCKET"),
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		logger.Info("initialized docker compute driver")
+		return drv, nil, nil
+	}
+	memDrv, err := compute.NewMemoryDriver()
+	if err != nil {
+		return nil, nil, err
+	}
+	logger.Info("initialized in-process memory compute driver")
+	return memDrv, memDrv.Close, nil
 }

@@ -683,6 +683,426 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
+  /api/workspaces/{workspaceID}/bots/{botID}/environment:
+    get:
+      operationId: getBotEnvironment
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
+        - $ref: '#/components/parameters/BotID'
+      responses:
+        '200':
+          description: Current sandbox environment state and resource telemetry
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvironmentStateResponse'
+        '401':
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Workspace or bot not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/workspaces/{workspaceID}/bots/{botID}/environment/start:
+    post:
+      operationId: startBotEnvironment
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
+        - $ref: '#/components/parameters/BotID'
+      responses:
+        '200':
+          description: Sandbox started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvironmentStateResponse'
+        '401':
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Workspace or bot not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/workspaces/{workspaceID}/bots/{botID}/environment/stop:
+    post:
+      operationId: stopBotEnvironment
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
+        - $ref: '#/components/parameters/BotID'
+      responses:
+        '200':
+          description: Sandbox stopped
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvironmentStateResponse'
+        '401':
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Workspace or bot not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/workspaces/{workspaceID}/bots/{botID}/environment/restart:
+    post:
+      operationId: restartBotEnvironment
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
+        - $ref: '#/components/parameters/BotID'
+      responses:
+        '200':
+          description: Sandbox restarted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvironmentStateResponse'
+        '401':
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Workspace or bot not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/workspaces/{workspaceID}/bots/{botID}/control/take:
+    post:
+      operationId: takeBotControl
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
+        - $ref: '#/components/parameters/BotID'
+      responses:
+        '200':
+          description: Desktop control claimed by caller
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvironmentStateResponse'
+        '401':
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Workspace or bot not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '409':
+          description: Control lock held by another user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/workspaces/{workspaceID}/bots/{botID}/control/release:
+    post:
+      operationId: releaseBotControl
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
+        - $ref: '#/components/parameters/BotID'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReleaseControlRequest'
+      responses:
+        '200':
+          description: Desktop control returned to bot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvironmentStateResponse'
+        '401':
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Workspace or bot not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '409':
+          description: Another user holds the control lock
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/workspaces/{workspaceID}/bots/{botID}/vnc-ticket:
+    post:
+      operationId: createVncTicket
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
+        - $ref: '#/components/parameters/BotID'
+      responses:
+        '200':
+          description: Short-lived HMAC-signed WebSocket ticket for desktop viewing/control
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StreamTicketResponse'
+        '401':
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Workspace or bot not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '409':
+          description: Sandbox is not running
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/workspaces/{workspaceID}/bots/{botID}/terminal/exec:
+    post:
+      operationId: execBotTerminal
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
+        - $ref: '#/components/parameters/BotID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TerminalExecRequest'
+      responses:
+        '200':
+          description: Command result from /home/bot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TerminalExecResponse'
+        '400':
+          description: Validation error or path escape
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Workspace or bot not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '409':
+          description: Sandbox is not running
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/workspaces/{workspaceID}/bots/{botID}/files:
+    get:
+      operationId: listBotFiles
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
+        - $ref: '#/components/parameters/BotID'
+        - name: path
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Directory entries under /home/bot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileListResponse'
+        '400':
+          description: Invalid or escaped path
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Workspace, bot, or directory not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '409':
+          description: Sandbox is not running
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/workspaces/{workspaceID}/bots/{botID}/files/content:
+    get:
+      operationId: readBotFile
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
+        - $ref: '#/components/parameters/BotID'
+        - name: path
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: File content under /home/bot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileContentResponse'
+        '400':
+          description: Invalid or escaped path
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Workspace, bot, or file not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '409':
+          description: Sandbox is not running
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    put:
+      operationId: writeBotFile
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
+        - $ref: '#/components/parameters/BotID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WriteFileContentRequest'
+      responses:
+        '200':
+          description: File saved under /home/bot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileContentResponse'
+        '400':
+          description: Invalid or escaped path
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Workspace or bot not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '409':
+          description: Sandbox is not running
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
 components:
   parameters:
     WorkspaceID:
@@ -1142,4 +1562,197 @@ components:
         driverType:
           $ref: '#/components/schemas/DriverType'
         replyLanguage:
+          type: string
+
+    EnvironmentStatus:
+      type: string
+      enum: [creating, running, stopped, error]
+
+    EnvironmentStats:
+      type: object
+      required: [cpuPercent, memoryUsedMiB, memoryLimitMiB, volumeUsedMiB, volumeLimitMiB]
+      properties:
+        cpuPercent:
+          type: number
+          format: double
+        memoryUsedMiB:
+          type: integer
+        memoryLimitMiB:
+          type: integer
+        volumeUsedMiB:
+          type: integer
+        volumeLimitMiB:
+          type: integer
+
+    ControlHolder:
+      type: object
+      required: [userId, displayName, email]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        email:
+          type: string
+          format: email
+
+    WatcherUser:
+      type: object
+      required: [userId, displayName]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+
+    EnvironmentStateResponse:
+      type: object
+      required:
+        - botId
+        - workspaceId
+        - driver
+        - envId
+        - status
+        - image
+        - cpuMillis
+        - memoryMiB
+        - volumeRef
+        - controlNote
+        - stats
+        - watchers
+        - updatedAt
+      properties:
+        botId:
+          type: string
+          format: uuid
+        workspaceId:
+          type: string
+          format: uuid
+        driver:
+          type: string
+        envId:
+          type: string
+        status:
+          $ref: '#/components/schemas/EnvironmentStatus'
+        image:
+          type: string
+        cpuMillis:
+          type: integer
+        memoryMiB:
+          type: integer
+        volumeRef:
+          type: string
+        controlHolder:
+          allOf:
+            - $ref: '#/components/schemas/ControlHolder'
+          nullable: true
+          x-omitempty: false
+        controlNote:
+          type: string
+        stats:
+          $ref: '#/components/schemas/EnvironmentStats'
+        watchers:
+          type: array
+          items:
+            $ref: '#/components/schemas/WatcherUser'
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+          x-omitempty: false
+        updatedAt:
+          type: string
+          format: date-time
+
+    ReleaseControlRequest:
+      type: object
+      properties:
+        note:
+          type: string
+
+    StreamTicketResponse:
+      type: object
+      required: [ticket, wsPath, canControl, expiresAt]
+      properties:
+        ticket:
+          type: string
+        wsPath:
+          type: string
+        canControl:
+          type: boolean
+        expiresAt:
+          type: string
+          format: date-time
+
+    TerminalExecRequest:
+      type: object
+      required: [command]
+      properties:
+        command:
+          type: string
+        workdir:
+          type: string
+
+    TerminalExecResponse:
+      type: object
+      required: [stdout, stderr, exitCode, cwd]
+      properties:
+        stdout:
+          type: string
+        stderr:
+          type: string
+        exitCode:
+          type: integer
+        cwd:
+          type: string
+
+    FileEntry:
+      type: object
+      required: [name, path, isDir, sizeBytes, updatedAt]
+      properties:
+        name:
+          type: string
+        path:
+          type: string
+        isDir:
+          type: boolean
+        sizeBytes:
+          type: integer
+          format: int64
+        updatedAt:
+          type: string
+          format: date-time
+
+    FileListResponse:
+      type: object
+      required: [path, entries]
+      properties:
+        path:
+          type: string
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileEntry'
+
+    FileContentResponse:
+      type: object
+      required: [path, content, sizeBytes]
+      properties:
+        path:
+          type: string
+        content:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+
+    WriteFileContentRequest:
+      type: object
+      required: [path, content]
+      properties:
+        path:
+          type: string
+        content:
           type: string
