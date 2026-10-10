@@ -1103,6 +1103,425 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
+  /api/workspaces/{workspaceID}/secrets:
+    get:
+      operationId: listWorkspaceSecrets
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
+      responses:
+        '200':
+          description: Workspace-scoped secrets metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecretListResponse'
+        '401':
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Workspace not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    post:
+      operationId: createWorkspaceSecret
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSecretRequest'
+      responses:
+        '201':
+          description: Workspace secret created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecretMetadata'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Workspace not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '409':
+          description: Duplicate secret name
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/workspaces/{workspaceID}/secrets/{secretID}:
+    put:
+      operationId: updateWorkspaceSecret
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
+        - $ref: '#/components/parameters/SecretID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSecretRequest'
+      responses:
+        '200':
+          description: Workspace secret updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecretMetadata'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Workspace or secret not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '409':
+          description: Duplicate secret name
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    delete:
+      operationId: deleteWorkspaceSecret
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
+        - $ref: '#/components/parameters/SecretID'
+      responses:
+        '204':
+          description: Workspace secret deleted
+        '401':
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Workspace or secret not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/workspaces/{workspaceID}/bots/{botID}/secrets:
+    get:
+      operationId: listBotSecrets
+      description: Returns bot-scoped secrets and inherited workspace-scoped secret metadata without plaintext values.
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
+        - $ref: '#/components/parameters/BotID'
+      responses:
+        '200':
+          description: Bot and inherited workspace secret metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecretListResponse'
+        '401':
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Workspace or bot not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    post:
+      operationId: createBotSecret
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
+        - $ref: '#/components/parameters/BotID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSecretRequest'
+      responses:
+        '201':
+          description: Bot secret created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecretMetadata'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Workspace or bot not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '409':
+          description: Duplicate secret name
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/workspaces/{workspaceID}/bots/{botID}/secrets/{secretID}:
+    put:
+      operationId: updateBotSecret
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
+        - $ref: '#/components/parameters/BotID'
+        - $ref: '#/components/parameters/SecretID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSecretRequest'
+      responses:
+        '200':
+          description: Bot secret updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecretMetadata'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Workspace, bot, or secret not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '409':
+          description: Duplicate secret name
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    delete:
+      operationId: deleteBotSecret
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
+        - $ref: '#/components/parameters/BotID'
+        - $ref: '#/components/parameters/SecretID'
+      responses:
+        '204':
+          description: Bot secret deleted
+        '401':
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Workspace, bot, or secret not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/workspaces/{workspaceID}/bots/{botID}/egress:
+    get:
+      operationId: getBotEgressPolicy
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
+        - $ref: '#/components/parameters/BotID'
+      responses:
+        '200':
+          description: Bot egress policy and allowlist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EgressPolicyResponse'
+        '401':
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Workspace or bot not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    patch:
+      operationId: updateBotEgressPolicy
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
+        - $ref: '#/components/parameters/BotID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateEgressPolicyRequest'
+      responses:
+        '200':
+          description: Bot egress policy updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EgressPolicyResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Workspace or bot not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/workspaces/{workspaceID}/bots/{botID}/egress/logs:
+    get:
+      operationId: listBotEgressLogs
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
+        - $ref: '#/components/parameters/BotID'
+        - name: action
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/EgressLogAction'
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        '200':
+          description: Non-sensitive egress proxy decision log entries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EgressLogListResponse'
+        '400':
+          description: Invalid filter or pagination parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Workspace or bot not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
 components:
   parameters:
     WorkspaceID:
@@ -1134,6 +1553,13 @@ components:
         type: string
     BotID:
       name: botID
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    SecretID:
+      name: secretID
       in: path
       required: true
       schema:
@@ -1756,3 +2182,237 @@ components:
           type: string
         content:
           type: string
+
+    SecretScope:
+      type: string
+      enum: [bot, workspace]
+
+    SecretAuthScheme:
+      type: string
+      enum: [bearer, header, basic]
+
+    SecretMetadata:
+      type: object
+      required:
+        - id
+        - workspaceId
+        - botId
+        - scope
+        - name
+        - domainMatch
+        - matchSubdomains
+        - pathPrefix
+        - authScheme
+        - headerName
+        - username
+        - maskedPreview
+        - usedCount
+        - lastUsedAt
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        workspaceId:
+          type: string
+          format: uuid
+        botId:
+          type: string
+          format: uuid
+          nullable: true
+          x-omitempty: false
+        scope:
+          $ref: '#/components/schemas/SecretScope'
+        name:
+          type: string
+        domainMatch:
+          type: string
+        matchSubdomains:
+          type: boolean
+        pathPrefix:
+          type: string
+        authScheme:
+          $ref: '#/components/schemas/SecretAuthScheme'
+        headerName:
+          type: string
+        username:
+          type: string
+        maskedPreview:
+          type: string
+        usedCount:
+          type: integer
+          format: int64
+        lastUsedAt:
+          type: string
+          format: date-time
+          nullable: true
+          x-omitempty: false
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    SecretListResponse:
+      type: object
+      required: [secrets]
+      properties:
+        secrets:
+          type: array
+          items:
+            $ref: '#/components/schemas/SecretMetadata'
+
+    CreateSecretRequest:
+      type: object
+      required: [name, domainMatch, authScheme, value]
+      properties:
+        name:
+          type: string
+        domainMatch:
+          type: string
+        matchSubdomains:
+          type: boolean
+        pathPrefix:
+          type: string
+        authScheme:
+          $ref: '#/components/schemas/SecretAuthScheme'
+        headerName:
+          type: string
+        username:
+          type: string
+        value:
+          type: string
+          minLength: 1
+
+    UpdateSecretRequest:
+      type: object
+      required: [name, domainMatch, authScheme]
+      properties:
+        name:
+          type: string
+        domainMatch:
+          type: string
+        matchSubdomains:
+          type: boolean
+        pathPrefix:
+          type: string
+        authScheme:
+          $ref: '#/components/schemas/SecretAuthScheme'
+        headerName:
+          type: string
+        username:
+          type: string
+        value:
+          type: string
+
+    EgressPolicyMode:
+      type: string
+      enum: [allowlist, open]
+
+    EgressPolicyResponse:
+      type: object
+      required: [botId, workspaceId, policy, allowedHosts, effectiveSecretHosts, updatedAt]
+      properties:
+        botId:
+          type: string
+          format: uuid
+        workspaceId:
+          type: string
+          format: uuid
+        policy:
+          $ref: '#/components/schemas/EgressPolicyMode'
+        allowedHosts:
+          type: array
+          items:
+            type: string
+        effectiveSecretHosts:
+          type: array
+          items:
+            type: string
+        updatedAt:
+          type: string
+          format: date-time
+
+    UpdateEgressPolicyRequest:
+      type: object
+      required: [policy, allowedHosts]
+      properties:
+        policy:
+          $ref: '#/components/schemas/EgressPolicyMode'
+        allowedHosts:
+          type: array
+          items:
+            type: string
+
+    EgressLogAction:
+      type: string
+      enum: [blocked_host, tunnel_passthrough, mitm_token_added]
+
+    EgressLogEntry:
+      type: object
+      required:
+        - id
+        - botId
+        - workspaceId
+        - method
+        - host
+        - port
+        - path
+        - action
+        - statusCode
+        - secretId
+        - secretScope
+        - secretName
+        - bytesTransferred
+        - latencyMs
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        botId:
+          type: string
+          format: uuid
+        workspaceId:
+          type: string
+          format: uuid
+        method:
+          type: string
+        host:
+          type: string
+        port:
+          type: string
+        path:
+          type: string
+        action:
+          $ref: '#/components/schemas/EgressLogAction'
+        statusCode:
+          type: integer
+        secretId:
+          type: string
+          format: uuid
+          nullable: true
+          x-omitempty: false
+        secretScope:
+          type: string
+        secretName:
+          type: string
+        bytesTransferred:
+          type: integer
+          format: int64
+        latencyMs:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+
+    EgressLogListResponse:
+      type: object
+      required: [logs]
+      properties:
+        logs:
+          type: array
+          items:
+            $ref: '#/components/schemas/EgressLogEntry'

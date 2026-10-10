@@ -18,6 +18,7 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/compute"
 	apigen "github.com/dunkeltech/botbox/backend/internal/gen/api"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
+	"github.com/dunkeltech/botbox/backend/internal/secrets"
 	"github.com/dunkeltech/botbox/backend/internal/testutil/pgtest"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -55,6 +56,7 @@ type testHarness struct {
 	logs       *bytes.Buffer
 	logger     *slog.Logger
 	computeDrv *compute.MemoryDriver
+	keyRing    *secrets.KeyRing
 	handler    http.Handler
 	jwtKey     []byte
 	secret     string
@@ -66,6 +68,7 @@ type harnessOpts struct {
 	loginIPLimit     int
 	loginEmailLimit  int
 	envSetupSecret   string
+	keyRing          *secrets.KeyRing
 }
 
 func newTestHarness(t *testing.T, existingPool *pgxpool.Pool, opts harnessOpts) *testHarness {
@@ -120,11 +123,24 @@ func newTestHarness(t *testing.T, existingPool *pgxpool.Pool, opts harnessOpts) 
 	}
 	t.Cleanup(computeDrv.Close)
 
+	keyRing := opts.keyRing
+	if keyRing == nil {
+		rawKEK := make([]byte, secrets.AES256KeySize)
+		for i := range rawKEK {
+			rawKEK[i] = byte(i + 1)
+		}
+		keyRing, err = secrets.NewKeyRing("test-v1", map[string][]byte{"test-v1": rawKEK})
+		if err != nil {
+			t.Fatalf("NewKeyRing: %v", err)
+		}
+	}
+
 	handler := api.NewHandlerWithConfig(api.Config{
 		Logger:  logger,
 		Pool:    pool,
 		JWT:     jwtSvc,
 		Compute: computeDrv,
+		KeyRing: keyRing,
 		Argon2Params: auth.Argon2Params{
 			MemoryKiB:   1024,
 			Iterations:  opts.argon2Iterations,
@@ -151,6 +167,7 @@ func newTestHarness(t *testing.T, existingPool *pgxpool.Pool, opts harnessOpts) 
 		logs:       &logs,
 		logger:     logger,
 		computeDrv: computeDrv,
+		keyRing:    keyRing,
 		handler:    handler,
 		jwtKey:     privKey,
 		secret:     secret,

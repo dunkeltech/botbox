@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/compute/docker"
 	"github.com/dunkeltech/botbox/backend/internal/compute/vncrelay"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
+	"github.com/dunkeltech/botbox/backend/internal/secrets"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -93,6 +95,17 @@ func run(logger *slog.Logger) error {
 		cfg.ReadinessCheck = func(checkCtx context.Context) error {
 			return pool.Ping(checkCtx)
 		}
+
+		kekEnv := os.Getenv("BOTBOX_SECRETS_KEK")
+		kekFile := envOrDefault("BOTBOX_SECRETS_KEK_FILE", filepath.Join(os.TempDir(), "botbox-secrets.kek"))
+		keyRing, generatedKEK, kekErr := secrets.LoadOrGenerateKeyRing(kekEnv, kekFile)
+		if kekErr != nil {
+			return kekErr
+		}
+		if generatedKEK {
+			logger.Warn("BOTBOX_SECRETS_KEK is unset; generated local dev KEK file", "path", kekFile)
+		}
+		cfg.KeyRing = keyRing
 
 		computeDrv, closeCompute, drvErr := initComputeDriver(logger)
 		if drvErr != nil {

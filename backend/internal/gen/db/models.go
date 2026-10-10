@@ -35,6 +35,54 @@ type Bot struct {
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
+type BotSecret struct {
+	ID              pgtype.UUID        `json:"id"`
+	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
+	BotID           pgtype.UUID        `json:"bot_id"`
+	Name            string             `json:"name"`
+	DomainMatch     string             `json:"domain_match"`
+	MatchSubdomains bool               `json:"match_subdomains"`
+	PathPrefix      string             `json:"path_prefix"`
+	AuthScheme      string             `json:"auth_scheme"`
+	HeaderName      string             `json:"header_name"`
+	Username        string             `json:"username"`
+	KekID           string             `json:"kek_id"`
+	WrappedDek      []byte             `json:"wrapped_dek"`
+	EncryptedValue  []byte             `json:"encrypted_value"`
+	MaskedPreview   string             `json:"masked_preview"`
+	UsedCount       int64              `json:"used_count"`
+	LastUsedAt      pgtype.Timestamptz `json:"last_used_at"`
+	CreatedBy       pgtype.UUID        `json:"created_by"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+type EgressLog struct {
+	ID               pgtype.UUID        `json:"id"`
+	WorkspaceID      pgtype.UUID        `json:"workspace_id"`
+	BotID            pgtype.UUID        `json:"bot_id"`
+	Method           string             `json:"method"`
+	Host             string             `json:"host"`
+	Port             string             `json:"port"`
+	Path             string             `json:"path"`
+	Action           string             `json:"action"`
+	StatusCode       int32              `json:"status_code"`
+	SecretID         pgtype.UUID        `json:"secret_id"`
+	SecretScope      string             `json:"secret_scope"`
+	SecretName       string             `json:"secret_name"`
+	BytesTransferred int64              `json:"bytes_transferred"`
+	LatencyMs        int32              `json:"latency_ms"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
+type EgressRule struct {
+	BotID        pgtype.UUID        `json:"bot_id"`
+	WorkspaceID  pgtype.UUID        `json:"workspace_id"`
+	Policy       string             `json:"policy"`
+	AllowedHosts []string           `json:"allowed_hosts"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Environment struct {
 	BotID               pgtype.UUID        `json:"bot_id"`
 	Driver              string             `json:"driver"`
@@ -103,4 +151,25 @@ type WorkspaceMember struct {
 	UserID      pgtype.UUID        `json:"user_id"`
 	Role        string             `json:"role"`
 	JoinedAt    pgtype.Timestamptz `json:"joined_at"`
+}
+
+type WorkspaceSecret struct {
+	ID              pgtype.UUID        `json:"id"`
+	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
+	Name            string             `json:"name"`
+	DomainMatch     string             `json:"domain_match"`
+	MatchSubdomains bool               `json:"match_subdomains"`
+	PathPrefix      string             `json:"path_prefix"`
+	AuthScheme      string             `json:"auth_scheme"`
+	HeaderName      string             `json:"header_name"`
+	Username        string             `json:"username"`
+	KekID           string             `json:"kek_id"`
+	WrappedDek      []byte             `json:"wrapped_dek"`
+	EncryptedValue  []byte             `json:"encrypted_value"`
+	MaskedPreview   string             `json:"masked_preview"`
+	UsedCount       int64              `json:"used_count"`
+	LastUsedAt      pgtype.Timestamptz `json:"last_used_at"`
+	CreatedBy       pgtype.UUID        `json:"created_by"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 }

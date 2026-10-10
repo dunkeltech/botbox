@@ -166,9 +166,24 @@ func BuildContainerSpec(cfg compute.BotConfig, seccompProfile string) (Container
 		"VNC_RESOLUTION=1280x800",
 		"BOTBOX_HOME_DIR=/home/bot",
 		"AGENT_GRPC_ADDR=0.0.0.0:9090",
+		"NO_PROXY=localhost,127.0.0.1,::1",
+		"no_proxy=localhost,127.0.0.1,::1",
 	}
 	if strings.TrimSpace(cfg.AgentToken) != "" {
 		env = append(env, "BOTBOX_AGENT_TOKEN="+strings.TrimSpace(cfg.AgentToken))
+	}
+	if proxyURL := strings.TrimSpace(cfg.ProxyURL); proxyURL != "" {
+		env = append(env,
+			"HTTP_PROXY="+proxyURL,
+			"HTTPS_PROXY="+proxyURL,
+			"http_proxy="+proxyURL,
+			"https_proxy="+proxyURL,
+		)
+	}
+	if caPath := strings.TrimSpace(cfg.CACertPath); caPath != "" {
+		env = append(env, "BOTBOX_CA_CERT="+caPath)
+	} else if strings.TrimSpace(cfg.ProxyURL) != "" {
+		env = append(env, "BOTBOX_CA_CERT=/run/botbox/ca.crt")
 	}
 
 	spec := ContainerCreateSpec{
@@ -223,6 +238,20 @@ func ValidateContainerSpec(spec ContainerCreateSpec) error {
 	for _, bind := range spec.HostConfig.Binds {
 		if strings.Contains(strings.ToLower(bind), "docker.sock") {
 			return fmt.Errorf("%w: Docker socket bind mounts are forbidden", compute.ErrSecurityViolation)
+		}
+	}
+	for _, entry := range spec.Env {
+		key, val, ok := strings.Cut(entry, "=")
+		if !ok {
+			continue
+		}
+		upperKey := strings.ToUpper(strings.TrimSpace(key))
+		switch upperKey {
+		case "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GITHUB_TOKEN", "GITLAB_TOKEN", "GOOGLE_API_KEY":
+			trimmed := strings.TrimSpace(val)
+			if trimmed != "" && !strings.EqualFold(trimmed, "botbox-placeholder") && !strings.EqualFold(trimmed, "placeholder") {
+				return fmt.Errorf("%w: raw secret env var %s is forbidden in sandbox", compute.ErrSecurityViolation, upperKey)
+			}
 		}
 	}
 	return nil

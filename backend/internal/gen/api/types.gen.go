@@ -75,6 +75,45 @@ func (e DriverType) Valid() bool {
 	}
 }
 
+// Defines values for EgressLogAction.
+const (
+	BlockedHost       EgressLogAction = "blocked_host"
+	MitmTokenAdded    EgressLogAction = "mitm_token_added"
+	TunnelPassthrough EgressLogAction = "tunnel_passthrough"
+)
+
+// Valid indicates whether the value is a known member of the EgressLogAction enum.
+func (e EgressLogAction) Valid() bool {
+	switch e {
+	case BlockedHost:
+		return true
+	case MitmTokenAdded:
+		return true
+	case TunnelPassthrough:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for EgressPolicyMode.
+const (
+	Allowlist EgressPolicyMode = "allowlist"
+	Open      EgressPolicyMode = "open"
+)
+
+// Valid indicates whether the value is a known member of the EgressPolicyMode enum.
+func (e EgressPolicyMode) Valid() bool {
+	switch e {
+	case Allowlist:
+		return true
+	case Open:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for EnvironmentStatus.
 const (
 	EnvironmentStatusCreating EnvironmentStatus = "creating"
@@ -111,6 +150,45 @@ func (e LlmMode) Valid() bool {
 	case Api:
 		return true
 	case Cli:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SecretAuthScheme.
+const (
+	Basic  SecretAuthScheme = "basic"
+	Bearer SecretAuthScheme = "bearer"
+	Header SecretAuthScheme = "header"
+)
+
+// Valid indicates whether the value is a known member of the SecretAuthScheme enum.
+func (e SecretAuthScheme) Valid() bool {
+	switch e {
+	case Basic:
+		return true
+	case Bearer:
+		return true
+	case Header:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SecretScope.
+const (
+	SecretScopeBot       SecretScope = "bot"
+	SecretScopeWorkspace SecretScope = "workspace"
+)
+
+// Valid indicates whether the value is a known member of the SecretScope enum.
+func (e SecretScope) Valid() bool {
+	switch e {
+	case SecretScopeBot:
+		return true
+	case SecretScopeWorkspace:
 		return true
 	default:
 		return false
@@ -211,6 +289,18 @@ type CreateInvitationRequest struct {
 	Role  WorkspaceRole        `json:"role"`
 }
 
+// CreateSecretRequest defines model for CreateSecretRequest.
+type CreateSecretRequest struct {
+	AuthScheme      SecretAuthScheme `json:"authScheme"`
+	DomainMatch     string           `json:"domainMatch"`
+	HeaderName      *string          `json:"headerName,omitempty"`
+	MatchSubdomains *bool            `json:"matchSubdomains,omitempty"`
+	Name            string           `json:"name"`
+	PathPrefix      *string          `json:"pathPrefix,omitempty"`
+	Username        *string          `json:"username,omitempty"`
+	Value           string           `json:"value"`
+}
+
 // CreateWorkspaceRequest defines model for CreateWorkspaceRequest.
 type CreateWorkspaceRequest struct {
 	DefaultDriver *DriverType `json:"defaultDriver,omitempty"`
@@ -228,6 +318,46 @@ type CreatedInvitationResponse struct {
 
 // DriverType defines model for DriverType.
 type DriverType string
+
+// EgressLogAction defines model for EgressLogAction.
+type EgressLogAction string
+
+// EgressLogEntry defines model for EgressLogEntry.
+type EgressLogEntry struct {
+	Action           EgressLogAction     `json:"action"`
+	BotId            openapi_types.UUID  `json:"botId"`
+	BytesTransferred int64               `json:"bytesTransferred"`
+	CreatedAt        time.Time           `json:"createdAt"`
+	Host             string              `json:"host"`
+	Id               openapi_types.UUID  `json:"id"`
+	LatencyMs        int                 `json:"latencyMs"`
+	Method           string              `json:"method"`
+	Path             string              `json:"path"`
+	Port             string              `json:"port"`
+	SecretId         *openapi_types.UUID `json:"secretId"`
+	SecretName       string              `json:"secretName"`
+	SecretScope      string              `json:"secretScope"`
+	StatusCode       int                 `json:"statusCode"`
+	WorkspaceId      openapi_types.UUID  `json:"workspaceId"`
+}
+
+// EgressLogListResponse defines model for EgressLogListResponse.
+type EgressLogListResponse struct {
+	Logs []EgressLogEntry `json:"logs"`
+}
+
+// EgressPolicyMode defines model for EgressPolicyMode.
+type EgressPolicyMode string
+
+// EgressPolicyResponse defines model for EgressPolicyResponse.
+type EgressPolicyResponse struct {
+	AllowedHosts         []string           `json:"allowedHosts"`
+	BotId                openapi_types.UUID `json:"botId"`
+	EffectiveSecretHosts []string           `json:"effectiveSecretHosts"`
+	Policy               EgressPolicyMode   `json:"policy"`
+	UpdatedAt            time.Time          `json:"updatedAt"`
+	WorkspaceId          openapi_types.UUID `json:"workspaceId"`
+}
 
 // EnvironmentStateResponse defines model for EnvironmentStateResponse.
 type EnvironmentStateResponse struct {
@@ -350,6 +480,37 @@ type ReleaseControlRequest struct {
 	Note *string `json:"note,omitempty"`
 }
 
+// SecretAuthScheme defines model for SecretAuthScheme.
+type SecretAuthScheme string
+
+// SecretListResponse defines model for SecretListResponse.
+type SecretListResponse struct {
+	Secrets []SecretMetadata `json:"secrets"`
+}
+
+// SecretMetadata defines model for SecretMetadata.
+type SecretMetadata struct {
+	AuthScheme      SecretAuthScheme    `json:"authScheme"`
+	BotId           *openapi_types.UUID `json:"botId"`
+	CreatedAt       time.Time           `json:"createdAt"`
+	DomainMatch     string              `json:"domainMatch"`
+	HeaderName      string              `json:"headerName"`
+	Id              openapi_types.UUID  `json:"id"`
+	LastUsedAt      *time.Time          `json:"lastUsedAt"`
+	MaskedPreview   string              `json:"maskedPreview"`
+	MatchSubdomains bool                `json:"matchSubdomains"`
+	Name            string              `json:"name"`
+	PathPrefix      string              `json:"pathPrefix"`
+	Scope           SecretScope         `json:"scope"`
+	UpdatedAt       time.Time           `json:"updatedAt"`
+	UsedCount       int64               `json:"usedCount"`
+	Username        string              `json:"username"`
+	WorkspaceId     openapi_types.UUID  `json:"workspaceId"`
+}
+
+// SecretScope defines model for SecretScope.
+type SecretScope string
+
 // SetupCompleteRequest defines model for SetupCompleteRequest.
 type SetupCompleteRequest struct {
 	DefaultDriver *DriverType         `json:"defaultDriver,omitempty"`
@@ -401,9 +562,27 @@ type UpdateBotRequest struct {
 	ReplyLanguage *string     `json:"replyLanguage,omitempty"`
 }
 
+// UpdateEgressPolicyRequest defines model for UpdateEgressPolicyRequest.
+type UpdateEgressPolicyRequest struct {
+	AllowedHosts []string         `json:"allowedHosts"`
+	Policy       EgressPolicyMode `json:"policy"`
+}
+
 // UpdateMemberRoleRequest defines model for UpdateMemberRoleRequest.
 type UpdateMemberRoleRequest struct {
 	Role WorkspaceRole `json:"role"`
+}
+
+// UpdateSecretRequest defines model for UpdateSecretRequest.
+type UpdateSecretRequest struct {
+	AuthScheme      SecretAuthScheme `json:"authScheme"`
+	DomainMatch     string           `json:"domainMatch"`
+	HeaderName      *string          `json:"headerName,omitempty"`
+	MatchSubdomains *bool            `json:"matchSubdomains,omitempty"`
+	Name            string           `json:"name"`
+	PathPrefix      *string          `json:"pathPrefix,omitempty"`
+	Username        *string          `json:"username,omitempty"`
+	Value           *string          `json:"value,omitempty"`
 }
 
 // User defines model for User.
@@ -471,11 +650,21 @@ type InvitationID = openapi_types.UUID
 // InvitationToken defines model for InvitationToken.
 type InvitationToken = string
 
+// SecretID defines model for SecretID.
+type SecretID = openapi_types.UUID
+
 // UserID defines model for UserID.
 type UserID = openapi_types.UUID
 
 // WorkspaceID defines model for WorkspaceID.
 type WorkspaceID = openapi_types.UUID
+
+// ListBotEgressLogsParams defines parameters for ListBotEgressLogs.
+type ListBotEgressLogsParams struct {
+	Action *EgressLogAction `form:"action,omitempty" json:"action,omitempty"`
+	Limit  *int             `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *int             `form:"offset,omitempty" json:"offset,omitempty"`
+}
 
 // ListBotFilesParams defines parameters for ListBotFiles.
 type ListBotFilesParams struct {
@@ -511,8 +700,17 @@ type UpdateBotJSONRequestBody = UpdateBotRequest
 // ReleaseBotControlJSONRequestBody defines body for ReleaseBotControl for application/json ContentType.
 type ReleaseBotControlJSONRequestBody = ReleaseControlRequest
 
+// UpdateBotEgressPolicyJSONRequestBody defines body for UpdateBotEgressPolicy for application/json ContentType.
+type UpdateBotEgressPolicyJSONRequestBody = UpdateEgressPolicyRequest
+
 // WriteBotFileJSONRequestBody defines body for WriteBotFile for application/json ContentType.
 type WriteBotFileJSONRequestBody = WriteFileContentRequest
+
+// CreateBotSecretJSONRequestBody defines body for CreateBotSecret for application/json ContentType.
+type CreateBotSecretJSONRequestBody = CreateSecretRequest
+
+// UpdateBotSecretJSONRequestBody defines body for UpdateBotSecret for application/json ContentType.
+type UpdateBotSecretJSONRequestBody = UpdateSecretRequest
 
 // ExecBotTerminalJSONRequestBody defines body for ExecBotTerminal for application/json ContentType.
 type ExecBotTerminalJSONRequestBody = TerminalExecRequest
@@ -522,3 +720,9 @@ type CreateInvitationJSONRequestBody = CreateInvitationRequest
 
 // UpdateWorkspaceMemberRoleJSONRequestBody defines body for UpdateWorkspaceMemberRole for application/json ContentType.
 type UpdateWorkspaceMemberRoleJSONRequestBody = UpdateMemberRoleRequest
+
+// CreateWorkspaceSecretJSONRequestBody defines body for CreateWorkspaceSecret for application/json ContentType.
+type CreateWorkspaceSecretJSONRequestBody = CreateSecretRequest
+
+// UpdateWorkspaceSecretJSONRequestBody defines body for UpdateWorkspaceSecret for application/json ContentType.
+type UpdateWorkspaceSecretJSONRequestBody = UpdateSecretRequest

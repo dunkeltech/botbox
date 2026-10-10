@@ -60,6 +60,51 @@ func TestBuildAndValidateContainerSpecSecurityInvariants(t *testing.T) {
 	if err := docker.ValidateContainerSpec(netAdmin); !errors.Is(err, compute.ErrSecurityViolation) {
 		t.Fatalf("NET_ADMIN cap error = %v, want ErrSecurityViolation", err)
 	}
+
+	// Raw credentials must never enter the sandbox container environment.
+	rawSecretSpec := spec
+	rawSecretSpec.Env = append(append([]string(nil), spec.Env...), "GITHUB_TOKEN=ghp_real_secret_value")
+	if err := docker.ValidateContainerSpec(rawSecretSpec); !errors.Is(err, compute.ErrSecurityViolation) {
+		t.Fatalf("raw secret env error = %v, want ErrSecurityViolation", err)
+	}
+
+	placeholderSpec := spec
+	placeholderSpec.Env = append(append([]string(nil), spec.Env...), "ANTHROPIC_API_KEY=botbox-placeholder")
+	if err := docker.ValidateContainerSpec(placeholderSpec); err != nil {
+		t.Fatalf("placeholder env should be permitted, got %v", err)
+	}
+
+	// ProxyURL and CACertPath wire proxy env vars into the sandbox cleanly.
+	proxySpec, _, _, err := docker.BuildContainerSpec(compute.BotConfig{
+		WorkspaceID: "ws-1",
+		BotID:       "bot-42",
+		Image:       "botbox/sandbox:dev",
+		CPUMillis:   2000,
+		MemoryMiB:   2048,
+		ProxyURL:    "http://127.0.0.1:8081",
+	}, "")
+	if err != nil {
+		t.Fatalf("BuildContainerSpec with proxy failed: %v", err)
+	}
+	envMap := make(map[string]string, len(proxySpec.Env))
+	for _, kv := range proxySpec.Env {
+		if k, v, ok := strings.Cut(kv, "="); ok {
+			envMap[k] = v
+		}
+	}
+	for _, want := range []struct {
+		k string
+		v string
+	}{
+		{"NO_PROXY", "localhost,127.0.0.1,::1"},
+		{"HTTP_PROXY", "http://127.0.0.1:8081"},
+		{"HTTPS_PROXY", "http://127.0.0.1:8081"},
+		{"BOTBOX_CA_CERT", "/run/botbox/ca.crt"},
+	} {
+		if envMap[want.k] != want.v {
+			t.Fatalf("proxy env %s = %q, want %q", want.k, envMap[want.k], want.v)
+		}
+	}
 }
 
 func TestDockerDriverLifecycleAndReconcile(t *testing.T) {

@@ -39,29 +39,45 @@ const (
 	ActionMITMTokenAdded    AuditAction = "mitm_token_added"   //nolint:gosec // audit label constant, not a credential
 )
 
-// SecretRule binds a destination hostname to an injected credential kept outside the sandbox.
+// SecretRule binds a destination hostname (and optional subdomain/path scope) to an
+// injected credential kept outside the sandbox.
 type SecretRule struct {
-	HeaderName string
-	Scheme     AuthScheme
-	Username   string
-	Value      string
+	ID              string
+	Scope           string
+	Name            string
+	DomainMatch     string
+	MatchSubdomains bool
+	PathPrefix      string
+	HeaderName      string
+	Scheme          AuthScheme
+	Username        string
+	Value           string
 }
 
 // AuditEvent records an allow/block/token-injection decision for observability without leaking secrets.
 type AuditEvent struct {
-	Host   string
-	Port   string
-	Method string
-	Path   string
-	Action AuditAction
-	Status int
+	Host        string
+	Port        string
+	Method      string
+	Path        string
+	Action      AuditAction
+	Status      int
+	SecretID    string
+	SecretScope string
+	SecretName  string
+	Bytes       int64
+	LatencyMs   int64
 }
 
 // Config configures the selective TLS-intercepting egress CONNECT proxy.
 type Config struct {
 	CA               *BotCA
+	Policy           EgressPolicy
 	AllowedHosts     map[string]bool
+	AllowedPatterns  []string
 	Secrets          map[string]SecretRule
+	Rules            []SecretRule
+	DynamicPolicy    func(context.Context) (PolicySnapshot, error)
 	UpstreamRootCAs  *x509.CertPool
 	DialContext      func(ctx context.Context, network, addr string) (net.Conn, error)
 	DialTimeout      time.Duration
@@ -139,13 +155,20 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "destination port forbidden", http.StatusForbidden)
 		return
 	}
-	if !h.allowed[host] {
+
+	snap, err := h.resolveSnapshot(r.Context())
+	if err != nil {
+		h.logger.Warn("resolve egress policy failed", slog.String("host", host), slog.Any("error", err))
+		http.Error(w, "egress policy unavailable", http.StatusBadGateway)
+		return
+	}
+	if !h.isHostAllowed(snap, host) {
 		h.emitAudit(AuditEvent{Host: host, Port: port, Method: r.Method, Action: ActionBlockedHost, Status: http.StatusForbidden})
 		http.Error(w, "destination host forbidden", http.StatusForbidden)
 		return
 	}
 
-	rule, needsMITM := h.secrets[host]
+	rule, needsMITM := h.firstHostRule(snap, host)
 	if !needsMITM {
 		h.handlePassthrough(w, r, host, port)
 		return
@@ -262,22 +285,72 @@ func (h *Handler) forwardMITMRequest(
 	}
 	outReq.RequestURI = ""
 
-	stripPlaceholderAuthHeaders(outReq.Header)
-	headerName, headerVal := formatSecretHeader(rule)
-	outReq.Header.Set(headerName, headerVal)
+	cleanPath := sanitizeAuditPath(r.URL.Path)
+	activeRule, shouldInject := h.resolveRuleForPath(r.Context(), host, cleanPath, rule)
+	auditAction := ActionTunnelPassthrough
+	var scrubRule SecretRule
+	var secretID, secretScope, secretName string
+	if shouldInject {
+		stripPlaceholderAuthHeaders(outReq.Header)
+		headerName, headerVal := formatSecretHeader(activeRule)
+		outReq.Header.Set(headerName, headerVal)
+		auditAction = ActionMITMTokenAdded
+		scrubRule = activeRule
+		secretID = activeRule.ID
+		secretScope = activeRule.Scope
+		secretName = activeRule.Name
+	}
 
+	start := time.Now()
 	resp, err := transport.RoundTrip(outReq)
 	if err != nil {
-		msg := scrubSecretValues("upstream request failed: "+err.Error(), rule)
-		h.logger.Warn("MITM upstream failed", slog.String("host", host), slog.String("error", scrubSecretValues(err.Error(), rule)))
-		h.emitAudit(AuditEvent{Host: host, Port: port, Method: r.Method, Path: r.URL.Path, Action: ActionMITMTokenAdded, Status: http.StatusBadGateway})
+		latencyMs := time.Since(start).Milliseconds()
+		msg := "upstream request failed: " + err.Error()
+		errLog := err.Error()
+		if scrubRule.Value != "" {
+			msg = scrubSecretValues(msg, scrubRule)
+			errLog = scrubSecretValues(errLog, scrubRule)
+		}
+		h.logger.Warn("MITM upstream failed", slog.String("host", host), slog.String("error", errLog))
+		h.emitAudit(AuditEvent{
+			Host:        host,
+			Port:        port,
+			Method:      r.Method,
+			Path:        cleanPath,
+			Action:      auditAction,
+			Status:      http.StatusBadGateway,
+			SecretID:    secretID,
+			SecretScope: secretScope,
+			SecretName:  secretName,
+			LatencyMs:   latencyMs,
+		})
 		http.Error(w, msg, http.StatusBadGateway)
 		return
 	}
-	defer func() { _ = resp.Body.Close() }()
 
-	copyResponseHeaders(w.Header(), resp.Header, rule)
-	h.emitAudit(AuditEvent{Host: host, Port: port, Method: r.Method, Path: r.URL.Path, Action: ActionMITMTokenAdded, Status: resp.StatusCode})
+	countedBody := newCountingReadCloser(resp.Body, resp.ContentLength, func(totalBytes int64) {
+		h.emitAudit(AuditEvent{
+			Host:        host,
+			Port:        port,
+			Method:      r.Method,
+			Path:        cleanPath,
+			Action:      auditAction,
+			Status:      resp.StatusCode,
+			SecretID:    secretID,
+			SecretScope: secretScope,
+			SecretName:  secretName,
+			Bytes:       totalBytes,
+			LatencyMs:   time.Since(start).Milliseconds(),
+		})
+	})
+	resp.Body = countedBody
+	defer func() { _ = countedBody.Close() }()
+
+	if scrubRule.Value != "" {
+		copyResponseHeaders(w.Header(), resp.Header, scrubRule)
+	} else {
+		copyHeadersPlain(w.Header(), resp.Header)
+	}
 
 	if resp.StatusCode >= http.StatusBadRequest {
 		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
@@ -285,9 +358,11 @@ func (h *Handler) forwardMITMRequest(
 			http.Error(w, "failed reading upstream error response", http.StatusBadGateway)
 			return
 		}
-		scrubbed := scrubSecretBytes(body, rule)
+		if scrubRule.Value != "" {
+			body = scrubSecretBytes(body, scrubRule)
+		}
 		w.WriteHeader(resp.StatusCode)
-		_, _ = w.Write(scrubbed)
+		_, _ = w.Write(body) // #nosec G705 -- reverse proxy forwards scrubbed upstream error response
 		return
 	}
 

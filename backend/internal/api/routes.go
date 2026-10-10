@@ -10,6 +10,7 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/compute"
 	"github.com/dunkeltech/botbox/backend/internal/compute/vncrelay"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
+	"github.com/dunkeltech/botbox/backend/internal/secrets"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -29,6 +30,7 @@ type server struct {
 	refreshRL     *auth.RateLimiter
 	compute       compute.Driver
 	ticketSigner  *vncrelay.Signer
+	keyRing       *secrets.KeyRing
 	watchersMu    sync.RWMutex
 	watchers      map[uuid.UUID]map[uuid.UUID]watcherEntry
 	cookieSecure  bool
@@ -104,6 +106,11 @@ func newServer(cfg Config, logger *slog.Logger) *server {
 		ticketSigner = mustEphemeralTicketSigner()
 	}
 
+	keyRing := cfg.KeyRing
+	if keyRing == nil {
+		keyRing = mustEphemeralKeyRing(logger)
+	}
+
 	return &server{
 		logger:        logger,
 		pool:          cfg.Pool,
@@ -118,6 +125,7 @@ func newServer(cfg Config, logger *slog.Logger) *server {
 		refreshRL:     refreshRL,
 		compute:       computeDrv,
 		ticketSigner:  ticketSigner,
+		keyRing:       keyRing,
 		watchers:      make(map[uuid.UUID]map[uuid.UUID]watcherEntry),
 		cookieSecure:  cfg.CookieSecure,
 		publicBaseURL: cfg.PublicBaseURL,
@@ -181,6 +189,20 @@ func (s *server) mountRoutes(r chi.Router) {
 			r.Get("/bots/{botID}/files", s.handleListBotFiles)
 			r.Get("/bots/{botID}/files/content", s.handleReadBotFile)
 			r.Put("/bots/{botID}/files/content", s.handleWriteBotFile)
+
+			r.Get("/secrets", s.handleListWorkspaceSecrets)
+			r.Post("/secrets", s.handleCreateWorkspaceSecret)
+			r.Put("/secrets/{secretID}", s.handleUpdateWorkspaceSecret)
+			r.Delete("/secrets/{secretID}", s.handleDeleteWorkspaceSecret)
+
+			r.Get("/bots/{botID}/secrets", s.handleListBotSecrets)
+			r.Post("/bots/{botID}/secrets", s.handleCreateBotSecret)
+			r.Put("/bots/{botID}/secrets/{secretID}", s.handleUpdateBotSecret)
+			r.Delete("/bots/{botID}/secrets/{secretID}", s.handleDeleteBotSecret)
+
+			r.Get("/bots/{botID}/egress", s.handleGetBotEgressPolicy)
+			r.Patch("/bots/{botID}/egress", s.handleUpdateBotEgressPolicy)
+			r.Get("/bots/{botID}/egress/logs", s.handleListBotEgressLogs)
 		})
 	})
 }

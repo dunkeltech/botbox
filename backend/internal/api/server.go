@@ -12,6 +12,7 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/auth"
 	"github.com/dunkeltech/botbox/backend/internal/compute"
 	"github.com/dunkeltech/botbox/backend/internal/compute/vncrelay"
+	"github.com/dunkeltech/botbox/backend/internal/secrets"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -27,6 +28,7 @@ type Config struct {
 	VNCRelay              http.Handler
 	Compute               compute.Driver
 	TicketSigner          *vncrelay.Signer
+	KeyRing               *secrets.KeyRing
 	Pool                  *pgxpool.Pool
 	JWT                   *auth.JWTService
 	AuthProvider          auth.Provider

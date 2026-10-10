@@ -57,6 +57,8 @@ type BotConfig struct {
 	MemoryMiB   int
 	VolumeRef   string
 	AgentToken  string
+	ProxyURL    string
+	CACertPath  string
 }
 
 // EnvStats reports live CPU, memory, and persistent home volume utilization.
