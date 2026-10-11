@@ -274,3 +274,93 @@ export interface WriteFileContentRequest {
   path: string;
   content: string;
 }
+
+export type SecretScope = 'bot' | 'workspace';
+
+export type SecretAuthScheme = 'bearer' | 'header' | 'basic';
+
+export interface SecretMetadata {
+  id: string;
+  workspaceId: string;
+  botId: string | null;
+  scope: SecretScope;
+  name: string;
+  domainMatch: string;
+  matchSubdomains: boolean;
+  pathPrefix: string;
+  authScheme: SecretAuthScheme;
+  headerName: string;
+  username: string;
+  maskedPreview: string;
+  usedCount: number;
+  lastUsedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SecretListResponse {
+  secrets: SecretMetadata[];
+}
+
+export interface CreateSecretRequest {
+  name: string;
+  domainMatch: string;
+  matchSubdomains?: boolean;
+  pathPrefix?: string;
+  authScheme: SecretAuthScheme;
+  headerName?: string;
+  username?: string;
+  value: string;
+}
+
+export interface UpdateSecretRequest {
+  name: string;
+  domainMatch: string;
+  matchSubdomains?: boolean;
+  pathPrefix?: string;
+  authScheme: SecretAuthScheme;
+  headerName?: string;
+  username?: string;
+  value?: string;
+}
+
+export type EgressPolicyMode = 'allowlist' | 'open';
+
+export interface EgressPolicyResponse {
+  botId: string;
+  workspaceId: string;
+  policy: EgressPolicyMode;
+  allowedHosts: string[];
+  effectiveSecretHosts: string[];
+  updatedAt: string;
+}
+
+export interface UpdateEgressPolicyRequest {
+  policy: EgressPolicyMode;
+  allowedHosts: string[];
+}
+
+export type EgressLogAction =
+  'blocked_host' | 'tunnel_passthrough' | 'mitm_token_added';
+
+export interface EgressLogEntry {
+  id: string;
+  botId: string;
+  workspaceId: string;
+  method: string;
+  host: string;
+  port: string;
+  path: string;
+  action: EgressLogAction;
+  statusCode: number;
+  secretId: string | null;
+  secretScope: string;
+  secretName: string;
+  bytesTransferred: number;
+  latencyMs: number;
+  createdAt: string;
+}
+
+export interface EgressLogListResponse {
+  logs: EgressLogEntry[];
+}

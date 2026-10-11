@@ -25,6 +25,8 @@ export type ErrorTranslationKey =
   | 'environmentNotRunning'
   | 'environmentNotFound'
   | 'fileNotFound'
+  | 'secretNotFound'
+  | 'secretAlreadyExists'
   | 'securityViolation'
   | 'sandboxUnavailable'
   | 'unknownError';
@@ -54,6 +56,8 @@ const ERROR_CODE_TO_KEY: Record<string, ErrorTranslationKey> = {
   'environment.not_running': 'environmentNotRunning',
   'environment.not_found': 'environmentNotFound',
   'file.not_found': 'fileNotFound',
+  'secret.not_found': 'secretNotFound',
+  'secret.already_exists': 'secretAlreadyExists',
   security_violation: 'securityViolation',
   sandbox_unavailable: 'sandboxUnavailable',
 };

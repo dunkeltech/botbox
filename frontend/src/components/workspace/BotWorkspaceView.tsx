@@ -7,6 +7,7 @@ import {
   Play,
   RefreshCw,
   RotateCcw,
+  ShieldCheck,
   SlidersHorizontal,
   Square,
   Terminal as TerminalIcon,
@@ -37,6 +38,7 @@ import {
   getBot,
   getBotEnvironment,
   listBotFiles,
+  listBotSecrets,
   readBotFile,
   releaseBotControl,
   restartBotEnvironment,
@@ -138,6 +140,7 @@ export function BotWorkspaceView() {
 
   const [bot, setBot] = useState<Bot | null>(null);
   const [env, setEnv] = useState<EnvironmentStateResponse | null>(null);
+  const [secretCount, setSecretCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadErrorKey, setLoadErrorKey] = useState<ErrorTranslationKey | null>(
     null,
@@ -185,13 +188,15 @@ export function BotWorkspaceView() {
 
     void (async () => {
       try {
-        const [fetchedBot, fetchedEnv] = await Promise.all([
+        const [fetchedBot, fetchedEnv, fetchedSecrets] = await Promise.all([
           getBot(activeWorkspace.id, botId),
           getBotEnvironment(activeWorkspace.id, botId),
+          listBotSecrets(activeWorkspace.id, botId).catch(() => null),
         ]);
         if (!cancelled) {
           setBot(fetchedBot);
           setEnv(fetchedEnv);
+          setSecretCount(fetchedSecrets ? fetchedSecrets.secrets.length : null);
         }
       } catch (err) {
         if (!cancelled) {
@@ -591,6 +596,15 @@ export function BotWorkspaceView() {
                 </Button>
               )}
 
+              {secretCount !== null ? (
+                <Link
+                  href={`/bots/${bot.id}/secrets`}
+                  className="inline-flex min-h-[44px] items-center gap-2 rounded-sm border-[1.5px] border-mint-line bg-mint-soft px-4 text-[14px] font-bold text-green-600 transition duration-150 hover:border-green hover:bg-mint focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+                >
+                  <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+                  <span>{t('egressChip', { count: secretCount })}</span>
+                </Link>
+              ) : null}
               <Link
                 href={`/bots/${bot.id}/settings`}
                 className="inline-flex min-h-[44px] items-center gap-2 rounded-sm border-[1.5px] border-line bg-paper px-4 text-[15px] font-bold text-ink transition duration-150 hover:border-green-light hover:bg-mint-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"

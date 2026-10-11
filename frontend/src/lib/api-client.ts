@@ -4,9 +4,13 @@ import type {
   Bot,
   BotListResponse,
   CreateBotRequest,
+  CreateSecretRequest,
   CreatedInvitationResponse,
   CreateInvitationRequest,
   CreateWorkspaceRequest,
+  EgressLogAction,
+  EgressLogListResponse,
+  EgressPolicyResponse,
   EnvironmentStateResponse,
   ErrorEnvelope,
   FileContentResponse,
@@ -16,13 +20,17 @@ import type {
   LoginRequest,
   MeResponse,
   ReleaseControlRequest,
+  SecretListResponse,
+  SecretMetadata,
   SetupCompleteRequest,
   SetupStatusResponse,
   StreamTicketResponse,
   TerminalExecRequest,
   TerminalExecResponse,
   UpdateBotRequest,
+  UpdateEgressPolicyRequest,
   UpdateMemberRoleRequest,
+  UpdateSecretRequest,
   WorkspaceListResponse,
   WorkspaceMember,
   WorkspaceMemberListResponse,
@@ -604,5 +612,159 @@ export function writeBotFile(
       method: 'PUT',
       body,
     },
+  );
+}
+
+/** Lists workspace-level secret metadata without plaintext values. */
+export function listWorkspaceSecrets(
+  workspaceId: string,
+): Promise<SecretListResponse> {
+  return requestJson<SecretListResponse>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/secrets`,
+  );
+}
+
+/** Stores a new workspace-wide write-only secret in envelope ciphertext. */
+export function createWorkspaceSecret(
+  workspaceId: string,
+  body: CreateSecretRequest,
+): Promise<SecretMetadata> {
+  return requestJson<SecretMetadata>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/secrets`,
+    {
+      method: 'POST',
+      body,
+    },
+  );
+}
+
+/** Updates a workspace secret's metadata and optionally rotates its write-only value. */
+export function updateWorkspaceSecret(
+  workspaceId: string,
+  secretId: string,
+  body: UpdateSecretRequest,
+): Promise<SecretMetadata> {
+  return requestJson<SecretMetadata>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/secrets/${encodeURIComponent(secretId)}`,
+    {
+      method: 'PUT',
+      body,
+    },
+  );
+}
+
+/** Deletes a workspace-wide secret. */
+export function deleteWorkspaceSecret(
+  workspaceId: string,
+  secretId: string,
+): Promise<void> {
+  return requestJson<void>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/secrets/${encodeURIComponent(secretId)}`,
+    {
+      method: 'DELETE',
+    },
+  );
+}
+
+/** Lists bot-scoped and inherited workspace secret metadata without plaintext values. */
+export function listBotSecrets(
+  workspaceId: string,
+  botId: string,
+): Promise<SecretListResponse> {
+  return requestJson<SecretListResponse>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/bots/${encodeURIComponent(botId)}/secrets`,
+  );
+}
+
+/** Stores a new bot-scoped write-only secret. */
+export function createBotSecret(
+  workspaceId: string,
+  botId: string,
+  body: CreateSecretRequest,
+): Promise<SecretMetadata> {
+  return requestJson<SecretMetadata>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/bots/${encodeURIComponent(botId)}/secrets`,
+    {
+      method: 'POST',
+      body,
+    },
+  );
+}
+
+/** Updates a bot-scoped secret's metadata and optionally replaces its write-only value. */
+export function updateBotSecret(
+  workspaceId: string,
+  botId: string,
+  secretId: string,
+  body: UpdateSecretRequest,
+): Promise<SecretMetadata> {
+  return requestJson<SecretMetadata>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/bots/${encodeURIComponent(botId)}/secrets/${encodeURIComponent(secretId)}`,
+    {
+      method: 'PUT',
+      body,
+    },
+  );
+}
+
+/** Deletes a bot-scoped secret. */
+export function deleteBotSecret(
+  workspaceId: string,
+  botId: string,
+  secretId: string,
+): Promise<void> {
+  return requestJson<void>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/bots/${encodeURIComponent(botId)}/secrets/${encodeURIComponent(secretId)}`,
+    {
+      method: 'DELETE',
+    },
+  );
+}
+
+/** Fetches the bot's outbound egress policy, allowlist hosts, and secret-bound hosts. */
+export function getBotEgressPolicy(
+  workspaceId: string,
+  botId: string,
+): Promise<EgressPolicyResponse> {
+  return requestJson<EgressPolicyResponse>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/bots/${encodeURIComponent(botId)}/egress`,
+  );
+}
+
+/** Updates the bot's outbound egress policy and allowed host patterns. */
+export function updateBotEgressPolicy(
+  workspaceId: string,
+  botId: string,
+  body: UpdateEgressPolicyRequest,
+): Promise<EgressPolicyResponse> {
+  return requestJson<EgressPolicyResponse>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/bots/${encodeURIComponent(botId)}/egress`,
+    {
+      method: 'PATCH',
+      body,
+    },
+  );
+}
+
+/** Fetches non-sensitive egress proxy audit decisions with optional action filtering. */
+export function listBotEgressLogs(
+  workspaceId: string,
+  botId: string,
+  options?: { action?: EgressLogAction; limit?: number; offset?: number },
+): Promise<EgressLogListResponse> {
+  const params = new URLSearchParams();
+  if (options?.action) {
+    params.set('action', options.action);
+  }
+  if (options?.limit !== undefined) {
+    params.set('limit', String(options.limit));
+  }
+  if (options?.offset !== undefined) {
+    params.set('offset', String(options.offset));
+  }
+  const qs = params.toString();
+  const suffix = qs ? `?${qs}` : '';
+  return requestJson<EgressLogListResponse>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/bots/${encodeURIComponent(botId)}/egress/logs${suffix}`,
   );
 }

@@ -178,6 +178,27 @@ export function BotBuilderForm({ mode, workspace, bot }: BotBuilderFormProps) {
         <p className="max-w-2xl text-[16px] leading-[1.6] text-ink-2">
           {t('lead')}
         </p>
+
+        {mode === 'edit' && bot ? (
+          <nav
+            aria-label={t('tabs.ariaLabel')}
+            className="mt-1 flex flex-wrap gap-2 border-b border-line pb-3"
+          >
+            <Link
+              href={`/bots/${bot.id}/settings`}
+              aria-current="page"
+              className="inline-flex min-h-[44px] items-center rounded-sm border border-green bg-mint-soft px-4 text-[14px] font-bold text-green-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+            >
+              {t('tabs.general')}
+            </Link>
+            <Link
+              href={`/bots/${bot.id}/secrets`}
+              className="inline-flex min-h-[44px] items-center rounded-sm border border-line bg-paper px-4 text-[14px] font-bold text-ink-2 transition duration-150 hover:border-green-light hover:bg-mint-soft hover:text-green-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+            >
+              {t('tabs.secrets')}
+            </Link>
+          </nav>
+        ) : null}
       </div>
 
       {!canEdit ? <Alert tone="info">{tErrors('authForbidden')}</Alert> : null}
