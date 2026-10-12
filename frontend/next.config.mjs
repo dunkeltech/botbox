@@ -1,4 +1,5 @@
 import process from 'node:process';
+import { PHASE_DEVELOPMENT_SERVER } from 'next/constants.js';
 import createNextIntlPlugin from 'next-intl/plugin';
 
 const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts');
@@ -21,4 +22,13 @@ const nextConfig = {
   },
 };
 
-export default withNextIntl(nextConfig);
+/**
+ * Keeps a running development server separate from production build output.
+ * @param {string} phase
+ */
+export default function configureNext(phase) {
+  return withNextIntl({
+    ...nextConfig,
+    distDir: phase === PHASE_DEVELOPMENT_SERVER ? '.next-dev' : '.next',
+  });
+}

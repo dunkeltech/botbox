@@ -1089,6 +1089,150 @@ func (x *WriteFileResponse) GetSizeBytes() int64 {
 	return 0
 }
 
+type RunCLIRequest struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Cli                string                 `protobuf:"bytes,1,opt,name=cli,proto3" json:"cli,omitempty"`
+	Prompt             string                 `protobuf:"bytes,2,opt,name=prompt,proto3" json:"prompt,omitempty"`
+	SessionId          string                 `protobuf:"bytes,3,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Model              string                 `protobuf:"bytes,4,opt,name=model,proto3" json:"model,omitempty"`
+	ClaudeSubscription bool                   `protobuf:"varint,5,opt,name=claude_subscription,json=claudeSubscription,proto3" json:"claude_subscription,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *RunCLIRequest) Reset() {
+	*x = RunCLIRequest{}
+	mi := &file_agent_v1_agent_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RunCLIRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RunCLIRequest) ProtoMessage() {}
+
+func (x *RunCLIRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_agent_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RunCLIRequest.ProtoReflect.Descriptor instead.
+func (*RunCLIRequest) Descriptor() ([]byte, []int) {
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *RunCLIRequest) GetCli() string {
+	if x != nil {
+		return x.Cli
+	}
+	return ""
+}
+
+func (x *RunCLIRequest) GetPrompt() string {
+	if x != nil {
+		return x.Prompt
+	}
+	return ""
+}
+
+func (x *RunCLIRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *RunCLIRequest) GetModel() string {
+	if x != nil {
+		return x.Model
+	}
+	return ""
+}
+
+func (x *RunCLIRequest) GetClaudeSubscription() bool {
+	if x != nil {
+		return x.ClaudeSubscription
+	}
+	return false
+}
+
+type RunCLIResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Data          []byte                 `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
+	Stderr        bool                   `protobuf:"varint,2,opt,name=stderr,proto3" json:"stderr,omitempty"`
+	Exited        bool                   `protobuf:"varint,3,opt,name=exited,proto3" json:"exited,omitempty"`
+	ExitCode      int32                  `protobuf:"varint,4,opt,name=exit_code,json=exitCode,proto3" json:"exit_code,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RunCLIResponse) Reset() {
+	*x = RunCLIResponse{}
+	mi := &file_agent_v1_agent_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RunCLIResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RunCLIResponse) ProtoMessage() {}
+
+func (x *RunCLIResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_agent_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RunCLIResponse.ProtoReflect.Descriptor instead.
+func (*RunCLIResponse) Descriptor() ([]byte, []int) {
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *RunCLIResponse) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
+func (x *RunCLIResponse) GetStderr() bool {
+	if x != nil {
+		return x.Stderr
+	}
+	return false
+}
+
+func (x *RunCLIResponse) GetExited() bool {
+	if x != nil {
+		return x.Exited
+	}
+	return false
+}
+
+func (x *RunCLIResponse) GetExitCode() int32 {
+	if x != nil {
+		return x.ExitCode
+	}
+	return 0
+}
+
 var File_agent_v1_agent_proto protoreflect.FileDescriptor
 
 const file_agent_v1_agent_proto_rawDesc = "" +
@@ -1159,8 +1303,21 @@ const file_agent_v1_agent_proto_rawDesc = "" +
 	"\x11WriteFileResponse\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x1d\n" +
 	"\n" +
-	"size_bytes\x18\x02 \x01(\x03R\tsizeBytes2\xf9\x04\n" +
-	"\fAgentService\x125\n" +
+	"size_bytes\x18\x02 \x01(\x03R\tsizeBytes\"\x9f\x01\n" +
+	"\rRunCLIRequest\x12\x10\n" +
+	"\x03cli\x18\x01 \x01(\tR\x03cli\x12\x16\n" +
+	"\x06prompt\x18\x02 \x01(\tR\x06prompt\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x03 \x01(\tR\tsessionId\x12\x14\n" +
+	"\x05model\x18\x04 \x01(\tR\x05model\x12/\n" +
+	"\x13claude_subscription\x18\x05 \x01(\bR\x12claudeSubscription\"q\n" +
+	"\x0eRunCLIResponse\x12\x12\n" +
+	"\x04data\x18\x01 \x01(\fR\x04data\x12\x16\n" +
+	"\x06stderr\x18\x02 \x01(\bR\x06stderr\x12\x16\n" +
+	"\x06exited\x18\x03 \x01(\bR\x06exited\x12\x1b\n" +
+	"\texit_code\x18\x04 \x01(\x05R\bexitCode2\xb8\x05\n" +
+	"\fAgentService\x12=\n" +
+	"\x06RunCLI\x12\x17.agent.v1.RunCLIRequest\x1a\x18.agent.v1.RunCLIResponse0\x01\x125\n" +
 	"\x04Ping\x12\x15.agent.v1.PingRequest\x1a\x16.agent.v1.PingResponse\x12>\n" +
 	"\aGetInfo\x12\x18.agent.v1.GetInfoRequest\x1a\x19.agent.v1.GetInfoResponse\x12G\n" +
 	"\n" +
@@ -1185,7 +1342,7 @@ func file_agent_v1_agent_proto_rawDescGZIP() []byte {
 	return file_agent_v1_agent_proto_rawDescData
 }
 
-var file_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
 var file_agent_v1_agent_proto_goTypes = []any{
 	(*PingRequest)(nil),        // 0: agent.v1.PingRequest
 	(*PingResponse)(nil),       // 1: agent.v1.PingResponse
@@ -1208,31 +1365,35 @@ var file_agent_v1_agent_proto_goTypes = []any{
 	(*ReadFileResponse)(nil),   // 18: agent.v1.ReadFileResponse
 	(*WriteFileRequest)(nil),   // 19: agent.v1.WriteFileRequest
 	(*WriteFileResponse)(nil),  // 20: agent.v1.WriteFileResponse
+	(*RunCLIRequest)(nil),      // 21: agent.v1.RunCLIRequest
+	(*RunCLIResponse)(nil),     // 22: agent.v1.RunCLIResponse
 }
 var file_agent_v1_agent_proto_depIdxs = []int32{
 	14, // 0: agent.v1.ListFilesResponse.entries:type_name -> agent.v1.FileEntry
-	0,  // 1: agent.v1.AgentService.Ping:input_type -> agent.v1.PingRequest
-	2,  // 2: agent.v1.AgentService.GetInfo:input_type -> agent.v1.GetInfoRequest
-	4,  // 3: agent.v1.AgentService.Screenshot:input_type -> agent.v1.ScreenshotRequest
-	6,  // 4: agent.v1.AgentService.Click:input_type -> agent.v1.ClickRequest
-	8,  // 5: agent.v1.AgentService.Type:input_type -> agent.v1.TypeRequest
-	10, // 6: agent.v1.AgentService.Key:input_type -> agent.v1.KeyRequest
-	12, // 7: agent.v1.AgentService.Exec:input_type -> agent.v1.ExecRequest
-	15, // 8: agent.v1.AgentService.ListFiles:input_type -> agent.v1.ListFilesRequest
-	17, // 9: agent.v1.AgentService.ReadFile:input_type -> agent.v1.ReadFileRequest
-	19, // 10: agent.v1.AgentService.WriteFile:input_type -> agent.v1.WriteFileRequest
-	1,  // 11: agent.v1.AgentService.Ping:output_type -> agent.v1.PingResponse
-	3,  // 12: agent.v1.AgentService.GetInfo:output_type -> agent.v1.GetInfoResponse
-	5,  // 13: agent.v1.AgentService.Screenshot:output_type -> agent.v1.ScreenshotResponse
-	7,  // 14: agent.v1.AgentService.Click:output_type -> agent.v1.ClickResponse
-	9,  // 15: agent.v1.AgentService.Type:output_type -> agent.v1.TypeResponse
-	11, // 16: agent.v1.AgentService.Key:output_type -> agent.v1.KeyResponse
-	13, // 17: agent.v1.AgentService.Exec:output_type -> agent.v1.ExecResponse
-	16, // 18: agent.v1.AgentService.ListFiles:output_type -> agent.v1.ListFilesResponse
-	18, // 19: agent.v1.AgentService.ReadFile:output_type -> agent.v1.ReadFileResponse
-	20, // 20: agent.v1.AgentService.WriteFile:output_type -> agent.v1.WriteFileResponse
-	11, // [11:21] is the sub-list for method output_type
-	1,  // [1:11] is the sub-list for method input_type
+	21, // 1: agent.v1.AgentService.RunCLI:input_type -> agent.v1.RunCLIRequest
+	0,  // 2: agent.v1.AgentService.Ping:input_type -> agent.v1.PingRequest
+	2,  // 3: agent.v1.AgentService.GetInfo:input_type -> agent.v1.GetInfoRequest
+	4,  // 4: agent.v1.AgentService.Screenshot:input_type -> agent.v1.ScreenshotRequest
+	6,  // 5: agent.v1.AgentService.Click:input_type -> agent.v1.ClickRequest
+	8,  // 6: agent.v1.AgentService.Type:input_type -> agent.v1.TypeRequest
+	10, // 7: agent.v1.AgentService.Key:input_type -> agent.v1.KeyRequest
+	12, // 8: agent.v1.AgentService.Exec:input_type -> agent.v1.ExecRequest
+	15, // 9: agent.v1.AgentService.ListFiles:input_type -> agent.v1.ListFilesRequest
+	17, // 10: agent.v1.AgentService.ReadFile:input_type -> agent.v1.ReadFileRequest
+	19, // 11: agent.v1.AgentService.WriteFile:input_type -> agent.v1.WriteFileRequest
+	22, // 12: agent.v1.AgentService.RunCLI:output_type -> agent.v1.RunCLIResponse
+	1,  // 13: agent.v1.AgentService.Ping:output_type -> agent.v1.PingResponse
+	3,  // 14: agent.v1.AgentService.GetInfo:output_type -> agent.v1.GetInfoResponse
+	5,  // 15: agent.v1.AgentService.Screenshot:output_type -> agent.v1.ScreenshotResponse
+	7,  // 16: agent.v1.AgentService.Click:output_type -> agent.v1.ClickResponse
+	9,  // 17: agent.v1.AgentService.Type:output_type -> agent.v1.TypeResponse
+	11, // 18: agent.v1.AgentService.Key:output_type -> agent.v1.KeyResponse
+	13, // 19: agent.v1.AgentService.Exec:output_type -> agent.v1.ExecResponse
+	16, // 20: agent.v1.AgentService.ListFiles:output_type -> agent.v1.ListFilesResponse
+	18, // 21: agent.v1.AgentService.ReadFile:output_type -> agent.v1.ReadFileResponse
+	20, // 22: agent.v1.AgentService.WriteFile:output_type -> agent.v1.WriteFileResponse
+	12, // [12:23] is the sub-list for method output_type
+	1,  // [1:12] is the sub-list for method input_type
 	1,  // [1:1] is the sub-list for extension type_name
 	1,  // [1:1] is the sub-list for extension extendee
 	0,  // [0:1] is the sub-list for field type_name
@@ -1249,7 +1410,7 @@ func file_agent_v1_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agent_v1_agent_proto_rawDesc), len(file_agent_v1_agent_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   21,
+			NumMessages:   23,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

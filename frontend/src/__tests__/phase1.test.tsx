@@ -15,6 +15,7 @@ import LoginPage from '@/app/login/page';
 import FleetPage from '@/app/page';
 import MembersSettingsPage from '@/app/settings/members/page';
 import SetupPage from '@/app/setup/page';
+import { QueryProvider } from '@/components/providers/QueryProvider';
 import { AuthProvider } from '@/context/AuthContext';
 import { setAccessToken } from '@/lib/api-client';
 import type {
@@ -46,7 +47,9 @@ vi.mock('next/navigation', () => ({
 function renderWithProviders(ui: ReactNode) {
   return render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
-      <AuthProvider>{ui}</AuthProvider>
+      <QueryProvider>
+        <AuthProvider>{ui}</AuthProvider>
+      </QueryProvider>
     </NextIntlClientProvider>,
   );
 }

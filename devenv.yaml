@@ -1,4 +1,8 @@
 # yaml-language-server: $schema=https://devenv.sh/devenv.schema.json
+# Fail when 15432 is taken instead of silently moving Postgres and caching
+# that fallback (cachix/devenv#2684).
+strict_ports: true
+
 inputs:
   nixpkgs:
     url: github:cachix/devenv-nixpkgs/rolling

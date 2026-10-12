@@ -20,24 +20,27 @@ const (
 
 // ServerOptions configures sandbox agent runtime settings.
 type ServerOptions struct {
-	Hostname  string
-	Desktop   *DesktopService
-	HomeDir   string
-	Version   string
-	StartedAt time.Time
-	Now       func() time.Time
+	// CLIBinaries overrides fixed executable paths for trusted deployments and fixtures.
+	CLIBinaries map[string]string
+	Hostname    string
+	Desktop     *DesktopService
+	HomeDir     string
+	Version     string
+	StartedAt   time.Time
+	Now         func() time.Time
 }
 
 // Server implements agentv1.AgentServiceServer for sandbox health, desktop control,
 // command execution, and /home/bot file access.
 type Server struct {
 	agentv1.UnimplementedAgentServiceServer
-	hostname  string
-	desktop   *DesktopService
-	homeDir   string
-	version   string
-	startedAt time.Time
-	now       func() time.Time
+	cliBinaries map[string]string
+	hostname    string
+	desktop     *DesktopService
+	homeDir     string
+	version     string
+	startedAt   time.Time
+	now         func() time.Time
 }
 
 // NewServer creates an AgentService gRPC server using the provided hostname.
@@ -86,12 +89,13 @@ func NewServerWithOptions(opts ServerOptions) *Server {
 	}
 
 	return &Server{
-		hostname:  hostname,
-		desktop:   desktop,
-		homeDir:   homeDir,
-		version:   version,
-		startedAt: startedAt,
-		now:       nowFn,
+		cliBinaries: opts.CLIBinaries,
+		hostname:    hostname,
+		desktop:     desktop,
+		homeDir:     homeDir,
+		version:     version,
+		startedAt:   startedAt,
+		now:         nowFn,
 	}
 }
 

@@ -17,6 +17,9 @@ import (
 )
 
 type server struct {
+	chatRL        *auth.RateLimiter
+	chatEvents    ChatEvents
+	turnQueue     TurnQueue
 	logger        *slog.Logger
 	pool          *pgxpool.Pool
 	queries       *db.Queries
@@ -111,7 +114,14 @@ func newServer(cfg Config, logger *slog.Logger) *server {
 		keyRing = mustEphemeralKeyRing(logger)
 	}
 
+	chatRL := cfg.ChatRateLimiter
+	if chatRL == nil {
+		chatRL = auth.NewRateLimiter(30, time.Minute, now)
+	}
 	return &server{
+		chatRL:        chatRL,
+		chatEvents:    cfg.ChatEvents,
+		turnQueue:     cfg.TurnQueue,
 		logger:        logger,
 		pool:          cfg.Pool,
 		queries:       queries,
@@ -172,8 +182,17 @@ func (s *server) mountRoutes(r chi.Router) {
 			r.Post("/invitations", s.handleCreateInvitation)
 			r.Delete("/invitations/{invitationID}", s.handleRevokeInvitation)
 
+			r.Get("/budgets", s.handleBudgetSummary)
+			r.Put("/budgets", s.handleSetBudget)
+			r.Put("/model-prices", s.handleSetModelPrice)
+			r.Get("/conversations", s.handleListDMs)
+			r.Post("/bots/{botID}/dm", s.handleOpenDM)
+			r.Get("/conversations/{conversationID}/messages", s.handleChatHistory)
+			r.Post("/conversations/{conversationID}/messages", s.handleSendChat)
 			r.Get("/bots", s.handleListBots)
 			r.Post("/bots", s.handleCreateBot)
+			r.Get("/bots/{botID}/runtime", s.handleBotRuntime)
+			r.Put("/bots/{botID}/runtime", s.handleBotRuntime)
 			r.Get("/bots/{botID}", s.handleGetBot)
 			r.Patch("/bots/{botID}", s.handleUpdateBot)
 			r.Delete("/bots/{botID}", s.handleDeleteBot)

@@ -44,6 +44,7 @@ vi.mock('next/navigation', () => ({
 import BotWorkspacePage from '@/app/bots/[botId]/page';
 import BotSecretsPage from '@/app/bots/[botId]/secrets/page';
 import BotSettingsPage from '@/app/bots/[botId]/settings/page';
+import { QueryProvider } from '@/components/providers/QueryProvider';
 import { AuthProvider } from '@/context/AuthContext';
 import { setAccessToken } from '@/lib/api-client';
 import type {
@@ -60,7 +61,9 @@ import enMessages from '../../messages/en.json';
 function renderWithProviders(ui: ReactNode) {
   return render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
-      <AuthProvider>{ui}</AuthProvider>
+      <QueryProvider>
+        <AuthProvider>{ui}</AuthProvider>
+      </QueryProvider>
     </NextIntlClientProvider>,
   );
 }
@@ -373,6 +376,17 @@ describe('Phase 3 Secrets & Outbound Egress UI', () => {
     expect(screen.getByText('GITHUB_TOKEN')).toBeInTheDocument();
     expect(screen.getByText('••••abcd')).toBeInTheDocument();
     expect(screen.getByText('Never used')).toBeInTheDocument();
+    expect(screen.getByText('claude setup-token')).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Configure Claude Pro / Max' }),
+    );
+    expect(screen.getByLabelText('Secret name')).toHaveValue(
+      'llm-anthropic-oauth',
+    );
+    expect(screen.getByLabelText('Destination host')).toHaveValue(
+      'api.anthropic.com',
+    );
+    expect(screen.getByLabelText('Secret value (write-only)')).toHaveValue('');
 
     fireEvent.change(screen.getByLabelText('Secret name'), {
       target: { value: 'ANTHROPIC_API_KEY' },

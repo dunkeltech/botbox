@@ -7,6 +7,9 @@ option go_package = "github.com/dunkeltech/botbox/backend/internal/gen/proto/age
 // AgentService runs inside each sandbox container to handle health checks,
 // host-driven computer-use actions, command execution, and /home/bot file access.
 service AgentService {
+  // RunCLI executes one bounded CLI turn and streams both output pipes.
+  rpc RunCLI(RunCLIRequest) returns (stream RunCLIResponse);
+
   // Ping verifies gRPC reachability and reports the sandbox hostname.
   rpc Ping(PingRequest) returns (PingResponse);
 
@@ -133,4 +136,18 @@ message WriteFileRequest {
 message WriteFileResponse {
   string path = 1;
   int64 size_bytes = 2;
+}
+
+message RunCLIRequest {
+ string cli = 1;
+ string prompt = 2;
+ string session_id = 3;
+ string model = 4;
+ bool claude_subscription = 5;
+}
+message RunCLIResponse {
+ bytes data = 1;
+ bool stderr = 2;
+ bool exited = 3;
+ int32 exit_code = 4;
 }

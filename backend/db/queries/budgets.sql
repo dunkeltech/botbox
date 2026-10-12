@@ -1,0 +1,54 @@
+-- name: ListBudgetState :many
+SELECT b.*,COALESCE((SELECT sum(u.cost_micros) FROM usage_records u WHERE u.workspace_id=b.workspace_id AND (b.bot_id IS NULL OR u.bot_id=b.bot_id)
+AND u.created_at >= date_trunc(b.period,sqlc.arg(as_of)::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'),0)::bigint AS spent_micros
+FROM budgets b WHERE b.workspace_id=$1 AND (b.bot_id IS NULL OR b.bot_id=sqlc.arg(bot_id)::uuid);
+
+-- name: SetBudget :one
+INSERT INTO budgets(workspace_id,bot_id,period,limit_micros) VALUES($1,$2,$3,$4)
+ON CONFLICT(workspace_id,bot_id,period) DO UPDATE SET limit_micros=EXCLUDED.limit_micros RETURNING *;
+
+-- name: CreateBudgetApproval :exec
+INSERT INTO approvals(workspace_id,bot_id,budget_id) VALUES($1,$2,$3)
+ON CONFLICT(workspace_id,budget_id) WHERE status='pending' DO NOTHING;
+
+-- name: RecordTurnUsage :exec
+INSERT INTO usage_records(workspace_id,bot_id,turn_id,request_id,source,model,input_tokens,output_tokens,cache_tokens,cost_micros,created_at,billing_kind)
+VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,COALESCE(NULLIF(sqlc.arg(billing_kind)::text,''),'metered')) ON CONFLICT(workspace_id,request_id) DO NOTHING;
+
+-- name: GetModelPrice :one
+SELECT * FROM model_prices WHERE workspace_id=$1 AND provider=$2 AND model=$3;
+
+-- name: SetModelPrice :one
+INSERT INTO model_prices(workspace_id,provider,model,input_micros_per_million,output_micros_per_million,cache_micros_per_million)
+VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(workspace_id,provider,model) DO UPDATE SET input_micros_per_million=EXCLUDED.input_micros_per_million,output_micros_per_million=EXCLUDED.output_micros_per_million,cache_micros_per_million=EXCLUDED.cache_micros_per_million RETURNING *;
+
+-- name: SpendToday :one
+SELECT COALESCE(sum(cost_micros),0)::bigint FROM usage_records WHERE workspace_id=$1 AND created_at >= date_trunc('day',sqlc.arg(as_of)::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC';
+
+-- name: LockWorkspaceSpend :exec
+SELECT pg_advisory_lock(hashtextextended(sqlc.arg(lock_key)::text, 1));
+
+-- name: UnlockWorkspaceSpend :exec
+SELECT pg_advisory_unlock(hashtextextended(sqlc.arg(lock_key)::text, 1));
+
+-- name: ResolveBudgetApprovals :exec
+UPDATE approvals SET status='approved',decided_by=$3,decided_at=now() WHERE workspace_id=$1 AND budget_id=$2 AND status='pending';
+
+-- name: ListBudgetApprovals :many
+SELECT * FROM approvals WHERE workspace_id=$1 AND status='pending' ORDER BY created_at;
+
+-- name: HasUnpricedAPIUsage :one
+SELECT EXISTS(SELECT 1 FROM usage_records u WHERE u.workspace_id=$1
+AND (sqlc.narg(bot_id)::uuid IS NULL OR u.bot_id=sqlc.narg(bot_id)::uuid)
+AND u.source IN ('api_response','proxy_meter') AND u.billing_kind='metered' AND u.cost_micros IS NULL
+AND u.created_at >= date_trunc(sqlc.arg(period)::text,sqlc.arg(as_of)::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC');
+
+-- name: SettleProxyUsage :execrows
+UPDATE usage_records SET input_tokens=$3,output_tokens=$4,cache_tokens=$5,cost_micros=$6
+WHERE workspace_id=$1 AND request_id=$2 AND source='proxy_meter';
+
+-- name: GetRunningBotTurn :one
+SELECT t.* FROM bot_turns t WHERE t.workspace_id=$1 AND t.bot_id=$2 AND t.status='running';
+
+-- name: HasProxyTurnUsage :one
+SELECT EXISTS(SELECT 1 FROM usage_records WHERE workspace_id=$1 AND turn_id=$2 AND source='proxy_meter');

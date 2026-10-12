@@ -31,8 +31,16 @@
 
   env = {
     PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
-    DATABASE_URL = "postgres://botbox:botbox@127.0.0.1:5432/botbox?sslmode=disable";
+    BOTBOX_COMPUTE_DRIVER = "docker";
+    # Host tools use loopback. The egress proxy runs in Docker and reaches this
+    # same server through host.docker.internal. Both use 15432 so this project
+    # does not take the default port other local Postgres servers use. The
+    # proxy container keeps the URL it was created with.
+    BOTBOX_EGRESS_DATABASE_URL = "postgres://botbox:botbox@host.docker.internal:15432/botbox?sslmode=disable";
+    DATABASE_URL = "postgres://botbox:botbox@127.0.0.1:15432/botbox?sslmode=disable";
     NATS_URL = "nats://127.0.0.1:4222";
+    CLAUDE_CLI_VERSION = "2.1.323";
+    CODEX_CLI_VERSION = "0.39.0";
     API_LISTEN_ADDR = "127.0.0.1:8080";
     FRONTEND_URL = "http://127.0.0.1:3000";
     PUBLIC_BASE_URL = "http://127.0.0.1:8000";
@@ -46,7 +54,9 @@
   services.postgres = {
     enable = true;
     listen_addresses = "127.0.0.1";
-    port = 5432;
+    # Leave 5432 free. devenv otherwise caches a fallback port and keeps
+    # listening there after the default port is free again (cachix/devenv#2684).
+    port = 15432;
     initialDatabases = [
       {
         name = "botbox";

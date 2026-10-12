@@ -36,6 +36,15 @@ func (s *server) handleListBots(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	activities, activityErr := s.queries.ListRunningBotActivity(r.Context(), wsRow.ID)
+	if activityErr != nil {
+		s.chatFailure(w)
+		return
+	}
+	activityByBot := make(map[uuid.UUID]string, len(activities))
+	for _, a := range activities {
+		activityByBot[fromPGUUID(a.BotID)] = a.Activity
+	}
 	out := make([]api.Bot, 0, len(rows))
 	for _, b := range rows {
 		var envPtr *db.Environment
@@ -43,7 +52,12 @@ func (s *server) handleListBots(w http.ResponseWriter, r *http.Request) {
 			envCopy := env
 			envPtr = &envCopy
 		}
-		out = append(out, toAPIBotWithEnv(b, envPtr))
+		converted := toAPIBotWithEnv(b, envPtr)
+		if activity := activityByBot[fromPGUUID(b.ID)]; activity != "" {
+			converted.Status = api.BotStatus(activity)
+			converted.Mood = api.AvatarMood(activity)
+		}
+		out = append(out, converted)
 	}
 	writeJSON(w, s.logger, http.StatusOK, api.BotListResponse{Bots: out})
 }
@@ -200,7 +214,19 @@ func (s *server) handleGetBot(w http.ResponseWriter, r *http.Request) {
 		envPtr = &envCopy
 	}
 
-	writeJSON(w, s.logger, http.StatusOK, toAPIBotWithEnv(botRow, envPtr))
+	converted := toAPIBotWithEnv(botRow, envPtr)
+	activities, activityErr := s.queries.ListRunningBotActivity(r.Context(), wsRow.ID)
+	if activityErr != nil {
+		s.chatFailure(w)
+		return
+	}
+	for _, a := range activities {
+		if a.BotID == botRow.ID {
+			converted.Status = api.BotStatus(a.Activity)
+			converted.Mood = api.AvatarMood(a.Activity)
+		}
+	}
+	writeJSON(w, s.logger, http.StatusOK, converted)
 }
 
 func (s *server) handleUpdateBot(w http.ResponseWriter, r *http.Request) {

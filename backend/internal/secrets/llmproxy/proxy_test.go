@@ -2,6 +2,7 @@ package llmproxy_test
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
 	"io"
@@ -207,5 +208,59 @@ func TestProxySecretInjectionAndScrubbing(t *testing.T) {
 
 	if len(audits) == 0 || audits[0].Result != "token_added" {
 		t.Fatalf("unexpected audit trail: %+v", audits)
+	}
+}
+
+func TestMeteredProxyDoesNotForwardCompressedProviderBody(t *testing.T) {
+	const payload = `{"id":"msg_fixture","type":"message"}`
+	const realKey = "sk-ant-fixture-compression"
+	var gotEncoding string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotEncoding = r.Header.Get("Accept-Encoding")
+		if r.Header.Get("x-api-key") != realKey {
+			http.Error(w, "missing key", http.StatusUnauthorized)
+			return
+		}
+		var buf bytes.Buffer
+		zw := gzip.NewWriter(&buf)
+		if _, err := zw.Write([]byte(payload)); err != nil {
+			t.Errorf("gzip: %v", err)
+			return
+		}
+		if err := zw.Close(); err != nil {
+			t.Errorf("gzip close: %v", err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Encoding", "gzip")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(buf.Bytes())
+	}))
+	defer upstream.Close()
+
+	handler, err := llmproxy.NewScopedHandler("ws", "bot", func(context.Context, string, string) (*llmproxy.SecretConfig, error) {
+		return &llmproxy.SecretConfig{UpstreamURL: upstream.URL, AuthKind: llmproxy.AuthKindAnthropicKey, SecretValue: realKey}, nil
+	}, &llmproxy.Options{
+		Admit: func(context.Context, string, string, string) (func(llmproxy.Usage) error, error) {
+			return func(llmproxy.Usage) error { return nil }, nil
+		},
+		Client: &http.Client{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/llm/anthropic/v1/messages", strings.NewReader(`{"model":"claude-sonnet-5-5"}`))
+	req.Header.Set("x-api-key", "botbox-placeholder")
+	req.Header.Set("Accept-Encoding", "gzip, deflate, br, zstd")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if strings.Contains(gotEncoding, "br") || strings.Contains(gotEncoding, "zstd") || gotEncoding == "" {
+		t.Fatalf("provider saw Accept-Encoding %q", gotEncoding)
+	}
+	if rec.Code != http.StatusOK || rec.Body.String() != payload {
+		t.Fatalf("status %d body %q", rec.Code, rec.Body.String())
+	}
+	if rec.Header().Get("Content-Encoding") != "" || strings.Contains(rec.Body.String(), realKey) {
+		t.Fatal("compressed body or credential was forwarded")
 	}
 }

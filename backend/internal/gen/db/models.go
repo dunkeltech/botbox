@@ -8,6 +8,18 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Approval struct {
+	ID          pgtype.UUID        `json:"id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	BotID       pgtype.UUID        `json:"bot_id"`
+	BudgetID    pgtype.UUID        `json:"budget_id"`
+	Kind        string             `json:"kind"`
+	Status      string             `json:"status"`
+	DecidedBy   pgtype.UUID        `json:"decided_by"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	DecidedAt   pgtype.Timestamptz `json:"decided_at"`
+}
+
 type AuditLog struct {
 	ID          pgtype.UUID        `json:"id"`
 	WorkspaceID pgtype.UUID        `json:"workspace_id"`
@@ -35,6 +47,12 @@ type Bot struct {
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
+type BotRuntime struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	BotID       pgtype.UUID `json:"bot_id"`
+	Paused      bool        `json:"paused"`
+}
+
 type BotSecret struct {
 	ID              pgtype.UUID        `json:"id"`
 	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
@@ -55,6 +73,52 @@ type BotSecret struct {
 	CreatedBy       pgtype.UUID        `json:"created_by"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+type BotSession struct {
+	WorkspaceID       pgtype.UUID `json:"workspace_id"`
+	BotID             pgtype.UUID `json:"bot_id"`
+	ConversationID    pgtype.UUID `json:"conversation_id"`
+	Runner            string      `json:"runner"`
+	ExternalSessionID string      `json:"external_session_id"`
+}
+
+type BotTurn struct {
+	ID             pgtype.UUID        `json:"id"`
+	Position       int64              `json:"position"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	BotID          pgtype.UUID        `json:"bot_id"`
+	ConversationID pgtype.UUID        `json:"conversation_id"`
+	MessageID      pgtype.UUID        `json:"message_id"`
+	Status         string             `json:"status"`
+	ErrorCode      string             `json:"error_code"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+type Budget struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	BotID       pgtype.UUID `json:"bot_id"`
+	Period      string      `json:"period"`
+	LimitMicros int64       `json:"limit_micros"`
+}
+
+type Conversation struct {
+	ID          pgtype.UUID        `json:"id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	Type        string             `json:"type"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	BotID       pgtype.UUID        `json:"bot_id"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type ConversationMember struct {
+	WorkspaceID      pgtype.UUID `json:"workspace_id"`
+	ConversationID   pgtype.UUID `json:"conversation_id"`
+	MemberType       string      `json:"member_type"`
+	MemberID         pgtype.UUID `json:"member_id"`
+	LastReadPosition int64       `json:"last_read_position"`
 }
 
 type EgressLog struct {
@@ -110,6 +174,29 @@ type Invitation struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type Message struct {
+	ID             pgtype.UUID        `json:"id"`
+	Position       int64              `json:"position"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	ConversationID pgtype.UUID        `json:"conversation_id"`
+	SenderType     string             `json:"sender_type"`
+	SenderUserID   pgtype.UUID        `json:"sender_user_id"`
+	SenderBotID    pgtype.UUID        `json:"sender_bot_id"`
+	Kind           string             `json:"kind"`
+	Content        string             `json:"content"`
+	Metadata       []byte             `json:"metadata"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+type ModelPrice struct {
+	WorkspaceID            pgtype.UUID `json:"workspace_id"`
+	Provider               string      `json:"provider"`
+	Model                  string      `json:"model"`
+	InputMicrosPerMillion  int64       `json:"input_micros_per_million"`
+	OutputMicrosPerMillion int64       `json:"output_micros_per_million"`
+	CacheMicrosPerMillion  int64       `json:"cache_micros_per_million"`
+}
+
 type RefreshToken struct {
 	ID         pgtype.UUID        `json:"id"`
 	UserID     pgtype.UUID        `json:"user_id"`
@@ -125,6 +212,22 @@ type SystemInfo struct {
 	Key       string             `json:"key"`
 	Value     string             `json:"value"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+type UsageRecord struct {
+	ID           pgtype.UUID        `json:"id"`
+	WorkspaceID  pgtype.UUID        `json:"workspace_id"`
+	BotID        pgtype.UUID        `json:"bot_id"`
+	TurnID       pgtype.UUID        `json:"turn_id"`
+	RequestID    pgtype.UUID        `json:"request_id"`
+	Source       string             `json:"source"`
+	Model        string             `json:"model"`
+	InputTokens  int64              `json:"input_tokens"`
+	OutputTokens int64              `json:"output_tokens"`
+	CacheTokens  int64              `json:"cache_tokens"`
+	CostMicros   pgtype.Int8        `json:"cost_micros"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	BillingKind  string             `json:"billing_kind"`
 }
 
 type User struct {

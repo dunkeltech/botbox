@@ -3,6 +3,7 @@
 package llmproxy
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,19 +18,49 @@ import (
 // ErrSecretNotFound indicates no credential is configured for the bot and provider.
 var ErrSecretNotFound = errors.New("provider secret not configured")
 
+// AuthMode reports the placeholder the sandbox CLI must present.
+// The result is oauth, api_key, or none. Credential material is never returned.
+func AuthMode(ctx context.Context, resolve SecretResolver, botID, provider string) (string, error) {
+	if resolve == nil {
+		return "", errors.New("credential resolver unavailable")
+	}
+	cfg, err := resolve(ctx, botID, provider)
+	if err != nil {
+		if errors.Is(err, ErrSecretNotFound) {
+			return "none", nil
+		}
+		return "", err
+	}
+	if cfg == nil || cfg.SecretValue == "" {
+		return "none", nil
+	}
+	switch cfg.AuthKind {
+	case AuthKindClaudeOAuth:
+		return "oauth", nil
+	case AuthKindAnthropicKey, AuthKindBearer:
+		return "api_key", nil
+	default:
+		return "none", nil
+	}
+}
+
 // Supported upstream provider route prefixes and credential injection strategies.
 const (
-	ProviderAnthropic = "anthropic"
-	ProviderOpenAI    = "openai"
-	ProviderGoogle    = "google"
+	ProviderAnthropic  = "anthropic"
+	ProviderOpenAI     = "openai"
+	ProviderGoogle     = "google"
+	ProviderOpenRouter = "openrouter"
 
 	AuthKindAnthropicKey = "anthropic_key"
 	AuthKindBearer       = "bearer"
+	AuthKindClaudeOAuth  = "claude_oauth"
 	AuthKindOAuthRefresh = "oauth_refresh"
 )
 
 // SecretConfig holds the upstream base URL and credential material stored outside the sandbox.
 type SecretConfig struct {
+	// PathPrefix restricts the full upstream path, including any configured base path.
+	PathPrefix  string
 	UpstreamURL string
 	AuthKind    string
 	SecretValue string
@@ -52,6 +83,14 @@ type AuditEvent struct {
 
 // Options configures optional dependencies for NewHandler.
 type Options struct {
+	// Admit reserves accounting before forwarding and returns a settlement function.
+	// Settlement must persist even after cancellation and release its request lock.
+	Admit func(context.Context, string, string, string) (func(Usage) error, error)
+
+	// CheckBudget must atomically check all applicable limits before each request.
+	CheckBudget    func(context.Context, string, string) error
+	workspaceID    string
+	botID          string
 	BotIDHeader    string
 	Client         *http.Client
 	OAuthExchanger OAuthExchanger
@@ -103,8 +142,23 @@ func NewHandler(resolve SecretResolver, opts *Options) http.Handler {
 		}
 
 		botID := r.Header.Get(botHeader)
+		if opts != nil && opts.botID != "" {
+			botID = opts.botID
+		}
 		if botID == "" {
 			botID = "default"
+		}
+
+		if opts != nil && opts.CheckBudget != nil {
+			if err := opts.CheckBudget(r.Context(), opts.workspaceID, botID); err != nil {
+				statusCode, code, message := http.StatusServiceUnavailable, "budget_unavailable", "budget service unavailable"
+				if errors.Is(err, ErrBudgetExceeded) {
+					statusCode, code, message = http.StatusTooManyRequests, "budget_exceeded", "budget exhausted"
+				}
+				emitAudit(onAudit, botID, provider, r.Method, upstreamPath, code)
+				writeError(w, logger, statusCode, code, message)
+				return
+			}
 		}
 
 		cfg, err := resolve(r.Context(), botID, provider)
@@ -124,10 +178,24 @@ func NewHandler(resolve SecretResolver, opts *Options) http.Handler {
 		targetURL := *targetBase
 		targetURL.Path = strings.TrimRight(targetBase.Path, "/") + upstreamPath
 		targetURL.RawQuery = r.URL.RawQuery
+		if prefix := strings.TrimRight(cfg.PathPrefix, "/"); prefix != "" && targetURL.Path != prefix && !strings.HasPrefix(targetURL.Path, prefix+"/") {
+			writeError(w, logger, http.StatusForbidden, "forbidden", "credential does not allow this path")
+			return
+		}
 
+		if opts != nil && opts.Admit != nil && provider == ProviderAnthropic {
+			oauthPlaceholder := r.Header.Get("Authorization") == "Bearer botbox-placeholder" && r.Header.Get("x-api-key") == ""
+			if oauthPlaceholder != (cfg.AuthKind == AuthKindClaudeOAuth) {
+				// Credential rotation must not switch a running subscription CLI
+				// to paid API billing without starting it in the matching mode.
+				writeError(w, logger, 403, "auth_mode_changed", "provider authentication changed; start a new turn")
+				return
+			}
+		}
 		// Security invariant: copy headers and strip all sandbox placeholder auth headers
 		// before adding real credentials so placeholders never reach upstream providers.
-		outReq, err := http.NewRequestWithContext(r.Context(), r.Method, targetURL.String(), r.Body)
+		requestCtx := context.WithValue(r.Context(), subscriptionContextKey{}, cfg.AuthKind == AuthKindClaudeOAuth)
+		outReq, err := http.NewRequestWithContext(requestCtx, r.Method, targetURL.String(), r.Body)
 		if err != nil {
 			emitAudit(onAudit, botID, provider, r.Method, upstreamPath, "upstream_error")
 			writeError(w, logger, http.StatusBadGateway, "upstream_error", "failed to build upstream request")
@@ -136,6 +204,11 @@ func NewHandler(resolve SecretResolver, opts *Options) http.Handler {
 		copyHeaders(outReq.Header, r.Header)
 		stripSandboxAuthHeaders(outReq.Header)
 		outReq.Header.Del(botHeader)
+		// Claude Code asks for br and zstd. net/http only decompresses gzip
+		// when it selected the encoding. A copied Accept-Encoding leaves the
+		// body compressed, and the metered response keeps only Content-Type,
+		// so the CLI parses gzip bytes as JSON.
+		outReq.Header.Del("Accept-Encoding")
 
 		if err := injectCredential(r.Context(), outReq.Header, cfg, exchange); err != nil {
 			logger.Warn("credential preparation failed",
@@ -148,6 +221,57 @@ func NewHandler(resolve SecretResolver, opts *Options) http.Handler {
 			return
 		}
 
+		var settle func(Usage) error
+		if opts != nil && opts.Admit != nil {
+			if r.Method != http.MethodPost || !meteredPath(provider, upstreamPath) {
+				writeError(w, logger, 403, "forbidden", "unsupported metered endpoint")
+				return
+			}
+			body, bodyErr := io.ReadAll(io.LimitReader(outReq.Body, (8<<20)+1))
+			if bodyErr != nil || len(body) > 8<<20 {
+				writeError(w, logger, 400, "validation_error", "invalid model request")
+				return
+			}
+			var model struct {
+				Model string `json:"model"`
+			}
+			if json.Unmarshal(body, &model) != nil || model.Model == "" || len(model.Model) > 200 {
+				writeError(w, logger, 400, "validation_error", "model is required")
+				return
+			}
+			outReq.Body = io.NopCloser(bytes.NewReader(body))
+			outReq.ContentLength = int64(len(body))
+			settle, err = opts.Admit(requestCtx, provider, model.Model, upstreamPath)
+			if err != nil {
+				status := http.StatusServiceUnavailable
+				code := "budget_unavailable"
+				if errors.Is(err, ErrBudgetExceeded) {
+					status = http.StatusTooManyRequests
+					code = "budget_exceeded"
+				}
+				writeError(w, logger, status, code, "model request is blocked")
+				return
+			}
+			if settle == nil {
+				writeError(w, logger, 503, "budget_unavailable", "accounting unavailable")
+				return
+			}
+		}
+		usage := Usage{}
+		if settle != nil {
+			defer func() {
+				if err := settle(usage); err != nil {
+					logger.Warn("request accounting incomplete", slog.String("bot_id", botID))
+				}
+			}()
+		}
+		if cfg.AuthKind == AuthKindClaudeOAuth && !strings.Contains(outReq.Header.Get("anthropic-beta"), "oauth-2025-04-20") {
+			beta := outReq.Header.Get("anthropic-beta")
+			if beta != "" {
+				beta += ","
+			}
+			outReq.Header.Set("anthropic-beta", beta+"oauth-2025-04-20")
+		}
 		resp, err := client.Do(outReq) //nolint:gosec // target URL originates from verified server-side SecretConfig, not user input
 		if err != nil {
 			// Security invariant: never include err.Error() or headers in logs/response in case a driver embeds request metadata.
@@ -164,11 +288,40 @@ func NewHandler(resolve SecretResolver, opts *Options) http.Handler {
 			_ = resp.Body.Close()
 		}()
 
+		if settle != nil && resp.StatusCode >= 400 {
+			// Provider error bodies may echo credentials or request headers.
+			// Return a fixed envelope instead of forwarding those details.
+			usage = Usage{Known: resp.StatusCode < 500}
+			writeError(w, logger, resp.StatusCode, "upstream_error", "model provider rejected request")
+			return
+		}
 		emitAudit(onAudit, botID, provider, r.Method, upstreamPath, "token_added")
 
-		copyHeaders(w.Header(), resp.Header)
+		if settle != nil {
+			w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+		} else {
+			copyHeaders(w.Header(), resp.Header)
+		}
 		w.WriteHeader(resp.StatusCode)
-		if _, err := io.Copy(w, resp.Body); err != nil {
+		var destination io.Writer = w
+		if strings.HasPrefix(strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream") {
+			// net/http otherwise buffers small chunks until completion, hiding
+			// live CLI activity and delaying cancellation feedback in the UI.
+			destination = flushingWriter{w}
+		}
+		var source io.Reader = resp.Body
+		collector := newUsageCollector(resp.Header.Get("Content-Type"))
+		if settle != nil {
+			source = io.TeeReader(resp.Body, collector)
+		}
+		_, copyErr := io.Copy(destination, source)
+		if settle != nil {
+			usage = collector.finish(copyErr == nil && resp.StatusCode >= 200 && resp.StatusCode < 300)
+			if copyErr == nil && (resp.StatusCode >= 400 && resp.StatusCode < 500 || upstreamPath == "/v1/messages/count_tokens" && resp.StatusCode == 200) {
+				usage = Usage{Known: true}
+			}
+		}
+		if copyErr != nil {
 			logger.Debug("stream upstream response interrupted", slog.String("provider", provider))
 		}
 	})
@@ -192,7 +345,7 @@ func parseLLMPath(path string) (provider, upstreamPath string, ok bool) {
 
 func isSupportedProvider(provider string) bool {
 	switch provider {
-	case ProviderAnthropic, ProviderOpenAI, ProviderGoogle:
+	case ProviderAnthropic, ProviderOpenAI, ProviderGoogle, ProviderOpenRouter:
 		return true
 	default:
 		return false
@@ -211,7 +364,7 @@ func injectCredential(ctx context.Context, h http.Header, cfg *SecretConfig, exc
 	case AuthKindAnthropicKey:
 		h.Set("x-api-key", cfg.SecretValue)
 		return nil
-	case AuthKindBearer:
+	case AuthKindBearer, AuthKindClaudeOAuth:
 		h.Set("Authorization", "Bearer "+cfg.SecretValue)
 		return nil
 	case AuthKindOAuthRefresh:
@@ -262,4 +415,59 @@ func writeError(w http.ResponseWriter, logger *slog.Logger, status int, code, me
 	if err := json.NewEncoder(w).Encode(env); err != nil {
 		logger.Error("encode llmproxy error failed", slog.Any("error", err))
 	}
+}
+
+// ErrBudgetExceeded prevents a provider call after an applicable limit is reached.
+var ErrBudgetExceeded = errors.New("budget exhausted")
+
+// NewScopedHandler binds identity to trusted proxy configuration instead of
+// sandbox headers. A separate handler must be provisioned for each bot.
+// CheckBudget failures deny requests before credential resolution or exchange.
+func NewScopedHandler(workspaceID, botID string, resolve SecretResolver, opts *Options) (http.Handler, error) {
+	if strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(botID) == "" || resolve == nil {
+		return nil, errors.New("workspace, bot and credential resolver are required")
+	}
+	config := Options{}
+	if opts != nil {
+		config = *opts
+	}
+	config.workspaceID, config.botID = workspaceID, botID
+	return NewHandler(resolve, &config), nil
+}
+
+// flushingWriter preserves live SSE boundaries on real HTTP listeners.
+type flushingWriter struct{ http.ResponseWriter }
+
+func (w flushingWriter) Write(data []byte) (int, error) {
+	n, err := w.ResponseWriter.Write(data)
+	if err != nil {
+		return n, err
+	}
+	err = http.NewResponseController(w.ResponseWriter).Flush()
+	if errors.Is(err, http.ErrNotSupported) {
+		err = nil
+	}
+	return n, err
+}
+
+func meteredPath(provider, path string) bool {
+	switch provider {
+	case ProviderOpenAI:
+		return path == "/v1/responses" || path == "/v1/chat/completions"
+	case ProviderOpenRouter:
+		return path == "/v1/chat/completions"
+	case ProviderAnthropic:
+		return path == "/v1/messages" || path == "/v1/messages/count_tokens"
+	default:
+		return false
+	}
+}
+
+type subscriptionContextKey struct{}
+
+// SubscriptionRequest reports billing selected by the trusted credential resolver.
+// The marker contains no token and cannot be set by sandbox request headers.
+func SubscriptionRequest(ctx context.Context) bool {
+	value, _ := ctx.Value(subscriptionContextKey{}).(bool)
+	return value
 }

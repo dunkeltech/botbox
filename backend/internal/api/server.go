@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/dunkeltech/botbox/backend/internal/auth"
@@ -23,6 +24,9 @@ type ReadinessCheck func(ctx context.Context) error
 
 // Config configures the HTTP control plane handler.
 type Config struct {
+	ChatRateLimiter       *auth.RateLimiter
+	ChatEvents            ChatEvents
+	TurnQueue             TurnQueue
 	Logger                *slog.Logger
 	ReadinessCheck        ReadinessCheck
 	VNCRelay              http.Handler
@@ -102,6 +106,14 @@ func NewHandlerWithConfig(cfg Config) http.Handler {
 		))
 	}
 
+	r.Get("/ws/chat/{workspaceID}/{conversationID}", func(w http.ResponseWriter, r *http.Request) {
+		for _, protocol := range strings.Split(r.Header.Get("Sec-WebSocket-Protocol"), ",") {
+			if token, ok := strings.CutPrefix(strings.TrimSpace(protocol), "botbox.auth."); ok {
+				r.Header.Set("Authorization", "Bearer "+token)
+			}
+		}
+		srv.requireAuth(http.HandlerFunc(srv.handleChatEvents)).ServeHTTP(w, r)
+	})
 	srv.mountRoutes(r)
 
 	return r

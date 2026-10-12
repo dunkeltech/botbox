@@ -12,6 +12,8 @@ import (
 
 	"github.com/dunkeltech/botbox/backend/internal/compute"
 	"github.com/dunkeltech/botbox/backend/internal/compute/docker"
+	"github.com/dunkeltech/botbox/backend/internal/engine"
+	"google.golang.org/grpc"
 )
 
 func TestBuildAndValidateContainerSpecSecurityInvariants(t *testing.T) {
@@ -34,6 +36,20 @@ func TestBuildAndValidateContainerSpecSecurityInvariants(t *testing.T) {
 	}
 	if spec.HostConfig.Privileged {
 		t.Fatal("sandbox container must never be privileged")
+	}
+	if _, ok := spec.ExposedPorts["9090/tcp"]; !ok {
+		t.Fatal("agent port must be exposed")
+	}
+	bindings := spec.HostConfig.PortBindings["9090/tcp"]
+	if len(bindings) != 1 || bindings[0].HostIP != "127.0.0.1" || bindings[0].HostPort != "" {
+		t.Fatalf("agent must publish on loopback with a dynamic port, got %+v", bindings)
+	}
+	for _, group := range spec.HostConfig.PortBindings {
+		for _, binding := range group {
+			if binding.HostIP == "0.0.0.0" || binding.HostIP == "::" {
+				t.Fatalf("agent publication must not listen on every interface: %+v", binding)
+			}
+		}
 	}
 	if spec.HostConfig.NanoCPUs != 2_000_000_000 || spec.HostConfig.Memory != 2048*1024*1024 {
 		t.Fatalf("unexpected resources: cpus=%d mem=%d", spec.HostConfig.NanoCPUs, spec.HostConfig.Memory)
@@ -104,6 +120,52 @@ func TestBuildAndValidateContainerSpecSecurityInvariants(t *testing.T) {
 		if envMap[want.k] != want.v {
 			t.Fatalf("proxy env %s = %q, want %q", want.k, envMap[want.k], want.v)
 		}
+	}
+}
+
+func TestAgentClientDialsLoopbackPublication(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name  string
+		ports string
+		want  string
+	}{
+		{name: "loopback", ports: `{"9090/tcp":[{"HostIp":"127.0.0.1","HostPort":"44000"}]}`, want: "127.0.0.1:44000"},
+		{name: "wildcard becomes loopback", ports: `{"9090/tcp":[{"HostIp":"0.0.0.0","HostPort":"44001"}]}`, want: "127.0.0.1:44001"},
+		{name: "lan binding is ignored", ports: `{"9090/tcp":[{"HostIp":"192.168.1.20","HostPort":"44002"}]}`, want: "172.20.0.5:9090"},
+		{name: "unpublished bridge", ports: `{}`, want: "172.20.0.5:9090"},
+		{name: "empty host port is ignored", ports: `{"9090/tcp":[{"HostIp":"127.0.0.1","HostPort":""}]}`, want: "172.20.0.5:9090"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var got string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/v1.45/containers/cid/json" {
+					http.NotFound(w, r)
+					return
+				}
+				_, _ = w.Write([]byte(`{"Id":"cid","State":{"Running":true},"NetworkSettings":{"Ports":` + tc.ports + `,"Networks":{"botbox-net":{"IPAddress":"172.20.0.5"}}}}`))
+			}))
+			defer srv.Close()
+			drv, err := docker.NewDriver(docker.Options{
+				BaseURL: srv.URL,
+				AgentDialer: func(_ context.Context, addr string) (*grpc.ClientConn, error) {
+					got = addr
+					return nil, errors.New("stop")
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = drv.RunCLI(context.Background(), "cid", "claude", "hi", "", "sonnet", func(engine.Event) error { return nil })
+			if got != tc.want {
+				t.Fatalf("dialed %q, want %q (err %v)", got, tc.want, err)
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("dial error = %v", err)
+			}
+		})
 	}
 }
 
@@ -278,6 +340,40 @@ func TestDockerDriverHandlesEngineFailure(t *testing.T) {
 		BotID:       "bot-1",
 	}); err == nil || !strings.Contains(err.Error(), "docker daemon unavailable") {
 		t.Fatalf("expected docker daemon error, got: %v", err)
+	}
+}
+
+func TestCreateReusesExistingHomeVolume(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/v1.45")
+		switch {
+		case r.Method == http.MethodPost && path == "/volumes/create":
+			w.WriteHeader(http.StatusConflict)
+			_, _ = w.Write([]byte(`{"message":"volume already exists"}`))
+		case r.Method == http.MethodGet && strings.HasPrefix(path, "/networks/"):
+			_, _ = w.Write([]byte(`{"Internal":true}`))
+		case r.Method == http.MethodPost && path == "/containers/create":
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"Id":"cid-reused-volume"}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	drv, err := docker.NewDriver(docker.Options{BaseURL: srv.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := drv.CreateEnvironment(context.Background(), compute.BotConfig{
+		WorkspaceID: "ws-1",
+		BotID:       "bot-1",
+		VolumeRef:   "botbox-home-bot-1",
+	})
+	if err != nil || id != "cid-reused-volume" {
+		t.Fatalf("existing home volume was not reused: %v %s", err, id)
 	}
 }
 

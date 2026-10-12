@@ -4,7 +4,9 @@ package main
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -20,6 +22,8 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/compute"
 	"github.com/dunkeltech/botbox/backend/internal/compute/docker"
 	"github.com/dunkeltech/botbox/backend/internal/compute/vncrelay"
+	"github.com/dunkeltech/botbox/backend/internal/engine"
+	"github.com/dunkeltech/botbox/backend/internal/events"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
 	"github.com/dunkeltech/botbox/backend/internal/secrets"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -115,6 +119,38 @@ func run(logger *slog.Logger) error {
 			defer closeCompute()
 		}
 		cfg.Compute = computeDrv
+		if natsURL := strings.TrimSpace(os.Getenv("NATS_URL")); natsURL != "" {
+			worker := &engine.Worker{Pool: pool, Execute: modelExecutor(pool, queries, keyRing, computeDrv)}
+			ready := make(chan struct{})
+			queue, queueErr := events.OpenQueue(natsURL, func(ctx context.Context, job events.TurnNotification) error {
+				select {
+				case <-ready:
+					return worker.Process(ctx, job)
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}, worker.Interrupt)
+			if queueErr != nil {
+				return fmt.Errorf("initialize turn queue: %w", queueErr)
+			}
+			defer queue.Close()
+			worker.Publish = func(eventCtx context.Context, session engine.Session, event engine.Event) error {
+				data, err := json.Marshal(event)
+				if err != nil {
+					return err
+				}
+				return queue.PublishConversation(eventCtx, session.WorkspaceID, session.ConversationID, data)
+			}
+			close(ready)
+			cfg.ReadinessCheck = func(checkCtx context.Context) error {
+				if err := pool.Ping(checkCtx); err != nil {
+					return err
+				}
+				return queue.Healthy()
+			}
+			cfg.ChatEvents = queue
+			cfg.TurnQueue = queue
+		}
 
 		if vncSecret := strings.TrimSpace(os.Getenv("BOTBOX_VNC_SECRET")); len(vncSecret) >= 16 {
 			signer, signErr := vncrelay.NewSigner([]byte(vncSecret))
@@ -169,7 +205,8 @@ func waitForPostgres(ctx context.Context, pool *pgxpool.Pool) error {
 		return nil
 	}
 
-	// devenv up starts postgres and api concurrently, so retry briefly until TCP 127.0.0.1:5432 binds.
+	// devenv up starts postgres and the API together, so retry until the
+	// configured DATABASE_URL accepts connections.
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -202,10 +239,28 @@ func envOrDefault(key, fallback string) string {
 }
 
 func initComputeDriver(logger *slog.Logger) (compute.Driver, func(), error) {
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("BOTBOX_COMPUTE_DRIVER")), compute.DefaultDriverDocker) {
-		drv, err := docker.NewDriver(docker.Options{
-			SocketPath: os.Getenv("DOCKER_SOCKET"),
-		})
+	driverName := strings.ToLower(strings.TrimSpace(envOrDefault("BOTBOX_COMPUTE_DRIVER", compute.DefaultDriverDocker)))
+	if driverName != compute.DefaultDriverDocker && driverName != "memory" {
+		return nil, nil, errors.New("unsupported compute driver")
+	}
+	if driverName == compute.DefaultDriverDocker {
+		proxyDB, err := proxyDatabaseURL(os.Getenv("DATABASE_URL"), os.Getenv("BOTBOX_EGRESS_DATABASE_URL"))
+		if err != nil {
+			return nil, nil, err
+		}
+		var proxy *docker.ProxyOptions
+		if proxyDB != "" {
+			keySpec := os.Getenv("BOTBOX_SECRETS_KEK")
+			if keySpec == "" {
+				data, err := os.ReadFile(envOrDefault("BOTBOX_SECRETS_KEK_FILE", filepath.Join(os.TempDir(), "botbox-secrets.kek")))
+				if err != nil {
+					return nil, nil, errors.New("proxy encryption configuration unavailable")
+				}
+				keySpec = strings.TrimSpace(string(data))
+			}
+			proxy = &docker.ProxyOptions{Image: envOrDefault("BOTBOX_EGRESS_IMAGE", "botbox/egress-proxy:dev"), DatabaseURL: proxyDB, KeySpec: keySpec}
+		}
+		drv, err := docker.NewDriver(docker.Options{SocketPath: os.Getenv("DOCKER_SOCKET"), Proxy: proxy})
 		if err != nil {
 			return nil, nil, err
 		}

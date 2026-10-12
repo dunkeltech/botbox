@@ -4,6 +4,158 @@ info:
   version: 0.1.0
   description: REST API for first-run setup, authentication, workspaces, RBAC, invitations, and bot configuration.
 paths:
+  /api/workspaces/{workspaceID}/bots/{botID}/runtime:
+    parameters:
+      - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: botID, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      operationId: getBotRuntime
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Persisted bot pause state
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BotRuntime'}
+        '401': {description: Authentication required}
+        '404': {description: Bot or workspace not found}
+    put:
+      operationId: setBotRuntime
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                paused: {type: boolean}
+      responses:
+        '200':
+          description: Bot pause state saved
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BotRuntime'}
+        '400': {description: Missing or invalid pause state}
+        '401': {description: Authentication required}
+        '403': {description: Bot manager required}
+        '404': {description: Bot or workspace not found}
+        '503': {description: Runner control unavailable}
+  /api/workspaces/{workspaceID}/budgets:
+    parameters:
+      - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      operationId: getBudgetSummary
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: botId, in: query, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Usage and applicable budgets
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BudgetSummary'}
+        '401': {description: Authentication required}
+        '404': {description: Workspace or bot not found}
+    put:
+      operationId: setBudget
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SetBudgetRequest'}
+      responses:
+        '200': {description: Budget saved and pending raise approved}
+        '400': {description: Invalid budget}
+        '401': {description: Authentication required}
+        '403': {description: Owner or admin required}
+        '404': {description: Workspace or bot not found}
+  /api/workspaces/{workspaceID}/model-prices:
+    parameters:
+      - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
+    put:
+      operationId: setModelPrice
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ModelPriceRequest'}
+      responses:
+        '200': {description: Model price saved}
+        '400': {description: Invalid price}
+        '401': {description: Authentication required}
+        '403': {description: Owner or admin required}
+  /api/workspaces/{workspaceID}/bots/{botID}/dm:
+    parameters:
+      - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: botID, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      operationId: openDirectMessage
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Private direct message
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ChatConversation'}
+        '401': {description: Authentication required}
+        '403': {description: Viewers cannot chat}
+        '404': {description: Bot or workspace not found}
+  /api/workspaces/{workspaceID}/conversations:
+    parameters:
+      - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      operationId: listDirectMessages
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Only the caller's conversations
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/ChatConversation'}}
+        '401': {description: Authentication required}
+        '404': {description: Workspace not found}
+  /api/workspaces/{workspaceID}/conversations/{conversationID}/messages:
+    parameters:
+      - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: conversationID, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      operationId: listChatMessages
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: before, in: query, schema: {type: integer, format: int64, minimum: 1}}
+      responses:
+        '200':
+          description: Paginated private history and current turn state
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ChatHistory'}
+        '401': {description: Authentication required}
+        '404': {description: Private conversation not found}
+    post:
+      operationId: sendChatMessage
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SendChatMessageRequest'}
+      responses:
+        '202':
+          description: Persisted and queued
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ChatMessage'}
+        '400': {description: Invalid message}
+        '401': {description: Authentication required}
+        '403': {description: Viewers cannot send messages}
+        '404': {description: Private conversation not found}
+        '409': {description: Request ID reused with different content}
+        '429': {description: Message rate limit or bot queue capacity exceeded}
+        '503': {description: Queue unavailable}
   /api/healthz:
     get:
       operationId: getHealthz
@@ -1523,6 +1675,11 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
   parameters:
     WorkspaceID:
       name: workspaceID
@@ -1567,6 +1724,80 @@ components:
         format: uuid
 
   schemas:
+    BotRuntime:
+      type: object
+      required: [paused]
+      properties:
+        paused: {type: boolean}
+    BudgetSummary:
+      type: object
+      required: [spendTodayMicros, budgets]
+      properties:
+        spendTodayMicros: {type: integer, format: int64}
+        budgets: {type: array, items: {$ref: '#/components/schemas/BudgetState'}}
+    BudgetState:
+      type: object
+      required: [id, period, limitMicros, spentMicros, warning, exceeded]
+      properties:
+        id: {type: string, format: uuid}
+        botId: {type: string, format: uuid}
+        period: {type: string, enum: [day, month]}
+        limitMicros: {type: integer, format: int64}
+        spentMicros: {type: integer, format: int64}
+        warning: {type: boolean}
+        exceeded: {type: boolean}
+    SetBudgetRequest:
+      type: object
+      required: [period, limitMicros]
+      properties:
+        botId: {type: string, format: uuid}
+        period: {type: string, enum: [day, month]}
+        limitMicros: {type: integer, format: int64, minimum: 1, maximum: 1000000000000}
+    ModelPriceRequest:
+      type: object
+      required: [provider, model, inputMicrosPerMillion, outputMicrosPerMillion, cacheMicrosPerMillion]
+      properties:
+        provider: {type: string, maxLength: 50}
+        model: {type: string, maxLength: 100}
+        inputMicrosPerMillion: {type: integer, format: int64, minimum: 0, maximum: 1000000000000}
+        outputMicrosPerMillion: {type: integer, format: int64, minimum: 0, maximum: 1000000000000}
+        cacheMicrosPerMillion: {type: integer, format: int64, minimum: 0, maximum: 1000000000000}
+    ChatConversation:
+      type: object
+      required: [id, botId]
+      properties:
+        id: {type: string, format: uuid}
+        botId: {type: string, format: uuid}
+    ChatMessage:
+      type: object
+      required: [id, position, senderType, kind, content, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        position: {type: integer, format: int64}
+        senderType: {type: string, enum: [user, bot, system]}
+        kind: {type: string, enum: [text, tool, system, card]}
+        content: {type: string}
+        createdAt: {type: string, format: date-time}
+    ChatTurn:
+      type: object
+      required: [id, status, queueAhead, errorCode]
+      properties:
+        id: {type: string, format: uuid}
+        status: {type: string, enum: [queued, running, completed, failed, interrupted, budget_exceeded]}
+        queueAhead: {type: integer, format: int64}
+        errorCode: {type: string}
+    ChatHistory:
+      type: object
+      required: [messages, turns]
+      properties:
+        messages: {type: array, items: {$ref: '#/components/schemas/ChatMessage'}}
+        turns: {type: array, items: {$ref: '#/components/schemas/ChatTurn'}}
+    SendChatMessageRequest:
+      type: object
+      required: [id, content]
+      properties:
+        id: {type: string, format: uuid}
+        content: {type: string, minLength: 1, maxLength: 8192}
     HealthResponse:
       type: object
       required: [status]

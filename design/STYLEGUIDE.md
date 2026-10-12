@@ -94,6 +94,8 @@ The status label is always written out next to the dot. Colour is never the only
 
 ### Semantic: budget thresholds
 
+The fleet shows known spend today. Budget meters follow the Stitch project `13598702750338265050`, screen `382c2e3cc2854be796ffa8ff42c03345`: show the percentage and 80%/100% thresholds, use amber above the warning threshold, and a dashed border for exhaustion. Meters expose their value through an accessible progressbar role. Bot settings expose daily and monthly USD limits to workspace owners and admins. Warning and exhausted states use text labels with the existing amber tokens. Money amounts never replace unknown costs with a fabricated estimate.
+
 | Threshold | Track fill | Banner / badge bg | Text | Border | Meaning |
 |---|---|---|---|---|---|
 | 0–79 % (`ok`) | `green` | `mint-soft` | `green-600` | `mint-line` | Normal spend within daily or monthly cap |
@@ -182,6 +184,7 @@ The status label is always written out next to the dot. Colour is never the only
 - **Unread counter:** a 20 px pill, `green-light` background, `terminal` text, weight 900.
 
 ### Chat
+- The workspace and Team DM panels share private history, streamed text, queue positions and explicit desktop-visibility disclosure (ADR-0008). A soft-denied tool must appear as an explicit error notice even when the CLI exits successfully. Budget admission errors use the existing warning treatment and translated copy; never show raw dependency errors.
 - **Message row (Slack style):** a 36 px avatar, then the name (weight 900), a BOT badge for bots (or role tag for human teammates with initials avatar and presence dot), and the time in 12 px `muted`. The body is 15/1.55. Consecutive messages from the same sender may later be grouped.
 - **Mentions & `@` autocomplete:** `blue` text on `blue-tint`, weight 700, radius 4, padding 0 3 px. Typing `@` opens a keyboard-navigable `role="listbox"` popover directly above the composer (in flow, without occluding messages) listing bots and humans with presence and role metadata.
 - **Approval request card:** inline `amber-tint` card with dashed `amber-line` border in group chat (`new_host`, `raise_budget`, `push_protected`) plus Pending / Approved / Denied filter tabs in the dedicated Approvals inbox (`Approvals 3` counter in sidebar).
@@ -304,3 +307,30 @@ theme: {
 
 - Port the avatar as a React component (`<BotAvatar seed mood size tile />`) from [`source/Avatar.dc.html`](source/Avatar.dc.html), and write a Go test that checks the hash and part selection against the same fixtures.
 - The `.dc.html` files in [`source/`](source/) are reference markup from the design canvas, with exact inline styles. They need the canvas runtime and are not meant to run in the app.
+
+### Bot pause control
+
+The workspace header exposes Pause bot / Resume bot to bot managers, with the
+persisted state readable by every workspace role. Use the secondary button style,
+44 px touch targets, and explicit text labels. Paused bots show that queued
+messages keep their order and interrupted turns are not replayed. A failed control
+request shows an amber inline alert and reloads the stored state, because a pause
+may have committed before cancellation transport failed.
+
+Budget displays count proxy request records once. A CLI aggregate must not add a
+second charge to already metered requests. Null cost on metered requests means unavailable pricing or
+unreconciled usage, rather than zero spend. Subscription records show tokens-only
+usage and must not be labeled missing billing. Use an explicit warning for blocked
+budget admission; raw provider errors and credentials never appear in chat.
+
+Chat turn failures use specific, translated recovery hints when the server knows
+the cause. Computer failures link to the workspace computer controls; missing
+provider credentials link to the bot Secrets page. Keep the amber warning style,
+visible underlined links and 44 px targets. Unknown codes use the generic message.
+Never interpolate raw dependency errors or unknown codes into user-facing text.
+
+Claude CLI bots show a Pro / Max setup card on Secrets & network. It prepares the
+write-only secret form with the fixed credential name, provider host and Bearer
+scheme, while preserving existing role permissions. Display the official setup
+command and optional project helper as code. The token itself remains a password
+input, is cleared on save, and is never rendered from a server response.

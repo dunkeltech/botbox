@@ -30,6 +30,8 @@ import {
   Textarea,
 } from '@/components/ui';
 import { VncViewport } from '@/components/workspace/VncViewport';
+import { RunnerControl } from '@/components/chat/RunnerControl';
+import { ChatPanel } from '@/components/chat/ChatPanel';
 import { useAuth } from '@/context/AuthContext';
 import {
   ApiClientError,
@@ -74,7 +76,7 @@ function mapEnvStatusToChip(
   botStatus: Bot['status'],
 ): ChipStatus {
   if (envStatus === 'running') {
-    return botStatus === 'thinking' ? 'thinking' : 'working';
+    return botStatus === 'action' ? 'working' : botStatus;
   }
   if (envStatus === 'creating') {
     return 'thinking';
@@ -551,7 +553,17 @@ export function BotWorkspaceView() {
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <RunnerControl
+              key={`${workspaceId}:${bot.id}:${user?.id}`}
+              workspaceId={workspaceId}
+              botId={bot.id}
+              userId={user?.id ?? ''}
+              canManage={canManage}
+            />
+            <div
+              id="computer-controls"
+              className="flex flex-wrap items-center gap-2"
+            >
               {envStatus === 'running' ? (
                 <>
                   <Button
@@ -668,14 +680,15 @@ export function BotWorkspaceView() {
             </div>
           ) : null}
 
-          <div className="rounded-md border border-blue-line bg-blue-tint p-3.5">
-            <p className="text-[14px] font-black text-blue">
-              {t('session.phaseChatNoticeTitle')}
-            </p>
-            <p className="mt-1 text-[13px] leading-[1.55] text-ink-2">
-              {t('session.phaseChatNoticeBody')}
-            </p>
-          </div>
+          <ChatPanel
+            key={`${workspaceId}/${user?.id}/${bot.id}`}
+            workspaceId={workspaceId}
+            userId={user?.id ?? ''}
+            botId={bot.id}
+            name={bot.name}
+            avatarSeed={bot.avatarSeed}
+            canChat={activeWorkspace.role !== 'viewer'}
+          />
 
           <p className="border-t border-line pt-3 text-[13px] text-muted">
             {t('session.footerHint')}

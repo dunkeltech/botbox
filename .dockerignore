@@ -1,0 +1,12 @@
+# Keep credentials and host runtime artifacts out of every image build context.
+.git
+.devenv*
+.direnv
+.env*
+**/.env*
+backend/bin
+frontend/node_modules
+frontend/.next
+frontend/.next-dev
+frontend/coverage
+**/*.tsbuildinfo

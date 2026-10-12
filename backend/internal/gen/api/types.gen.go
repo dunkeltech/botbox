@@ -57,6 +57,99 @@ func (e BotStatus) Valid() bool {
 	}
 }
 
+// Defines values for BudgetStatePeriod.
+const (
+	BudgetStatePeriodDay   BudgetStatePeriod = "day"
+	BudgetStatePeriodMonth BudgetStatePeriod = "month"
+)
+
+// Valid indicates whether the value is a known member of the BudgetStatePeriod enum.
+func (e BudgetStatePeriod) Valid() bool {
+	switch e {
+	case BudgetStatePeriodDay:
+		return true
+	case BudgetStatePeriodMonth:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ChatMessageKind.
+const (
+	ChatMessageKindCard   ChatMessageKind = "card"
+	ChatMessageKindSystem ChatMessageKind = "system"
+	ChatMessageKindText   ChatMessageKind = "text"
+	ChatMessageKindTool   ChatMessageKind = "tool"
+)
+
+// Valid indicates whether the value is a known member of the ChatMessageKind enum.
+func (e ChatMessageKind) Valid() bool {
+	switch e {
+	case ChatMessageKindCard:
+		return true
+	case ChatMessageKindSystem:
+		return true
+	case ChatMessageKindText:
+		return true
+	case ChatMessageKindTool:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ChatMessageSenderType.
+const (
+	ChatMessageSenderTypeBot    ChatMessageSenderType = "bot"
+	ChatMessageSenderTypeSystem ChatMessageSenderType = "system"
+	ChatMessageSenderTypeUser   ChatMessageSenderType = "user"
+)
+
+// Valid indicates whether the value is a known member of the ChatMessageSenderType enum.
+func (e ChatMessageSenderType) Valid() bool {
+	switch e {
+	case ChatMessageSenderTypeBot:
+		return true
+	case ChatMessageSenderTypeSystem:
+		return true
+	case ChatMessageSenderTypeUser:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ChatTurnStatus.
+const (
+	ChatTurnStatusBudgetExceeded ChatTurnStatus = "budget_exceeded"
+	ChatTurnStatusCompleted      ChatTurnStatus = "completed"
+	ChatTurnStatusFailed         ChatTurnStatus = "failed"
+	ChatTurnStatusInterrupted    ChatTurnStatus = "interrupted"
+	ChatTurnStatusQueued         ChatTurnStatus = "queued"
+	ChatTurnStatusRunning        ChatTurnStatus = "running"
+)
+
+// Valid indicates whether the value is a known member of the ChatTurnStatus enum.
+func (e ChatTurnStatus) Valid() bool {
+	switch e {
+	case ChatTurnStatusBudgetExceeded:
+		return true
+	case ChatTurnStatusCompleted:
+		return true
+	case ChatTurnStatusFailed:
+		return true
+	case ChatTurnStatusInterrupted:
+		return true
+	case ChatTurnStatusQueued:
+		return true
+	case ChatTurnStatusRunning:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DriverType.
 const (
 	Docker     DriverType = "docker"
@@ -195,6 +288,24 @@ func (e SecretScope) Valid() bool {
 	}
 }
 
+// Defines values for SetBudgetRequestPeriod.
+const (
+	SetBudgetRequestPeriodDay   SetBudgetRequestPeriod = "day"
+	SetBudgetRequestPeriodMonth SetBudgetRequestPeriod = "month"
+)
+
+// Valid indicates whether the value is a known member of the SetBudgetRequestPeriod enum.
+func (e SetBudgetRequestPeriod) Valid() bool {
+	switch e {
+	case SetBudgetRequestPeriodDay:
+		return true
+	case SetBudgetRequestPeriodMonth:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for WorkspaceRole.
 const (
 	Admin  WorkspaceRole = "admin"
@@ -261,8 +372,72 @@ type BotListResponse struct {
 	Bots []Bot `json:"bots"`
 }
 
+// BotRuntime defines model for BotRuntime.
+type BotRuntime struct {
+	Paused bool `json:"paused"`
+}
+
 // BotStatus defines model for BotStatus.
 type BotStatus string
+
+// BudgetState defines model for BudgetState.
+type BudgetState struct {
+	BotId       *openapi_types.UUID `json:"botId,omitempty"`
+	Exceeded    bool                `json:"exceeded"`
+	Id          openapi_types.UUID  `json:"id"`
+	LimitMicros int64               `json:"limitMicros"`
+	Period      BudgetStatePeriod   `json:"period"`
+	SpentMicros int64               `json:"spentMicros"`
+	Warning     bool                `json:"warning"`
+}
+
+// BudgetStatePeriod defines model for BudgetState.Period.
+type BudgetStatePeriod string
+
+// BudgetSummary defines model for BudgetSummary.
+type BudgetSummary struct {
+	Budgets          []BudgetState `json:"budgets"`
+	SpendTodayMicros int64         `json:"spendTodayMicros"`
+}
+
+// ChatConversation defines model for ChatConversation.
+type ChatConversation struct {
+	BotId openapi_types.UUID `json:"botId"`
+	Id    openapi_types.UUID `json:"id"`
+}
+
+// ChatHistory defines model for ChatHistory.
+type ChatHistory struct {
+	Messages []ChatMessage `json:"messages"`
+	Turns    []ChatTurn    `json:"turns"`
+}
+
+// ChatMessage defines model for ChatMessage.
+type ChatMessage struct {
+	Content    string                `json:"content"`
+	CreatedAt  time.Time             `json:"createdAt"`
+	Id         openapi_types.UUID    `json:"id"`
+	Kind       ChatMessageKind       `json:"kind"`
+	Position   int64                 `json:"position"`
+	SenderType ChatMessageSenderType `json:"senderType"`
+}
+
+// ChatMessageKind defines model for ChatMessage.Kind.
+type ChatMessageKind string
+
+// ChatMessageSenderType defines model for ChatMessage.SenderType.
+type ChatMessageSenderType string
+
+// ChatTurn defines model for ChatTurn.
+type ChatTurn struct {
+	ErrorCode  string             `json:"errorCode"`
+	Id         openapi_types.UUID `json:"id"`
+	QueueAhead int64              `json:"queueAhead"`
+	Status     ChatTurnStatus     `json:"status"`
+}
+
+// ChatTurnStatus defines model for ChatTurn.Status.
+type ChatTurnStatus string
 
 // ControlHolder defines model for ControlHolder.
 type ControlHolder struct {
@@ -470,6 +645,15 @@ type MeResponse struct {
 	Workspaces []WorkspaceSummary `json:"workspaces"`
 }
 
+// ModelPriceRequest defines model for ModelPriceRequest.
+type ModelPriceRequest struct {
+	CacheMicrosPerMillion  int64  `json:"cacheMicrosPerMillion"`
+	InputMicrosPerMillion  int64  `json:"inputMicrosPerMillion"`
+	Model                  string `json:"model"`
+	OutputMicrosPerMillion int64  `json:"outputMicrosPerMillion"`
+	Provider               string `json:"provider"`
+}
+
 // RefreshRequest defines model for RefreshRequest.
 type RefreshRequest struct {
 	RefreshToken *string `json:"refreshToken,omitempty"`
@@ -510,6 +694,22 @@ type SecretMetadata struct {
 
 // SecretScope defines model for SecretScope.
 type SecretScope string
+
+// SendChatMessageRequest defines model for SendChatMessageRequest.
+type SendChatMessageRequest struct {
+	Content string             `json:"content"`
+	Id      openapi_types.UUID `json:"id"`
+}
+
+// SetBudgetRequest defines model for SetBudgetRequest.
+type SetBudgetRequest struct {
+	BotId       *openapi_types.UUID    `json:"botId,omitempty"`
+	LimitMicros int64                  `json:"limitMicros"`
+	Period      SetBudgetRequestPeriod `json:"period"`
+}
+
+// SetBudgetRequestPeriod defines model for SetBudgetRequest.Period.
+type SetBudgetRequestPeriod string
 
 // SetupCompleteRequest defines model for SetupCompleteRequest.
 type SetupCompleteRequest struct {
@@ -676,6 +876,21 @@ type ReadBotFileParams struct {
 	Path string `form:"path" json:"path"`
 }
 
+// SetBotRuntimeJSONBody defines parameters for SetBotRuntime.
+type SetBotRuntimeJSONBody struct {
+	Paused *bool `json:"paused,omitempty"`
+}
+
+// GetBudgetSummaryParams defines parameters for GetBudgetSummary.
+type GetBudgetSummaryParams struct {
+	BotId *openapi_types.UUID `form:"botId,omitempty" json:"botId,omitempty"`
+}
+
+// ListChatMessagesParams defines parameters for ListChatMessages.
+type ListChatMessagesParams struct {
+	Before *int64 `form:"before,omitempty" json:"before,omitempty"`
+}
+
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody = LoginRequest
 
@@ -706,6 +921,9 @@ type UpdateBotEgressPolicyJSONRequestBody = UpdateEgressPolicyRequest
 // WriteBotFileJSONRequestBody defines body for WriteBotFile for application/json ContentType.
 type WriteBotFileJSONRequestBody = WriteFileContentRequest
 
+// SetBotRuntimeJSONRequestBody defines body for SetBotRuntime for application/json ContentType.
+type SetBotRuntimeJSONRequestBody SetBotRuntimeJSONBody
+
 // CreateBotSecretJSONRequestBody defines body for CreateBotSecret for application/json ContentType.
 type CreateBotSecretJSONRequestBody = CreateSecretRequest
 
@@ -715,11 +933,20 @@ type UpdateBotSecretJSONRequestBody = UpdateSecretRequest
 // ExecBotTerminalJSONRequestBody defines body for ExecBotTerminal for application/json ContentType.
 type ExecBotTerminalJSONRequestBody = TerminalExecRequest
 
+// SetBudgetJSONRequestBody defines body for SetBudget for application/json ContentType.
+type SetBudgetJSONRequestBody = SetBudgetRequest
+
+// SendChatMessageJSONRequestBody defines body for SendChatMessage for application/json ContentType.
+type SendChatMessageJSONRequestBody = SendChatMessageRequest
+
 // CreateInvitationJSONRequestBody defines body for CreateInvitation for application/json ContentType.
 type CreateInvitationJSONRequestBody = CreateInvitationRequest
 
 // UpdateWorkspaceMemberRoleJSONRequestBody defines body for UpdateWorkspaceMemberRole for application/json ContentType.
 type UpdateWorkspaceMemberRoleJSONRequestBody = UpdateMemberRoleRequest
+
+// SetModelPriceJSONRequestBody defines body for SetModelPrice for application/json ContentType.
+type SetModelPriceJSONRequestBody = ModelPriceRequest
 
 // CreateWorkspaceSecretJSONRequestBody defines body for CreateWorkspaceSecret for application/json ContentType.
 type CreateWorkspaceSecretJSONRequestBody = CreateSecretRequest

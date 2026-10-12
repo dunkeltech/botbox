@@ -120,6 +120,13 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const navItems = [
     {
+      href: '/team',
+      label: t('navTeam'),
+      icon: Users,
+      active: pathname.startsWith('/team'),
+      visible: true,
+    },
+    {
       href: '/',
       label: t('navFleet'),
       icon: Bot,

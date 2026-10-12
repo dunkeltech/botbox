@@ -266,6 +266,27 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
     [bot.id, workspace.id],
   );
 
+  function prepareClaudeSubscription() {
+    const existing = secrets.find(
+      (secret) =>
+        secret.scope === 'bot' && secret.name === 'llm-anthropic-oauth',
+    );
+    if (existing) startEditSecret(existing);
+    else resetSecretForm();
+    setScope('bot');
+    setSecretName('llm-anthropic-oauth');
+    setDomainMatch('api.anthropic.com');
+    setMatchSubdomains(false);
+    setPathPrefix('');
+    setAuthScheme('bearer');
+    setHeaderName('Authorization');
+    setUsername('');
+    setSecretValue('');
+    document
+      .getElementById('secret-form')
+      ?.scrollIntoView?.({ block: 'start' });
+  }
+
   function canMutateSecret(secret: SecretMetadata): boolean {
     return secret.scope === 'workspace'
       ? canEditWorkspaceSecrets
@@ -528,6 +549,39 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
         </nav>
       </div>
 
+      {bot.llmMode === 'cli' &&
+      ['anthropic', 'claude'].includes(bot.llmProvider) ? (
+        <Card className="flex flex-col gap-3 p-6">
+          <h2 className="text-[20px] font-black text-ink">
+            {t('claudeSubscriptionTitle')}
+          </h2>
+          <p className="text-[14px] text-ink-2">
+            {t('claudeSubscriptionSetup')}
+          </p>
+          <code className="w-fit rounded-xs bg-paper-2 px-3 py-2 text-[13px] text-ink">
+            {t('claudeSubscriptionCommand')}
+          </code>
+          <p className="text-[14px] text-ink-2">
+            {t('claudeSubscriptionDockerSetup')}
+          </p>
+          <code className="w-fit rounded-xs bg-paper-2 px-3 py-2 text-[13px] text-ink">
+            {t('claudeSubscriptionDockerCommand')}
+          </code>
+          <p className="text-[14px] text-ink-2">
+            {t('claudeSubscriptionPrivacy')}
+          </p>
+          {canEditBotSecrets ? (
+            <Button
+              variant="secondary"
+              disabled={loading || savingSecret}
+              onClick={prepareClaudeSubscription}
+            >
+              {t('claudeSubscriptionConfigure')}
+            </Button>
+          ) : null}
+        </Card>
+      ) : null}
+
       {!canEditBotSecrets ? (
         <Alert tone="info">{t('readOnlyNotice')}</Alert>
       ) : null}
@@ -760,6 +814,7 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
 
             <Card className="p-6">
               <form
+                id="secret-form"
                 aria-labelledby="secret-form-heading"
                 onSubmit={(event) => void handleSecretSubmit(event)}
                 className="flex flex-col gap-5"

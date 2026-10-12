@@ -19,6 +19,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	AgentService_RunCLI_FullMethodName     = "/agent.v1.AgentService/RunCLI"
 	AgentService_Ping_FullMethodName       = "/agent.v1.AgentService/Ping"
 	AgentService_GetInfo_FullMethodName    = "/agent.v1.AgentService/GetInfo"
 	AgentService_Screenshot_FullMethodName = "/agent.v1.AgentService/Screenshot"
@@ -38,6 +39,8 @@ const (
 // AgentService runs inside each sandbox container to handle health checks,
 // host-driven computer-use actions, command execution, and /home/bot file access.
 type AgentServiceClient interface {
+	// RunCLI executes one bounded CLI turn and streams both output pipes.
+	RunCLI(ctx context.Context, in *RunCLIRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[RunCLIResponse], error)
 	// Ping verifies gRPC reachability and reports the sandbox hostname.
 	Ping(ctx context.Context, in *PingRequest, opts ...grpc.CallOption) (*PingResponse, error)
 	// GetInfo returns runtime capabilities and uptime of the sandbox agent.
@@ -67,6 +70,25 @@ type agentServiceClient struct {
 func NewAgentServiceClient(cc grpc.ClientConnInterface) AgentServiceClient {
 	return &agentServiceClient{cc}
 }
+
+func (c *agentServiceClient) RunCLI(ctx context.Context, in *RunCLIRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[RunCLIResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &AgentService_ServiceDesc.Streams[0], AgentService_RunCLI_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[RunCLIRequest, RunCLIResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AgentService_RunCLIClient = grpc.ServerStreamingClient[RunCLIResponse]
 
 func (c *agentServiceClient) Ping(ctx context.Context, in *PingRequest, opts ...grpc.CallOption) (*PingResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
@@ -175,6 +197,8 @@ func (c *agentServiceClient) WriteFile(ctx context.Context, in *WriteFileRequest
 // AgentService runs inside each sandbox container to handle health checks,
 // host-driven computer-use actions, command execution, and /home/bot file access.
 type AgentServiceServer interface {
+	// RunCLI executes one bounded CLI turn and streams both output pipes.
+	RunCLI(*RunCLIRequest, grpc.ServerStreamingServer[RunCLIResponse]) error
 	// Ping verifies gRPC reachability and reports the sandbox hostname.
 	Ping(context.Context, *PingRequest) (*PingResponse, error)
 	// GetInfo returns runtime capabilities and uptime of the sandbox agent.
@@ -205,6 +229,9 @@ type AgentServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedAgentServiceServer struct{}
 
+func (UnimplementedAgentServiceServer) RunCLI(*RunCLIRequest, grpc.ServerStreamingServer[RunCLIResponse]) error {
+	return status.Error(codes.Unimplemented, "method RunCLI not implemented")
+}
 func (UnimplementedAgentServiceServer) Ping(context.Context, *PingRequest) (*PingResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Ping not implemented")
 }
@@ -255,6 +282,17 @@ func RegisterAgentServiceServer(s grpc.ServiceRegistrar, srv AgentServiceServer)
 	}
 	s.RegisterService(&AgentService_ServiceDesc, srv)
 }
+
+func _AgentService_RunCLI_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(RunCLIRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(AgentServiceServer).RunCLI(m, &grpc.GenericServerStream[RunCLIRequest, RunCLIResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AgentService_RunCLIServer = grpc.ServerStreamingServer[RunCLIResponse]
 
 func _AgentService_Ping_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(PingRequest)
@@ -484,6 +522,12 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _AgentService_WriteFile_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "RunCLI",
+			Handler:       _AgentService_RunCLI_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "agent/v1/agent.proto",
 }

@@ -15,12 +15,14 @@ const maxStreamLineBytes = 1 << 20
 
 // Normalized bot engine stream event kinds emitted by all CLI adapters.
 const (
-	EventKindStatus     EventKind = "status"
-	EventKindTextDelta  EventKind = "text_delta"
-	EventKindToolCall   EventKind = "tool_call"
-	EventKindToolResult EventKind = "tool_result"
-	EventKindUsage      EventKind = "usage"
-	EventKindError      EventKind = "error"
+	EventKindMessage        EventKind = "message"
+	EventKindApprovalNeeded EventKind = "approval_needed"
+	EventKindStatus         EventKind = "status"
+	EventKindTextDelta      EventKind = "text_delta"
+	EventKindToolCall       EventKind = "tool_call"
+	EventKindToolResult     EventKind = "tool_result"
+	EventKindUsage          EventKind = "usage"
+	EventKindError          EventKind = "error"
 )
 
 // ErrLineTooLong indicates a single NDJSON line exceeded maxStreamLineBytes.
@@ -31,6 +33,9 @@ type EventKind string
 
 // Event is the unified internal representation produced from claude, codex, and agy streams.
 type Event struct {
+	TurnID       string
+	CostMicros   *int64
+	SessionID    string
 	Kind         EventKind
 	Text         string
 	ToolID       string
@@ -50,6 +55,7 @@ func ParseClaudeStream(ctx context.Context, r io.Reader) ([]Event, error) {
 	return scanNDJSON(ctx, "claude", r, func(line []byte) ([]Event, error) {
 		var env struct {
 			Type        string `json:"type"`
+			SessionID   string `json:"session_id"`
 			IsError     bool   `json:"is_error"`
 			StreamEvent struct {
 				Type  string `json:"type"`
@@ -61,6 +67,7 @@ func ParseClaudeStream(ctx context.Context, r io.Reader) ([]Event, error) {
 			Message struct {
 				Content []struct {
 					Type      string          `json:"type"`
+					Text      string          `json:"text"`
 					ID        string          `json:"id"`
 					Name      string          `json:"name"`
 					Input     json.RawMessage `json:"input"`
@@ -82,13 +89,17 @@ func ParseClaudeStream(ctx context.Context, r io.Reader) ([]Event, error) {
 		var out []Event
 		switch env.Type {
 		case "system":
-			out = append(out, Event{Kind: EventKindStatus, Status: "thinking"})
+			out = append(out, Event{Kind: EventKindStatus, Status: "thinking", SessionID: env.SessionID})
 		case "stream_event":
 			if env.StreamEvent.Delta.Type == "text_delta" && env.StreamEvent.Delta.Text != "" {
 				out = append(out, Event{Kind: EventKindTextDelta, Text: env.StreamEvent.Delta.Text})
 			}
 		case "assistant":
+			var text strings.Builder
 			for _, item := range env.Message.Content {
+				if item.Type == "text" {
+					text.WriteString(item.Text)
+				}
 				if item.Type == "tool_use" {
 					out = append(out, Event{
 						Kind:      EventKindToolCall,
@@ -98,6 +109,9 @@ func ParseClaudeStream(ctx context.Context, r io.Reader) ([]Event, error) {
 						Status:    "action",
 					})
 				}
+			}
+			if text.Len() > 0 {
+				out = append(out, Event{Kind: EventKindMessage, Text: text.String()})
 			}
 		case "user":
 			for _, item := range env.Message.Content {
@@ -132,8 +146,9 @@ func ParseClaudeStream(ctx context.Context, r io.Reader) ([]Event, error) {
 func ParseCodexStream(ctx context.Context, r io.Reader) ([]Event, error) {
 	return scanNDJSON(ctx, "codex", r, func(line []byte) ([]Event, error) {
 		var env struct {
-			Type string `json:"type"`
-			Item *struct {
+			Type      string `json:"type"`
+			SessionID string `json:"thread_id"`
+			Item      *struct {
 				ID               string `json:"id"`
 				Type             string `json:"type"`
 				Command          string `json:"command"`
@@ -154,7 +169,7 @@ func ParseCodexStream(ctx context.Context, r io.Reader) ([]Event, error) {
 		var out []Event
 		switch env.Type {
 		case "thread.started", "turn.started":
-			out = append(out, Event{Kind: EventKindStatus, Status: "thinking"})
+			out = append(out, Event{Kind: EventKindStatus, Status: "thinking", SessionID: env.SessionID})
 		case "item.started":
 			if env.Item != nil && env.Item.Type == "command_execution" {
 				inputJSON, _ := json.Marshal(map[string]string{"command": env.Item.Command})
@@ -203,6 +218,7 @@ func ParseAgyStream(ctx context.Context, stdout, stderr io.Reader) ([]Event, err
 	events, err := scanNDJSON(ctx, "agy", stdout, func(line []byte) ([]Event, error) {
 		var env struct {
 			Type      string `json:"type"`
+			SessionID string `json:"conversation_id"`
 			TextDelta *struct {
 				Text string `json:"text"`
 			} `json:"text_delta"`
@@ -231,7 +247,7 @@ func ParseAgyStream(ctx context.Context, stdout, stderr io.Reader) ([]Event, err
 		var out []Event
 		switch env.Type {
 		case "init":
-			out = append(out, Event{Kind: EventKindStatus, Status: "thinking"})
+			out = append(out, Event{Kind: EventKindStatus, Status: "thinking", SessionID: env.SessionID})
 		case "step_update":
 			if env.TextDelta != nil && env.TextDelta.Text != "" {
 				out = append(out, Event{Kind: EventKindTextDelta, Text: env.TextDelta.Text})

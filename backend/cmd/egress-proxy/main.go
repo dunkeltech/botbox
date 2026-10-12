@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -80,18 +81,37 @@ func main() {
 		mux.ServeHTTP(w, r)
 	})
 
+	var handler http.Handler = rootHandler
+	if database := strings.TrimSpace(os.Getenv("DATABASE_URL")); database != "" {
+		bound, closeDB, err := openDatabaseProxy(context.Background(), database, os.Getenv("BOTBOX_SECRETS_KEK"), os.Getenv("BOTBOX_WORKSPACE_ID"), os.Getenv("BOTBOX_BOT_ID"), ca, logger)
+		if err != nil {
+			logger.Error("database proxy initialization failed", "error", err)
+			os.Exit(1)
+		}
+		defer closeDB()
+		handler = bound
+	}
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           rootHandler,
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       time.Minute,
+		IdleTimeout:       30 * time.Second,
+		MaxHeaderBytes:    64 << 10,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	srv.BaseContext = func(net.Listener) context.Context { return ctx }
 
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		logger.Error("egress proxy listener unavailable")
+		os.Exit(1)
+	}
 	go func() {
 		logger.Info("egress proxy listening", slog.String("addr", addr), slog.String("policy", string(policy)))
-		if serveErr := srv.ListenAndServe(); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+		if serveErr := srv.Serve(listener); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
 			logger.Error("egress proxy server failed", slog.Any("error", serveErr))
 			stop()
 		}

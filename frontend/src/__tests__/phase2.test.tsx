@@ -68,6 +68,7 @@ vi.mock('next/navigation', () => ({
 import BotWorkspacePage from '@/app/bots/[botId]/page';
 import BotSettingsPage from '@/app/bots/[botId]/settings/page';
 import FleetPage from '@/app/page';
+import { QueryProvider } from '@/components/providers/QueryProvider';
 import { AuthProvider } from '@/context/AuthContext';
 import { setAccessToken } from '@/lib/api-client';
 import type {
@@ -85,7 +86,9 @@ import enMessages from '../../messages/en.json';
 function renderWithProviders(ui: ReactNode) {
   return render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
-      <AuthProvider>{ui}</AuthProvider>
+      <QueryProvider>
+        <AuthProvider>{ui}</AuthProvider>
+      </QueryProvider>
     </NextIntlClientProvider>,
   );
 }

@@ -167,7 +167,8 @@
     "driverDocker": "Docker",
     "driverK8s": "Kubernetes",
     "createWorkspaceSubmit": "Create workspace",
-    "creatingWorkspace": "Creating…"
+    "creatingWorkspace": "Creating…",
+    "navTeam": "Team"
   },
   "fleet": {
     "eyebrow": "Workspace fleet",
@@ -365,7 +366,14 @@
     "logColDestination": "Destination",
     "logColSecret": "Secret",
     "logColMetrics": "Metrics",
-    "logColTime": "Recorded"
+    "logColTime": "Recorded",
+    "claudeSubscriptionTitle": "Claude Pro / Max subscription",
+    "claudeSubscriptionSetup": "On your own computer, run the command below and sign in with your Claude account. Then prepare the form and paste the generated token into Secret value.",
+    "claudeSubscriptionPrivacy": "The token is stored encrypted outside the bot computer. The official Claude CLI receives a placeholder. Usage is recorded as tokens only. Never paste this token into chat.",
+    "claudeSubscriptionConfigure": "Configure Claude Pro / Max",
+    "claudeSubscriptionCommand": "claude setup-token",
+    "claudeSubscriptionDockerSetup": "Without a local Claude installation, run this project command in your own terminal. It opens a temporary trusted login helper; use the printed browser link and paste the returned code into that terminal.",
+    "claudeSubscriptionDockerCommand": "make claude-login"
   },
   "members": {
     "eyebrow": "Access & RBAC",
@@ -636,5 +644,62 @@
         "budgetExceeded": "Spend 100 % · Stopped"
       }
     }
+  },
+  "chat": {
+    "title": "Chat with {name}",
+    "privacy": "This direct message is private to you and this bot. The bot’s desktop is visible to workspace viewers.",
+    "viewer": "Viewers cannot start or send direct messages.",
+    "error": "Chat is unavailable. Please try again.",
+    "history": "Direct message history",
+    "you": "You",
+    "toolCall": "Tool call",
+    "queued": "Queued · {count} turns ahead",
+    "working": "{name} is working…",
+    "message": "Message",
+    "send": "Send",
+    "sending": "Sending…",
+    "team": "Direct messages",
+    "empty": "Create a bot to start chatting.",
+    "budgetWarning": "At least 80% of an applicable budget has been used.",
+    "budgetExceeded": "Budget exhausted. An administrator must raise the limit.",
+    "turnFailed": "The bot could not finish this turn. Check its model, credentials, budget and computer configuration.",
+    "older": "Load older messages",
+    "cliUnavailable": "This server uses a simulated computer. CLI bots require an isolated Docker computer.",
+    "computerNotRunning": "Start the bot computer before sending another message.",
+    "computerRestartRequired": "Start or restart the bot computer to replace its simulated computer with an isolated Docker computer. Your messages are kept.",
+    "computerControlled": "The bot computer is under human control. Release control before sending another message.",
+    "proxyUnavailable": "The bot egress proxy is not ready. Restart the computer or ask the server administrator to check the proxy configuration.",
+    "credentialsMissing": "No provider credential is configured for this bot. Open Secrets to connect Claude Pro / Max or configure the matching provider API key.",
+    "credentialsUnavailable": "The provider credential could not be loaded. Ask an administrator to check its domain, scope and encryption configuration.",
+    "providerFailed": "The model provider could not complete the request. Check its credentials, model and availability.",
+    "openCredentials": "Open provider credentials",
+    "openComputer": "Open computer controls"
+  },
+  "budgets": {
+    "title": "Spend & budgets",
+    "today": "Spend today: {amount}",
+    "error": "Budget information could not be loaded or saved.",
+    "day": "Daily spend: {spent} of {limit}",
+    "month": "Monthly spend: {spent} of {limit}",
+    "limit": "Limit (USD)",
+    "period": "Budget period",
+    "daily": "Daily",
+    "monthly": "Monthly",
+    "save": "Save budget",
+    "warning": "80% of this budget has been used.",
+    "exceeded": "Budget exhausted. Raise the limit to allow further model requests.",
+    "botTitle": "Bot budget limits",
+    "used": "{percent}% used",
+    "threshold": "80% warning · 100% cap",
+    "hardCap": "At 100%, further model requests are blocked until an administrator raises the budget."
+  },
+  "runner": {
+    "paused": "Bot paused",
+    "ready": "Bot ready",
+    "loading": "Loading bot state…",
+    "pause": "Pause bot",
+    "resume": "Resume bot",
+    "queuePreserved": "Queued messages keep their position. An interrupted turn is not replayed.",
+    "failed": "Could not update or load the bot state. Please try again."
   }
 }

@@ -167,7 +167,8 @@ async function executeFetch(
   });
 }
 
-async function requestJson<T>(
+/** Sends a typed same-origin request with session refresh and CSRF protection. */
+export async function requestJson<T>(
   path: string,
   options: RequestOptions = {},
 ): Promise<T> {

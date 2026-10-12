@@ -7,6 +7,7 @@ export default tseslint.config(
   {
     ignores: [
       '.next/**',
+      '.next-dev/**',
       'out/**',
       'coverage/**',
       'node_modules/**',
@@ -23,6 +24,7 @@ export default tseslint.config(
             'eslint.config.mjs',
             'next.config.mjs',
             'postcss.config.mjs',
+            'src/__tests__/next-config.test.mjs',
           ],
         },
         tsconfigRootDir: import.meta.dirname,

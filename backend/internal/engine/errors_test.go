@@ -1,0 +1,29 @@
+package engine_test
+
+import (
+	"errors"
+	"strings"
+	"testing"
+
+	"github.com/dunkeltech/botbox/backend/internal/engine"
+)
+
+func TestTurnFailureCodesNeverExposePrivateCauses(t *testing.T) {
+	private := errors.New("credential=fixture-private-value")
+	for _, code := range []string{engine.FailureCLIUnavailable, engine.FailureComputerNotRunning, engine.FailureComputerRestart, engine.FailureControlHeld, engine.FailureProxyUnavailable, engine.FailureCredentialsMissing, engine.FailureCredentialsUnavailable, engine.FailureProvider, "fixture-private-value", ""} {
+		wrapped := engine.WithFailureCode(code, private)
+		safe := engine.TurnFailureCode(wrapped)
+		if strings.Contains(safe, "fixture") || strings.Contains(wrapped.Error(), "fixture") {
+			t.Fatal("private details exposed")
+		}
+		if !errors.Is(wrapped, private) {
+			t.Fatal("private cause lost")
+		}
+		if code != "fixture-private-value" && code != "" && safe != code {
+			t.Fatal("failure category lost")
+		}
+	}
+	if engine.TurnFailureCode(private) != engine.FailureTurn {
+		t.Fatal("unexpected dependency error exposed")
+	}
+}

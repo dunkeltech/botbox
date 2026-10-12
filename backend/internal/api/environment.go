@@ -265,6 +265,10 @@ func (s *server) handleTakeBotControl(w http.ResponseWriter, r *http.Request) {
 	defer rollbackTx(r.Context(), tx)
 
 	txq := s.queries.WithTx(tx)
+	if err := txq.LockBotQueue(r.Context(), fromPGUUID(wsRow.ID).String()+"/"+fromPGUUID(botRow.ID).String()); err != nil {
+		s.chatFailure(w)
+		return
+	}
 	claimed, err := txq.ClaimEnvironmentControl(r.Context(), db.ClaimEnvironmentControlParams{
 		BotID:               envRow.BotID,
 		ControlHolderUserID: toPGUUID(claims.Subject),
@@ -294,6 +298,14 @@ func (s *server) handleTakeBotControl(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.touchWatcher(botUUID, claims.Subject, claims.DisplayName)
+	if queue, ok := s.turnQueue.(interface {
+		Interrupt(context.Context, uuid.UUID, uuid.UUID) error
+	}); ok {
+		if err := queue.Interrupt(r.Context(), fromPGUUID(wsRow.ID), fromPGUUID(botRow.ID)); err != nil {
+			s.chatFailure(w)
+			return
+		}
+	}
 	_, holderName, holderEmail, _ := s.lookupControlHolder(r.Context(), wsRow.ID, botRow.ID)
 	stats := s.fetchEnvStats(r.Context(), claimed)
 	writeJSON(w, s.logger, http.StatusOK, s.toAPIEnvironmentState(wsRow.ID, claimed, holderName, holderEmail, stats))

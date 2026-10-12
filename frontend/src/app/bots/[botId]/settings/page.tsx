@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 
+import { BudgetPanel } from '@/components/chat/BudgetPanel';
 import { BotBuilderForm } from '@/components/bots/BotBuilderForm';
 import { AppShell } from '@/components/shell/AppShell';
 import { Alert, Card } from '@/components/ui';
@@ -87,7 +88,18 @@ function BotSettingsContent() {
     );
   }
 
-  return <BotBuilderForm mode="edit" workspace={activeWorkspace} bot={bot} />;
+  return (
+    <div className="flex flex-col gap-6">
+      <BotBuilderForm mode="edit" workspace={activeWorkspace} bot={bot} />
+      <BudgetPanel
+        workspaceId={activeWorkspace.id}
+        botId={bot.id}
+        canManage={
+          activeWorkspace.role === 'owner' || activeWorkspace.role === 'admin'
+        }
+      />
+    </div>
+  );
 }
 
 /**

@@ -63,6 +63,9 @@ type testHarness struct {
 }
 
 type harnessOpts struct {
+	chatLimit        int
+	chatEvents       api.ChatEvents
+	turnQueue        api.TurnQueue
 	argon2Iterations uint32
 	setupLimit       int
 	loginIPLimit     int
@@ -135,12 +138,19 @@ func newTestHarness(t *testing.T, existingPool *pgxpool.Pool, opts harnessOpts) 
 		}
 	}
 
+	chatLimit := opts.chatLimit
+	if chatLimit == 0 {
+		chatLimit = 30
+	}
 	handler := api.NewHandlerWithConfig(api.Config{
-		Logger:  logger,
-		Pool:    pool,
-		JWT:     jwtSvc,
-		Compute: computeDrv,
-		KeyRing: keyRing,
+		ChatRateLimiter: auth.NewRateLimiter(chatLimit, time.Minute, clock.Now),
+		TurnQueue:       opts.turnQueue,
+		ChatEvents:      opts.chatEvents,
+		Logger:          logger,
+		Pool:            pool,
+		JWT:             jwtSvc,
+		Compute:         computeDrv,
+		KeyRing:         keyRing,
 		Argon2Params: auth.Argon2Params{
 			MemoryKiB:   1024,
 			Iterations:  opts.argon2Iterations,

@@ -8,6 +8,8 @@ package docker
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,12 +18,12 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 
 	"github.com/dunkeltech/botbox/backend/internal/agent"
@@ -38,6 +40,8 @@ const (
 
 // Options configures how the Docker compute driver connects to the Docker Engine API.
 type Options struct {
+	// Proxy provisions an isolated metered egress service for each sandbox.
+	Proxy *ProxyOptions
 	// SocketPath overrides /var/run/docker.sock when BaseURL is empty.
 	SocketPath string
 	// BaseURL overrides the HTTP base URL (primarily for mock/integration tests).
@@ -53,27 +57,38 @@ type Options struct {
 // Driver implements compute.Driver using Docker Engine HTTP API calls
 // and per-sandbox gRPC AgentService calls.
 type Driver struct {
+	proxy          *ProxyOptions
 	client         *http.Client
 	baseURL        string
 	seccompProfile string
 	agentDialer    func(ctx context.Context, addr string) (*grpc.ClientConn, error)
+	// daemonDial opens one raw Engine connection. The shared HTTP client
+	// timeout would cut a hijacked chat stream off.
+	daemonDial func(ctx context.Context) (net.Conn, error)
 
 	mu     sync.RWMutex
 	tokens map[compute.EnvID]string
 }
 
+// PortBinding is one Docker host port mapping. HostIp stays loopback.
+type PortBinding struct {
+	HostIP   string `json:"HostIp"`
+	HostPort string `json:"HostPort"`
+}
+
 // ContainerHostConfig captures Docker HostConfig security and resource constraints.
 type ContainerHostConfig struct {
-	Privileged  bool     `json:"Privileged"`
-	CapDrop     []string `json:"CapDrop"`
-	CapAdd      []string `json:"CapAdd,omitempty"`
-	SecurityOpt []string `json:"SecurityOpt"`
-	NanoCPUs    int64    `json:"NanoCPUs"`
-	Memory      int64    `json:"Memory"`
-	PidsLimit   *int64   `json:"PidsLimit"`
-	ShmSize     int64    `json:"ShmSize"`
-	Binds       []string `json:"Binds"`
-	NetworkMode string   `json:"NetworkMode"`
+	Privileged   bool                     `json:"Privileged"`
+	CapDrop      []string                 `json:"CapDrop"`
+	CapAdd       []string                 `json:"CapAdd,omitempty"`
+	SecurityOpt  []string                 `json:"SecurityOpt"`
+	NanoCPUs     int64                    `json:"NanoCPUs"`
+	Memory       int64                    `json:"Memory"`
+	PidsLimit    *int64                   `json:"PidsLimit"`
+	ShmSize      int64                    `json:"ShmSize"`
+	Binds        []string                 `json:"Binds"`
+	NetworkMode  string                   `json:"NetworkMode"`
+	PortBindings map[string][]PortBinding `json:"PortBindings,omitempty"`
 }
 
 // ContainerNetworkingConfig attaches a container to a single isolated bot network.
@@ -86,14 +101,19 @@ type ContainerCreateSpec struct {
 	Image            string                    `json:"Image"`
 	Env              []string                  `json:"Env,omitempty"`
 	Labels           map[string]string         `json:"Labels"`
+	ExposedPorts     map[string]struct{}       `json:"ExposedPorts,omitempty"`
 	HostConfig       ContainerHostConfig       `json:"HostConfig"`
 	NetworkingConfig ContainerNetworkingConfig `json:"NetworkingConfig"`
 }
 
 // NewDriver creates a Docker ComputeDriver using either opts.BaseURL or opts.SocketPath.
 func NewDriver(opts Options) (*Driver, error) {
+	if err := validateProxyOptions(opts.Proxy); err != nil {
+		return nil, err
+	}
 	baseURL := strings.TrimRight(strings.TrimSpace(opts.BaseURL), "/")
 	client := opts.HTTPClient
+	var daemonDial func(ctx context.Context) (net.Conn, error)
 
 	if baseURL == "" {
 		socketPath := strings.TrimSpace(opts.SocketPath)
@@ -101,18 +121,33 @@ func NewDriver(opts Options) (*Driver, error) {
 			socketPath = defaultDockerSocket
 		}
 		baseURL = "http://docker/" + defaultAPIVersion
+		daemonDial = func(ctx context.Context) (net.Conn, error) {
+			var dialer net.Dialer
+			return dialer.DialContext(ctx, "unix", socketPath)
+		}
 		if client == nil {
-			dialer := &net.Dialer{Timeout: 5 * time.Second}
 			client = &http.Client{
 				Timeout: 30 * time.Second,
 				Transport: &http.Transport{
 					DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-						return dialer.DialContext(ctx, "unix", socketPath)
+						return daemonDial(ctx)
 					},
 				},
 			}
 		}
 	} else {
+		parsed, err := url.Parse(baseURL)
+		if err != nil || parsed.Host == "" {
+			if err == nil {
+				err = errors.New("missing host")
+			}
+			return nil, fmt.Errorf("parse docker base url: %w", err)
+		}
+		host := parsed.Host
+		daemonDial = func(ctx context.Context) (net.Conn, error) {
+			var dialer net.Dialer
+			return dialer.DialContext(ctx, "tcp", host)
+		}
 		if !strings.Contains(baseURL, "/v1.") {
 			baseURL += "/" + defaultAPIVersion
 		}
@@ -121,11 +156,18 @@ func NewDriver(opts Options) (*Driver, error) {
 		}
 	}
 
+	var proxy *ProxyOptions
+	if opts.Proxy != nil {
+		copy := *opts.Proxy
+		proxy = &copy
+	}
 	return &Driver{
+		proxy:          proxy,
 		client:         client,
 		baseURL:        baseURL,
 		seccompProfile: strings.TrimSpace(opts.SeccompProfile),
 		agentDialer:    opts.AgentDialer,
+		daemonDial:     daemonDial,
 		tokens:         make(map[compute.EnvID]string),
 	}, nil
 }
@@ -194,6 +236,11 @@ func BuildContainerSpec(cfg compute.BotConfig, seccompProfile string) (Container
 			"botbox.workspace_id": cfg.WorkspaceID,
 			"botbox.bot_id":       cfg.BotID,
 		},
+		// Best-effort loopback publish. Bot networks are internal, so Docker
+		// does not allocate this host port. The dialer then tunnels through
+		// the Engine socket (ADR-0013). An empty host port asks for a free one
+		// on engines that do publish it.
+		ExposedPorts: map[string]struct{}{"9090/tcp": {}},
 		HostConfig: ContainerHostConfig{
 			Privileged:  false,
 			CapDrop:     []string{"ALL"},
@@ -204,6 +251,9 @@ func BuildContainerSpec(cfg compute.BotConfig, seccompProfile string) (Container
 			ShmSize:     compute.DefaultShmSizeBytes,
 			Binds:       []string{volumeName + ":/home/bot"},
 			NetworkMode: netName,
+			PortBindings: map[string][]PortBinding{
+				"9090/tcp": {{HostIP: "127.0.0.1", HostPort: ""}},
+			},
 		},
 		NetworkingConfig: ContainerNetworkingConfig{
 			EndpointsConfig: map[string]map[string]any{
@@ -259,6 +309,17 @@ func ValidateContainerSpec(spec ContainerCreateSpec) error {
 
 // CreateEnvironment provisions the named volume, per-bot internal network, and unprivileged container.
 func (d *Driver) CreateEnvironment(ctx context.Context, cfg compute.BotConfig) (compute.EnvID, error) {
+	if d.proxy != nil && strings.TrimSpace(cfg.AgentToken) == "" {
+		raw := make([]byte, 32)
+		if _, err := rand.Read(raw); err != nil {
+			return "", errors.New("agent token generation failed")
+		}
+		cfg.AgentToken = base64.RawURLEncoding.EncodeToString(raw)
+	}
+	if d.proxy != nil {
+		cfg.ProxyURL = "http://egress:8081"
+		cfg.CACertPath = "/home/bot/.local/share/botbox/proxy-ca.crt"
+	}
 	spec, netName, volumeName, err := BuildContainerSpec(cfg, d.seccompProfile)
 	if err != nil {
 		return "", err
@@ -271,6 +332,13 @@ func (d *Driver) CreateEnvironment(ctx context.Context, cfg compute.BotConfig) (
 		return "", err
 	}
 
+	if d.proxy != nil {
+		if err := d.ensureProxy(ctx, cfg.WorkspaceID, cfg.BotID, netName); err != nil {
+			return "", err
+		}
+		spec.Labels["botbox.egress_proxy"] = proxyMarker
+		spec.Env = append(spec.Env, "BOTBOX_CA_URL=http://egress:8081/ca.crt")
+	}
 	containerName := "botbox-bot-" + sanitizeIdentifier(cfg.BotID)
 	var createResp struct {
 		ID string `json:"Id"`
@@ -283,6 +351,15 @@ func (d *Driver) CreateEnvironment(ctx context.Context, cfg compute.BotConfig) (
 				return "", inspErr
 			}
 			id := compute.EnvID(inspected.ID)
+			if d.proxy != nil {
+				if inspected.Config.Labels["botbox.egress_proxy"] != proxyMarker {
+					return "", errors.New("sandbox requires metered proxy recreation")
+				}
+				cfg.AgentToken = inspectAgentToken(inspected)
+				if cfg.AgentToken == "" {
+					return "", errors.New("sandbox requires authenticated agent recreation")
+				}
+			}
 			d.storeToken(id, cfg.AgentToken)
 			return id, nil
 		}
@@ -301,6 +378,18 @@ func (d *Driver) CreateEnvironment(ctx context.Context, cfg compute.BotConfig) (
 func (d *Driver) StartEnvironment(ctx context.Context, id compute.EnvID) error {
 	if strings.TrimSpace(string(id)) == "" {
 		return compute.ErrEnvironmentNotFound
+	}
+	if d.proxy != nil {
+		info, err := d.inspectContainer(ctx, string(id))
+		if err != nil {
+			return err
+		}
+		if info.Config.Labels["botbox.egress_proxy"] != proxyMarker {
+			return errors.New("sandbox requires metered proxy recreation")
+		}
+		if err = d.ensureProxy(ctx, info.Config.Labels["botbox.workspace_id"], info.Config.Labels["botbox.bot_id"], "botbox-net-"+sanitizeIdentifier(info.Config.Labels["botbox.bot_id"])); err != nil {
+			return err
+		}
 	}
 	statusCode, err := d.doJSON(ctx, http.MethodPost, "/containers/"+url.PathEscape(string(id))+"/start", nil, nil)
 	if err != nil {
@@ -335,6 +424,13 @@ func (d *Driver) StopEnvironment(ctx context.Context, id compute.EnvID) error {
 
 // DestroyEnvironment removes the sandbox container cleanly.
 func (d *Driver) DestroyEnvironment(ctx context.Context, id compute.EnvID) error {
+	var proxyName string
+	if d.proxy != nil {
+		info, err := d.inspectContainer(ctx, string(id))
+		if err == nil && info.Config.Labels["botbox.egress_proxy"] == proxyMarker {
+			proxyName = "botbox-egress-" + sanitizeIdentifier(info.Config.Labels["botbox.bot_id"])
+		}
+	}
 	if strings.TrimSpace(string(id)) == "" {
 		return compute.ErrEnvironmentNotFound
 	}
@@ -348,6 +444,12 @@ func (d *Driver) DestroyEnvironment(ctx context.Context, id compute.EnvID) error
 	d.mu.Lock()
 	delete(d.tokens, id)
 	d.mu.Unlock()
+	if proxyName != "" {
+		code, err := d.doJSON(ctx, http.MethodDelete, "/containers/"+url.PathEscape(proxyName)+"?force=true", nil, nil)
+		if err != nil && code != http.StatusNotFound {
+			return errors.New("proxy cleanup failed")
+		}
+	}
 	return nil
 }
 
@@ -530,13 +632,23 @@ func (d *Driver) ensureVolume(ctx context.Context, name string, labels map[strin
 		"Name":   name,
 		"Labels": labels,
 	}
-	_, err := d.doJSON(ctx, http.MethodPost, "/volumes/create", payload, nil)
+	code, err := d.doJSON(ctx, http.MethodPost, "/volumes/create", payload, nil)
+	if err != nil && code == http.StatusConflict {
+		// Recreating a computer must keep the named home volume.
+		return nil
+	}
 	return err
 }
 
 func (d *Driver) ensureInternalNetwork(ctx context.Context, name string, labels map[string]string) error {
-	statusCode, err := d.doJSON(ctx, http.MethodGet, "/networks/"+url.PathEscape(name), nil, nil)
+	var network struct {
+		Internal bool `json:"Internal"`
+	}
+	statusCode, err := d.doJSON(ctx, http.MethodGet, "/networks/"+url.PathEscape(name), nil, &network)
 	if err == nil {
+		if d.proxy != nil && !network.Internal {
+			return fmt.Errorf("%w: bot network must be internal", compute.ErrSecurityViolation)
+		}
 		return nil
 	}
 	if statusCode != http.StatusNotFound {
@@ -557,12 +669,17 @@ func (d *Driver) ensureInternalNetwork(ctx context.Context, name string, labels 
 }
 
 type containerInspectResponse struct {
+	Config struct {
+		Labels map[string]string `json:"Labels"`
+		Env    []string          `json:"Env"`
+	} `json:"Config"`
 	ID    string `json:"Id"`
 	State struct {
 		Status  string `json:"Status"`
 		Running bool   `json:"Running"`
 	} `json:"State"`
 	NetworkSettings struct {
+		Ports    map[string][]PortBinding `json:"Ports"`
 		Networks map[string]struct {
 			IPAddress string `json:"IPAddress"`
 		} `json:"Networks"`
@@ -600,26 +717,64 @@ func (d *Driver) runningContainerIP(ctx context.Context, id compute.EnvID) (stri
 	return "", errors.New("running container has no assigned internal network IP")
 }
 
+// loopbackAgentAddr returns the published agent port on the host loopback.
+// Bindings on any other address are ignored so a sandbox cannot be exposed
+// on a LAN interface and then dialed by the API.
+func loopbackAgentAddr(ports map[string][]PortBinding) (string, bool) {
+	for _, binding := range ports["9090/tcp"] {
+		port := strings.TrimSpace(binding.HostPort)
+		if port == "" {
+			continue
+		}
+		switch strings.TrimSpace(binding.HostIP) {
+		case "", "0.0.0.0", "127.0.0.1":
+			return net.JoinHostPort("127.0.0.1", port), true
+		case "::", "::1":
+			return net.JoinHostPort("::1", port), true
+		}
+	}
+	return "", false
+}
+
+func agentEndpoint(info *containerInspectResponse) (string, error) {
+	if info == nil || !info.State.Running {
+		return "", compute.ErrEnvironmentNotRunning
+	}
+	if addr, ok := loopbackAgentAddr(info.NetworkSettings.Ports); ok {
+		return addr, nil
+	}
+	for _, endpoint := range info.NetworkSettings.Networks {
+		if ip := strings.TrimSpace(endpoint.IPAddress); ip != "" {
+			return net.JoinHostPort(ip, strconv.Itoa(defaultAgentGRPCPort)), nil
+		}
+	}
+	return "", errors.New("running container has no agent endpoint")
+}
+
 func (d *Driver) agentClient(ctx context.Context, id compute.EnvID) (agentv1.AgentServiceClient, context.Context, func(), error) {
-	ip, err := d.runningContainerIP(ctx, id)
+	info, err := d.inspectContainer(ctx, string(id))
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	addr := fmt.Sprintf("%s:%d", ip, defaultAgentGRPCPort)
-
-	var conn *grpc.ClientConn
-	if d.agentDialer != nil {
-		conn, err = d.agentDialer(ctx, addr)
-	} else {
-		conn, err = grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	}
+	addr, err := agentEndpoint(info)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("dial sandbox agent %s: %w", addr, err)
+		return nil, nil, nil, err
 	}
-
 	d.mu.RLock()
 	token := d.tokens[id]
 	d.mu.RUnlock()
+	if token == "" && d.proxy != nil {
+		token = inspectAgentToken(info)
+		if token == "" {
+			return nil, nil, nil, errors.New("authenticated agent unavailable")
+		}
+		d.storeToken(id, token)
+	}
+
+	conn, err := d.dialAgentGRPC(ctx, id, addr)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("dial sandbox agent %s: %w", addr, err)
+	}
 
 	rpcCtx := ctx
 	if token != "" {
@@ -648,6 +803,7 @@ func (d *Driver) doJSON(ctx context.Context, method, path string, reqBody any, d
 		bodyReader = bytes.NewReader(raw)
 	}
 
+	//nolint:gosec // baseURL is trusted Docker configuration; callers construct escaped Engine API paths
 	req, err := http.NewRequestWithContext(ctx, method, d.baseURL+path, bodyReader)
 	if err != nil {
 		return 0, fmt.Errorf("build docker request: %w", err)
@@ -656,6 +812,7 @@ func (d *Driver) doJSON(ctx context.Context, method, path string, reqBody any, d
 		req.Header.Set("Content-Type", "application/json")
 	}
 
+	//nolint:gosec // the configured transport targets the trusted Docker Engine, never a user URL
 	resp, err := d.client.Do(req)
 	if err != nil {
 		return 0, fmt.Errorf("docker engine %s %s: %w", method, path, err)
@@ -746,4 +903,13 @@ func sanitizeIdentifier(raw string) string {
 		return "bot"
 	}
 	return b.String()
+}
+
+func inspectAgentToken(info *containerInspectResponse) string {
+	for _, entry := range info.Config.Env {
+		if value, ok := strings.CutPrefix(entry, "BOTBOX_AGENT_TOKEN="); ok {
+			return value
+		}
+	}
+	return ""
 }

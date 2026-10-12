@@ -1,20 +1,25 @@
 # syntax=docker/dockerfile:1
 
+FROM node:24-bookworm-slim AS node-runtime
+
 FROM golang:1.26-bookworm AS agent-builder
 WORKDIR /src/backend
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 COPY backend/ ./
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/botbox-agent ./cmd/agent
+COPY --from=node-runtime /usr/local/bin/node /out/node
+RUN strip --strip-unneeded /out/node
 
 FROM debian:bookworm-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Pinned versions for agent CLIs documented in ADR-0002 / Phase 2 (#4).
-ARG CLAUDE_CLI_VERSION=1.0.51
+# Pinned agent CLIs. Claude Code 2.1.323 is the native package; its
+# postinstall must run or bin/claude.exe stays a text stub (ADR-0012).
+ARG CLAUDE_CLI_VERSION=2.1.323
 ARG CODEX_CLI_VERSION=0.39.0
-ARG AGY_CLI_VERSION=0.2.0
+# agy release URLs and SHA-512 digests are pinned in releases/.
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -42,6 +47,12 @@ RUN apt-get update \
         chromium \
     && rm -rf /var/lib/apt/lists/*
 
+# CLI launchers require Node 20 or later; match the Node 24 devenv toolchain.
+COPY --from=agent-builder /out/node /usr/local/bin/node
+COPY --from=node-runtime /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
+RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
+
 # Create unprivileged user 'bot' with passwordless sudo inside the sandbox only.
 # Security invariant: container runs unprivileged without host Docker socket.
 RUN groupadd --gid 1000 bot \
@@ -54,18 +65,32 @@ RUN mkdir -p /home/bot/.pki/nssdb /workspace /var/log/supervisor /var/run/superv
     && certutil -N --empty-password -d sql:/home/bot/.pki/nssdb \
     && chown -R bot:bot /home/bot /workspace /var/log/supervisor /var/run/supervisor
 
-# Preinstall pinned claude / codex / agy wrappers so PATH checks and version pins succeed offline;
-# installations can be overridden in /usr/local/lib/node_modules at build or runtime.
-RUN printf '#!/usr/bin/env bash\necho "claude %s"\n' "${CLAUDE_CLI_VERSION}" > /usr/local/bin/claude \
-    && printf '#!/usr/bin/env bash\necho "codex %s"\n' "${CODEX_CLI_VERSION}" > /usr/local/bin/codex \
-    && printf '#!/usr/bin/env bash\necho "agy %s"\n' "${AGY_CLI_VERSION}" > /usr/local/bin/agy \
-    && chmod +x /usr/local/bin/claude /usr/local/bin/codex /usr/local/bin/agy
+# Install real pinned executables; version-only wrappers cannot execute bot turns.
+# Do not pass --ignore-scripts or --omit=optional: Claude's postinstall copies
+# the platform ELF over the text stub.
+RUN npm install --global --omit=dev \
+        "@anthropic-ai/claude-code@${CLAUDE_CLI_VERSION}" \
+        "@openai/codex@${CODEX_CLI_VERSION}" \
+    && python3 -c 'import pathlib,sys; p=pathlib.Path("/usr/local/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe"); b=p.read_bytes()[:4]; sys.exit("claude native binary missing" if b!=b"\x7fELF" else 0)' \
+    && /usr/local/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe --version | grep -F "${CLAUDE_CLI_VERSION}" \
+    && npm cache clean --force
+
+COPY images/sandbox/releases/agy-linux-*.json /tmp/
+COPY images/sandbox/install-agy.py /tmp/install-agy.py
+RUN python3 /tmp/install-agy.py && rm /tmp/install-agy.py /tmp/agy-linux-*.json
 
 COPY --from=agent-builder /out/botbox-agent /usr/local/bin/botbox-agent
 COPY images/sandbox/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY images/sandbox/install-bot-ca.sh /usr/local/bin/install-bot-ca.sh
+# Install the launcher as its own file. COPY onto the npm symlink would
+# overwrite cli.js, and the launcher would then ask Node to parse itself.
+COPY images/sandbox/claude-launch.sh /tmp/claude-launch.sh
+COPY images/sandbox/install-claude-launcher.sh /tmp/install-claude-launcher.sh
+RUN chmod +x /tmp/install-claude-launcher.sh \
+    && /tmp/install-claude-launcher.sh /usr/local/bin/claude /tmp/claude-launch.sh \
+    && rm /tmp/claude-launch.sh /tmp/install-claude-launcher.sh
 COPY images/sandbox/supervisord.conf /etc/supervisor/conf.d/botbox.conf
-RUN chmod +x /usr/local/bin/botbox-agent /usr/local/bin/entrypoint.sh /usr/local/bin/install-bot-ca.sh
+RUN chmod +x /usr/local/bin/botbox-agent /usr/local/bin/entrypoint.sh /usr/local/bin/install-bot-ca.sh /usr/local/bin/claude
 
 USER bot
 WORKDIR /home/bot

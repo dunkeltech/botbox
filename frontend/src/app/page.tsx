@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 
+import { BudgetPanel } from '@/components/chat/BudgetPanel';
 import { AppShell } from '@/components/shell/AppShell';
 import {
   Alert,
@@ -131,6 +132,14 @@ function FleetContent() {
 
   return (
     <div className="flex flex-col gap-6">
+      {activeWorkspace ? (
+        <BudgetPanel
+          workspaceId={activeWorkspace.id}
+          canManage={
+            activeWorkspace.role === 'owner' || activeWorkspace.role === 'admin'
+          }
+        />
+      ) : null}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="flex flex-col gap-2">
           <Eyebrow>{t('eyebrow')}</Eyebrow>

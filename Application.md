@@ -155,6 +155,77 @@ type AgentRunner interface {
 - **Status:** derived from the events (`idle`, `thinking`, `action`, `offline`). It drives the status chips and the avatar mood.
 - **Reply language** is a per-bot setting. System prompts are in English.
 
+Claude CLI bots can use a Pro/Max subscription through an encrypted
+`llm-anthropic-oauth` secret, prepared on the bot Secrets page. The user completes
+`claude setup-token` outside the bot (or uses `make claude-login`), then stores the
+token through the write-only form. The sandbox receives only an OAuth placeholder
+and no API key; the proxy injects the actual token. Generic API mode ignores this
+credential. Subscription request records keep tokens and null cost with an
+explicit `billing_kind=subscription`; those records do not represent unknown API
+billing and do not require model prices. See
+[ADR-0011](docs/adr/0011-claude-subscription-outside-sandbox.md).
+
+Typing `claude` in the bot computer uses that same placeholder and metered
+route. The pinned CLI is 2.1.323. Its first-run connectivity check and
+workspace trust prompt are skipped there, because provider CONNECT tunnels stay
+closed and the desktop cannot answer the prompt. The `sonnet` alias is sent to
+the provider as `claude-sonnet-5-5`; a monetary budget needs a price for that
+name, while subscription records stay tokens-only. Desktop calls are metered
+without a chat turn. Pause still blocks them. Holding the desktop stops engine
+turns and does not block that personal CLI. See
+[ADR-0012](docs/adr/0012-interactive-claude-in-the-sandbox.md).
+
+The executable defaults to Docker; simulation requires the explicit development
+setting `BOTBOX_COMPUTE_DRIVER=memory`. Unrecognized driver names fail startup.
+Existing simulated computers require a restart before a CLI turn can run. Chat
+uses allowlisted failure categories with links to computer controls or Secrets,
+and CLI preflight checks provider credentials before launching a process. Private
+dependency errors are never displayed. See
+[ADR-0010](docs/adr/0010-explicit-simulation-and-turn-recovery.md).
+
+Phase 4 implementation: private DM APIs persist conversation-local history and
+turns. JetStream notifications drive the API worker, and authorized conversation
+WebSockets stream normalized events. `/team` and the bot workspace share the DM
+panel; workspace and bot settings show spend and budget limits. The workspace
+provides a persisted bot-wide Pause/Resume control. Pausing cancels the active
+turn, keeps queued messages in order, and survives API restarts. Taking desktop
+control also blocks new turns until release. Interrupted turns are never replayed;
+resuming only permits queued work. Bot managers can change pause state; viewers
+can read it. The runner lifecycle owns a bounded event stream and propagates
+cancellation to CLI process groups and API requests. API runners
+support OpenAI-compatible providers and native Anthropic Messages with bounded
+sandbox tools. Credentials named `llm-openrouter`, `llm-openai` and `llm-anthropic`
+are resolved from encrypted bot/workspace secrets outside the sandbox.
+
+Budget accounting uses UTC periods and integer microdollars. Execution is
+serialized per workspace to protect shared spend. Model prices can be edited via
+`PUT /api/workspaces/{workspaceID}/model-prices`; budgeted API turns require a
+configured price. At exhaustion the next API request is denied and a deduplicated
+budget approval is created. Raising a budget above current spend resolves its
+pending approval with audit logging.
+
+CLI turns use the authenticated streaming agent RPC and persist vendor resume IDs
+per bot/conversation. agy stderr soft-denial notices are persisted as system
+messages so they remain visible after reconnecting. Complete CLI messages and
+text deltas both update the live chat, without duplicating the final response.
+Claude and Codex skip their additional CLI permission checks only inside the
+isolated sandbox; processes are terminated as a group on cancellation.
+The sandbox installs a provided public proxy CA into its user-owned combined
+trust bundle and NSS store; supervised tools inherit the CA environment without
+sudo. The Docker driver provisions one trusted proxy per bot, using the database
+URL derived from `DATABASE_URL` or the `BOTBOX_EGRESS_DATABASE_URL` override. Claude/Codex requests take a workspace budget lock,
+create a provisional usage record, and settle usage before the next request.
+Native provider CONNECT tunnels cannot bypass this route. Provider-reported cost
+wins over configured prices; CLI summaries do not double charge proxy records.
+Missing usage/prices on metered requests block applicable monetary budgets until reconciliation.
+New metered sandboxes use generated agent control tokens, recovered through
+trusted Docker inspection after an API restart. agy OAuth exchange and automated
+crash/billing reconciliation remain integration requirements. No live-provider
+acceptance run is implied by fixture or Docker tests. See
+[ADR-0007](docs/adr/0007-live-cli-streams-and-proxy-admission.md),
+[ADR-0008](docs/adr/0008-private-dms-durable-turns-and-budgets.md) and
+[ADR-0009](docs/adr/0009-metered-sandbox-proxy.md).
+
 ### 4.3 Bot sandbox ("computer")
 
 Each bot gets its own isolated Debian-based container:
@@ -164,7 +235,7 @@ Each bot gets its own isolated Debian-based container:
 - **Rights:**
   - User `bot` with passwordless `sudo` **inside** the container, so it can install with `apt-get`, `pip` and `npm`.
   - No privileged mode and no `NET_ADMIN` / `SYS_ADMIN`; a seccomp profile; gVisor where available.
-- **Agent:** a small Go service started by a process supervisor. It offers gRPC for exec (streaming), PTY sessions, files under `/home/bot`, health, and the desktop tools (§4.7), which it also exposes as a local MCP server for the CLIs.
+- **Agent:** a small Go service started by a process supervisor. It offers gRPC for exec (streaming), PTY sessions, files under `/home/bot`, health, and the desktop tools (§4.7), which it also exposes as a local MCP server for the CLIs. The API dials a published loopback port when Docker allocated one. Bot networks are internal, so that publish usually does not exist, and the API then tunnels the RPC through the Docker socket to `127.0.0.1:9090` inside the sandbox ([ADR-0013](docs/adr/0013-localhost-agent-port.md)).
 - **Persistence:** a volume per bot for `/home/bot`. It survives stop, start and image upgrades.
 - **Control lock:** exactly one controller per desktop, the bot or one human.
   - "Take control" pauses the bot; "View only" releases the lock.
@@ -448,6 +519,7 @@ CREATE TABLE usage_records (
     bot_id UUID NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
     conversation_id UUID REFERENCES conversations(id) ON DELETE SET NULL,
     source VARCHAR(20) NOT NULL,                   -- cli_result, api_response, proxy_meter
+    billing_kind VARCHAR(20) NOT NULL DEFAULT 'metered', -- metered, subscription
     model VARCHAR(100),
     input_tokens BIGINT NOT NULL DEFAULT 0,
     output_tokens BIGINT NOT NULL DEFAULT 0,
