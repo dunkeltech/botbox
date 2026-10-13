@@ -38,6 +38,9 @@ export interface VncViewportProps {
   onConnectionChange?: (connected: boolean) => void;
   /** Optional handler invoked instead of mutating local state in controlled mode. */
   onRequestControlToggle?: (nextControl: boolean) => void | Promise<void>;
+  /** Bot pointer in desktop pixels. Shown only while the human does not hold the lock. */
+  cursor?: { x: number; y: number; label: string } | null;
+  showCursor?: boolean;
 }
 
 async function defaultConnectRFB(
@@ -64,6 +67,8 @@ export function VncViewport({
   onControlChange,
   onConnectionChange,
   onRequestControlToggle,
+  cursor = null,
+  showCursor = false,
 }: VncViewportProps) {
   const t = useTranslations('workspace.vnc');
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -152,12 +157,34 @@ export function VncViewport({
         </p>
       ) : null}
 
-      <div
-        ref={stageRef}
-        data-testid="vnc-stage"
-        aria-label={t('resolution')}
-        className={`aspect-[16/10] w-full overflow-hidden bg-terminal ${hideHeader ? '' : 'rounded-md border border-line'}`.trim()}
-      />
+      <div className="relative">
+        <div
+          ref={stageRef}
+          data-testid="vnc-stage"
+          aria-label={t('resolution')}
+          className={`aspect-[16/10] w-full overflow-hidden bg-terminal ${hideHeader ? '' : 'rounded-md border border-line'}`.trim()}
+        />
+        {showCursor && cursor ? (
+          <div
+            data-testid="bot-cursor"
+            role="img"
+            aria-label={cursor.label}
+            className="pointer-events-none absolute z-10"
+            style={{
+              left: `${(cursor.x / 1280) * 100}%`,
+              top: `${(cursor.y / 800) * 100}%`,
+            }}
+          >
+            <span
+              aria-hidden="true"
+              className="block h-3 w-3 border-b-2 border-l-2 border-green bg-paper"
+            />
+            <span className="mt-1 inline-flex min-h-[24px] items-center rounded-sm bg-dark px-1.5 text-[11px] font-bold text-paper">
+              {cursor.label}
+            </span>
+          </div>
+        ) : null}
+      </div>
     </>
   );
 

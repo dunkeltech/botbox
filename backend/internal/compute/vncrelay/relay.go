@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -17,6 +18,11 @@ const (
 	rfbMsgKeyEvent      byte = 4
 	rfbMsgPointerEvent  byte = 5
 	rfbMsgClientCutText byte = 6
+	// websockify turns each TCP read into one WebSocket message. The library
+	// default is 32 KiB, and the first 1280×800 framebuffer is already larger,
+	// so the viewer socket closes and the UI stays on "Connecting…".
+	// A raw frame is 4 MiB; the cap leaves room for one update.
+	maxVNCMessage = 8 << 20
 )
 
 // UpstreamResolver returns the upstream websockify ws:// URL for a workspace bot.
@@ -24,8 +30,16 @@ type UpstreamResolver func(ctx context.Context, workspaceID, botID string) (stri
 
 // RelayOptions configures optional clock and origin behavior for NewRelayHandler.
 type RelayOptions struct {
-	Now                    func() time.Time
-	InsecureSkipOriginWait bool
+	Now func() time.Time
+	// OriginPatterns lists extra browser origins allowed to open the viewer.
+	// A proxy (Next or Caddy) makes the request Host the API address while the
+	// page Origin stays on the site the human opened. The ticket is checked
+	// before the upgrade, so this list is not the authorization check.
+	OriginPatterns []string
+	// DialUpstream opens the TCP connection to websockify. Set it when the
+	// process cannot route the sandbox bridge address. The relay still
+	// completes the WebSocket handshake on that connection.
+	DialUpstream func(ctx context.Context, workspaceID, botID string) (net.Conn, error)
 }
 
 type jsonErrorEnvelope struct {
@@ -100,9 +114,27 @@ func NewRelayHandler(
 		}
 
 		// Dial upstream before accepting the client upgrade so unreachable containers return 502 cleanly.
-		upstreamConn, resp, err := websocket.Dial(r.Context(), upstreamURL, &websocket.DialOptions{
-			Subprotocols: []string{"binary"},
-		})
+		// A bridge URL is not routed from this process on Docker Desktop, so DialUpstream
+		// carries a stream that already ends at 127.0.0.1:6080 inside the sandbox.
+		var upstreamConn *websocket.Conn
+		var resp *http.Response
+		if opts != nil && opts.DialUpstream != nil {
+			raw, dialErr := opts.DialUpstream(r.Context(), workspaceID, botID)
+			if dialErr != nil {
+				logger.Warn("failed to open VNC tunnel",
+					slog.String("workspace_id", workspaceID),
+					slog.String("bot_id", botID),
+					slog.Any("error", dialErr),
+				)
+				writeRelayError(w, logger, http.StatusBadGateway, "upstream_unavailable", "sandbox desktop unreachable")
+				return
+			}
+			upstreamConn, resp, err = dialTunneled(r.Context(), raw)
+		} else {
+			upstreamConn, resp, err = websocket.Dial(r.Context(), upstreamURL, &websocket.DialOptions{
+				Subprotocols: []string{"binary"},
+			})
+		}
 		if resp != nil && resp.Body != nil {
 			_ = resp.Body.Close()
 		}
@@ -119,8 +151,15 @@ func NewRelayHandler(
 			_ = upstreamConn.CloseNow()
 		}()
 
+		var origins []string
+		if opts != nil {
+			origins = opts.OriginPatterns
+		}
+		// Accept compares Origin to this request's Host. After a proxy those
+		// differ, and the browser then stays on "Connecting…".
 		clientConn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-			Subprotocols: []string{"binary"},
+			Subprotocols:   []string{"binary"},
+			OriginPatterns: origins,
 		})
 		if err != nil {
 			logger.Warn("failed to accept VNC WebSocket client", slog.Any("error", err))
@@ -130,8 +169,34 @@ func NewRelayHandler(
 			_ = clientConn.CloseNow()
 		}()
 
+		upstreamConn.SetReadLimit(maxVNCMessage)
+		clientConn.SetReadLimit(maxVNCMessage)
 		pump(r.Context(), clientConn, upstreamConn, claims.CanControl, logger)
 	}
+}
+
+// dialTunneled finishes the websockify handshake on a connection that is already
+// attached to 127.0.0.1:6080. The URL host is not dialed.
+func dialTunneled(ctx context.Context, raw net.Conn) (*websocket.Conn, *http.Response, error) {
+	used := false
+	client := &http.Client{Transport: &http.Transport{
+		DialContext: func(context.Context, string, string) (net.Conn, error) {
+			if used {
+				return nil, errors.New("desktop tunnel already open")
+			}
+			used = true
+			return raw, nil
+		},
+		DisableKeepAlives: true,
+	}}
+	conn, resp, err := websocket.Dial(ctx, "ws://127.0.0.1:6080/", &websocket.DialOptions{
+		Subprotocols: []string{"binary"},
+		HTTPClient:   client,
+	})
+	if err != nil && !used {
+		_ = raw.Close()
+	}
+	return conn, resp, err
 }
 
 func pump(

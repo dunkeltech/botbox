@@ -51,7 +51,7 @@ func (q *Queries) CountWorkspaceOwners(ctx context.Context, workspaceID pgtype.U
 const createWorkspace = `-- name: CreateWorkspace :one
 INSERT INTO workspaces (name, slug, default_driver, default_locale)
 VALUES ($1, $2, $3, $4)
-RETURNING id, name, slug, default_driver, default_locale, created_at
+RETURNING id, name, slug, default_driver, default_locale, created_at, screenshot_retention_days
 `
 
 type CreateWorkspaceParams struct {
@@ -76,12 +76,13 @@ func (q *Queries) CreateWorkspace(ctx context.Context, arg CreateWorkspaceParams
 		&i.DefaultDriver,
 		&i.DefaultLocale,
 		&i.CreatedAt,
+		&i.ScreenshotRetentionDays,
 	)
 	return i, err
 }
 
 const getWorkspaceByIDForUser = `-- name: GetWorkspaceByIDForUser :one
-SELECT w.id, w.name, w.slug, w.default_driver, w.default_locale, w.created_at, wm.role
+SELECT w.id, w.name, w.slug, w.default_driver, w.default_locale, w.created_at, w.screenshot_retention_days, wm.role
 FROM workspaces w
 JOIN workspace_members wm ON wm.workspace_id = w.id
 WHERE w.id = $1 AND wm.user_id = $2
@@ -93,13 +94,14 @@ type GetWorkspaceByIDForUserParams struct {
 }
 
 type GetWorkspaceByIDForUserRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	Name          string             `json:"name"`
-	Slug          string             `json:"slug"`
-	DefaultDriver string             `json:"default_driver"`
-	DefaultLocale string             `json:"default_locale"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	Role          string             `json:"role"`
+	ID                      pgtype.UUID        `json:"id"`
+	Name                    string             `json:"name"`
+	Slug                    string             `json:"slug"`
+	DefaultDriver           string             `json:"default_driver"`
+	DefaultLocale           string             `json:"default_locale"`
+	CreatedAt               pgtype.Timestamptz `json:"created_at"`
+	ScreenshotRetentionDays int32              `json:"screenshot_retention_days"`
+	Role                    string             `json:"role"`
 }
 
 func (q *Queries) GetWorkspaceByIDForUser(ctx context.Context, arg GetWorkspaceByIDForUserParams) (GetWorkspaceByIDForUserRow, error) {
@@ -112,13 +114,14 @@ func (q *Queries) GetWorkspaceByIDForUser(ctx context.Context, arg GetWorkspaceB
 		&i.DefaultDriver,
 		&i.DefaultLocale,
 		&i.CreatedAt,
+		&i.ScreenshotRetentionDays,
 		&i.Role,
 	)
 	return i, err
 }
 
 const getWorkspaceBySlugForUser = `-- name: GetWorkspaceBySlugForUser :one
-SELECT w.id, w.name, w.slug, w.default_driver, w.default_locale, w.created_at, wm.role
+SELECT w.id, w.name, w.slug, w.default_driver, w.default_locale, w.created_at, w.screenshot_retention_days, wm.role
 FROM workspaces w
 JOIN workspace_members wm ON wm.workspace_id = w.id
 WHERE w.slug = $1 AND wm.user_id = $2
@@ -130,13 +133,14 @@ type GetWorkspaceBySlugForUserParams struct {
 }
 
 type GetWorkspaceBySlugForUserRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	Name          string             `json:"name"`
-	Slug          string             `json:"slug"`
-	DefaultDriver string             `json:"default_driver"`
-	DefaultLocale string             `json:"default_locale"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	Role          string             `json:"role"`
+	ID                      pgtype.UUID        `json:"id"`
+	Name                    string             `json:"name"`
+	Slug                    string             `json:"slug"`
+	DefaultDriver           string             `json:"default_driver"`
+	DefaultLocale           string             `json:"default_locale"`
+	CreatedAt               pgtype.Timestamptz `json:"created_at"`
+	ScreenshotRetentionDays int32              `json:"screenshot_retention_days"`
+	Role                    string             `json:"role"`
 }
 
 func (q *Queries) GetWorkspaceBySlugForUser(ctx context.Context, arg GetWorkspaceBySlugForUserParams) (GetWorkspaceBySlugForUserRow, error) {
@@ -149,6 +153,7 @@ func (q *Queries) GetWorkspaceBySlugForUser(ctx context.Context, arg GetWorkspac
 		&i.DefaultDriver,
 		&i.DefaultLocale,
 		&i.CreatedAt,
+		&i.ScreenshotRetentionDays,
 		&i.Role,
 	)
 	return i, err
@@ -238,7 +243,7 @@ func (q *Queries) ListWorkspaceMembers(ctx context.Context, workspaceID pgtype.U
 }
 
 const listWorkspacesForUser = `-- name: ListWorkspacesForUser :many
-SELECT w.id, w.name, w.slug, w.default_driver, w.default_locale, w.created_at, wm.role
+SELECT w.id, w.name, w.slug, w.default_driver, w.default_locale, w.created_at, w.screenshot_retention_days, wm.role
 FROM workspaces w
 JOIN workspace_members wm ON wm.workspace_id = w.id
 WHERE wm.user_id = $1
@@ -246,13 +251,14 @@ ORDER BY w.created_at ASC, w.slug ASC
 `
 
 type ListWorkspacesForUserRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	Name          string             `json:"name"`
-	Slug          string             `json:"slug"`
-	DefaultDriver string             `json:"default_driver"`
-	DefaultLocale string             `json:"default_locale"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	Role          string             `json:"role"`
+	ID                      pgtype.UUID        `json:"id"`
+	Name                    string             `json:"name"`
+	Slug                    string             `json:"slug"`
+	DefaultDriver           string             `json:"default_driver"`
+	DefaultLocale           string             `json:"default_locale"`
+	CreatedAt               pgtype.Timestamptz `json:"created_at"`
+	ScreenshotRetentionDays int32              `json:"screenshot_retention_days"`
+	Role                    string             `json:"role"`
 }
 
 func (q *Queries) ListWorkspacesForUser(ctx context.Context, userID pgtype.UUID) ([]ListWorkspacesForUserRow, error) {
@@ -271,6 +277,7 @@ func (q *Queries) ListWorkspacesForUser(ctx context.Context, userID pgtype.UUID)
 			&i.DefaultDriver,
 			&i.DefaultLocale,
 			&i.CreatedAt,
+			&i.ScreenshotRetentionDays,
 			&i.Role,
 		); err != nil {
 			return nil, err

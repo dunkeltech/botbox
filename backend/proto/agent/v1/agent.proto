@@ -39,6 +39,18 @@ service AgentService {
 
   // WriteFile writes file bytes strictly under /home/bot.
   rpc WriteFile(WriteFileRequest) returns (WriteFileResponse);
+
+  // DesktopAction runs one computer-use or browser action on the shared desktop.
+  rpc DesktopAction(DesktopActionRequest) returns (DesktopActionResponse);
+
+  // SetControlLock cancels in-flight bot input when a human takes the desktop.
+  rpc SetControlLock(SetControlLockRequest) returns (SetControlLockResponse);
+
+  // PullDesktopActions returns actions the API has not stored yet.
+  rpc PullDesktopActions(PullDesktopActionsRequest) returns (PullDesktopActionsResponse);
+
+  // AckDesktopActions drops stored actions so the sandbox journal can shrink.
+  rpc AckDesktopActions(AckDesktopActionsRequest) returns (AckDesktopActionsResponse);
 }
 
 message PingRequest {
@@ -151,3 +163,52 @@ message RunCLIResponse {
  bool exited = 3;
  int32 exit_code = 4;
 }
+
+message DesktopActionRequest {
+  string kind = 1;
+  string payload_json = 2;
+}
+
+message DesktopActionResponse {
+  string result_text = 1;
+  bytes image = 2;
+  string mime_type = 3;
+  int32 width = 4;
+  int32 height = 5;
+  string error_code = 6;
+}
+
+message SetControlLockRequest {
+  bool human = 1;
+}
+
+message SetControlLockResponse {}
+
+message PullDesktopActionsRequest {}
+
+message DesktopActionRecord {
+  uint64 seq = 1;
+  string session_id = 2;
+  string kind = 3;
+  string params_json = 4;
+  string result_text = 5;
+  string error_code = 6;
+  bytes image = 7;
+  string mime_type = 8;
+  int32 coord_x = 9;
+  int32 coord_y = 10;
+  bool has_coord = 11;
+  int64 unix_nano = 12;
+}
+
+message PullDesktopActionsResponse {
+  string session_id = 1;
+  repeated DesktopActionRecord records = 2;
+}
+
+message AckDesktopActionsRequest {
+  string session_id = 1;
+  uint64 through_seq = 2;
+}
+
+message AckDesktopActionsResponse {}

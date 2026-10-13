@@ -173,6 +173,7 @@ func (s *server) mountRoutes(r chi.Router) {
 
 		r.Route("/api/workspaces/{workspaceID}", func(r chi.Router) {
 			r.Get("/", s.handleGetWorkspace)
+			r.Patch("/", s.handleUpdateWorkspace)
 
 			r.Get("/members", s.handleListMembers)
 			r.Patch("/members/{userID}", s.handleUpdateMemberRole)
@@ -203,6 +204,8 @@ func (s *server) mountRoutes(r chi.Router) {
 			r.Post("/bots/{botID}/environment/restart", s.handleRestartBotEnvironment)
 			r.Post("/bots/{botID}/control/take", s.handleTakeBotControl)
 			r.Post("/bots/{botID}/control/release", s.handleReleaseBotControl)
+			r.Get("/bots/{botID}/desktop-actions", s.handleListDesktopActions)
+			r.Get("/bots/{botID}/desktop-actions/{actionID}/screenshot", s.handleGetDesktopActionScreenshot)
 			r.Post("/bots/{botID}/vnc-ticket", s.handleCreateVNCTicket)
 			r.Post("/bots/{botID}/terminal/exec", s.handleExecBotTerminal)
 			r.Get("/bots/{botID}/files", s.handleListBotFiles)

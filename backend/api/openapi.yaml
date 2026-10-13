@@ -411,6 +411,47 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
+    patch:
+      operationId: updateWorkspace
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateWorkspaceRequest'
+      responses:
+        '200':
+          description: Workspace settings updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceSummary'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '403':
+          description: Only the owner may change workspace settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Workspace not found or not a member
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
 
   /api/workspaces/{workspaceID}/members:
     get:
@@ -994,6 +1035,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
+        '503':
+          description: Running sandbox did not accept the control lock
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
 
   /api/workspaces/{workspaceID}/bots/{botID}/control/release:
     post:
@@ -1034,6 +1081,87 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
         '409':
           description: Another user holds the control lock
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '503':
+          description: Running sandbox did not accept the control lock
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/workspaces/{workspaceID}/bots/{botID}/desktop-actions:
+    get:
+      operationId: listDesktopActions
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
+        - $ref: '#/components/parameters/BotID'
+      responses:
+        '200':
+          description: Desktop action timeline without screenshot bytes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DesktopActionListResponse'
+        '401':
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Workspace or bot not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /api/workspaces/{workspaceID}/bots/{botID}/desktop-actions/{actionID}/screenshot:
+    get:
+      operationId: getDesktopActionScreenshot
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
+        - $ref: '#/components/parameters/BotID'
+        - name: actionID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Screenshot image bytes
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+        '401':
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Action not found or screenshot expired
           content:
             application/json:
               schema:
@@ -1930,6 +2058,72 @@ components:
         createdAt:
           type: string
           format: date-time
+        screenshotRetentionDays:
+          type: integer
+          minimum: 1
+          maximum: 30
+
+    UpdateWorkspaceRequest:
+      type: object
+      properties:
+        screenshotRetentionDays:
+          type: integer
+          minimum: 1
+          maximum: 30
+
+    DesktopAction:
+      type: object
+      required: [id, botId, kind, result, errorCode, hasScreenshot, hasCoord, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        botId:
+          type: string
+          format: uuid
+        turnId:
+          type: string
+          format: uuid
+        sessionId:
+          type: string
+        seq:
+          type: integer
+          format: int64
+        kind:
+          type: string
+        params:
+          type: object
+          additionalProperties: true
+        result:
+          type: string
+        errorCode:
+          type: string
+        hasScreenshot:
+          type: boolean
+        screenshotMime:
+          type: string
+        coordX:
+          type: integer
+        coordY:
+          type: integer
+        hasCoord:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    DesktopActionListResponse:
+      type: object
+      required: [actions, screenshotRetentionDays]
+      properties:
+        actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/DesktopAction'
+        screenshotRetentionDays:
+          type: integer
+          minimum: 1
+          maximum: 30
 
     WorkspaceListResponse:
       type: object

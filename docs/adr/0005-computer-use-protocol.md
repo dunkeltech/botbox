@@ -35,3 +35,4 @@ Adopt **Option A**: implement shared `DesktopService` validation in `backend/int
 - `Application.md` §7's open question ("Whether the agent supports MCP for `agy`") is resolved: confirmed **yes** via `~/.gemini/config/mcp_config.json` (Stdio and Streamable HTTP `2025-03-26`).
 - All desktop coordinates and inputs undergo centralized bounds and character sanitization in `DesktopService` regardless of whether gRPC or MCP invokes them.
 - Human takeover deterministically blocks host-driven computer-use mutations before sending X11 clicks or keystrokes.
+- Phase 5 (ADR-0014) keeps this decision and extends the tool list (pointer, drag, scroll, wait, browser). Loopback HTTP MCP on `127.0.0.1:9091` is the primary CLI path; stdio remains the `--mcp-stdio` fallback.

@@ -5,7 +5,7 @@
 
 ## Context
 
-Chat turns run the CLI through the sandbox agent over gRPC. The API dialed the container's bridge address, for example `192.168.223.3:9090`. On Docker Desktop for macOS that route is interface-scoped (`bridge` + `IFSCOPE`). Go's `connect` then returns `EHOSTUNREACH` (`no route to host`) in a few tens of milliseconds. The UI wraps that as `engine.provider_failed`, which looks like a bad credential. Browsers and other non-Go clients still reach the desktop on the same bridge, so interactive `claude` inside the computer keeps working.
+Chat turns run the CLI through the sandbox agent over gRPC. The API dialed the container's bridge address, for example `192.168.223.3:9090`. On Docker Desktop for macOS that route is interface-scoped (`bridge` + `IFSCOPE`). Go's `connect` then returns `EHOSTUNREACH` (`no route to host`) in a few tens of milliseconds. The UI wraps that as `engine.provider_failed`, which looks like a bad credential. The desktop relay made the same dial for websockify, so the viewer stayed on "Connecting…". The browser never opens the bridge itself. Interactive `claude` inside the computer keeps working because that process is already in the sandbox.
 
 The agent already requires a per-sandbox token. The port does not need to be reachable from any other machine.
 
@@ -34,5 +34,5 @@ Option C, with the loopback dial from option B when `NetworkSettings.Ports` show
 
 - Chat on Docker Desktop does not depend on the bridge route or on a host port that internal networks do not allocate.
 - An existing computer does not need a recreate for the tunnel. The home volume stays. A computer that was already recreated keeps that volume too.
-- The desktop websockify port is unchanged. Browsers already reach it on the bridge.
+- The desktop uses the same tunnel. The browser talks to the Go relay, and that process cannot dial the bridge, so websockify is reached at `127.0.0.1:6080` through the Engine socket. The port is not published.
 - The agent token check is unchanged. The tunnel carries the same gRPC metadata.

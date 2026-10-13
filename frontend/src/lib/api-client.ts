@@ -8,6 +8,7 @@ import type {
   CreatedInvitationResponse,
   CreateInvitationRequest,
   CreateWorkspaceRequest,
+  DesktopActionListResponse,
   EgressLogAction,
   EgressLogListResponse,
   EgressPolicyResponse,
@@ -29,6 +30,7 @@ import type {
   TerminalExecResponse,
   UpdateBotRequest,
   UpdateEgressPolicyRequest,
+  UpdateWorkspaceRequest,
   UpdateMemberRoleRequest,
   UpdateSecretRequest,
   WorkspaceListResponse,
@@ -197,6 +199,32 @@ export async function requestJson<T>(
   return (await response.json()) as T;
 }
 
+/** Fetches binary responses, including desktop screenshots, with the same session. */
+export async function requestBlob(
+  path: string,
+  options: RequestOptions = {},
+): Promise<Blob> {
+  let response = await executeFetch(path, options);
+
+  if (response.status === 401 && options.retryOnUnauthorized !== false) {
+    try {
+      const refreshed = await refreshSession();
+      sessionCallbacks.onRefreshed?.(refreshed);
+      response = await executeFetch(path, options);
+    } catch {
+      accessToken = null;
+      sessionCallbacks.onCleared?.();
+      throw await readError(response);
+    }
+  }
+
+  if (!response.ok) {
+    throw await readError(response);
+  }
+
+  return response.blob();
+}
+
 /**
  * Checks whether first-run setup is still pending.
  * Returns { setupRequired: false } when setup is already completed (HTTP 404).
@@ -314,6 +342,17 @@ export function createWorkspace(
 export function getWorkspace(workspaceId: string): Promise<WorkspaceSummary> {
   return requestJson<WorkspaceSummary>(
     `/api/workspaces/${encodeURIComponent(workspaceId)}`,
+  );
+}
+
+/** Updates owner-only workspace settings, including screenshot retention. */
+export function updateWorkspace(
+  workspaceId: string,
+  body: UpdateWorkspaceRequest,
+): Promise<WorkspaceSummary> {
+  return requestJson<WorkspaceSummary>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}`,
+    { method: 'PATCH', body },
   );
 }
 
@@ -519,6 +558,27 @@ export function restartBotEnvironment(
     {
       method: 'POST',
     },
+  );
+}
+
+/** Lists recent desktop actions. Screenshot bytes are fetched separately. */
+export function listDesktopActions(
+  workspaceId: string,
+  botId: string,
+): Promise<DesktopActionListResponse> {
+  return requestJson<DesktopActionListResponse>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/bots/${encodeURIComponent(botId)}/desktop-actions`,
+  );
+}
+
+/** Loads one screenshot through the authenticated API client. */
+export function fetchDesktopActionScreenshot(
+  workspaceId: string,
+  botId: string,
+  actionId: string,
+): Promise<Blob> {
+  return requestBlob(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/bots/${encodeURIComponent(botId)}/desktop-actions/${encodeURIComponent(actionId)}/screenshot`,
   );
 }
 

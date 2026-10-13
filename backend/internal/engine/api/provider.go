@@ -30,13 +30,17 @@ type Tools interface {
 // Provider streams OpenAI-compatible chat responses through a configured proxy.
 // Client and URL must refer to a trusted proxy, never a user-provided endpoint.
 type Provider struct {
-	Client        *http.Client
-	URL           string
-	Model         string
-	BotID         string
-	BeforeRequest func(context.Context) error
-	Tools         Tools
-	MaxSteps      int
+	Client         *http.Client
+	URL            string
+	Model          string
+	BotID          string
+	BeforeRequest  func(context.Context) error
+	Tools          Tools
+	MaxSteps       int
+	MaxScreenshots int
+	MaxTurnTokens  int64
+	// Computer selects anthropic, openai, or generic computer-use tools.
+	Computer string
 }
 
 type toolCall struct {
@@ -64,6 +68,12 @@ func (p *Provider) Run(ctx context.Context, messages []Message, emit func(engine
 	if steps > 100 {
 		return errors.New("step limit exceeds maximum")
 	}
+	maxShots := p.MaxScreenshots
+	if p.Computer != "" && maxShots <= 0 {
+		maxShots = 12
+	}
+	var shots int
+	var turnTokens int64
 	for range steps {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -90,6 +100,7 @@ func (p *Provider) Run(ctx context.Context, messages []Message, emit func(engine
 				}
 				tools = append(tools, map[string]any{"type": "function", "function": map[string]any{"name": name, "parameters": map[string]any{"type": "object", "properties": properties, "required": required, "additionalProperties": false}}})
 			}
+			tools = append(tools, computerTools(p.Computer)...)
 		}
 		payload := map[string]any{"model": p.Model, "messages": history, "stream": true, "stream_options": map[string]bool{"include_usage": true}, "max_tokens": 4096}
 		if len(tools) > 0 {
@@ -118,6 +129,7 @@ func (p *Provider) Run(ctx context.Context, messages []Message, emit func(engine
 		text, calls, err := readCompletion(resp.Body, func(event engine.Event) error {
 			if event.Kind == engine.EventKindUsage {
 				usageSeen = true
+				turnTokens += event.InputTokens + event.OutputTokens
 			}
 			return emit(event)
 		})
@@ -136,6 +148,9 @@ func (p *Provider) Run(ctx context.Context, messages []Message, emit func(engine
 		}
 
 		if len(calls) == 0 {
+			if p.MaxTurnTokens > 0 && turnTokens > p.MaxTurnTokens {
+				return engine.ErrTurnTokenBudget
+			}
 			return emit(engine.Event{Kind: engine.EventKindMessage, Text: text})
 		}
 		if p.Tools == nil {
@@ -149,6 +164,12 @@ func (p *Provider) Run(ctx context.Context, messages []Message, emit func(engine
 			if err = emit(engine.Event{Kind: engine.EventKindToolCall, ToolID: call.ID, ToolName: call.Function.Name, ToolInput: json.RawMessage(call.Function.Arguments)}); err != nil {
 				return err
 			}
+			if maxShots > 0 && screenshotCall(call.Function.Name, call.Function.Arguments) {
+				shots++
+				if shots > maxShots {
+					return engine.ErrScreenshotLimitExceeded
+				}
+			}
 			output, callErr := p.Tools.Call(ctx, call.Function.Name, json.RawMessage(call.Function.Arguments))
 			if callErr != nil {
 				output = "sandbox tool failed"
@@ -159,10 +180,25 @@ func (p *Provider) Run(ctx context.Context, messages []Message, emit func(engine
 			if err = emit(engine.Event{Kind: engine.EventKindToolResult, ToolID: call.ID, Text: output, IsError: callErr != nil}); err != nil {
 				return err
 			}
-			history = append(history, map[string]string{"role": "tool", "tool_call_id": call.ID, "content": output})
+			history = append(history, toolResultMessage(p.Computer, call.ID, output))
+		}
+		if p.MaxTurnTokens > 0 && turnTokens > p.MaxTurnTokens {
+			return engine.ErrTurnTokenBudget
 		}
 	}
 	return errors.New("model step limit exceeded")
+}
+
+func toolResultMessage(profile, id, output string) any {
+	if profile == ComputerGeneric {
+		if image, ok := decodeImageResult(output); ok {
+			return map[string]any{"role": "tool", "tool_call_id": id, "content": []any{
+				map[string]string{"type": "text", "text": image.Text},
+				map[string]any{"type": "image_url", "image_url": map[string]string{"url": "data:" + image.Mime + ";base64," + image.BotboxImage}},
+			}}
+		}
+	}
+	return map[string]string{"role": "tool", "tool_call_id": id, "content": output}
 }
 
 func readCompletion(r io.Reader, emit func(engine.Event) error) (string, []toolCall, error) {

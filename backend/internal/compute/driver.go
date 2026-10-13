@@ -5,6 +5,7 @@ package compute
 import (
 	"context"
 	"errors"
+	"net"
 	"time"
 )
 
@@ -100,4 +101,13 @@ type Driver interface {
 	ReadFile(ctx context.Context, id EnvID, filePath string) ([]byte, error)
 	WriteFile(ctx context.Context, id EnvID, filePath string, content []byte) error
 	Reconcile(ctx context.Context, known []EnvID) (missing []EnvID, err error)
+}
+
+// VNCDialer opens a byte stream to websockify inside a running sandbox.
+// Docker Desktop gives the container a bridge address that this Go process
+// cannot route (EHOSTUNREACH, ADR-0013). The desktop relay uses the stream
+// instead of dialing that address. The stream is the websockify TCP port,
+// before the WebSocket handshake.
+type VNCDialer interface {
+	DialVNC(ctx context.Context, id EnvID) (net.Conn, error)
 }

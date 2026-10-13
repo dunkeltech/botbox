@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"path"
 	"strings"
 	"time"
 
@@ -95,14 +97,20 @@ func NewHandlerWithConfig(cfg Config) http.Handler {
 	if cfg.VNCRelay != nil {
 		r.Method(http.MethodGet, "/ws/bots/{workspaceID}/{botID}/vnc", cfg.VNCRelay)
 	} else {
+		relayOpts := &vncrelay.RelayOptions{
+			Now:            srv.now,
+			OriginPatterns: vncOriginPatterns(cfg.PublicBaseURL),
+		}
+		if _, ok := cfg.Compute.(compute.VNCDialer); ok {
+			// The browser reaches this process, not the container bridge.
+			// Docker Desktop cannot route that bridge from Go (ADR-0013).
+			relayOpts.DialUpstream = srv.dialVNCUpstream
+		}
 		r.Method(http.MethodGet, "/ws/bots/{workspaceID}/{botID}/vnc", vncrelay.NewRelayHandler(
 			srv.ticketSigner,
 			srv.resolveVNCUpstream,
 			logger,
-			&vncrelay.RelayOptions{
-				Now:                    srv.now,
-				InsecureSkipOriginWait: true,
-			},
+			relayOpts,
 		))
 	}
 
@@ -117,6 +125,28 @@ func NewHandlerWithConfig(cfg Config) http.Handler {
 	srv.mountRoutes(r)
 
 	return r
+}
+
+// vncOriginPatterns allows the viewer page when a proxy presents a different
+// Host than the browser's Origin. Loopback covers `devenv up` (Caddy :8000
+// and Next :3000, both as localhost and 127.0.0.1). The public site host is
+// added for a deployment that proxies the socket.
+func vncOriginPatterns(publicBaseURL string) []string {
+	patterns := []string{"localhost", "localhost:*", "127.0.0.1", "127.0.0.1:*"}
+	parsed, err := url.Parse(strings.TrimSpace(publicBaseURL))
+	if err != nil || parsed.Host == "" {
+		return patterns
+	}
+	host := strings.ToLower(parsed.Host)
+	for _, existing := range patterns {
+		// Same match the WebSocket library uses, so a loopback public URL
+		// does not add a second entry next to localhost:* .
+		matched, matchErr := path.Match(strings.ToLower(existing), host)
+		if matchErr == nil && matched {
+			return patterns
+		}
+	}
+	return append(patterns, parsed.Host)
 }
 
 func healthHandler(logger *slog.Logger, readinessCheck ReadinessCheck) http.HandlerFunc {

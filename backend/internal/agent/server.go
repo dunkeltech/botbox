@@ -10,6 +10,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/dunkeltech/botbox/backend/internal/desk"
 	agentv1 "github.com/dunkeltech/botbox/backend/internal/gen/proto/agent/v1"
 )
 
@@ -204,8 +205,10 @@ func mapDesktopGRPCError(err error) error {
 		return status.Error(codes.DeadlineExceeded, err.Error())
 	case errors.Is(err, context.Canceled):
 		return status.Error(codes.Canceled, err.Error())
-	case errors.Is(err, ErrInvalidDesktopInput):
+	case errors.Is(err, ErrInvalidDesktopInput), errors.Is(err, desk.ErrInvalid):
 		return status.Error(codes.InvalidArgument, err.Error())
+	case errors.Is(err, ErrControlLocked):
+		return status.Error(codes.FailedPrecondition, "desktop control lock held by human")
 	default:
 		return status.Error(codes.Internal, err.Error())
 	}

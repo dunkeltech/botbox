@@ -256,7 +256,7 @@ export interface paths {
     delete?: never;
     options?: never;
     head?: never;
-    patch?: never;
+    patch: operations['updateWorkspace'];
     trace?: never;
   };
   '/api/workspaces/{workspaceID}/members': {
@@ -477,6 +477,38 @@ export interface paths {
     get?: never;
     put?: never;
     post: operations['releaseBotControl'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/workspaces/{workspaceID}/bots/{botID}/desktop-actions': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations['listDesktopActions'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/workspaces/{workspaceID}/bots/{botID}/desktop-actions/{actionID}/screenshot': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations['getDesktopActionScreenshot'];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -793,6 +825,38 @@ export interface components {
       role: components['schemas']['WorkspaceRole'];
       /** Format: date-time */
       createdAt: string;
+      screenshotRetentionDays?: number;
+    };
+    UpdateWorkspaceRequest: {
+      screenshotRetentionDays?: number;
+    };
+    DesktopAction: {
+      /** Format: uuid */
+      id: string;
+      /** Format: uuid */
+      botId: string;
+      /** Format: uuid */
+      turnId?: string;
+      sessionId?: string;
+      /** Format: int64 */
+      seq?: number;
+      kind: string;
+      params?: {
+        [key: string]: unknown;
+      };
+      result: string;
+      errorCode: string;
+      hasScreenshot: boolean;
+      screenshotMime?: string;
+      coordX?: number;
+      coordY?: number;
+      hasCoord: boolean;
+      /** Format: date-time */
+      createdAt: string;
+    };
+    DesktopActionListResponse: {
+      actions: components['schemas']['DesktopAction'][];
+      screenshotRetentionDays: number;
     };
     WorkspaceListResponse: {
       workspaces: components['schemas']['WorkspaceSummary'][];
@@ -1959,6 +2023,68 @@ export interface operations {
       };
     };
   };
+  updateWorkspace: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateWorkspaceRequest'];
+      };
+    };
+    responses: {
+      /** @description Workspace settings updated */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['WorkspaceSummary'];
+        };
+      };
+      /** @description Validation error */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Only the owner may change workspace settings */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Workspace not found or not a member */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
   listWorkspaceMembers: {
     parameters: {
       query?: never;
@@ -2873,6 +2999,15 @@ export interface operations {
           'application/json': components['schemas']['ErrorEnvelope'];
         };
       };
+      /** @description Running sandbox did not accept the control lock */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
     };
   };
   releaseBotControl: {
@@ -2929,6 +3064,117 @@ export interface operations {
       };
       /** @description Another user holds the control lock */
       409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Running sandbox did not accept the control lock */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  listDesktopActions: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+        botID: components['parameters']['BotID'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Desktop action timeline without screenshot bytes */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DesktopActionListResponse'];
+        };
+      };
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Workspace or bot not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  getDesktopActionScreenshot: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+        botID: components['parameters']['BotID'];
+        actionID: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Screenshot image bytes */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'image/png': string;
+          'image/jpeg': string;
+        };
+      };
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Action not found or screenshot expired */
+      404: {
         headers: {
           [name: string]: unknown;
         };

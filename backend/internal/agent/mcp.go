@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+
+	"github.com/dunkeltech/botbox/backend/internal/desk"
 )
 
 const maxMCPBodyBytes = 1 << 20
@@ -172,81 +174,34 @@ func (m *MCPHandler) callTool(ctx context.Context, rawParams json.RawMessage) (a
 		return nil, &rpcError{Code: -32602, Message: "invalid tools/call params"}
 	}
 
-	switch params.Name {
-	case "screenshot":
-		pngBytes, w, h, err := m.desktop.Screenshot(ctx)
-		if err != nil {
-			return nil, mapToolError(err)
-		}
-		return map[string]any{
-			"content": []map[string]any{
-				{
-					"type":     "image",
-					"data":     base64.StdEncoding.EncodeToString(pngBytes),
-					"mimeType": "image/png",
-				},
-				{
-					"type": "text",
-					"text": fmt.Sprintf("Captured %dx%d screenshot", w, h),
-				},
-			},
-		}, nil
-
-	case "click":
-		var args struct {
-			X      int32  `json:"x"`
-			Y      int32  `json:"y"`
-			Button string `json:"button"`
-		}
-		if err := json.Unmarshal(params.Arguments, &args); err != nil {
-			return nil, &rpcError{Code: -32602, Message: "invalid click arguments"}
-		}
-		if err := m.desktop.Click(ctx, args.X, args.Y, args.Button); err != nil {
-			return nil, mapToolError(err)
-		}
-		return textContent(fmt.Sprintf("Clicked %s at (%d, %d)", args.Button, args.X, args.Y)), nil
-
-	case "type":
-		var args struct {
-			Text string `json:"text"`
-		}
-		if err := json.Unmarshal(params.Arguments, &args); err != nil {
-			return nil, &rpcError{Code: -32602, Message: "invalid type arguments"}
-		}
-		if err := m.desktop.Type(ctx, args.Text); err != nil {
-			return nil, mapToolError(err)
-		}
-		return textContent("Typed text"), nil
-
-	case "key":
-		var args struct {
-			Key string `json:"key"`
-		}
-		if err := json.Unmarshal(params.Arguments, &args); err != nil {
-			return nil, &rpcError{Code: -32602, Message: "invalid key arguments"}
-		}
-		if err := m.desktop.Key(ctx, args.Key); err != nil {
-			return nil, mapToolError(err)
-		}
-		return textContent("Pressed key " + args.Key), nil
-
-	default:
-		return nil, &rpcError{Code: -32602, Message: "unknown tool: " + params.Name}
+	act, err := desk.Parse(params.Name, params.Arguments)
+	if err != nil {
+		return nil, mapToolError(err)
 	}
+	result, err := m.desktop.Perform(ctx, act)
+	if err != nil {
+		return nil, mapToolError(err)
+	}
+	content := []map[string]any{}
+	if len(result.Image) > 0 {
+		mime := result.Mime
+		if mime == "" {
+			mime = "image/png"
+		}
+		content = append(content, map[string]any{"type": "image", "data": base64.StdEncoding.EncodeToString(result.Image), "mimeType": mime})
+	}
+	content = append(content, map[string]any{"type": "text", "text": result.Text})
+	return map[string]any{"content": content}, nil
 }
 
 func mapToolError(err error) *rpcError {
-	if errors.Is(err, ErrInvalidDesktopInput) {
+	switch {
+	case errors.Is(err, ErrControlLocked):
+		return &rpcError{Code: -32001, Message: err.Error()}
+	case errors.Is(err, ErrInvalidDesktopInput), errors.Is(err, desk.ErrInvalid):
 		return &rpcError{Code: -32602, Message: err.Error()}
-	}
-	return &rpcError{Code: -32603, Message: err.Error()}
-}
-
-func textContent(msg string) map[string]any {
-	return map[string]any{
-		"content": []map[string]string{
-			{"type": "text", "text": msg},
-		},
+	default:
+		return &rpcError{Code: -32603, Message: err.Error()}
 	}
 }
 
@@ -268,46 +223,37 @@ func writeRPCErrorHTTP(w http.ResponseWriter, status int, id json.RawMessage, co
 }
 
 func mcpToolsList() []map[string]any {
-	return []map[string]any{
-		{
-			"name":        "screenshot",
-			"description": "Capture the 1280x800 X11 desktop as PNG.",
-			"inputSchema": map[string]any{"type": "object", "properties": map[string]any{}},
-		},
-		{
-			"name":        "click",
-			"description": "Click mouse button at (x, y) on the 1280x800 desktop.",
-			"inputSchema": map[string]any{
-				"type":     "object",
-				"required": []string{"x", "y"},
-				"properties": map[string]any{
-					"x":      map[string]any{"type": "integer", "minimum": 0, "maximum": DesktopWidth - 1},
-					"y":      map[string]any{"type": "integer", "minimum": 0, "maximum": DesktopHeight - 1},
-					"button": map[string]any{"type": "string", "enum": []string{"left", "right", "middle", "double"}},
-				},
-			},
-		},
-		{
-			"name":        "type",
-			"description": "Type text into the focused window.",
-			"inputSchema": map[string]any{
-				"type":     "object",
-				"required": []string{"text"},
-				"properties": map[string]any{
-					"text": map[string]any{"type": "string", "minLength": 1},
-				},
-			},
-		},
-		{
-			"name":        "key",
-			"description": "Press a key or chord such as Return or ctrl+l.",
-			"inputSchema": map[string]any{
-				"type":     "object",
-				"required": []string{"key"},
-				"properties": map[string]any{
-					"key": map[string]any{"type": "string", "minLength": 1},
-				},
-			},
-		},
+	point := map[string]any{
+		"x":            map[string]any{"type": "integer"},
+		"y":            map[string]any{"type": "integer"},
+		"image_width":  map[string]any{"type": "integer"},
+		"image_height": map[string]any{"type": "integer"},
 	}
+	return []map[string]any{
+		{"name": "screenshot", "description": "Capture the 1280x800 desktop. Optional format png or jpeg and max_width. Coordinates on a downscaled shot are scaled back to the desktop.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"format": map[string]any{"type": "string", "enum": []string{"png", "jpeg"}}, "max_width": map[string]any{"type": "integer"}, "quality": map[string]any{"type": "integer"}}}},
+		{"name": "cursor_position", "description": "Read the pointer position on the 1280x800 desktop.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{}}},
+		{"name": "mouse_move", "description": "Move the pointer. Prefer shell or browser tools when a page has selectors.", "inputSchema": map[string]any{"type": "object", "required": []string{"x", "y"}, "properties": point}},
+		{"name": "click", "description": "Click a mouse button at x, y.", "inputSchema": map[string]any{"type": "object", "required": []string{"x", "y"}, "properties": merge(point, map[string]any{"button": map[string]any{"type": "string", "enum": []string{"left", "right", "middle", "double", "triple"}}})}},
+		{"name": "drag", "description": "Drag the left button from x, y to to_x, to_y.", "inputSchema": map[string]any{"type": "object", "required": []string{"x", "y", "to_x", "to_y"}, "properties": merge(point, map[string]any{"to_x": map[string]any{"type": "integer"}, "to_y": map[string]any{"type": "integer"}})}},
+		{"name": "scroll", "description": "Scroll by dx and dy ticks, at most 20. Positive dy scrolls down.", "inputSchema": map[string]any{"type": "object", "properties": merge(point, map[string]any{"dx": map[string]any{"type": "integer"}, "dy": map[string]any{"type": "integer"}})}},
+		{"name": "type", "description": "Type text into the focused window with a short per-character delay.", "inputSchema": map[string]any{"type": "object", "required": []string{"text"}, "properties": map[string]any{"text": map[string]any{"type": "string"}}}},
+		{"name": "key", "description": "Press a key or chord such as Return or ctrl+l.", "inputSchema": map[string]any{"type": "object", "required": []string{"key"}, "properties": map[string]any{"key": map[string]any{"type": "string"}}}},
+		{"name": "wait", "description": "Wait up to 10 seconds. A human takeover cancels the wait.", "inputSchema": map[string]any{"type": "object", "required": []string{"ms"}, "properties": map[string]any{"ms": map[string]any{"type": "integer"}}}},
+		{"name": "browser_navigate", "description": "Open an http(s) URL in the sandbox browser. More reliable than pixel clicks on web pages.", "inputSchema": map[string]any{"type": "object", "required": []string{"url"}, "properties": map[string]any{"url": map[string]any{"type": "string"}}}},
+		{"name": "browser_click", "description": "Click a CSS selector in the sandbox browser.", "inputSchema": map[string]any{"type": "object", "required": []string{"selector"}, "properties": map[string]any{"selector": map[string]any{"type": "string"}}}},
+		{"name": "browser_fill", "description": "Fill a form control selected by CSS selector.", "inputSchema": map[string]any{"type": "object", "required": []string{"selector", "text"}, "properties": map[string]any{"selector": map[string]any{"type": "string"}, "text": map[string]any{"type": "string"}}}},
+		{"name": "browser_read", "description": "Read visible text from a CSS selector, or the page when selector is omitted.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"selector": map[string]any{"type": "string"}}}},
+		{"name": "browser_screenshot", "description": "Capture a browser element, or the viewport when selector is omitted.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"selector": map[string]any{"type": "string"}}}},
+	}
+}
+
+func merge(base, extra map[string]any) map[string]any {
+	out := map[string]any{}
+	for k, v := range base {
+		out[k] = v
+	}
+	for k, v := range extra {
+		out[k] = v
+	}
+	return out
 }

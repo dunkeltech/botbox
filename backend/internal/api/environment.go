@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"sort"
 	"strings"
@@ -306,6 +307,16 @@ func (s *server) handleTakeBotControl(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if err := s.pushDesktopLock(r.Context(), claimed, true); err != nil {
+		s.logger.Error("push desktop lock", "bot_id", botUUID.String())
+		_, _ = s.queries.ReleaseEnvironmentControl(r.Context(), db.ReleaseEnvironmentControlParams{
+			BotID:               claimed.BotID,
+			ControlHolderUserID: toPGUUID(claims.Subject),
+			Column4:             true,
+		})
+		writeError(w, s.logger, http.StatusServiceUnavailable, "agent.unavailable", "sandbox did not accept the control lock")
+		return
+	}
 	_, holderName, holderEmail, _ := s.lookupControlHolder(r.Context(), wsRow.ID, botRow.ID)
 	stats := s.fetchEnvStats(r.Context(), claimed)
 	writeJSON(w, s.logger, http.StatusOK, s.toAPIEnvironmentState(wsRow.ID, claimed, holderName, holderEmail, stats))
@@ -359,6 +370,10 @@ func (s *server) handleReleaseBotControl(w http.ResponseWriter, r *http.Request)
 	defer rollbackTx(r.Context(), tx)
 
 	txq := s.queries.WithTx(tx)
+	if err := txq.LockBotQueue(r.Context(), fromPGUUID(wsRow.ID).String()+"/"+fromPGUUID(botRow.ID).String()); err != nil {
+		s.chatFailure(w)
+		return
+	}
 	released, err := txq.ReleaseEnvironmentControl(r.Context(), db.ReleaseEnvironmentControlParams{
 		BotID:               envRow.BotID,
 		ControlHolderUserID: toPGUUID(claims.Subject),
@@ -383,6 +398,27 @@ func (s *server) handleReleaseBotControl(w http.ResponseWriter, r *http.Request)
 	}); err != nil {
 		s.logger.Error("audit release control", "err", err)
 		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to record audit log")
+		return
+	}
+	turnID, err := s.queueHandback(r.Context(), txq, wsRow.ID, botRow.ID, note)
+	if err != nil {
+		s.logger.Error("queue desktop handback", "bot_id", botUUID.String())
+		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to resume the bot")
+		return
+	}
+	if turnID != uuid.Nil {
+		if s.turnQueue == nil {
+			writeError(w, s.logger, http.StatusServiceUnavailable, "dependency_unavailable", "turn queue is unavailable")
+			return
+		}
+		if err := s.turnQueue.Enqueue(r.Context(), wsUUID, botUUID, turnID); err != nil {
+			s.chatFailure(w)
+			return
+		}
+	}
+	if err := s.pushDesktopLock(r.Context(), released, false); err != nil {
+		s.logger.Error("release desktop lock", "bot_id", botUUID.String())
+		writeError(w, s.logger, http.StatusServiceUnavailable, "agent.unavailable", "sandbox did not accept the control lock")
 		return
 	}
 	if err := tx.Commit(r.Context()); err != nil {
@@ -846,29 +882,48 @@ func (s *server) persistStoppedEnvironment(
 }
 
 func (s *server) resolveVNCUpstream(ctx context.Context, workspaceIDStr, botIDStr string) (string, error) {
+	row, err := s.runningEnvironment(ctx, workspaceIDStr, botIDStr)
+	if err != nil {
+		return "", err
+	}
+	return s.compute.GetVNCStreamURL(ctx, compute.EnvID(row.EnvID))
+}
+
+func (s *server) dialVNCUpstream(ctx context.Context, workspaceIDStr, botIDStr string) (net.Conn, error) {
+	dialer, ok := s.compute.(compute.VNCDialer)
+	if !ok {
+		return nil, errors.New("sandbox desktop dialer unavailable")
+	}
+	row, err := s.runningEnvironment(ctx, workspaceIDStr, botIDStr)
+	if err != nil {
+		return nil, err
+	}
+	return dialer.DialVNC(ctx, compute.EnvID(row.EnvID))
+}
+
+func (s *server) runningEnvironment(ctx context.Context, workspaceIDStr, botIDStr string) (db.GetEnvironmentByWorkspaceAndBotRow, error) {
 	if s.queries == nil || s.compute == nil {
-		return "", errors.New("sandbox runtime unavailable")
+		return db.GetEnvironmentByWorkspaceAndBotRow{}, errors.New("sandbox runtime unavailable")
 	}
 	wsID, err := uuid.Parse(workspaceIDStr)
 	if err != nil {
-		return "", err
+		return db.GetEnvironmentByWorkspaceAndBotRow{}, err
 	}
 	botID, err := uuid.Parse(botIDStr)
 	if err != nil {
-		return "", err
+		return db.GetEnvironmentByWorkspaceAndBotRow{}, err
 	}
-
 	row, err := s.queries.GetEnvironmentByWorkspaceAndBot(ctx, db.GetEnvironmentByWorkspaceAndBotParams{
 		WorkspaceID: toPGUUID(wsID),
 		ID:          toPGUUID(botID),
 	})
 	if err != nil {
-		return "", err
+		return db.GetEnvironmentByWorkspaceAndBotRow{}, err
 	}
 	if row.Status != string(compute.StatusRunning) || strings.TrimSpace(row.EnvID) == "" {
-		return "", compute.ErrEnvironmentNotRunning
+		return db.GetEnvironmentByWorkspaceAndBotRow{}, compute.ErrEnvironmentNotRunning
 	}
-	return s.compute.GetVNCStreamURL(ctx, compute.EnvID(row.EnvID))
+	return row, nil
 }
 
 func (s *server) fetchEnvStats(ctx context.Context, env db.Environment) api.EnvironmentStats {

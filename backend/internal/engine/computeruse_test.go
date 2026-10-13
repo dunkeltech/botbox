@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/dunkeltech/botbox/backend/internal/desk"
 	"github.com/dunkeltech/botbox/backend/internal/engine"
 )
 
@@ -15,27 +16,18 @@ type fakeDesktopController struct {
 	calls           []string
 }
 
-func (f *fakeDesktopController) Screenshot(_ context.Context) ([]byte, error) {
-	f.calls = append(f.calls, "screenshot")
-	if f.screenshotErr != nil {
-		return nil, f.screenshotErr
+func (f *fakeDesktopController) Do(_ context.Context, act engine.DesktopAction) (desk.Result, error) {
+	f.calls = append(f.calls, act.Kind)
+	if act.Kind == engine.ActionScreenshot {
+		if f.screenshotErr != nil {
+			return desk.Result{}, f.screenshotErr
+		}
+		return desk.Result{Image: f.screenshotBytes}, nil
 	}
-	return f.screenshotBytes, nil
-}
-
-func (f *fakeDesktopController) Click(_ context.Context, _ int32, _ int32, _ string) error {
-	f.calls = append(f.calls, "click")
-	return f.actionErr
-}
-
-func (f *fakeDesktopController) Type(_ context.Context, _ string) error {
-	f.calls = append(f.calls, "type")
-	return f.actionErr
-}
-
-func (f *fakeDesktopController) Key(_ context.Context, _ string) error {
-	f.calls = append(f.calls, "key")
-	return f.actionErr
+	if f.actionErr != nil {
+		return desk.Result{}, f.actionErr
+	}
+	return desk.Result{Text: "ok"}, nil
 }
 
 type fakeComputerUseModel struct {

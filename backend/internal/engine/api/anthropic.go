@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/dunkeltech/botbox/backend/internal/desk"
 )
 
 // AnthropicClient adapts the common tool loop to native Anthropic Messages SSE.
@@ -41,7 +43,7 @@ func (t anthropicTransport) RoundTrip(req *http.Request) (*http.Response, error)
 			} `json:"function"`
 		} `json:"tools"`
 	}
-	if err := json.NewDecoder(io.LimitReader(req.Body, 2<<20)).Decode(&input); err != nil {
+	if err := json.NewDecoder(io.LimitReader(req.Body, 12<<20)).Decode(&input); err != nil {
 		return nil, errors.New("invalid model request")
 	}
 	_ = req.Body.Close()
@@ -56,7 +58,14 @@ func (t anthropicTransport) RoundTrip(req *http.Request) (*http.Response, error)
 		role := m.Role
 		if m.Role == "tool" {
 			role = "user"
-			blocks = append(blocks, map[string]any{"type": "tool_result", "tool_use_id": m.ToolCallID, "content": m.Content})
+			var content any = m.Content
+			if image, ok := decodeImageResult(m.Content); ok {
+				content = []any{
+					map[string]string{"type": "text", "text": image.Text},
+					map[string]any{"type": "image", "source": map[string]string{"type": "base64", "media_type": image.Mime, "data": image.BotboxImage}},
+				}
+			}
+			blocks = append(blocks, map[string]any{"type": "tool_result", "tool_use_id": m.ToolCallID, "content": content})
 		} else {
 			if m.Content != "" {
 				blocks = append(blocks, map[string]string{"type": "text", "text": m.Content})
@@ -68,7 +77,40 @@ func (t anthropicTransport) RoundTrip(req *http.Request) (*http.Response, error)
 		messages = append(messages, map[string]any{"role": role, "content": blocks})
 	}
 	tools := []any{}
+	computerBeta := ""
 	for _, tool := range input.Tools {
+		var marker struct {
+			Computer string `json:"x-botbox-computer"`
+			Width    int    `json:"display_width_px"`
+			Height   int    `json:"display_height_px"`
+			Version  string `json:"version"`
+			Beta     string `json:"beta"`
+		}
+		if json.Unmarshal(tool.Function.Parameters, &marker) == nil && marker.Computer == "anthropic" && tool.Function.Name == "computer" {
+			version := marker.Version
+			if version == "" {
+				version = ComputerToolVersion
+			}
+			width, height := marker.Width, marker.Height
+			if width == 0 {
+				width = desk.Width
+			}
+			if height == 0 {
+				height = desk.Height
+			}
+			tools = append(tools, map[string]any{
+				"type":              version,
+				"name":              "computer",
+				"display_width_px":  width,
+				"display_height_px": height,
+				"display_number":    1,
+			})
+			computerBeta = marker.Beta
+			if computerBeta == "" {
+				computerBeta = ComputerBetaHeader
+			}
+			continue
+		}
 		tools = append(tools, map[string]any{"name": tool.Function.Name, "input_schema": tool.Function.Parameters})
 	}
 	payload := map[string]any{"model": input.Model, "system": system, "messages": messages, "stream": true, "max_tokens": 4096}
@@ -86,6 +128,9 @@ func (t anthropicTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	outgoing.Body = io.NopCloser(bytes.NewReader(data))
 	outgoing.ContentLength = int64(len(data))
 	outgoing.Header.Set("Anthropic-Version", "2023-06-01")
+	if computerBeta != "" {
+		outgoing.Header.Set("anthropic-beta", computerBeta)
+	}
 	response, err := t.base.RoundTrip(outgoing)
 	if err != nil || response.StatusCode != 200 {
 		return response, err

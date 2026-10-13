@@ -230,7 +230,7 @@ acceptance run is implied by fixture or Docker tests. See
 
 Each bot gets its own isolated Debian-based container:
 
-- **Desktop:** XFCE with a VNC server on `:0` at a fixed 1280×800 resolution, and websockify bound to the container network. The browser connects through an authenticated relay in the API (short-lived ticket).
+- **Desktop:** XFCE with a VNC server on `:0` at a fixed 1280×800 resolution, and websockify on `127.0.0.1:6080` inside the sandbox. The browser connects through an authenticated relay in the API (short-lived ticket). The relay reaches websockify through the Docker socket, because the API process cannot route the container bridge address. Caddy and Next forward that socket, so the page origin and the API host differ; the relay allows the site origin after the ticket check.
 - **Software:** Chromium, git, build tools, Python, Node.js, and `claude`, `codex` and `agy` at pinned versions.
 - **Rights:**
   - User `bot` with passwordless `sudo` **inside** the container, so it can install with `apt-get`, `pip` and `npm`.
@@ -308,11 +308,11 @@ Every bot gets a unique, animated robot avatar, generated deterministically from
 
 - **Desktop tools in the agent:** `screenshot`, `cursor_position`, `mouse_move`, `click` (left, right, middle, double), `drag`, `scroll`, `type`, `key`, `wait`. They are implemented with xdotool and X11 capture. Coordinates are scaled when screenshots are downscaled.
 - **One implementation, two interfaces:**
-  - gRPC for API mode, with adapters for Anthropic computer use, OpenAI computer use, and generic image-returning function tools for OpenRouter.
-  - A local MCP server for the CLIs.
-- **Browser tool (recommended):** Chromium with remote debugging on localhost, driven via CDP or Playwright. It is more reliable and cheaper than pixel clicks on web pages.
+  - gRPC for API mode, with adapters for Anthropic computer use (`computer_20251124`), OpenAI computer use (translated to the Responses API), and generic image-returning function tools for OpenRouter.
+  - A local MCP server in the same agent process at `POST http://127.0.0.1:9091/mcp`, registered with the CLIs. Stdio is only the `--mcp-stdio` fallback.
+- **Browser tool (recommended):** Chromium with remote debugging on `127.0.0.1:9222` only, driven via CDP. It is more reliable and cheaper than pixel clicks on web pages.
 - **Limits per turn:** screenshots, steps and tokens.
-- **Takeover:** a human taking control interrupts the bot within 1 s. On hand-back, the bot is told to take a fresh screenshot.
+- **Takeover:** a human taking control interrupts the bot within 1 s and pauses the turn. On hand-back the bot receives the exact system note `A human used the desktop; take a fresh screenshot.` and the turn resumes.
 - **Transparency:**
   - The bot's labelled cursor is shown in the viewer.
   - An action timeline (`desktop_actions`) lists every desktop action.
@@ -560,7 +560,8 @@ CREATE TABLE audit_log (
     metadata JSONB NOT NULL DEFAULT '{}',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
--- Also planned: model_prices, notifications, desktop_actions (with screenshot retention).
+-- model_prices is implemented (migration 00005). notifications are still planned.
+-- desktop_actions is implemented (migration 00009): one row per agent action, screenshot bytes expire after workspaces.screenshot_retention_days (1..30, default 7) while the row stays.
 ```
 
 ---

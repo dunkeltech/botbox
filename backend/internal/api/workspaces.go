@@ -143,6 +143,31 @@ func (s *server) handleGetWorkspace(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.logger, http.StatusOK, toAPIWorkspaceFromUserRow(wsRow))
 }
 
+func (s *server) handleUpdateWorkspace(w http.ResponseWriter, r *http.Request) {
+	wsRow, _, role, ok := s.loadWorkspaceMembership(w, r, workspaces.ActionManageWorkspace)
+	if !ok {
+		return
+	}
+	var req api.UpdateWorkspaceRequest
+	if !decodeJSON(w, r, s.logger, &req) {
+		return
+	}
+	if req.ScreenshotRetentionDays == nil || *req.ScreenshotRetentionDays < 1 || *req.ScreenshotRetentionDays > 30 {
+		writeError(w, s.logger, http.StatusBadRequest, "validation_error", "screenshot retention must be between 1 and 30 days")
+		return
+	}
+	updated, err := s.queries.UpdateScreenshotRetention(r.Context(), db.UpdateScreenshotRetentionParams{
+		ID:                      wsRow.ID,
+		ScreenshotRetentionDays: int32(*req.ScreenshotRetentionDays),
+	})
+	if err != nil {
+		s.logger.Error("update screenshot retention", "err", err)
+		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to update workspace")
+		return
+	}
+	writeJSON(w, s.logger, http.StatusOK, toAPIWorkspaceFromRow(updated, string(role)))
+}
+
 func (s *server) handleListMembers(w http.ResponseWriter, r *http.Request) {
 	wsRow, _, _, ok := s.loadWorkspaceMembership(w, r, workspaces.ActionViewWorkspace)
 	if !ok {

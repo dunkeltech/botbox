@@ -1233,6 +1233,530 @@ func (x *RunCLIResponse) GetExitCode() int32 {
 	return 0
 }
 
+type DesktopActionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Kind          string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	PayloadJson   string                 `protobuf:"bytes,2,opt,name=payload_json,json=payloadJson,proto3" json:"payload_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DesktopActionRequest) Reset() {
+	*x = DesktopActionRequest{}
+	mi := &file_agent_v1_agent_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DesktopActionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DesktopActionRequest) ProtoMessage() {}
+
+func (x *DesktopActionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_agent_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DesktopActionRequest.ProtoReflect.Descriptor instead.
+func (*DesktopActionRequest) Descriptor() ([]byte, []int) {
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *DesktopActionRequest) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *DesktopActionRequest) GetPayloadJson() string {
+	if x != nil {
+		return x.PayloadJson
+	}
+	return ""
+}
+
+type DesktopActionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ResultText    string                 `protobuf:"bytes,1,opt,name=result_text,json=resultText,proto3" json:"result_text,omitempty"`
+	Image         []byte                 `protobuf:"bytes,2,opt,name=image,proto3" json:"image,omitempty"`
+	MimeType      string                 `protobuf:"bytes,3,opt,name=mime_type,json=mimeType,proto3" json:"mime_type,omitempty"`
+	Width         int32                  `protobuf:"varint,4,opt,name=width,proto3" json:"width,omitempty"`
+	Height        int32                  `protobuf:"varint,5,opt,name=height,proto3" json:"height,omitempty"`
+	ErrorCode     string                 `protobuf:"bytes,6,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DesktopActionResponse) Reset() {
+	*x = DesktopActionResponse{}
+	mi := &file_agent_v1_agent_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DesktopActionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DesktopActionResponse) ProtoMessage() {}
+
+func (x *DesktopActionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_agent_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DesktopActionResponse.ProtoReflect.Descriptor instead.
+func (*DesktopActionResponse) Descriptor() ([]byte, []int) {
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *DesktopActionResponse) GetResultText() string {
+	if x != nil {
+		return x.ResultText
+	}
+	return ""
+}
+
+func (x *DesktopActionResponse) GetImage() []byte {
+	if x != nil {
+		return x.Image
+	}
+	return nil
+}
+
+func (x *DesktopActionResponse) GetMimeType() string {
+	if x != nil {
+		return x.MimeType
+	}
+	return ""
+}
+
+func (x *DesktopActionResponse) GetWidth() int32 {
+	if x != nil {
+		return x.Width
+	}
+	return 0
+}
+
+func (x *DesktopActionResponse) GetHeight() int32 {
+	if x != nil {
+		return x.Height
+	}
+	return 0
+}
+
+func (x *DesktopActionResponse) GetErrorCode() string {
+	if x != nil {
+		return x.ErrorCode
+	}
+	return ""
+}
+
+type SetControlLockRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Human         bool                   `protobuf:"varint,1,opt,name=human,proto3" json:"human,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetControlLockRequest) Reset() {
+	*x = SetControlLockRequest{}
+	mi := &file_agent_v1_agent_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetControlLockRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetControlLockRequest) ProtoMessage() {}
+
+func (x *SetControlLockRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_agent_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetControlLockRequest.ProtoReflect.Descriptor instead.
+func (*SetControlLockRequest) Descriptor() ([]byte, []int) {
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *SetControlLockRequest) GetHuman() bool {
+	if x != nil {
+		return x.Human
+	}
+	return false
+}
+
+type SetControlLockResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetControlLockResponse) Reset() {
+	*x = SetControlLockResponse{}
+	mi := &file_agent_v1_agent_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetControlLockResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetControlLockResponse) ProtoMessage() {}
+
+func (x *SetControlLockResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_agent_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetControlLockResponse.ProtoReflect.Descriptor instead.
+func (*SetControlLockResponse) Descriptor() ([]byte, []int) {
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{26}
+}
+
+type PullDesktopActionsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PullDesktopActionsRequest) Reset() {
+	*x = PullDesktopActionsRequest{}
+	mi := &file_agent_v1_agent_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PullDesktopActionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PullDesktopActionsRequest) ProtoMessage() {}
+
+func (x *PullDesktopActionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_agent_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PullDesktopActionsRequest.ProtoReflect.Descriptor instead.
+func (*PullDesktopActionsRequest) Descriptor() ([]byte, []int) {
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{27}
+}
+
+type DesktopActionRecord struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Seq           uint64                 `protobuf:"varint,1,opt,name=seq,proto3" json:"seq,omitempty"`
+	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Kind          string                 `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`
+	ParamsJson    string                 `protobuf:"bytes,4,opt,name=params_json,json=paramsJson,proto3" json:"params_json,omitempty"`
+	ResultText    string                 `protobuf:"bytes,5,opt,name=result_text,json=resultText,proto3" json:"result_text,omitempty"`
+	ErrorCode     string                 `protobuf:"bytes,6,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
+	Image         []byte                 `protobuf:"bytes,7,opt,name=image,proto3" json:"image,omitempty"`
+	MimeType      string                 `protobuf:"bytes,8,opt,name=mime_type,json=mimeType,proto3" json:"mime_type,omitempty"`
+	CoordX        int32                  `protobuf:"varint,9,opt,name=coord_x,json=coordX,proto3" json:"coord_x,omitempty"`
+	CoordY        int32                  `protobuf:"varint,10,opt,name=coord_y,json=coordY,proto3" json:"coord_y,omitempty"`
+	HasCoord      bool                   `protobuf:"varint,11,opt,name=has_coord,json=hasCoord,proto3" json:"has_coord,omitempty"`
+	UnixNano      int64                  `protobuf:"varint,12,opt,name=unix_nano,json=unixNano,proto3" json:"unix_nano,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DesktopActionRecord) Reset() {
+	*x = DesktopActionRecord{}
+	mi := &file_agent_v1_agent_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DesktopActionRecord) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DesktopActionRecord) ProtoMessage() {}
+
+func (x *DesktopActionRecord) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_agent_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DesktopActionRecord.ProtoReflect.Descriptor instead.
+func (*DesktopActionRecord) Descriptor() ([]byte, []int) {
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *DesktopActionRecord) GetSeq() uint64 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
+}
+
+func (x *DesktopActionRecord) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *DesktopActionRecord) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *DesktopActionRecord) GetParamsJson() string {
+	if x != nil {
+		return x.ParamsJson
+	}
+	return ""
+}
+
+func (x *DesktopActionRecord) GetResultText() string {
+	if x != nil {
+		return x.ResultText
+	}
+	return ""
+}
+
+func (x *DesktopActionRecord) GetErrorCode() string {
+	if x != nil {
+		return x.ErrorCode
+	}
+	return ""
+}
+
+func (x *DesktopActionRecord) GetImage() []byte {
+	if x != nil {
+		return x.Image
+	}
+	return nil
+}
+
+func (x *DesktopActionRecord) GetMimeType() string {
+	if x != nil {
+		return x.MimeType
+	}
+	return ""
+}
+
+func (x *DesktopActionRecord) GetCoordX() int32 {
+	if x != nil {
+		return x.CoordX
+	}
+	return 0
+}
+
+func (x *DesktopActionRecord) GetCoordY() int32 {
+	if x != nil {
+		return x.CoordY
+	}
+	return 0
+}
+
+func (x *DesktopActionRecord) GetHasCoord() bool {
+	if x != nil {
+		return x.HasCoord
+	}
+	return false
+}
+
+func (x *DesktopActionRecord) GetUnixNano() int64 {
+	if x != nil {
+		return x.UnixNano
+	}
+	return 0
+}
+
+type PullDesktopActionsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Records       []*DesktopActionRecord `protobuf:"bytes,2,rep,name=records,proto3" json:"records,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PullDesktopActionsResponse) Reset() {
+	*x = PullDesktopActionsResponse{}
+	mi := &file_agent_v1_agent_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PullDesktopActionsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PullDesktopActionsResponse) ProtoMessage() {}
+
+func (x *PullDesktopActionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_agent_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PullDesktopActionsResponse.ProtoReflect.Descriptor instead.
+func (*PullDesktopActionsResponse) Descriptor() ([]byte, []int) {
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *PullDesktopActionsResponse) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *PullDesktopActionsResponse) GetRecords() []*DesktopActionRecord {
+	if x != nil {
+		return x.Records
+	}
+	return nil
+}
+
+type AckDesktopActionsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	ThroughSeq    uint64                 `protobuf:"varint,2,opt,name=through_seq,json=throughSeq,proto3" json:"through_seq,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AckDesktopActionsRequest) Reset() {
+	*x = AckDesktopActionsRequest{}
+	mi := &file_agent_v1_agent_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AckDesktopActionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AckDesktopActionsRequest) ProtoMessage() {}
+
+func (x *AckDesktopActionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_agent_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AckDesktopActionsRequest.ProtoReflect.Descriptor instead.
+func (*AckDesktopActionsRequest) Descriptor() ([]byte, []int) {
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *AckDesktopActionsRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *AckDesktopActionsRequest) GetThroughSeq() uint64 {
+	if x != nil {
+		return x.ThroughSeq
+	}
+	return 0
+}
+
+type AckDesktopActionsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AckDesktopActionsResponse) Reset() {
+	*x = AckDesktopActionsResponse{}
+	mi := &file_agent_v1_agent_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AckDesktopActionsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AckDesktopActionsResponse) ProtoMessage() {}
+
+func (x *AckDesktopActionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_agent_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AckDesktopActionsResponse.ProtoReflect.Descriptor instead.
+func (*AckDesktopActionsResponse) Descriptor() ([]byte, []int) {
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{31}
+}
+
 var File_agent_v1_agent_proto protoreflect.FileDescriptor
 
 const file_agent_v1_agent_proto_rawDesc = "" +
@@ -1315,7 +1839,51 @@ const file_agent_v1_agent_proto_rawDesc = "" +
 	"\x04data\x18\x01 \x01(\fR\x04data\x12\x16\n" +
 	"\x06stderr\x18\x02 \x01(\bR\x06stderr\x12\x16\n" +
 	"\x06exited\x18\x03 \x01(\bR\x06exited\x12\x1b\n" +
-	"\texit_code\x18\x04 \x01(\x05R\bexitCode2\xb8\x05\n" +
+	"\texit_code\x18\x04 \x01(\x05R\bexitCode\"M\n" +
+	"\x14DesktopActionRequest\x12\x12\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\x12!\n" +
+	"\fpayload_json\x18\x02 \x01(\tR\vpayloadJson\"\xb8\x01\n" +
+	"\x15DesktopActionResponse\x12\x1f\n" +
+	"\vresult_text\x18\x01 \x01(\tR\n" +
+	"resultText\x12\x14\n" +
+	"\x05image\x18\x02 \x01(\fR\x05image\x12\x1b\n" +
+	"\tmime_type\x18\x03 \x01(\tR\bmimeType\x12\x14\n" +
+	"\x05width\x18\x04 \x01(\x05R\x05width\x12\x16\n" +
+	"\x06height\x18\x05 \x01(\x05R\x06height\x12\x1d\n" +
+	"\n" +
+	"error_code\x18\x06 \x01(\tR\terrorCode\"-\n" +
+	"\x15SetControlLockRequest\x12\x14\n" +
+	"\x05human\x18\x01 \x01(\bR\x05human\"\x18\n" +
+	"\x16SetControlLockResponse\"\x1b\n" +
+	"\x19PullDesktopActionsRequest\"\xda\x02\n" +
+	"\x13DesktopActionRecord\x12\x10\n" +
+	"\x03seq\x18\x01 \x01(\x04R\x03seq\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\x12\x12\n" +
+	"\x04kind\x18\x03 \x01(\tR\x04kind\x12\x1f\n" +
+	"\vparams_json\x18\x04 \x01(\tR\n" +
+	"paramsJson\x12\x1f\n" +
+	"\vresult_text\x18\x05 \x01(\tR\n" +
+	"resultText\x12\x1d\n" +
+	"\n" +
+	"error_code\x18\x06 \x01(\tR\terrorCode\x12\x14\n" +
+	"\x05image\x18\a \x01(\fR\x05image\x12\x1b\n" +
+	"\tmime_type\x18\b \x01(\tR\bmimeType\x12\x17\n" +
+	"\acoord_x\x18\t \x01(\x05R\x06coordX\x12\x17\n" +
+	"\acoord_y\x18\n" +
+	" \x01(\x05R\x06coordY\x12\x1b\n" +
+	"\thas_coord\x18\v \x01(\bR\bhasCoord\x12\x1b\n" +
+	"\tunix_nano\x18\f \x01(\x03R\bunixNano\"t\n" +
+	"\x1aPullDesktopActionsResponse\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x127\n" +
+	"\arecords\x18\x02 \x03(\v2\x1d.agent.v1.DesktopActionRecordR\arecords\"Z\n" +
+	"\x18AckDesktopActionsRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1f\n" +
+	"\vthrough_seq\x18\x02 \x01(\x04R\n" +
+	"throughSeq\"\x1b\n" +
+	"\x19AckDesktopActionsResponse2\x9e\b\n" +
 	"\fAgentService\x12=\n" +
 	"\x06RunCLI\x12\x17.agent.v1.RunCLIRequest\x1a\x18.agent.v1.RunCLIResponse0\x01\x125\n" +
 	"\x04Ping\x12\x15.agent.v1.PingRequest\x1a\x16.agent.v1.PingResponse\x12>\n" +
@@ -1328,7 +1896,11 @@ const file_agent_v1_agent_proto_rawDesc = "" +
 	"\x04Exec\x12\x15.agent.v1.ExecRequest\x1a\x16.agent.v1.ExecResponse\x12D\n" +
 	"\tListFiles\x12\x1a.agent.v1.ListFilesRequest\x1a\x1b.agent.v1.ListFilesResponse\x12A\n" +
 	"\bReadFile\x12\x19.agent.v1.ReadFileRequest\x1a\x1a.agent.v1.ReadFileResponse\x12D\n" +
-	"\tWriteFile\x12\x1a.agent.v1.WriteFileRequest\x1a\x1b.agent.v1.WriteFileResponseBJZHgithub.com/dunkeltech/botbox/backend/internal/gen/proto/agent/v1;agentv1b\x06proto3"
+	"\tWriteFile\x12\x1a.agent.v1.WriteFileRequest\x1a\x1b.agent.v1.WriteFileResponse\x12P\n" +
+	"\rDesktopAction\x12\x1e.agent.v1.DesktopActionRequest\x1a\x1f.agent.v1.DesktopActionResponse\x12S\n" +
+	"\x0eSetControlLock\x12\x1f.agent.v1.SetControlLockRequest\x1a .agent.v1.SetControlLockResponse\x12_\n" +
+	"\x12PullDesktopActions\x12#.agent.v1.PullDesktopActionsRequest\x1a$.agent.v1.PullDesktopActionsResponse\x12\\\n" +
+	"\x11AckDesktopActions\x12\".agent.v1.AckDesktopActionsRequest\x1a#.agent.v1.AckDesktopActionsResponseBJZHgithub.com/dunkeltech/botbox/backend/internal/gen/proto/agent/v1;agentv1b\x06proto3"
 
 var (
 	file_agent_v1_agent_proto_rawDescOnce sync.Once
@@ -1342,61 +1914,79 @@ func file_agent_v1_agent_proto_rawDescGZIP() []byte {
 	return file_agent_v1_agent_proto_rawDescData
 }
 
-var file_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
+var file_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
 var file_agent_v1_agent_proto_goTypes = []any{
-	(*PingRequest)(nil),        // 0: agent.v1.PingRequest
-	(*PingResponse)(nil),       // 1: agent.v1.PingResponse
-	(*GetInfoRequest)(nil),     // 2: agent.v1.GetInfoRequest
-	(*GetInfoResponse)(nil),    // 3: agent.v1.GetInfoResponse
-	(*ScreenshotRequest)(nil),  // 4: agent.v1.ScreenshotRequest
-	(*ScreenshotResponse)(nil), // 5: agent.v1.ScreenshotResponse
-	(*ClickRequest)(nil),       // 6: agent.v1.ClickRequest
-	(*ClickResponse)(nil),      // 7: agent.v1.ClickResponse
-	(*TypeRequest)(nil),        // 8: agent.v1.TypeRequest
-	(*TypeResponse)(nil),       // 9: agent.v1.TypeResponse
-	(*KeyRequest)(nil),         // 10: agent.v1.KeyRequest
-	(*KeyResponse)(nil),        // 11: agent.v1.KeyResponse
-	(*ExecRequest)(nil),        // 12: agent.v1.ExecRequest
-	(*ExecResponse)(nil),       // 13: agent.v1.ExecResponse
-	(*FileEntry)(nil),          // 14: agent.v1.FileEntry
-	(*ListFilesRequest)(nil),   // 15: agent.v1.ListFilesRequest
-	(*ListFilesResponse)(nil),  // 16: agent.v1.ListFilesResponse
-	(*ReadFileRequest)(nil),    // 17: agent.v1.ReadFileRequest
-	(*ReadFileResponse)(nil),   // 18: agent.v1.ReadFileResponse
-	(*WriteFileRequest)(nil),   // 19: agent.v1.WriteFileRequest
-	(*WriteFileResponse)(nil),  // 20: agent.v1.WriteFileResponse
-	(*RunCLIRequest)(nil),      // 21: agent.v1.RunCLIRequest
-	(*RunCLIResponse)(nil),     // 22: agent.v1.RunCLIResponse
+	(*PingRequest)(nil),                // 0: agent.v1.PingRequest
+	(*PingResponse)(nil),               // 1: agent.v1.PingResponse
+	(*GetInfoRequest)(nil),             // 2: agent.v1.GetInfoRequest
+	(*GetInfoResponse)(nil),            // 3: agent.v1.GetInfoResponse
+	(*ScreenshotRequest)(nil),          // 4: agent.v1.ScreenshotRequest
+	(*ScreenshotResponse)(nil),         // 5: agent.v1.ScreenshotResponse
+	(*ClickRequest)(nil),               // 6: agent.v1.ClickRequest
+	(*ClickResponse)(nil),              // 7: agent.v1.ClickResponse
+	(*TypeRequest)(nil),                // 8: agent.v1.TypeRequest
+	(*TypeResponse)(nil),               // 9: agent.v1.TypeResponse
+	(*KeyRequest)(nil),                 // 10: agent.v1.KeyRequest
+	(*KeyResponse)(nil),                // 11: agent.v1.KeyResponse
+	(*ExecRequest)(nil),                // 12: agent.v1.ExecRequest
+	(*ExecResponse)(nil),               // 13: agent.v1.ExecResponse
+	(*FileEntry)(nil),                  // 14: agent.v1.FileEntry
+	(*ListFilesRequest)(nil),           // 15: agent.v1.ListFilesRequest
+	(*ListFilesResponse)(nil),          // 16: agent.v1.ListFilesResponse
+	(*ReadFileRequest)(nil),            // 17: agent.v1.ReadFileRequest
+	(*ReadFileResponse)(nil),           // 18: agent.v1.ReadFileResponse
+	(*WriteFileRequest)(nil),           // 19: agent.v1.WriteFileRequest
+	(*WriteFileResponse)(nil),          // 20: agent.v1.WriteFileResponse
+	(*RunCLIRequest)(nil),              // 21: agent.v1.RunCLIRequest
+	(*RunCLIResponse)(nil),             // 22: agent.v1.RunCLIResponse
+	(*DesktopActionRequest)(nil),       // 23: agent.v1.DesktopActionRequest
+	(*DesktopActionResponse)(nil),      // 24: agent.v1.DesktopActionResponse
+	(*SetControlLockRequest)(nil),      // 25: agent.v1.SetControlLockRequest
+	(*SetControlLockResponse)(nil),     // 26: agent.v1.SetControlLockResponse
+	(*PullDesktopActionsRequest)(nil),  // 27: agent.v1.PullDesktopActionsRequest
+	(*DesktopActionRecord)(nil),        // 28: agent.v1.DesktopActionRecord
+	(*PullDesktopActionsResponse)(nil), // 29: agent.v1.PullDesktopActionsResponse
+	(*AckDesktopActionsRequest)(nil),   // 30: agent.v1.AckDesktopActionsRequest
+	(*AckDesktopActionsResponse)(nil),  // 31: agent.v1.AckDesktopActionsResponse
 }
 var file_agent_v1_agent_proto_depIdxs = []int32{
 	14, // 0: agent.v1.ListFilesResponse.entries:type_name -> agent.v1.FileEntry
-	21, // 1: agent.v1.AgentService.RunCLI:input_type -> agent.v1.RunCLIRequest
-	0,  // 2: agent.v1.AgentService.Ping:input_type -> agent.v1.PingRequest
-	2,  // 3: agent.v1.AgentService.GetInfo:input_type -> agent.v1.GetInfoRequest
-	4,  // 4: agent.v1.AgentService.Screenshot:input_type -> agent.v1.ScreenshotRequest
-	6,  // 5: agent.v1.AgentService.Click:input_type -> agent.v1.ClickRequest
-	8,  // 6: agent.v1.AgentService.Type:input_type -> agent.v1.TypeRequest
-	10, // 7: agent.v1.AgentService.Key:input_type -> agent.v1.KeyRequest
-	12, // 8: agent.v1.AgentService.Exec:input_type -> agent.v1.ExecRequest
-	15, // 9: agent.v1.AgentService.ListFiles:input_type -> agent.v1.ListFilesRequest
-	17, // 10: agent.v1.AgentService.ReadFile:input_type -> agent.v1.ReadFileRequest
-	19, // 11: agent.v1.AgentService.WriteFile:input_type -> agent.v1.WriteFileRequest
-	22, // 12: agent.v1.AgentService.RunCLI:output_type -> agent.v1.RunCLIResponse
-	1,  // 13: agent.v1.AgentService.Ping:output_type -> agent.v1.PingResponse
-	3,  // 14: agent.v1.AgentService.GetInfo:output_type -> agent.v1.GetInfoResponse
-	5,  // 15: agent.v1.AgentService.Screenshot:output_type -> agent.v1.ScreenshotResponse
-	7,  // 16: agent.v1.AgentService.Click:output_type -> agent.v1.ClickResponse
-	9,  // 17: agent.v1.AgentService.Type:output_type -> agent.v1.TypeResponse
-	11, // 18: agent.v1.AgentService.Key:output_type -> agent.v1.KeyResponse
-	13, // 19: agent.v1.AgentService.Exec:output_type -> agent.v1.ExecResponse
-	16, // 20: agent.v1.AgentService.ListFiles:output_type -> agent.v1.ListFilesResponse
-	18, // 21: agent.v1.AgentService.ReadFile:output_type -> agent.v1.ReadFileResponse
-	20, // 22: agent.v1.AgentService.WriteFile:output_type -> agent.v1.WriteFileResponse
-	12, // [12:23] is the sub-list for method output_type
-	1,  // [1:12] is the sub-list for method input_type
-	1,  // [1:1] is the sub-list for extension type_name
-	1,  // [1:1] is the sub-list for extension extendee
-	0,  // [0:1] is the sub-list for field type_name
+	28, // 1: agent.v1.PullDesktopActionsResponse.records:type_name -> agent.v1.DesktopActionRecord
+	21, // 2: agent.v1.AgentService.RunCLI:input_type -> agent.v1.RunCLIRequest
+	0,  // 3: agent.v1.AgentService.Ping:input_type -> agent.v1.PingRequest
+	2,  // 4: agent.v1.AgentService.GetInfo:input_type -> agent.v1.GetInfoRequest
+	4,  // 5: agent.v1.AgentService.Screenshot:input_type -> agent.v1.ScreenshotRequest
+	6,  // 6: agent.v1.AgentService.Click:input_type -> agent.v1.ClickRequest
+	8,  // 7: agent.v1.AgentService.Type:input_type -> agent.v1.TypeRequest
+	10, // 8: agent.v1.AgentService.Key:input_type -> agent.v1.KeyRequest
+	12, // 9: agent.v1.AgentService.Exec:input_type -> agent.v1.ExecRequest
+	15, // 10: agent.v1.AgentService.ListFiles:input_type -> agent.v1.ListFilesRequest
+	17, // 11: agent.v1.AgentService.ReadFile:input_type -> agent.v1.ReadFileRequest
+	19, // 12: agent.v1.AgentService.WriteFile:input_type -> agent.v1.WriteFileRequest
+	23, // 13: agent.v1.AgentService.DesktopAction:input_type -> agent.v1.DesktopActionRequest
+	25, // 14: agent.v1.AgentService.SetControlLock:input_type -> agent.v1.SetControlLockRequest
+	27, // 15: agent.v1.AgentService.PullDesktopActions:input_type -> agent.v1.PullDesktopActionsRequest
+	30, // 16: agent.v1.AgentService.AckDesktopActions:input_type -> agent.v1.AckDesktopActionsRequest
+	22, // 17: agent.v1.AgentService.RunCLI:output_type -> agent.v1.RunCLIResponse
+	1,  // 18: agent.v1.AgentService.Ping:output_type -> agent.v1.PingResponse
+	3,  // 19: agent.v1.AgentService.GetInfo:output_type -> agent.v1.GetInfoResponse
+	5,  // 20: agent.v1.AgentService.Screenshot:output_type -> agent.v1.ScreenshotResponse
+	7,  // 21: agent.v1.AgentService.Click:output_type -> agent.v1.ClickResponse
+	9,  // 22: agent.v1.AgentService.Type:output_type -> agent.v1.TypeResponse
+	11, // 23: agent.v1.AgentService.Key:output_type -> agent.v1.KeyResponse
+	13, // 24: agent.v1.AgentService.Exec:output_type -> agent.v1.ExecResponse
+	16, // 25: agent.v1.AgentService.ListFiles:output_type -> agent.v1.ListFilesResponse
+	18, // 26: agent.v1.AgentService.ReadFile:output_type -> agent.v1.ReadFileResponse
+	20, // 27: agent.v1.AgentService.WriteFile:output_type -> agent.v1.WriteFileResponse
+	24, // 28: agent.v1.AgentService.DesktopAction:output_type -> agent.v1.DesktopActionResponse
+	26, // 29: agent.v1.AgentService.SetControlLock:output_type -> agent.v1.SetControlLockResponse
+	29, // 30: agent.v1.AgentService.PullDesktopActions:output_type -> agent.v1.PullDesktopActionsResponse
+	31, // 31: agent.v1.AgentService.AckDesktopActions:output_type -> agent.v1.AckDesktopActionsResponse
+	17, // [17:32] is the sub-list for method output_type
+	2,  // [2:17] is the sub-list for method input_type
+	2,  // [2:2] is the sub-list for extension type_name
+	2,  // [2:2] is the sub-list for extension extendee
+	0,  // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_agent_v1_agent_proto_init() }
@@ -1410,7 +2000,7 @@ func file_agent_v1_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agent_v1_agent_proto_rawDesc), len(file_agent_v1_agent_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   23,
+			NumMessages:   32,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -458,7 +458,17 @@
       "tabs": {
         "desktop": "Desktop",
         "terminal": "Terminal",
-        "files": "Files"
+        "files": "Files",
+        "actions": "Actions"
+      },
+      "timeline": {
+        "regionLabel": "Desktop actions",
+        "empty": "No desktop actions yet.",
+        "retention": "Screenshots kept {days} days · excluded from logs",
+        "coords": "{x}, {y} · 1280×800",
+        "conflict": "409",
+        "screenshot": "Screenshot",
+        "screenshotAlt": "Screenshot of {kind}"
       },
       "takeControl": "Take control",
       "releaseControl": "Hand back",

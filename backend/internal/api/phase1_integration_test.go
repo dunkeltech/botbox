@@ -72,6 +72,7 @@ type harnessOpts struct {
 	loginEmailLimit  int
 	envSetupSecret   string
 	keyRing          *secrets.KeyRing
+	decorateCompute  func(*compute.MemoryDriver) compute.Driver
 }
 
 func newTestHarness(t *testing.T, existingPool *pgxpool.Pool, opts harnessOpts) *testHarness {
@@ -142,6 +143,10 @@ func newTestHarness(t *testing.T, existingPool *pgxpool.Pool, opts harnessOpts) 
 	if chatLimit == 0 {
 		chatLimit = 30
 	}
+	var computeDriver compute.Driver = computeDrv
+	if opts.decorateCompute != nil {
+		computeDriver = opts.decorateCompute(computeDrv)
+	}
 	handler := api.NewHandlerWithConfig(api.Config{
 		ChatRateLimiter: auth.NewRateLimiter(chatLimit, time.Minute, clock.Now),
 		TurnQueue:       opts.turnQueue,
@@ -149,7 +154,7 @@ func newTestHarness(t *testing.T, existingPool *pgxpool.Pool, opts harnessOpts) 
 		Logger:          logger,
 		Pool:            pool,
 		JWT:             jwtSvc,
-		Compute:         computeDrv,
+		Compute:         computeDriver,
 		KeyRing:         keyRing,
 		Argon2Params: auth.Argon2Params{
 			MemoryKiB:   1024,

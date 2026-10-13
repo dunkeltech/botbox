@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -22,13 +23,25 @@ import (
 
 const dockerMaxFrame = 1 << 20
 
-// agentRelayScript is the fixed in-sandbox command that splices the exec
-// stdio onto the agent. The image has Python and no socat. The path is
-// absolute so a file in the writable home directory cannot shadow it.
-// The script contains no secret and no caller input.
-const agentRelayScript = `
+// agentRelayScript splices exec stdio onto the agent at 127.0.0.1:9090.
+// websockifyRelayScript does the same for the desktop at 127.0.0.1:6080.
+// The image has Python and no socat. Both scripts are fixed: the only
+// difference is the port, and that port is not taken from a request.
+var (
+	agentRelayScript      = loopbackRelayScript(9090)
+	websockifyRelayScript = loopbackRelayScript(6080)
+)
+
+func loopbackRelayScript(port int) string {
+	switch port {
+	case 9090, 6080:
+	default:
+		// A request must not be able to choose the in-sandbox connect target.
+		panic("relay port is not a fixed sandbox port")
+	}
+	return `
 import os, socket, threading
-s = socket.create_connection(("127.0.0.1", 9090))
+s = socket.create_connection(("127.0.0.1", ` + strconv.Itoa(port) + `))
 s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
 def upload():
     try:
@@ -57,6 +70,7 @@ try:
 finally:
     s.close()
 `
+}
 
 // publishedLoopback reports whether addr is a host loopback port Docker
 // actually allocated. Bot networks are internal, so a requested binding often
@@ -96,31 +110,45 @@ func (d *Driver) dialAgentGRPC(ctx context.Context, id compute.EnvID, addr strin
 	return grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithContextDialer(dialer))
 }
 
+// DialVNC returns a stream to websockify inside the sandbox. The API process
+// dials the Docker socket, and the exec connects to 127.0.0.1:6080. The bridge
+// address is not used (ADR-0013).
+func (d *Driver) DialVNC(ctx context.Context, id compute.EnvID) (net.Conn, error) {
+	return d.dialRelayExec(ctx, string(id), websockifyRelayScript)
+}
+
 func (d *Driver) dialAgentExec(ctx context.Context, id string) (net.Conn, error) {
+	return d.dialRelayExec(ctx, id, agentRelayScript)
+}
+
+func (d *Driver) dialRelayExec(ctx context.Context, id, script string) (net.Conn, error) {
 	id = strings.TrimSpace(id)
 	if id == "" || strings.ContainsAny(id, "/\\") {
 		return nil, errors.New("invalid sandbox id")
+	}
+	if script != agentRelayScript && script != websockifyRelayScript {
+		return nil, errors.New("invalid sandbox relay")
 	}
 	payload := map[string]any{
 		"AttachStdin":  true,
 		"AttachStdout": true,
 		"AttachStderr": true,
 		"Tty":          false,
-		"Cmd":          []string{"/usr/bin/python3", "-c", agentRelayScript},
+		"Cmd":          []string{"/usr/bin/python3", "-c", script},
 	}
 	var created struct {
 		ID string `json:"Id"`
 	}
 	if _, err := d.doJSON(ctx, http.MethodPost, "/containers/"+url.PathEscape(id)+"/exec", payload, &created); err != nil {
-		return nil, fmt.Errorf("open sandbox agent tunnel: %w", err)
+		return nil, fmt.Errorf("open sandbox tunnel: %w", err)
 	}
 	if strings.TrimSpace(created.ID) == "" {
-		return nil, errors.New("open sandbox agent tunnel: docker returned no exec id")
+		return nil, errors.New("open sandbox tunnel: docker returned no exec id")
 	}
 	start := []byte(`{"Detach":false,"Tty":false}`)
 	conn, err := d.hijack(ctx, "/exec/"+url.PathEscape(created.ID)+"/start", start)
 	if err != nil {
-		return nil, fmt.Errorf("start sandbox agent tunnel: %w", err)
+		return nil, fmt.Errorf("start sandbox tunnel: %w", err)
 	}
 	return conn, nil
 }

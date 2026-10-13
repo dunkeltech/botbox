@@ -18,6 +18,13 @@ const nextConfig = {
         source: '/api/:path*',
         destination: `${apiBackendUrl}/api/:path*`,
       },
+      // The desktop viewer opens a WebSocket on the page origin. Without this
+      // rewrite, Next answers it itself and noVNC stays on "Connecting…".
+      // Caddy already forwards /ws when the browser uses port 8000.
+      {
+        source: '/ws/:path*',
+        destination: `${apiBackendUrl}/ws/:path*`,
+      },
     ];
   },
 };

@@ -53,6 +53,9 @@ func (s *Server) RunCLI(req *agentv1.RunCLIRequest, stream grpc.ServerStreamingS
 	default:
 		return status.Error(codes.InvalidArgument, "unsupported CLI")
 	}
+	if configPath, mcpErr := InstallDesktopMCP(req.Cli, s.homeDir); mcpErr == nil && req.Cli == "claude" && configPath != "" {
+		args = append(args, "--mcp-config", configPath)
+	}
 	if req.Model != "" {
 		args = append(args, "--model", req.Model)
 	}

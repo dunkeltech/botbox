@@ -61,6 +61,33 @@ export interface WorkspaceSummary {
   defaultLocale: string;
   role: WorkspaceRole;
   createdAt: string;
+  screenshotRetentionDays?: number;
+}
+
+export interface UpdateWorkspaceRequest {
+  screenshotRetentionDays: number;
+}
+
+export interface DesktopAction {
+  id: string;
+  botId: string;
+  turnId?: string;
+  sessionId?: string;
+  seq?: number;
+  kind: string;
+  result: string;
+  errorCode: string;
+  hasScreenshot: boolean;
+  screenshotMime?: string;
+  coordX?: number;
+  coordY?: number;
+  hasCoord: boolean;
+  createdAt: string;
+}
+
+export interface DesktopActionListResponse {
+  actions: DesktopAction[];
+  screenshotRetentionDays: number;
 }
 
 export interface WorkspaceListResponse {

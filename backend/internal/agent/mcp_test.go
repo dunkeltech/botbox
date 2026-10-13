@@ -59,8 +59,8 @@ func TestMCPHandlerInitializeToolsAndCall(t *testing.T) {
 			t.Fatalf("decode list: %v", err)
 		}
 		tools, ok := listEnv.Result["tools"].([]any)
-		if !ok || len(tools) != 4 {
-			t.Fatalf("tools count = %v, want 4", listEnv.Result["tools"])
+		if !ok || len(tools) != 14 {
+			t.Fatalf("tools count = %v, want 14", listEnv.Result["tools"])
 		}
 	})
 

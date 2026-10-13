@@ -154,40 +154,46 @@ func toAPIUser(u db.User) api.User {
 }
 
 func toAPIWorkspaceFromRow(w db.Workspace, role string) api.WorkspaceSummary {
+	days := int(w.ScreenshotRetentionDays)
 	return api.WorkspaceSummary{
-		Id:            fromPGUUID(w.ID),
-		Name:          w.Name,
-		Slug:          w.Slug,
-		DefaultDriver: api.DriverType(w.DefaultDriver),
-		DefaultLocale: w.DefaultLocale,
-		Role:          api.WorkspaceRole(role),
-		CreatedAt:     w.CreatedAt.Time.UTC(),
+		Id:                      fromPGUUID(w.ID),
+		Name:                    w.Name,
+		Slug:                    w.Slug,
+		DefaultDriver:           api.DriverType(w.DefaultDriver),
+		DefaultLocale:           w.DefaultLocale,
+		Role:                    api.WorkspaceRole(role),
+		CreatedAt:               w.CreatedAt.Time.UTC(),
+		ScreenshotRetentionDays: &days,
 	}
 }
 
 func toAPIWorkspaceFromUserRow(w db.GetWorkspaceByIDForUserRow) api.WorkspaceSummary {
+	days := int(w.ScreenshotRetentionDays)
 	return api.WorkspaceSummary{
-		Id:            fromPGUUID(w.ID),
-		Name:          w.Name,
-		Slug:          w.Slug,
-		DefaultDriver: api.DriverType(w.DefaultDriver),
-		DefaultLocale: w.DefaultLocale,
-		Role:          api.WorkspaceRole(w.Role),
-		CreatedAt:     w.CreatedAt.Time.UTC(),
+		Id:                      fromPGUUID(w.ID),
+		Name:                    w.Name,
+		Slug:                    w.Slug,
+		DefaultDriver:           api.DriverType(w.DefaultDriver),
+		DefaultLocale:           w.DefaultLocale,
+		Role:                    api.WorkspaceRole(w.Role),
+		CreatedAt:               w.CreatedAt.Time.UTC(),
+		ScreenshotRetentionDays: &days,
 	}
 }
 
 func toAPIWorkspaceList(rows []db.ListWorkspacesForUserRow) []api.WorkspaceSummary {
 	out := make([]api.WorkspaceSummary, 0, len(rows))
 	for _, r := range rows {
+		days := int(r.ScreenshotRetentionDays)
 		out = append(out, api.WorkspaceSummary{
-			Id:            fromPGUUID(r.ID),
-			Name:          r.Name,
-			Slug:          r.Slug,
-			DefaultDriver: api.DriverType(r.DefaultDriver),
-			DefaultLocale: r.DefaultLocale,
-			Role:          api.WorkspaceRole(r.Role),
-			CreatedAt:     r.CreatedAt.Time.UTC(),
+			Id:                      fromPGUUID(r.ID),
+			Name:                    r.Name,
+			Slug:                    r.Slug,
+			DefaultDriver:           api.DriverType(r.DefaultDriver),
+			DefaultLocale:           r.DefaultLocale,
+			Role:                    api.WorkspaceRole(r.Role),
+			CreatedAt:               r.CreatedAt.Time.UTC(),
+			ScreenshotRetentionDays: &days,
 		})
 	}
 	return out

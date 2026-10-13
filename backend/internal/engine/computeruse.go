@@ -4,35 +4,41 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
+	"github.com/dunkeltech/botbox/backend/internal/desk"
 )
 
 var (
 	// ErrStepLimitExceeded indicates a computer-use turn reached MaxSteps without completing.
 	ErrStepLimitExceeded = errors.New("computer-use step limit exceeded")
+	// ErrScreenshotLimitExceeded indicates a turn captured too many screenshots.
+	ErrScreenshotLimitExceeded = errors.New("computer-use screenshot limit exceeded")
+	// ErrTurnTokenBudget indicates a computer-use turn spent its token allowance.
+	ErrTurnTokenBudget = errors.New("turn token budget exceeded")
 	// ErrTakeoverConflict corresponds to HTTP 409 when a human owns the desktop control lock.
 	ErrTakeoverConflict = errors.New("desktop control lock held by human")
 )
 
+// DesktopGuidance is appended to API and CLI prompts so models prefer cheap
+// tools and refresh the screen after a human has used the desktop.
+const DesktopGuidance = "Desktop tools are available: screenshot, pointer, keyboard, and browser tools (navigate, click_selector, fill, read_text). Prefer shell commands and browser tools over pixel clicks. The desktop is 1280 by 800; coordinates on a downscaled screenshot are scaled back to that desktop. After a human uses the desktop, take a fresh screenshot before acting."
+
+// HandbackNote is the system note sent when a person returns the desktop to the bot.
+const HandbackNote = "A human used the desktop; take a fresh screenshot."
+
 // DesktopActionKind identifies the desktop primitive executed in one step.
-type DesktopActionKind string
+type DesktopActionKind = string
 
 // Supported desktop action kinds dispatched by ComputerUseRunner.
 const (
-	ActionScreenshot DesktopActionKind = "screenshot"
-	ActionClick      DesktopActionKind = "click"
-	ActionType       DesktopActionKind = "type"
-	ActionKey        DesktopActionKind = "key"
+	ActionScreenshot DesktopActionKind = desk.KindScreenshot
+	ActionClick      DesktopActionKind = desk.KindClick
+	ActionType       DesktopActionKind = desk.KindType
+	ActionKey        DesktopActionKind = desk.KindKey
 )
 
-// DesktopAction describes one action chosen by the Anthropic computer-use adapter.
-type DesktopAction struct {
-	Kind   DesktopActionKind
-	X      int32
-	Y      int32
-	Button string
-	Text   string
-	Key    string
-}
+// DesktopAction is one computer-use operation shared with the sandbox agent.
+type DesktopAction = desk.Action
 
 // ModelDecision is returned by a ComputerUseModel on each observation step.
 type ModelDecision struct {
@@ -43,10 +49,7 @@ type ModelDecision struct {
 
 // DesktopController is satisfied by the gRPC client talking to cmd/agent.
 type DesktopController interface {
-	Screenshot(ctx context.Context) ([]byte, error)
-	Click(ctx context.Context, x, y int32, button string) error
-	Type(ctx context.Context, text string) error
-	Key(ctx context.Context, key string) error
+	Do(ctx context.Context, act DesktopAction) (desk.Result, error)
 }
 
 // ComputerUseModel abstracts the LLM computer-use loop so tests use deterministic fakes.
@@ -56,10 +59,11 @@ type ComputerUseModel interface {
 
 // ComputerUseRunner runs a bounded screenshot -> action loop with takeover preemption.
 type ComputerUseRunner struct {
-	MaxSteps    int
-	IsTakenOver func() bool
-	Desktop     DesktopController
-	Model       ComputerUseModel
+	MaxSteps       int
+	MaxScreenshots int
+	IsTakenOver    func() bool
+	Desktop        DesktopController
+	Model          ComputerUseModel
 }
 
 // Run executes steps until the model reports Done or hits a safety limit or human takeover.
@@ -71,22 +75,30 @@ func (r *ComputerUseRunner) Run(ctx context.Context) (string, []DesktopAction, e
 	if maxSteps <= 0 {
 		maxSteps = 10
 	}
+	maxShots := r.MaxScreenshots
+	if maxShots <= 0 {
+		maxShots = 12
+	}
 
 	var executed []DesktopAction
+	shots := 0
 	for step := 1; step <= maxSteps; step++ {
 		if err := ctx.Err(); err != nil {
 			return "", executed, fmt.Errorf("computer-use loop canceled: %w", err)
 		}
-		if r.IsTakenOver != nil && r.IsTakenOver() {
+		if r.takenOver() {
 			return "", executed, ErrTakeoverConflict
 		}
-
-		shot, err := r.Desktop.Screenshot(ctx)
+		shots++
+		if shots > maxShots {
+			return "", executed, ErrScreenshotLimitExceeded
+		}
+		shot, err := r.Desktop.Do(ctx, desk.Action{Kind: desk.KindScreenshot})
 		if err != nil {
 			return "", executed, fmt.Errorf("capture screenshot on step %d: %w", step, err)
 		}
 
-		decision, err := r.Model.NextStep(ctx, step, shot, executed)
+		decision, err := r.Model.NextStep(ctx, step, shot.Image, executed)
 		if err != nil {
 			return "", executed, fmt.Errorf("model step %d: %w", step, err)
 		}
@@ -98,12 +110,18 @@ func (r *ComputerUseRunner) Run(ctx context.Context) (string, []DesktopAction, e
 		}
 
 		// Re-check takeover right before mutating desktop state (maps to HTTP 409 action rejection).
-		if r.IsTakenOver != nil && r.IsTakenOver() {
+		if r.takenOver() {
 			return "", executed, ErrTakeoverConflict
 		}
 
 		act := *decision.Action
-		if err := r.dispatchAction(ctx, act); err != nil {
+		if act.Kind == desk.KindScreenshot {
+			shots++
+			if shots > maxShots {
+				return "", executed, ErrScreenshotLimitExceeded
+			}
+		}
+		if _, err := r.Desktop.Do(ctx, act); err != nil {
 			return "", executed, fmt.Errorf("execute action %s on step %d: %w", act.Kind, step, err)
 		}
 		executed = append(executed, act)
@@ -112,18 +130,6 @@ func (r *ComputerUseRunner) Run(ctx context.Context) (string, []DesktopAction, e
 	return "", executed, ErrStepLimitExceeded
 }
 
-func (r *ComputerUseRunner) dispatchAction(ctx context.Context, act DesktopAction) error {
-	switch act.Kind {
-	case ActionScreenshot:
-		_, err := r.Desktop.Screenshot(ctx)
-		return err
-	case ActionClick:
-		return r.Desktop.Click(ctx, act.X, act.Y, act.Button)
-	case ActionType:
-		return r.Desktop.Type(ctx, act.Text)
-	case ActionKey:
-		return r.Desktop.Key(ctx, act.Key)
-	default:
-		return fmt.Errorf("unsupported desktop action %q", act.Kind)
-	}
+func (r *ComputerUseRunner) takenOver() bool {
+	return r.IsTakenOver != nil && r.IsTakenOver()
 }

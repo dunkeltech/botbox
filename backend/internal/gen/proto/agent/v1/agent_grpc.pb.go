@@ -19,17 +19,21 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AgentService_RunCLI_FullMethodName     = "/agent.v1.AgentService/RunCLI"
-	AgentService_Ping_FullMethodName       = "/agent.v1.AgentService/Ping"
-	AgentService_GetInfo_FullMethodName    = "/agent.v1.AgentService/GetInfo"
-	AgentService_Screenshot_FullMethodName = "/agent.v1.AgentService/Screenshot"
-	AgentService_Click_FullMethodName      = "/agent.v1.AgentService/Click"
-	AgentService_Type_FullMethodName       = "/agent.v1.AgentService/Type"
-	AgentService_Key_FullMethodName        = "/agent.v1.AgentService/Key"
-	AgentService_Exec_FullMethodName       = "/agent.v1.AgentService/Exec"
-	AgentService_ListFiles_FullMethodName  = "/agent.v1.AgentService/ListFiles"
-	AgentService_ReadFile_FullMethodName   = "/agent.v1.AgentService/ReadFile"
-	AgentService_WriteFile_FullMethodName  = "/agent.v1.AgentService/WriteFile"
+	AgentService_RunCLI_FullMethodName             = "/agent.v1.AgentService/RunCLI"
+	AgentService_Ping_FullMethodName               = "/agent.v1.AgentService/Ping"
+	AgentService_GetInfo_FullMethodName            = "/agent.v1.AgentService/GetInfo"
+	AgentService_Screenshot_FullMethodName         = "/agent.v1.AgentService/Screenshot"
+	AgentService_Click_FullMethodName              = "/agent.v1.AgentService/Click"
+	AgentService_Type_FullMethodName               = "/agent.v1.AgentService/Type"
+	AgentService_Key_FullMethodName                = "/agent.v1.AgentService/Key"
+	AgentService_Exec_FullMethodName               = "/agent.v1.AgentService/Exec"
+	AgentService_ListFiles_FullMethodName          = "/agent.v1.AgentService/ListFiles"
+	AgentService_ReadFile_FullMethodName           = "/agent.v1.AgentService/ReadFile"
+	AgentService_WriteFile_FullMethodName          = "/agent.v1.AgentService/WriteFile"
+	AgentService_DesktopAction_FullMethodName      = "/agent.v1.AgentService/DesktopAction"
+	AgentService_SetControlLock_FullMethodName     = "/agent.v1.AgentService/SetControlLock"
+	AgentService_PullDesktopActions_FullMethodName = "/agent.v1.AgentService/PullDesktopActions"
+	AgentService_AckDesktopActions_FullMethodName  = "/agent.v1.AgentService/AckDesktopActions"
 )
 
 // AgentServiceClient is the client API for AgentService service.
@@ -61,6 +65,14 @@ type AgentServiceClient interface {
 	ReadFile(ctx context.Context, in *ReadFileRequest, opts ...grpc.CallOption) (*ReadFileResponse, error)
 	// WriteFile writes file bytes strictly under /home/bot.
 	WriteFile(ctx context.Context, in *WriteFileRequest, opts ...grpc.CallOption) (*WriteFileResponse, error)
+	// DesktopAction runs one computer-use or browser action on the shared desktop.
+	DesktopAction(ctx context.Context, in *DesktopActionRequest, opts ...grpc.CallOption) (*DesktopActionResponse, error)
+	// SetControlLock cancels in-flight bot input when a human takes the desktop.
+	SetControlLock(ctx context.Context, in *SetControlLockRequest, opts ...grpc.CallOption) (*SetControlLockResponse, error)
+	// PullDesktopActions returns actions the API has not stored yet.
+	PullDesktopActions(ctx context.Context, in *PullDesktopActionsRequest, opts ...grpc.CallOption) (*PullDesktopActionsResponse, error)
+	// AckDesktopActions drops stored actions so the sandbox journal can shrink.
+	AckDesktopActions(ctx context.Context, in *AckDesktopActionsRequest, opts ...grpc.CallOption) (*AckDesktopActionsResponse, error)
 }
 
 type agentServiceClient struct {
@@ -190,6 +202,46 @@ func (c *agentServiceClient) WriteFile(ctx context.Context, in *WriteFileRequest
 	return out, nil
 }
 
+func (c *agentServiceClient) DesktopAction(ctx context.Context, in *DesktopActionRequest, opts ...grpc.CallOption) (*DesktopActionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DesktopActionResponse)
+	err := c.cc.Invoke(ctx, AgentService_DesktopAction_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) SetControlLock(ctx context.Context, in *SetControlLockRequest, opts ...grpc.CallOption) (*SetControlLockResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetControlLockResponse)
+	err := c.cc.Invoke(ctx, AgentService_SetControlLock_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) PullDesktopActions(ctx context.Context, in *PullDesktopActionsRequest, opts ...grpc.CallOption) (*PullDesktopActionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PullDesktopActionsResponse)
+	err := c.cc.Invoke(ctx, AgentService_PullDesktopActions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) AckDesktopActions(ctx context.Context, in *AckDesktopActionsRequest, opts ...grpc.CallOption) (*AckDesktopActionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AckDesktopActionsResponse)
+	err := c.cc.Invoke(ctx, AgentService_AckDesktopActions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AgentServiceServer is the server API for AgentService service.
 // All implementations must embed UnimplementedAgentServiceServer
 // for forward compatibility.
@@ -219,6 +271,14 @@ type AgentServiceServer interface {
 	ReadFile(context.Context, *ReadFileRequest) (*ReadFileResponse, error)
 	// WriteFile writes file bytes strictly under /home/bot.
 	WriteFile(context.Context, *WriteFileRequest) (*WriteFileResponse, error)
+	// DesktopAction runs one computer-use or browser action on the shared desktop.
+	DesktopAction(context.Context, *DesktopActionRequest) (*DesktopActionResponse, error)
+	// SetControlLock cancels in-flight bot input when a human takes the desktop.
+	SetControlLock(context.Context, *SetControlLockRequest) (*SetControlLockResponse, error)
+	// PullDesktopActions returns actions the API has not stored yet.
+	PullDesktopActions(context.Context, *PullDesktopActionsRequest) (*PullDesktopActionsResponse, error)
+	// AckDesktopActions drops stored actions so the sandbox journal can shrink.
+	AckDesktopActions(context.Context, *AckDesktopActionsRequest) (*AckDesktopActionsResponse, error)
 	mustEmbedUnimplementedAgentServiceServer()
 }
 
@@ -261,6 +321,18 @@ func (UnimplementedAgentServiceServer) ReadFile(context.Context, *ReadFileReques
 }
 func (UnimplementedAgentServiceServer) WriteFile(context.Context, *WriteFileRequest) (*WriteFileResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method WriteFile not implemented")
+}
+func (UnimplementedAgentServiceServer) DesktopAction(context.Context, *DesktopActionRequest) (*DesktopActionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DesktopAction not implemented")
+}
+func (UnimplementedAgentServiceServer) SetControlLock(context.Context, *SetControlLockRequest) (*SetControlLockResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetControlLock not implemented")
+}
+func (UnimplementedAgentServiceServer) PullDesktopActions(context.Context, *PullDesktopActionsRequest) (*PullDesktopActionsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PullDesktopActions not implemented")
+}
+func (UnimplementedAgentServiceServer) AckDesktopActions(context.Context, *AckDesktopActionsRequest) (*AckDesktopActionsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AckDesktopActions not implemented")
 }
 func (UnimplementedAgentServiceServer) mustEmbedUnimplementedAgentServiceServer() {}
 func (UnimplementedAgentServiceServer) testEmbeddedByValue()                      {}
@@ -474,6 +546,78 @@ func _AgentService_WriteFile_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AgentService_DesktopAction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DesktopActionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).DesktopAction(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_DesktopAction_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).DesktopAction(ctx, req.(*DesktopActionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_SetControlLock_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetControlLockRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).SetControlLock(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_SetControlLock_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).SetControlLock(ctx, req.(*SetControlLockRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_PullDesktopActions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PullDesktopActionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).PullDesktopActions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_PullDesktopActions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).PullDesktopActions(ctx, req.(*PullDesktopActionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_AckDesktopActions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AckDesktopActionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).AckDesktopActions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_AckDesktopActions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).AckDesktopActions(ctx, req.(*AckDesktopActionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AgentService_ServiceDesc is the grpc.ServiceDesc for AgentService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -520,6 +664,22 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "WriteFile",
 			Handler:    _AgentService_WriteFile_Handler,
+		},
+		{
+			MethodName: "DesktopAction",
+			Handler:    _AgentService_DesktopAction_Handler,
+		},
+		{
+			MethodName: "SetControlLock",
+			Handler:    _AgentService_SetControlLock_Handler,
+		},
+		{
+			MethodName: "PullDesktopActions",
+			Handler:    _AgentService_PullDesktopActions_Handler,
+		},
+		{
+			MethodName: "AckDesktopActions",
+			Handler:    _AgentService_AckDesktopActions_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

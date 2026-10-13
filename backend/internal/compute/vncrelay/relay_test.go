@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -155,6 +156,234 @@ func TestRelayHTTPCases(t *testing.T) {
 				t.Fatalf("error.code = %q, want %q", decoded.Error.Code, tc.wantErrorCode)
 			}
 		})
+	}
+}
+
+func TestRelayUsesTunnelInsteadOfUnroutableURL(t *testing.T) {
+	t.Parallel()
+	fixedNow := time.Date(2026, 11, 14, 22, 0, 0, 0, time.UTC)
+	signer := testSigner(t)
+	banner := []byte("RFB 003.008\n")
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{Subprotocols: []string{"binary"}})
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.CloseNow() }()
+		_ = conn.Write(r.Context(), websocket.MessageBinary, banner)
+		_, _, _ = conn.Read(r.Context())
+	}))
+	t.Cleanup(upstream.Close)
+
+	r := chi.NewRouter()
+	r.Get("/ws/bots/{workspaceID}/{botID}/vnc", vncrelay.NewRelayHandler(
+		signer,
+		func(context.Context, string, string) (string, error) {
+			// This address is not routed. The tunnel must be the connection.
+			return "ws://192.0.2.1:6080", nil
+		},
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		&vncrelay.RelayOptions{
+			Now: func() time.Time { return fixedNow },
+			DialUpstream: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				var dialer net.Dialer
+				return dialer.DialContext(ctx, "tcp", upstream.Listener.Addr().String())
+			},
+		},
+	))
+	relay := httptest.NewServer(r)
+	t.Cleanup(relay.Close)
+	token, err := signer.Sign(vncrelay.TicketClaims{
+		WorkspaceID: "ws-1", BotID: "bot-atlas", UserID: "usr-1", CanControl: true,
+		ExpiresAt: fixedNow.Add(time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	clientWS := "ws" + strings.TrimPrefix(relay.URL, "http") + "/ws/bots/ws-1/bot-atlas/vnc?ticket=" + token
+	conn, resp, err := websocket.Dial(ctx, clientWS, &websocket.DialOptions{Subprotocols: []string{"binary"}})
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	if err != nil {
+		t.Fatalf("Dial relay: %v", err)
+	}
+	defer func() { _ = conn.CloseNow() }()
+	_, got, err := conn.Read(ctx)
+	if err != nil || !bytes.Equal(got, banner) {
+		t.Fatalf("banner %q err=%v", got, err)
+	}
+}
+
+func TestRelayTunnelFailureIsBadGateway(t *testing.T) {
+	t.Parallel()
+	fixedNow := time.Date(2026, 11, 14, 22, 0, 0, 0, time.UTC)
+	signer := testSigner(t)
+	token, err := signer.Sign(vncrelay.TicketClaims{
+		WorkspaceID: "ws-1", BotID: "bot-atlas", UserID: "usr-1", CanControl: false,
+		ExpiresAt: fixedNow.Add(time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := vncrelay.NewRelayHandler(
+		signer,
+		func(context.Context, string, string) (string, error) { return "ws://127.0.0.1:1", nil },
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		&vncrelay.RelayOptions{
+			Now: func() time.Time { return fixedNow },
+			DialUpstream: func(context.Context, string, string) (net.Conn, error) {
+				return nil, errors.New("tunnel down")
+			},
+		},
+	)
+	r := chi.NewRouter()
+	r.Get("/ws/bots/{workspaceID}/{botID}/vnc", handler)
+	req := httptest.NewRequest(http.MethodGet, "/ws/bots/ws-1/bot-atlas/vnc?ticket="+token, nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadGateway || !strings.Contains(rec.Body.String(), "upstream_unavailable") {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRelayAllowsProxiedPageOriginAndRejectsOtherSites(t *testing.T) {
+	t.Parallel()
+	fixedNow := time.Date(2026, 11, 14, 22, 0, 0, 0, time.UTC)
+	signer := testSigner(t)
+	banner := []byte("RFB 003.008\n")
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+			Subprotocols:       []string{"binary"},
+			InsecureSkipVerify: true,
+		})
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.CloseNow() }()
+		_ = conn.Write(r.Context(), websocket.MessageBinary, banner)
+		_, _, _ = conn.Read(r.Context())
+	}))
+	t.Cleanup(upstream.Close)
+
+	r := chi.NewRouter()
+	r.Get("/ws/bots/{workspaceID}/{botID}/vnc", vncrelay.NewRelayHandler(
+		signer,
+		func(context.Context, string, string) (string, error) { return "ws://192.0.2.1:6080", nil },
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		&vncrelay.RelayOptions{
+			Now:            func() time.Time { return fixedNow },
+			OriginPatterns: []string{"localhost:*", "127.0.0.1:*"},
+			DialUpstream: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				var dialer net.Dialer
+				return dialer.DialContext(ctx, "tcp", upstream.Listener.Addr().String())
+			},
+		},
+	))
+	relay := httptest.NewServer(r)
+	t.Cleanup(relay.Close)
+	token, err := signer.Sign(vncrelay.TicketClaims{
+		WorkspaceID: "ws-1", BotID: "bot-atlas", UserID: "usr-1", CanControl: true,
+		ExpiresAt: fixedNow.Add(time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := "ws" + strings.TrimPrefix(relay.URL, "http") + "/ws/bots/ws-1/bot-atlas/vnc?ticket=" + token
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conn, resp, err := websocket.Dial(ctx, base, &websocket.DialOptions{
+		Subprotocols: []string{"binary"},
+		Host:         "127.0.0.1:8080",
+		HTTPHeader:   http.Header{"Origin": []string{"http://localhost:3000"}},
+	})
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	if err != nil {
+		t.Fatalf("proxied origin: %v", err)
+	}
+	defer func() { _ = conn.CloseNow() }()
+	_, got, err := conn.Read(ctx)
+	if err != nil || !bytes.Equal(got, banner) {
+		t.Fatalf("banner %q err=%v", got, err)
+	}
+
+	_, resp, err = websocket.Dial(ctx, base, &websocket.DialOptions{
+		Subprotocols: []string{"binary"},
+		Host:         "127.0.0.1:8080",
+		HTTPHeader:   http.Header{"Origin": []string{"https://evil.example"}},
+	})
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	if err == nil || resp == nil || resp.StatusCode != http.StatusForbidden {
+		status := 0
+		if resp != nil {
+			status = resp.StatusCode
+		}
+		t.Fatalf("evil origin status=%d err=%v", status, err)
+	}
+}
+
+func TestRelayForwardsMessageLargerThanDefaultLimit(t *testing.T) {
+	t.Parallel()
+	fixedNow := time.Date(2026, 11, 14, 22, 0, 0, 0, time.UTC)
+	signer := testSigner(t)
+	// websockify sends one TCP read as one WebSocket message. The first
+	// framebuffer is already past the library default of 32 KiB.
+	payload := bytes.Repeat([]byte{0x07}, 40<<10)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+			Subprotocols:       []string{"binary"},
+			InsecureSkipVerify: true,
+		})
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.CloseNow() }()
+		conn.SetReadLimit(1 << 20)
+		_ = conn.Write(r.Context(), websocket.MessageBinary, payload)
+		_, _, _ = conn.Read(r.Context())
+	}))
+	t.Cleanup(upstream.Close)
+
+	r := chi.NewRouter()
+	r.Get("/ws/bots/{workspaceID}/{botID}/vnc", vncrelay.NewRelayHandler(
+		signer,
+		func(context.Context, string, string) (string, error) {
+			return "ws" + strings.TrimPrefix(upstream.URL, "http"), nil
+		},
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		&vncrelay.RelayOptions{Now: func() time.Time { return fixedNow }},
+	))
+	relay := httptest.NewServer(r)
+	t.Cleanup(relay.Close)
+	token, err := signer.Sign(vncrelay.TicketClaims{
+		WorkspaceID: "ws-1", BotID: "bot-atlas", UserID: "usr-1", CanControl: true,
+		ExpiresAt: fixedNow.Add(time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	clientWS := "ws" + strings.TrimPrefix(relay.URL, "http") + "/ws/bots/ws-1/bot-atlas/vnc?ticket=" + token
+	conn, resp, err := websocket.Dial(ctx, clientWS, &websocket.DialOptions{Subprotocols: []string{"binary"}})
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	if err != nil {
+		t.Fatalf("Dial relay: %v", err)
+	}
+	defer func() { _ = conn.CloseNow() }()
+	conn.SetReadLimit(1 << 20)
+	_, got, err := conn.Read(ctx)
+	if err != nil || !bytes.Equal(got, payload) {
+		t.Fatalf("len=%d err=%v", len(got), err)
 	}
 }
 

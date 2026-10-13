@@ -121,6 +121,25 @@ type ConversationMember struct {
 	LastReadPosition int64       `json:"last_read_position"`
 }
 
+type DesktopAction struct {
+	ID             pgtype.UUID        `json:"id"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	BotID          pgtype.UUID        `json:"bot_id"`
+	TurnID         pgtype.UUID        `json:"turn_id"`
+	SessionID      string             `json:"session_id"`
+	AgentSeq       int64              `json:"agent_seq"`
+	Kind           string             `json:"kind"`
+	Params         []byte             `json:"params"`
+	Result         string             `json:"result"`
+	ErrorCode      string             `json:"error_code"`
+	Screenshot     []byte             `json:"screenshot"`
+	ScreenshotMime string             `json:"screenshot_mime"`
+	CoordX         int32              `json:"coord_x"`
+	CoordY         int32              `json:"coord_y"`
+	HasCoord       bool               `json:"has_coord"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
 type EgressLog struct {
 	ID               pgtype.UUID        `json:"id"`
 	WorkspaceID      pgtype.UUID        `json:"workspace_id"`
@@ -241,12 +260,13 @@ type User struct {
 }
 
 type Workspace struct {
-	ID            pgtype.UUID        `json:"id"`
-	Name          string             `json:"name"`
-	Slug          string             `json:"slug"`
-	DefaultDriver string             `json:"default_driver"`
-	DefaultLocale string             `json:"default_locale"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	ID                      pgtype.UUID        `json:"id"`
+	Name                    string             `json:"name"`
+	Slug                    string             `json:"slug"`
+	DefaultDriver           string             `json:"default_driver"`
+	DefaultLocale           string             `json:"default_locale"`
+	CreatedAt               pgtype.Timestamptz `json:"created_at"`
+	ScreenshotRetentionDays int32              `json:"screenshot_retention_days"`
 }
 
 type WorkspaceMember struct {

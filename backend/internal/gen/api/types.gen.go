@@ -491,6 +491,31 @@ type CreatedInvitationResponse struct {
 	Token      string            `json:"token"`
 }
 
+// DesktopAction defines model for DesktopAction.
+type DesktopAction struct {
+	BotId          openapi_types.UUID      `json:"botId"`
+	CoordX         *int                    `json:"coordX,omitempty"`
+	CoordY         *int                    `json:"coordY,omitempty"`
+	CreatedAt      time.Time               `json:"createdAt"`
+	ErrorCode      string                  `json:"errorCode"`
+	HasCoord       bool                    `json:"hasCoord"`
+	HasScreenshot  bool                    `json:"hasScreenshot"`
+	Id             openapi_types.UUID      `json:"id"`
+	Kind           string                  `json:"kind"`
+	Params         *map[string]interface{} `json:"params,omitempty"`
+	Result         string                  `json:"result"`
+	ScreenshotMime *string                 `json:"screenshotMime,omitempty"`
+	Seq            *int64                  `json:"seq,omitempty"`
+	SessionId      *string                 `json:"sessionId,omitempty"`
+	TurnId         *openapi_types.UUID     `json:"turnId,omitempty"`
+}
+
+// DesktopActionListResponse defines model for DesktopActionListResponse.
+type DesktopActionListResponse struct {
+	Actions                 []DesktopAction `json:"actions"`
+	ScreenshotRetentionDays int             `json:"screenshotRetentionDays"`
+}
+
 // DriverType defines model for DriverType.
 type DriverType string
 
@@ -785,6 +810,11 @@ type UpdateSecretRequest struct {
 	Value           *string          `json:"value,omitempty"`
 }
 
+// UpdateWorkspaceRequest defines model for UpdateWorkspaceRequest.
+type UpdateWorkspaceRequest struct {
+	ScreenshotRetentionDays *int `json:"screenshotRetentionDays,omitempty"`
+}
+
 // User defines model for User.
 type User struct {
 	CreatedAt   time.Time           `json:"createdAt"`
@@ -826,13 +856,14 @@ type WorkspaceRole string
 
 // WorkspaceSummary defines model for WorkspaceSummary.
 type WorkspaceSummary struct {
-	CreatedAt     time.Time          `json:"createdAt"`
-	DefaultDriver DriverType         `json:"defaultDriver"`
-	DefaultLocale string             `json:"defaultLocale"`
-	Id            openapi_types.UUID `json:"id"`
-	Name          string             `json:"name"`
-	Role          WorkspaceRole      `json:"role"`
-	Slug          string             `json:"slug"`
+	CreatedAt               time.Time          `json:"createdAt"`
+	DefaultDriver           DriverType         `json:"defaultDriver"`
+	DefaultLocale           string             `json:"defaultLocale"`
+	Id                      openapi_types.UUID `json:"id"`
+	Name                    string             `json:"name"`
+	Role                    WorkspaceRole      `json:"role"`
+	ScreenshotRetentionDays *int               `json:"screenshotRetentionDays,omitempty"`
+	Slug                    string             `json:"slug"`
 }
 
 // WriteFileContentRequest defines model for WriteFileContentRequest.
@@ -905,6 +936,9 @@ type CompleteSetupJSONRequestBody = SetupCompleteRequest
 
 // CreateWorkspaceJSONRequestBody defines body for CreateWorkspace for application/json ContentType.
 type CreateWorkspaceJSONRequestBody = CreateWorkspaceRequest
+
+// UpdateWorkspaceJSONRequestBody defines body for UpdateWorkspace for application/json ContentType.
+type UpdateWorkspaceJSONRequestBody = UpdateWorkspaceRequest
 
 // CreateBotJSONRequestBody defines body for CreateBot for application/json ContentType.
 type CreateBotJSONRequestBody = CreateBotRequest

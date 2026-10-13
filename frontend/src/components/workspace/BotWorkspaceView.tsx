@@ -12,6 +12,7 @@ import {
   Square,
   Terminal as TerminalIcon,
   Monitor,
+  ListChecks,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
@@ -29,6 +30,7 @@ import {
   StatusChip,
   Textarea,
 } from '@/components/ui';
+import { ActionTimeline } from '@/components/workspace/ActionTimeline';
 import { VncViewport } from '@/components/workspace/VncViewport';
 import { RunnerControl } from '@/components/chat/RunnerControl';
 import { ChatPanel } from '@/components/chat/ChatPanel';
@@ -41,6 +43,7 @@ import {
   getBotEnvironment,
   listBotFiles,
   listBotSecrets,
+  listDesktopActions,
   readBotFile,
   releaseBotControl,
   restartBotEnvironment,
@@ -54,13 +57,14 @@ import { canManageBot, canTakeDesktopControl } from '@/lib/rbac';
 import type {
   AvatarMood,
   Bot,
+  DesktopAction,
   EnvironmentStateResponse,
   EnvironmentStatus,
   FileEntry,
   StreamTicketResponse,
 } from '@/types/api';
 
-type WorkspaceTab = 'desktop' | 'terminal' | 'files';
+type WorkspaceTab = 'desktop' | 'terminal' | 'files' | 'actions';
 
 interface TerminalEntry {
   id: string;
@@ -173,6 +177,8 @@ export function BotWorkspaceView() {
   const [editorContent, setEditorContent] = useState('');
   const [fileBusy, setFileBusy] = useState<'read' | 'write' | null>(null);
   const [fileSavedPath, setFileSavedPath] = useState<string | null>(null);
+  const [desktopActions, setDesktopActions] = useState<DesktopAction[]>([]);
+  const [retentionDays, setRetentionDays] = useState(7);
 
   useEffect(() => {
     if (!activeWorkspace || !botId) {
@@ -281,6 +287,41 @@ export function BotWorkspaceView() {
     }
   }, [activeTab, envStatus, filesPath, loadDirectory]);
 
+  useEffect(() => {
+    if (
+      !activeWorkspace ||
+      !bot ||
+      envStatus !== 'running' ||
+      (activeTab !== 'desktop' && activeTab !== 'actions')
+    ) {
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const listed = await listDesktopActions(activeWorkspace.id, bot.id);
+        if (!cancelled) {
+          setDesktopActions(listed.actions);
+          setRetentionDays(listed.screenshotRetentionDays || 7);
+        }
+      } catch (err) {
+        // Phase 2 fixtures answer unknown URLs with 404. A missing timeline
+        // must not surface as an action error on the desktop tab.
+        if (
+          !cancelled &&
+          !(err instanceof ApiClientError && err.status === 404)
+        ) {
+          setActionErrorKey(resolveErrorKey(err));
+        } else if (!cancelled) {
+          setDesktopActions([]);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWorkspace, bot, envStatus, activeTab, controlHolderId]);
+
   if (!activeWorkspace) {
     return null;
   }
@@ -317,6 +358,10 @@ export function BotWorkspaceView() {
     controlHolder && user && controlHolder.userId === user.id,
   );
   const lockedByOther = Boolean(controlHolder && !userHoldsControl);
+  const cursorPoint = desktopActions.find(
+    (action) =>
+      action.hasCoord && action.coordX != null && action.coordY != null,
+  );
   const canToggleControl =
     canControl && envStatus === 'running' && !lockedByOther && !controlBusy;
 
@@ -745,6 +790,19 @@ export function BotWorkspaceView() {
                   <Folder className="h-4 w-4" aria-hidden="true" />
                   <span>{t('computer.tabs.files')}</span>
                 </button>
+                <button
+                  type="button"
+                  aria-pressed={activeTab === 'actions'}
+                  onClick={() => setActiveTab('actions')}
+                  className={`inline-flex min-h-[44px] items-center gap-2 rounded-sm px-3.5 text-[14px] font-bold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${
+                    activeTab === 'actions'
+                      ? 'bg-dark text-paper'
+                      : 'bg-paper text-ink hover:bg-mint-soft'
+                  }`}
+                >
+                  <ListChecks className="h-4 w-4" aria-hidden="true" />
+                  <span>{t('computer.tabs.actions')}</span>
+                </button>
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
@@ -856,6 +914,20 @@ export function BotWorkspaceView() {
                 canTakeControl={canToggleControl}
                 controlBusy={controlBusy}
                 onConnectionChange={setVncConnected}
+                showCursor={
+                  !userHoldsControl &&
+                  cursorPoint?.coordX != null &&
+                  cursorPoint.coordY != null
+                }
+                cursor={
+                  cursorPoint?.coordX != null && cursorPoint.coordY != null
+                    ? {
+                        x: cursorPoint.coordX,
+                        y: cursorPoint.coordY,
+                        label: bot.name,
+                      }
+                    : null
+                }
               />
             ) : activeTab === 'terminal' ? (
               <div className="flex flex-col">
@@ -939,6 +1011,13 @@ export function BotWorkspaceView() {
                   </div>
                 </form>
               </div>
+            ) : activeTab === 'actions' ? (
+              <ActionTimeline
+                workspaceId={workspaceId}
+                botId={bot.id}
+                actions={desktopActions}
+                retentionDays={retentionDays}
+              />
             ) : (
               <div className="flex flex-col gap-4 p-4">
                 {!canManage ? (

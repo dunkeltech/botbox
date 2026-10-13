@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
+
 	"github.com/dunkeltech/botbox/backend/internal/compute"
 	agentv1 "github.com/dunkeltech/botbox/backend/internal/gen/proto/agent/v1"
 )
@@ -115,6 +117,104 @@ func TestDockerStreamDemux(t *testing.T) {
 			t.Fatalf("err = %v", err)
 		}
 	})
+}
+
+// TestDockerStreamCarriesWebSocket is the desktop path: websockify bytes
+// arrive as Docker exec frames, and the handshake must still complete.
+func TestDockerStreamCarriesWebSocket(t *testing.T) {
+	t.Parallel()
+	banner := []byte("RFB 003.008\n")
+	got := make(chan []byte, 1)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{Subprotocols: []string{"binary"}})
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.CloseNow() }()
+		if err := conn.Write(r.Context(), websocket.MessageBinary, banner); err != nil {
+			return
+		}
+		_, data, err := conn.Read(r.Context())
+		if err != nil {
+			return
+		}
+		got <- append([]byte(nil), data...)
+	}))
+	t.Cleanup(upstream.Close)
+
+	raw, err := net.Dial("tcp", upstream.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = raw.Close() })
+
+	used := false
+	client := &http.Client{Transport: &http.Transport{
+		DialContext: func(context.Context, string, string) (net.Conn, error) {
+			if used {
+				return nil, io.ErrClosedPipe
+			}
+			used = true
+			return &dockerStream{c: &framingConn{Conn: raw}}, nil
+		},
+		DisableKeepAlives: true,
+	}}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn, resp, err := websocket.Dial(ctx, "ws://127.0.0.1:6080/", &websocket.DialOptions{
+		Subprotocols: []string{"binary"},
+		HTTPClient:   client,
+	})
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	if err != nil {
+		t.Fatalf("dial through docker stream: %v", err)
+	}
+	defer func() { _ = conn.CloseNow() }()
+	_, data, err := conn.Read(ctx)
+	if err != nil || string(data) != string(banner) {
+		t.Fatalf("banner %q err=%v", data, err)
+	}
+	if err := conn.Write(ctx, websocket.MessageBinary, []byte("ping")); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case msg := <-got:
+		if string(msg) != "ping" {
+			t.Fatalf("upstream got %q", msg)
+		}
+	case <-ctx.Done():
+		t.Fatal("upstream read timed out")
+	}
+}
+
+// framingConn presents each TCP read as one Docker stdout frame.
+type framingConn struct {
+	net.Conn
+	mu      sync.Mutex
+	pending []byte
+}
+
+func (f *framingConn) Read(p []byte) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.pending) == 0 {
+		buf := make([]byte, 4096)
+		n, err := f.Conn.Read(buf)
+		if n > 0 {
+			f.pending = muxFrame(1, buf[:n])
+		}
+		if len(f.pending) == 0 {
+			if err == nil {
+				err = io.EOF
+			}
+			return 0, err
+		}
+	}
+	n := copy(p, f.pending)
+	f.pending = f.pending[n:]
+	return n, nil
 }
 
 func TestDialAgentExecRejectsBadID(t *testing.T) {
@@ -267,6 +367,34 @@ func TestDialAgentExecTunnelsAndRejectsDockerErrors(t *testing.T) {
 			t.Fatalf("err = %v", err)
 		}
 	})
+}
+
+func TestDialVNCTargetsWebsockify(t *testing.T) {
+	t.Parallel()
+	var body []byte
+	drv := newExecDriver(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/exec") && !strings.HasSuffix(r.URL.Path, "/start") {
+			raw, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Errorf("read exec body: %v", err)
+			}
+			body = raw
+			_, _ = w.Write([]byte(`{"Id":"exec-vnc"}`))
+			return
+		}
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"message":"stop"}`))
+	})
+	_, err := drv.DialVNC(context.Background(), compute.EnvID("cid"))
+	if err == nil || !strings.Contains(err.Error(), "stop") {
+		t.Fatalf("err = %v", err)
+	}
+	if !strings.Contains(string(body), "6080") || strings.Contains(string(body), "9090") || strings.Contains(string(body), "os.environ") {
+		t.Fatalf("script = %s", body)
+	}
+	if _, err = drv.DialVNC(context.Background(), compute.EnvID(`../cid`)); err == nil {
+		t.Fatal("path-like sandbox id was accepted")
+	}
 }
 
 func TestDialAgentGRPCChoosesLoopbackOrTunnel(t *testing.T) {
