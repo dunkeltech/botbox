@@ -163,3 +163,64 @@ func TestStreamParsersNegativeCases(t *testing.T) {
 		}
 	})
 }
+
+func TestParseClaudeStreamAcceptsBlockContent(t *testing.T) {
+	t.Parallel()
+
+	const image = "BASE64IMAGE"
+	stream := strings.Join([]string{
+		`{"type":"system","subtype":"init","session_id":"sess-1"}`,
+		`{"type":"user","message":{"role":"user","content":"echoed prompt"}}`,
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_shot","name":"screenshot","input":{}}]}}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_shot","is_error":false,"content":[{"type":"image","data":"` + image + `","mimeType":"image/png"},{"type":"text","text":"desktop"},{"type":"text","text":"ready"}]}]}}`,
+		`{"type":"assistant","message":{"content":[{"type":"text","text":"","content":[{"type":"text","text":"done"}]}]}}`,
+		`{"type":"result","is_error":false,"usage":{"input_tokens":3,"output_tokens":4,"cache_read_input_tokens":5}}`,
+		"",
+	}, "\n")
+
+	events, err := engine.ParseClaudeStream(context.Background(), strings.NewReader(stream))
+	if err != nil {
+		t.Fatalf("ParseClaudeStream: %v", err)
+	}
+	var toolResult *engine.Event
+	var message string
+	for i := range events {
+		ev := &events[i]
+		if strings.Contains(ev.Text, image) || strings.Contains(string(ev.ToolInput), image) || strings.Contains(ev.ErrorMessage, image) {
+			t.Fatalf("image payload leaked into event %+v", ev)
+		}
+		if ev.Kind == engine.EventKindToolResult {
+			toolResult = ev
+		}
+		if ev.Kind == engine.EventKindMessage {
+			message = ev.Text
+		}
+	}
+	if toolResult == nil {
+		t.Fatal("missing tool result")
+	}
+	if toolResult.ToolID != "toolu_shot" || toolResult.Text != "desktop\nready" || toolResult.IsError {
+		t.Fatalf("tool result = %+v", toolResult)
+	}
+	if message != "done" {
+		t.Fatalf("message = %q", message)
+	}
+}
+
+func TestParseClaudeStreamRejectsNonBlockContent(t *testing.T) {
+	t.Parallel()
+
+	cases := []string{
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t","content":1}]}}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t","content":{"raw":true}}]}}`,
+		`{"type":"user","message":{"content":1}}`,
+	}
+	for _, line := range cases {
+		t.Run(line, func(t *testing.T) {
+			t.Parallel()
+			if _, err := engine.ParseClaudeStream(context.Background(), strings.NewReader(line+"\n")); err == nil {
+				t.Fatal("expected error")
+			}
+		})
+	}
+}

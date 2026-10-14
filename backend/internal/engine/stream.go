@@ -2,6 +2,7 @@ package engine
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -50,6 +51,90 @@ type Event struct {
 	ErrorMessage string
 }
 
+// claudeContentBlock is one entry of a Claude stream message.
+// Content is a string for plain tool output and an array of text and image
+// blocks for MCP results. A desktop screenshot uses the array form. Decoding
+// it as a string aborts the turn, which the chat shows as a provider failure.
+type claudeContentBlock struct {
+	Type      string          `json:"type"`
+	Text      string          `json:"text"`
+	ID        string          `json:"id"`
+	Name      string          `json:"name"`
+	Input     json.RawMessage `json:"input"`
+	ToolUseID string          `json:"tool_use_id"`
+	Content   json.RawMessage `json:"content"`
+	IsError   bool            `json:"is_error"`
+}
+
+// claudeContentBlocks accepts the two shapes Claude Code writes for message
+// content: a prompt string, or a list of blocks. A string is the echoed user
+// prompt and produces no blocks.
+func claudeContentBlocks(raw json.RawMessage) ([]claudeContentBlock, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return nil, nil
+	}
+	switch trimmed[0] {
+	case '"':
+		return nil, nil
+	case '[':
+		var rawBlocks []json.RawMessage
+		if err := json.Unmarshal(trimmed, &rawBlocks); err != nil {
+			return nil, err
+		}
+		blocks := make([]claudeContentBlock, 0, len(rawBlocks))
+		for _, rawBlock := range rawBlocks {
+			item := bytes.TrimSpace(rawBlock)
+			if len(item) == 0 || item[0] != '{' {
+				return nil, errors.New("claude content block is not an object")
+			}
+			var block claudeContentBlock
+			if err := json.Unmarshal(item, &block); err != nil {
+				return nil, err
+			}
+			blocks = append(blocks, block)
+		}
+		return blocks, nil
+	default:
+		return nil, errors.New("claude message content is not a string or block list")
+	}
+}
+
+// claudeBlockText reads tool_result content without copying image bytes.
+// Plain tools send a string. MCP tools send text and image blocks.
+func claudeBlockText(raw json.RawMessage) (string, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return "", nil
+	}
+	switch trimmed[0] {
+	case '"':
+		var text string
+		if err := json.Unmarshal(trimmed, &text); err != nil {
+			return "", err
+		}
+		return text, nil
+	case '[':
+		blocks, err := claudeContentBlocks(trimmed)
+		if err != nil {
+			return "", err
+		}
+		var text strings.Builder
+		for _, block := range blocks {
+			if block.Type != "text" || block.Text == "" {
+				continue
+			}
+			if text.Len() > 0 {
+				text.WriteByte('\n')
+			}
+			text.WriteString(block.Text)
+		}
+		return text.String(), nil
+	default:
+		return "", errors.New("claude tool result content is not a string or block list")
+	}
+}
+
 // ParseClaudeStream decodes NDJSON output from `claude -p --output-format stream-json`.
 func ParseClaudeStream(ctx context.Context, r io.Reader) ([]Event, error) {
 	return scanNDJSON(ctx, "claude", r, func(line []byte) ([]Event, error) {
@@ -65,16 +150,7 @@ func ParseClaudeStream(ctx context.Context, r io.Reader) ([]Event, error) {
 				} `json:"delta"`
 			} `json:"event"`
 			Message struct {
-				Content []struct {
-					Type      string          `json:"type"`
-					Text      string          `json:"text"`
-					ID        string          `json:"id"`
-					Name      string          `json:"name"`
-					Input     json.RawMessage `json:"input"`
-					ToolUseID string          `json:"tool_use_id"`
-					Content   string          `json:"content"`
-					IsError   bool            `json:"is_error"`
-				} `json:"content"`
+				Content json.RawMessage `json:"content"`
 			} `json:"message"`
 			Usage *struct {
 				InputTokens  int64 `json:"input_tokens"`
@@ -95,10 +171,21 @@ func ParseClaudeStream(ctx context.Context, r io.Reader) ([]Event, error) {
 				out = append(out, Event{Kind: EventKindTextDelta, Text: env.StreamEvent.Delta.Text})
 			}
 		case "assistant":
+			blocks, err := claudeContentBlocks(env.Message.Content)
+			if err != nil {
+				return nil, err
+			}
 			var text strings.Builder
-			for _, item := range env.Message.Content {
+			for _, item := range blocks {
 				if item.Type == "text" {
-					text.WriteString(item.Text)
+					piece := item.Text
+					if piece == "" {
+						piece, err = claudeBlockText(item.Content)
+						if err != nil {
+							return nil, err
+						}
+					}
+					text.WriteString(piece)
 				}
 				if item.Type == "tool_use" {
 					out = append(out, Event{
@@ -114,15 +201,24 @@ func ParseClaudeStream(ctx context.Context, r io.Reader) ([]Event, error) {
 				out = append(out, Event{Kind: EventKindMessage, Text: text.String()})
 			}
 		case "user":
-			for _, item := range env.Message.Content {
-				if item.Type == "tool_result" {
-					out = append(out, Event{
-						Kind:    EventKindToolResult,
-						ToolID:  item.ToolUseID,
-						Text:    item.Content,
-						IsError: item.IsError,
-					})
+			blocks, err := claudeContentBlocks(env.Message.Content)
+			if err != nil {
+				return nil, err
+			}
+			for _, item := range blocks {
+				if item.Type != "tool_result" {
+					continue
 				}
+				text, err := claudeBlockText(item.Content)
+				if err != nil {
+					return nil, err
+				}
+				out = append(out, Event{
+					Kind:    EventKindToolResult,
+					ToolID:  item.ToolUseID,
+					Text:    text,
+					IsError: item.IsError,
+				})
 			}
 		case "result":
 			if env.Usage != nil {
