@@ -5,8 +5,12 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { Alert, BotAvatar, Button, Input } from '@/components/ui';
-import { getAccessToken, requestJson } from '@/lib/api-client';
+import { getAccessToken, requestBlob, requestJson } from '@/lib/api-client';
 import type { components } from '@/types/openapi.gen';
+import {
+  describeToolMessage,
+  type ToolCopy,
+} from '@/components/chat/toolMessage';
 
 type Conversation = components['schemas']['ChatConversation'];
 type History = components['schemas']['ChatHistory'];
@@ -24,6 +28,63 @@ const turnFailureKeys: Record<string, string> = {
   'engine.provider_failed': 'providerFailed',
   budget_exceeded: 'budgetExceeded',
 };
+
+function ToolImage({ path, alt }: { path: string; alt: string }) {
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    let url: string | null = null;
+    let cancelled = false;
+    requestBlob(path)
+      .then((blob) => {
+        if (cancelled || !blob.type.startsWith('image/')) return;
+        const next = URL.createObjectURL(blob);
+        // The effect may have cleaned up while the blob was in flight.
+        if (cancelled) {
+          URL.revokeObjectURL(next);
+          return;
+        }
+        url = next;
+        setSrc(next);
+      })
+      .catch(() => {
+        // The sentence stays. A missing file does not replace it with an error.
+      });
+    return () => {
+      cancelled = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [path]);
+  if (!src) return null;
+  return (
+    // The blob URL is minted in this session from an authenticated fetch.
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt={alt}
+      className="max-h-80 w-full rounded-sm border border-line object-contain"
+    />
+  );
+}
+
+function ToolLine({
+  copy,
+  imagePath,
+  alt,
+}: {
+  copy: ToolCopy;
+  imagePath: string;
+  alt: string;
+}) {
+  const t = useTranslations('chat');
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="break-words text-[14px]">
+        {copy.values ? t(copy.key, copy.values) : t(copy.key)}
+      </p>
+      {copy.image ? <ToolImage path={imagePath} alt={alt} /> : null}
+    </div>
+  );
+}
 
 /** Displays the caller's private DM; the bot computer remains a shared workspace resource. */
 export function ChatPanel({
@@ -194,19 +255,30 @@ export function ChatPanel({
             (message, index, all) =>
               all.findIndex((m) => m.id === message.id) === index,
           )
-          .map((message) => (
-            <article
-              key={message.id}
-              className={`rounded-md border border-line p-3 ${message.senderType === 'user' ? 'bg-paper-2' : 'bg-paper'}`}
-            >
-              <p className="text-[12px] font-bold text-muted">
-                {message.senderType === 'user' ? t('you') : name}
-              </p>
-              <p className="whitespace-pre-wrap break-words text-[14px]">
-                {message.content || t('toolCall')}
-              </p>
-            </article>
-          ))}
+          .map((message) => {
+            const tool = describeToolMessage(message.kind, message.content);
+            return (
+              <article
+                key={message.id}
+                className={`border border-line p-3 ${tool ? 'rounded-sm bg-paper-2' : `rounded-md ${message.senderType === 'user' ? 'bg-paper-2' : 'bg-paper'}`}`}
+              >
+                <p className="text-[12px] font-bold text-muted">
+                  {message.senderType === 'user' ? t('you') : name}
+                </p>
+                {tool && conversationId ? (
+                  <ToolLine
+                    copy={tool}
+                    imagePath={`${base}/conversations/${conversationId}/messages/${message.id}/tool-image`}
+                    alt={t('toolImageAlt')}
+                  />
+                ) : (
+                  <p className="whitespace-pre-wrap break-words text-[14px]">
+                    {message.content || t('toolCall')}
+                  </p>
+                )}
+              </article>
+            );
+          })}
         {live ? (
           <p className="whitespace-pre-wrap text-[14px]" aria-live="polite">
             {live}

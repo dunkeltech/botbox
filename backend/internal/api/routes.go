@@ -190,6 +190,7 @@ func (s *server) mountRoutes(r chi.Router) {
 			r.Post("/bots/{botID}/dm", s.handleOpenDM)
 			r.Get("/conversations/{conversationID}/messages", s.handleChatHistory)
 			r.Post("/conversations/{conversationID}/messages", s.handleSendChat)
+			r.Get("/conversations/{conversationID}/messages/{messageID}/tool-image", s.handleChatToolImage)
 			r.Get("/bots", s.handleListBots)
 			r.Post("/bots", s.handleCreateBot)
 			r.Get("/bots/{botID}/runtime", s.handleBotRuntime)

@@ -115,6 +115,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/workspaces/{workspaceID}/conversations/{conversationID}/messages/{messageID}/tool-image': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+        conversationID: string;
+        messageID: string;
+      };
+      cookie?: never;
+    };
+    get: operations['getChatToolImage'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/healthz': {
     parameters: {
       query?: never;
@@ -1611,6 +1631,68 @@ export interface operations {
       };
       /** @description Queue unavailable */
       503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  getChatToolImage: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+        conversationID: string;
+        messageID: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Screenshot referenced by a tool message in this private conversation */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'image/png': string;
+          'image/jpeg': string;
+          'image/webp': string;
+          'image/gif': string;
+        };
+      };
+      /** @description Invalid message identifier */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Conversation */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Sandbox is not running */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Sandbox could not be read */
+      502: {
         headers: {
           [name: string]: unknown;
         };

@@ -174,7 +174,7 @@ The fleet shows known spend today. Budget meters follow the Stitch project `1359
 - **Status chip:** a pill with an 8 px dot and the label at 13 px weight 700 (see section 3).
 - **BOT badge:** 11 px, weight 900, tracking `.06em`, `mint-soft` background, `green-600` text, radius 5.
 - **Terminal block:** `terminal` background, `on-dark` text, mono 13 px, radius 9. Prompt user `green-light`, path `hex-1`, failures `amber-on-dark`, cursor block `mint`.
-- **Tool-call block** (in chat): a `paper-2` box with a 1 px `line` border and radius 9. The first row shows a mono command with a terminal icon. The second row shows the result: green text on `mint-soft` for success or for "Token added by the egress proxy", amber on `amber-tint` for failures.
+- **Tool-call block** (in chat): a `paper-2` box with a 1 px `line` border and radius 9. The line is a short action sentence ("Opening https://dunkel.tech", "Opened the page", "Browser screenshot"). Raw tool names, JSON arguments and sandbox paths stay out of the bubble. When the result names a screenshot, the image is shown under the sentence.
 - **System message** (team chat): a `mint-soft` banner with a `mint-line` border, radius 9, 13 px `dark` text and a bot-to-bot (two arrows) icon.
 - **Attachment card** (merge request, file, approval): a white card with `shadow`, an icon tile in `mint-soft`, the title in 900, mono meta and a status chip.
 - **Budget meter:** 6–8 px bar on a `line` track with tick markers at 80 % (warn) and 100 % (stop). Switches from `green` to `amber` at 80 % and pairs with a dashed `amber-line` / `amber-tint` kill-switch notice at 100 %.

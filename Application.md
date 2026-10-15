@@ -208,6 +208,11 @@ CLI turns use the authenticated streaming agent RPC and persist vendor resume ID
 per bot/conversation. agy stderr soft-denial notices are persisted as system
 messages so they remain visible after reconnecting. Complete CLI messages and
 text deltas both update the live chat, without duplicating the final response.
+Tool rows stay in the conversation as the CLI wrote them. The chat shows a short
+action sentence instead of the tool name and JSON. A screenshot Claude saved under
+that bot's `tool-results` directory is loaded only for the conversation owner,
+and only when the path is one image file in that directory. The browser asks for
+it by message id. The sandbox path is not an image URL.
 Claude and Codex skip their additional CLI permission checks only inside the
 isolated sandbox; processes are terminated as a group on cancellation.
 The sandbox installs a provided public proxy CA into its user-owned combined

@@ -11,11 +11,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatPanel } from '@/components/chat/ChatPanel';
 import { BudgetPanel } from '@/components/chat/BudgetPanel';
 import { QueryProvider } from '@/components/providers/QueryProvider';
-import { getAccessToken, requestJson } from '@/lib/api-client';
+import { getAccessToken, requestBlob, requestJson } from '@/lib/api-client';
 import messages from '../../messages/en.json';
 
 vi.mock('@/lib/api-client', () => ({
   requestJson: vi.fn(),
+  requestBlob: vi.fn(),
   getAccessToken: vi.fn(() => null),
 }));
 const request = vi.mocked(requestJson);
@@ -183,6 +184,100 @@ describe('Phase 4 chat and budgets', () => {
           body: { botId: 'bot-1', period: 'day', limitMicros: 2000000 },
         }),
       ),
+    );
+  });
+});
+
+describe('tool lines in chat', () => {
+  it('shows an action sentence and the screenshot, not the sandbox path', async () => {
+    const path =
+      '/home/bot/.claude/projects/-home-bot/fe505481-b639-48b3-95ab-6e1db702084f/tool-results/mcp-botbox-desktop-blob-1.png';
+    request.mockImplementation((apiPath: string) => {
+      if (apiPath.endsWith('/dm'))
+        return Promise.resolve({ id: 'conversation-1', botId: 'bot-1' });
+      if (apiPath.includes('/messages'))
+        return Promise.resolve({
+          messages: [
+            {
+              id: 'call-1',
+              position: 1,
+              senderType: 'bot',
+              kind: 'tool',
+              content:
+                'mcp__botbox-desktop__browser_navigate\n{"url":"https://dunkel.tech"}',
+              createdAt: '2026-11-16T11:00:00Z',
+            },
+            {
+              id: 'result-1',
+              position: 2,
+              senderType: 'bot',
+              kind: 'tool',
+              content: 'navigated',
+              createdAt: '2026-11-16T11:00:01Z',
+            },
+            {
+              id: 'shot-1',
+              position: 3,
+              senderType: 'bot',
+              kind: 'tool',
+              content: `[Image: source: ${path}]\nbrowser screenshot`,
+              createdAt: '2026-11-16T11:00:02Z',
+            },
+            {
+              id: 'empty-1',
+              position: 4,
+              senderType: 'bot',
+              kind: 'tool',
+              content: '',
+              createdAt: '2026-11-16T11:00:03Z',
+            },
+          ],
+          turns: [],
+        });
+      return Promise.resolve({ budgets: [], spendTodayMicros: 0 });
+    });
+    vi.mocked(requestBlob).mockResolvedValue(
+      new Blob([Uint8Array.from([137, 80, 78, 71])], { type: 'image/png' }),
+    );
+    // jsdom has no createObjectURL. Replacing URL entirely would also drop the
+    // constructor, and page addresses would fall back to the generic sentence.
+    const urls: string[] = [];
+    const RealURL = URL;
+    function TestURL(input: string | URL, base?: string | URL) {
+      return new RealURL(input, base);
+    }
+    TestURL.prototype = RealURL.prototype;
+    TestURL.createObjectURL = (blob: Blob) => {
+      urls.push(blob.type);
+      return 'blob:shot';
+    };
+    TestURL.revokeObjectURL = () => undefined;
+    vi.stubGlobal('URL', TestURL);
+    show(
+      <ChatPanel
+        workspaceId="ws-1"
+        userId="user-1"
+        botId="bot-1"
+        name="Atlas"
+        avatarSeed="atlas-seed"
+      />,
+    );
+    expect(
+      await screen.findByText('Opening https://dunkel.tech/'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Opened the page')).toBeInTheDocument();
+    expect(screen.getByText('Browser screenshot')).toBeInTheDocument();
+    expect(screen.getByText('Finished')).toBeInTheDocument();
+    expect(screen.queryByText(/mcp__botbox/)).toBeNull();
+    expect(screen.queryByText(/tool-results/)).toBeNull();
+    expect(screen.queryByText('Tool call')).toBeNull();
+    const image = await screen.findByRole('img', {
+      name: 'Screenshot from the bot computer',
+    });
+    expect(image).toHaveAttribute('src', 'blob:shot');
+    expect(urls).toEqual(['image/png']);
+    expect(requestBlob).toHaveBeenCalledWith(
+      '/api/workspaces/ws-1/conversations/conversation-1/messages/shot-1/tool-image',
     );
   });
 });
