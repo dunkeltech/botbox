@@ -325,25 +325,33 @@ Every bot gets a unique, animated robot avatar, generated deterministically from
 
 ### 4.8 Team chat & bot-to-bot orchestration
 
-- **Conversations:** direct messages (one user and one bot, private) and groups (several humans and bots).
-- **Group settings:** goal, lead bot, bot-to-bot on or off, turn limit, answer policy (`mentioned_else_lead`, `lead_first`, `round_robin`), "ask me before" rules, budget.
-- **Orchestrator:**
-  - **Router:** decides which bots answer a message.
-  - **Context builder:** each bot turn gets the goal, the roster with roles, the rules, the recent messages and a rolling summary.
-  - **Handoffs:** mentions in a bot reply schedule the next bot's turn, if bot-to-bot is on.
+Direct messages stay private to one human and one bot. Groups are a second
+conversation type on the same tables. A group has no single owner column.
+Membership is the only read path, including for workspace admins. See
+[ADR-0015](docs/adr/0015-group-chat-orchestration.md).
+
+- **Group settings:** name, goal, lead bot, bot-to-bot on or off, turn limit
+  (default 20), answer policy (`mentioned_else_lead`, `lead_first`,
+  `round_robin`), "ask me before" rules, and an optional lifetime budget in
+  microdollars.
+- **Orchestrator** (`internal/orchestrator`), used for groups only:
+  - **Router:** mentioned bots, otherwise the lead; lead first plus mentions; or round robin.
+  - **Context builder:** goal, roster with roles, rules, the last 50 messages, and an extractive summary of older text. The summary does not call a model. The prompt tells the bot to mention the colleague it hands work to. Secrets are not included.
+  - **Handoffs:** mentions in a bot reply schedule the next bot through the per-bot queue, only when bot-to-bot is on.
 - **Limits:**
-  - The turn counter resets on every human message, and the group pauses at the limit.
-  - Loop and ping-pong detection pauses the group early.
-  - Per-conversation budgets apply.
+  - The turn counter resets on every human message and increments when a group bot turn is claimed. At the limit the group pauses and posts `Turn <limit> of <limit> · paused, waiting for you`.
+  - Ping-pong A, B, A, B pauses the group before the limit. A bot is not scheduled to answer itself.
+  - A conversation cap is checked on top of the bot and workspace budgets. Unknown cost is not zero. At 100% the group pauses.
   - One turn per bot across all conversations (the work queue from §4.2).
 - **Approvals:**
-  - Kinds: new outbound host, budget raise, protected push, custom.
-  - Who decides: human group members or workspace admins.
-  - Enforced in infrastructure where possible (proxy, budgets, token rights), not only by prompting.
+  - Kinds: `new_host`, `raise_budget`, `push_protected`, `custom`.
+  - Who decides: a non-viewer human member of the group, or a workspace owner or admin. Viewers can read.
+  - A human chat message clears every pause. Approving an ask-before card clears only an approval pause and does not reset the turn counter.
+  - `new_host` is enforced by the egress allowlist. `raise_budget` for a bot or workspace stays on the Phase 4 budget row. A group cap is an approval with `conversation_id` and no `budget_id`. `push_protected` records a card and does not push.
 - **UI:**
-  - Slack-style sidebar listing approvals, activity, group chats and colleagues: bots with live avatar and current activity, humans with presence.
-  - Unread counts and mention notifications.
-  - A details pane per conversation.
+  - Slack-style sidebar listing approvals, activity, group chats and colleagues. Bots use the existing avatar and status. Humans are listed without a live presence dot.
+  - Unread counts come from `last_read_position`. Mentions, approvals, and budget warnings create notification rows.
+  - A details pane per group: goal, members, how bots talk, and links to their computers.
 
 ### 4.9 Usage & budgets
 
@@ -565,7 +573,8 @@ CREATE TABLE audit_log (
     metadata JSONB NOT NULL DEFAULT '{}',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
--- model_prices is implemented (migration 00005). notifications are still planned.
+-- model_prices is implemented (migration 00005).
+-- Group columns, approval kinds, and notifications are specified in ADR-0015 and added by the Phase 6 migration.
 -- desktop_actions is implemented (migration 00009): one row per agent action, screenshot bytes expire after workspaces.screenshot_retention_days (1..30, default 7) while the row stays.
 ```
 
@@ -583,7 +592,7 @@ Each phase is a GitHub issue with a detailed task list, designs and acceptance c
 | 3 · Egress proxy & secrets | [#5](https://github.com/dunkeltech/botbox/issues/5) | Proxy with allowlist and secret injection, encrypted write-only secrets, egress log |
 | 4 · Bot engine, commands & DMs | [#6](https://github.com/dunkeltech/botbox/issues/6) | `claude`, `codex`, `agy` adapters, API mode, direct messages, usage and budgets |
 | 5 · Computer use | [#7](https://github.com/dunkeltech/botbox/issues/7) | Desktop tools via gRPC and MCP, provider adapters, takeover, action timeline |
-| 6 · Team chat & bot-to-bot | [#8](https://github.com/dunkeltech/botbox/issues/8) | Group chats with humans and bots, orchestrator, approvals, notifications |
+| 6 · Team chat & bot-to-bot | [#8](https://github.com/dunkeltech/botbox/issues/8) | Group chats with humans and bots, orchestrator, approvals, notifications. Decisions in [ADR-0015](docs/adr/0015-group-chat-orchestration.md) |
 | 7 · Kubernetes driver | [#9](https://github.com/dunkeltech/botbox/issues/9) | Kubernetes driver with isolation and quotas, Helm chart |
 | 8 · Hardening & release | [#10](https://github.com/dunkeltech/botbox/issues/10) | Security review, observability, backups, e2e/a11y/i18n checks, docs, release |
 
