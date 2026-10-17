@@ -196,7 +196,7 @@ func (q *Queries) GetBotTurn(ctx context.Context, arg GetBotTurnParams) (BotTurn
 }
 
 const getPrivateConversation = `-- name: GetPrivateConversation :one
-SELECT id, workspace_id, type, user_id, bot_id, created_at FROM conversations WHERE workspace_id=$1 AND id=$2 AND user_id=$3
+SELECT id, workspace_id, type, user_id, bot_id, created_at, name, goal, lead_bot_id, bot_talk, turn_limit, answer_policy, ask_before, budget_limit_micros, turns_since_human, paused, pause_reason, summary, rr_index FROM conversations WHERE workspace_id=$1 AND id=$2 AND user_id=$3
 `
 
 type GetPrivateConversationParams struct {
@@ -215,6 +215,19 @@ func (q *Queries) GetPrivateConversation(ctx context.Context, arg GetPrivateConv
 		&i.UserID,
 		&i.BotID,
 		&i.CreatedAt,
+		&i.Name,
+		&i.Goal,
+		&i.LeadBotID,
+		&i.BotTalk,
+		&i.TurnLimit,
+		&i.AnswerPolicy,
+		&i.AskBefore,
+		&i.BudgetLimitMicros,
+		&i.TurnsSinceHuman,
+		&i.Paused,
+		&i.PauseReason,
+		&i.Summary,
+		&i.RrIndex,
 	)
 	return i, err
 }
@@ -353,7 +366,7 @@ func (q *Queries) ListConversationTurns(ctx context.Context, arg ListConversatio
 }
 
 const listDirectMessages = `-- name: ListDirectMessages :many
-SELECT c.id, c.workspace_id, c.type, c.user_id, c.bot_id, c.created_at,b.name AS bot_name FROM conversations c JOIN bots b ON b.workspace_id=c.workspace_id AND b.id=c.bot_id
+SELECT c.id, c.workspace_id, c.type, c.user_id, c.bot_id, c.created_at, c.name, c.goal, c.lead_bot_id, c.bot_talk, c.turn_limit, c.answer_policy, c.ask_before, c.budget_limit_micros, c.turns_since_human, c.paused, c.pause_reason, c.summary, c.rr_index,b.name AS bot_name FROM conversations c JOIN bots b ON b.workspace_id=c.workspace_id AND b.id=c.bot_id
 WHERE c.workspace_id=$1 AND c.user_id=$2 ORDER BY c.created_at DESC
 `
 
@@ -363,13 +376,26 @@ type ListDirectMessagesParams struct {
 }
 
 type ListDirectMessagesRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	WorkspaceID pgtype.UUID        `json:"workspace_id"`
-	Type        string             `json:"type"`
-	UserID      pgtype.UUID        `json:"user_id"`
-	BotID       pgtype.UUID        `json:"bot_id"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	BotName     string             `json:"bot_name"`
+	ID                pgtype.UUID        `json:"id"`
+	WorkspaceID       pgtype.UUID        `json:"workspace_id"`
+	Type              string             `json:"type"`
+	UserID            pgtype.UUID        `json:"user_id"`
+	BotID             pgtype.UUID        `json:"bot_id"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	Name              pgtype.Text        `json:"name"`
+	Goal              string             `json:"goal"`
+	LeadBotID         pgtype.UUID        `json:"lead_bot_id"`
+	BotTalk           bool               `json:"bot_talk"`
+	TurnLimit         int32              `json:"turn_limit"`
+	AnswerPolicy      string             `json:"answer_policy"`
+	AskBefore         []byte             `json:"ask_before"`
+	BudgetLimitMicros pgtype.Int8        `json:"budget_limit_micros"`
+	TurnsSinceHuman   int32              `json:"turns_since_human"`
+	Paused            bool               `json:"paused"`
+	PauseReason       string             `json:"pause_reason"`
+	Summary           string             `json:"summary"`
+	RrIndex           int32              `json:"rr_index"`
+	BotName           string             `json:"bot_name"`
 }
 
 func (q *Queries) ListDirectMessages(ctx context.Context, arg ListDirectMessagesParams) ([]ListDirectMessagesRow, error) {
@@ -388,6 +414,19 @@ func (q *Queries) ListDirectMessages(ctx context.Context, arg ListDirectMessages
 			&i.UserID,
 			&i.BotID,
 			&i.CreatedAt,
+			&i.Name,
+			&i.Goal,
+			&i.LeadBotID,
+			&i.BotTalk,
+			&i.TurnLimit,
+			&i.AnswerPolicy,
+			&i.AskBefore,
+			&i.BudgetLimitMicros,
+			&i.TurnsSinceHuman,
+			&i.Paused,
+			&i.PauseReason,
+			&i.Summary,
+			&i.RrIndex,
 			&i.BotName,
 		); err != nil {
 			return nil, err
@@ -541,8 +580,8 @@ func (q *Queries) NextQueuedBotTurn(ctx context.Context, arg NextQueuedBotTurnPa
 
 const openDirectMessage = `-- name: OpenDirectMessage :one
 INSERT INTO conversations(workspace_id,user_id,bot_id)
-VALUES($1,$2,$3) ON CONFLICT(workspace_id,user_id,bot_id) DO UPDATE SET user_id=EXCLUDED.user_id
-RETURNING id, workspace_id, type, user_id, bot_id, created_at
+VALUES($1,$2,$3) ON CONFLICT(workspace_id,user_id,bot_id) WHERE type = 'dm' DO UPDATE SET user_id=EXCLUDED.user_id
+RETURNING id, workspace_id, type, user_id, bot_id, created_at, name, goal, lead_bot_id, bot_talk, turn_limit, answer_policy, ask_before, budget_limit_micros, turns_since_human, paused, pause_reason, summary, rr_index
 `
 
 type OpenDirectMessageParams struct {
@@ -561,6 +600,19 @@ func (q *Queries) OpenDirectMessage(ctx context.Context, arg OpenDirectMessagePa
 		&i.UserID,
 		&i.BotID,
 		&i.CreatedAt,
+		&i.Name,
+		&i.Goal,
+		&i.LeadBotID,
+		&i.BotTalk,
+		&i.TurnLimit,
+		&i.AnswerPolicy,
+		&i.AskBefore,
+		&i.BudgetLimitMicros,
+		&i.TurnsSinceHuman,
+		&i.Paused,
+		&i.PauseReason,
+		&i.Summary,
+		&i.RrIndex,
 	)
 	return i, err
 }

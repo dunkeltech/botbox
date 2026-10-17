@@ -1,6 +1,6 @@
 -- name: OpenDirectMessage :one
 INSERT INTO conversations(workspace_id,user_id,bot_id)
-VALUES($1,$2,$3) ON CONFLICT(workspace_id,user_id,bot_id) DO UPDATE SET user_id=EXCLUDED.user_id
+VALUES($1,$2,$3) ON CONFLICT(workspace_id,user_id,bot_id) WHERE type = 'dm' DO UPDATE SET user_id=EXCLUDED.user_id
 RETURNING *;
 
 -- name: AddDirectMessageMember :exec

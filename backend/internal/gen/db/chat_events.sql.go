@@ -12,7 +12,7 @@ import (
 )
 
 const getBotConversation = `-- name: GetBotConversation :one
-SELECT id, workspace_id, type, user_id, bot_id, created_at FROM conversations WHERE workspace_id=$1 AND bot_id=$2 AND id=$3
+SELECT id, workspace_id, type, user_id, bot_id, created_at, name, goal, lead_bot_id, bot_talk, turn_limit, answer_policy, ask_before, budget_limit_micros, turns_since_human, paused, pause_reason, summary, rr_index FROM conversations WHERE workspace_id=$1 AND bot_id=$2 AND id=$3
 `
 
 type GetBotConversationParams struct {
@@ -31,6 +31,19 @@ func (q *Queries) GetBotConversation(ctx context.Context, arg GetBotConversation
 		&i.UserID,
 		&i.BotID,
 		&i.CreatedAt,
+		&i.Name,
+		&i.Goal,
+		&i.LeadBotID,
+		&i.BotTalk,
+		&i.TurnLimit,
+		&i.AnswerPolicy,
+		&i.AskBefore,
+		&i.BudgetLimitMicros,
+		&i.TurnsSinceHuman,
+		&i.Paused,
+		&i.PauseReason,
+		&i.Summary,
+		&i.RrIndex,
 	)
 	return i, err
 }

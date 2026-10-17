@@ -121,7 +121,7 @@ func (q *Queries) HasUnpricedAPIUsage(ctx context.Context, arg HasUnpricedAPIUsa
 }
 
 const listBudgetApprovals = `-- name: ListBudgetApprovals :many
-SELECT id, workspace_id, bot_id, budget_id, kind, status, decided_by, created_at, decided_at FROM approvals WHERE workspace_id=$1 AND status='pending' ORDER BY created_at
+SELECT id, workspace_id, bot_id, budget_id, kind, status, decided_by, created_at, decided_at, conversation_id, message_id, payload FROM approvals WHERE workspace_id=$1 AND status='pending' ORDER BY created_at
 `
 
 func (q *Queries) ListBudgetApprovals(ctx context.Context, workspaceID pgtype.UUID) ([]Approval, error) {
@@ -143,6 +143,9 @@ func (q *Queries) ListBudgetApprovals(ctx context.Context, workspaceID pgtype.UU
 			&i.DecidedBy,
 			&i.CreatedAt,
 			&i.DecidedAt,
+			&i.ConversationID,
+			&i.MessageID,
+			&i.Payload,
 		); err != nil {
 			return nil, err
 		}
