@@ -126,6 +126,10 @@ func (s *server) handleChatHistory(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	s.writeConversationHistory(w, r, c.WorkspaceID, c.ID)
+}
+
+func (s *server) writeConversationHistory(w http.ResponseWriter, r *http.Request, workspaceID, conversationID pgtype.UUID) {
 	before := int64(math.MaxInt64)
 	if raw := r.URL.Query().Get("before"); raw != "" {
 		n, err := strconv.ParseInt(raw, 10, 64)
@@ -135,12 +139,12 @@ func (s *server) handleChatHistory(w http.ResponseWriter, r *http.Request) {
 		}
 		before = n
 	}
-	rows, err := s.queries.ListChatMessages(r.Context(), db.ListChatMessagesParams{WorkspaceID: c.WorkspaceID, ConversationID: c.ID, BeforePosition: before, PageLimit: 50})
+	rows, err := s.queries.ListChatMessages(r.Context(), db.ListChatMessagesParams{WorkspaceID: workspaceID, ConversationID: conversationID, BeforePosition: before, PageLimit: 50})
 	if err != nil {
 		s.chatFailure(w)
 		return
 	}
-	turns, err := s.queries.ListConversationTurns(r.Context(), db.ListConversationTurnsParams{WorkspaceID: c.WorkspaceID, ConversationID: c.ID})
+	turns, err := s.queries.ListConversationTurns(r.Context(), db.ListConversationTurnsParams{WorkspaceID: workspaceID, ConversationID: conversationID})
 	if err != nil {
 		s.chatFailure(w)
 		return

@@ -156,6 +156,125 @@ paths:
         '409': {description: Request ID reused with different content}
         '429': {description: Message rate limit or bot queue capacity exceeded}
         '503': {description: Queue unavailable}
+  /api/workspaces/{workspaceID}/groups:
+    parameters:
+      - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      operationId: listGroups
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Groups the caller belongs to
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/Group'}}
+        '401': {description: Authentication required}
+        '404': {description: Workspace not found}
+    post:
+      operationId: createGroup
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateGroupRequest'}
+      responses:
+        '201':
+          description: Group created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Group'}
+        '200':
+          description: Same request id and body replayed
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Group'}
+        '400': {description: Invalid group}
+        '401': {description: Authentication required}
+        '403': {description: Viewers cannot create groups}
+        '404': {description: Workspace not found}
+        '409': {description: Request id reused with a different body}
+  /api/workspaces/{workspaceID}/groups/{groupID}:
+    parameters:
+      - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: groupID, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      operationId: getGroup
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Group visible to a member
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Group'}
+        '401': {description: Authentication required}
+        '404': {description: Group not found}
+    patch:
+      operationId: updateGroup
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateGroupRequest'}
+      responses:
+        '200':
+          description: Settings replaced
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Group'}
+        '400': {description: Invalid settings}
+        '401': {description: Authentication required}
+        '403': {description: Viewers cannot change a group}
+        '404': {description: Group not found}
+  /api/workspaces/{workspaceID}/groups/{groupID}/messages:
+    parameters:
+      - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: groupID, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      operationId: listGroupMessages
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: before, in: query, schema: {type: integer, format: int64, minimum: 1}}
+      responses:
+        '200':
+          description: Group history
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ChatHistory'}
+        '401': {description: Authentication required}
+        '404': {description: Group not found}
+    post:
+      operationId: sendGroupMessage
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SendChatMessageRequest'}
+      responses:
+        '202':
+          description: Stored. Bots are not queued by this call.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ChatMessage'}
+        '400': {description: Invalid message}
+        '401': {description: Authentication required}
+        '403': {description: Viewers cannot post}
+        '404': {description: Group not found}
+        '409': {description: Request id reused with different content}
+        '429': {description: Message rate limit exceeded}
+  /api/workspaces/{workspaceID}/groups/{groupID}/read:
+    parameters:
+      - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: groupID, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      operationId: markGroupRead
+      security: [{bearerAuth: []}]
+      responses:
+        '204': {description: Read cursor moved to the latest message}
+        '401': {description: Authentication required}
+        '404': {description: Group not found}
   /api/workspaces/{workspaceID}/conversations/{conversationID}/messages/{messageID}/tool-image:
     parameters:
       - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
@@ -1951,6 +2070,65 @@ components:
       properties:
         id: {type: string, format: uuid}
         content: {type: string, minLength: 1, maxLength: 8192}
+    AskBeforeRule:
+      type: object
+      required: [kind]
+      properties:
+        kind: {type: string, enum: [new_host, raise_budget, push_protected, custom]}
+        label: {type: string, maxLength: 100}
+    GroupMember:
+      type: object
+      required: [type, id, roleText]
+      properties:
+        type: {type: string, enum: [user, bot]}
+        id: {type: string, format: uuid}
+        roleText: {type: string, maxLength: 100}
+        name: {type: string}
+    Group:
+      type: object
+      required: [id, name, goal, leadBotId, botTalk, turnLimit, answerPolicy, askBefore, paused, pauseReason, turnsSinceHuman, unread, members]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        goal: {type: string}
+        leadBotId: {type: string, format: uuid}
+        botTalk: {type: boolean}
+        turnLimit: {type: integer}
+        answerPolicy: {type: string, enum: [mentioned_else_lead, lead_first, round_robin]}
+        askBefore: {type: array, items: {$ref: '#/components/schemas/AskBeforeRule'}}
+        budgetLimitMicros: {type: integer, format: int64, nullable: true}
+        paused: {type: boolean}
+        pauseReason: {type: string}
+        turnsSinceHuman: {type: integer}
+        unread: {type: integer, format: int64}
+        members: {type: array, items: {$ref: '#/components/schemas/GroupMember'}}
+    CreateGroupRequest:
+      type: object
+      required: [id, name, leadBotId, botTalk, turnLimit, answerPolicy, askBefore, members]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string, minLength: 1, maxLength: 100}
+        goal: {type: string, maxLength: 8192}
+        leadBotId: {type: string, format: uuid}
+        botTalk: {type: boolean}
+        turnLimit: {type: integer, minimum: 1, maximum: 100}
+        answerPolicy: {type: string, enum: [mentioned_else_lead, lead_first, round_robin]}
+        askBefore: {type: array, items: {$ref: '#/components/schemas/AskBeforeRule'}}
+        budgetLimitMicros: {type: integer, format: int64, nullable: true, minimum: 1, maximum: 1000000000000}
+        members: {type: array, items: {$ref: '#/components/schemas/GroupMember'}}
+    UpdateGroupRequest:
+      type: object
+      required: [name, leadBotId, botTalk, turnLimit, answerPolicy, askBefore, members]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 100}
+        goal: {type: string, maxLength: 8192}
+        leadBotId: {type: string, format: uuid}
+        botTalk: {type: boolean}
+        turnLimit: {type: integer, minimum: 1, maximum: 100}
+        answerPolicy: {type: string, enum: [mentioned_else_lead, lead_first, round_robin]}
+        askBefore: {type: array, items: {$ref: '#/components/schemas/AskBeforeRule'}}
+        budgetLimitMicros: {type: integer, format: int64, nullable: true, minimum: 1, maximum: 1000000000000}
+        members: {type: array, items: {$ref: '#/components/schemas/GroupMember'}}
     HealthResponse:
       type: object
       required: [status]

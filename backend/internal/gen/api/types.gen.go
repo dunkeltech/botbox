@@ -9,6 +9,30 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for AskBeforeRuleKind.
+const (
+	Custom        AskBeforeRuleKind = "custom"
+	NewHost       AskBeforeRuleKind = "new_host"
+	PushProtected AskBeforeRuleKind = "push_protected"
+	RaiseBudget   AskBeforeRuleKind = "raise_budget"
+)
+
+// Valid indicates whether the value is a known member of the AskBeforeRuleKind enum.
+func (e AskBeforeRuleKind) Valid() bool {
+	switch e {
+	case Custom:
+		return true
+	case NewHost:
+		return true
+	case PushProtected:
+		return true
+	case RaiseBudget:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AvatarMood.
 const (
 	AvatarMoodAction   AvatarMood = "action"
@@ -150,6 +174,27 @@ func (e ChatTurnStatus) Valid() bool {
 	}
 }
 
+// Defines values for CreateGroupRequestAnswerPolicy.
+const (
+	CreateGroupRequestAnswerPolicyLeadFirst         CreateGroupRequestAnswerPolicy = "lead_first"
+	CreateGroupRequestAnswerPolicyMentionedElseLead CreateGroupRequestAnswerPolicy = "mentioned_else_lead"
+	CreateGroupRequestAnswerPolicyRoundRobin        CreateGroupRequestAnswerPolicy = "round_robin"
+)
+
+// Valid indicates whether the value is a known member of the CreateGroupRequestAnswerPolicy enum.
+func (e CreateGroupRequestAnswerPolicy) Valid() bool {
+	switch e {
+	case CreateGroupRequestAnswerPolicyLeadFirst:
+		return true
+	case CreateGroupRequestAnswerPolicyMentionedElseLead:
+		return true
+	case CreateGroupRequestAnswerPolicyRoundRobin:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DriverType.
 const (
 	Docker     DriverType = "docker"
@@ -231,6 +276,45 @@ func (e EnvironmentStatus) Valid() bool {
 	}
 }
 
+// Defines values for GroupAnswerPolicy.
+const (
+	GroupAnswerPolicyLeadFirst         GroupAnswerPolicy = "lead_first"
+	GroupAnswerPolicyMentionedElseLead GroupAnswerPolicy = "mentioned_else_lead"
+	GroupAnswerPolicyRoundRobin        GroupAnswerPolicy = "round_robin"
+)
+
+// Valid indicates whether the value is a known member of the GroupAnswerPolicy enum.
+func (e GroupAnswerPolicy) Valid() bool {
+	switch e {
+	case GroupAnswerPolicyLeadFirst:
+		return true
+	case GroupAnswerPolicyMentionedElseLead:
+		return true
+	case GroupAnswerPolicyRoundRobin:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GroupMemberType.
+const (
+	GroupMemberTypeBot  GroupMemberType = "bot"
+	GroupMemberTypeUser GroupMemberType = "user"
+)
+
+// Valid indicates whether the value is a known member of the GroupMemberType enum.
+func (e GroupMemberType) Valid() bool {
+	switch e {
+	case GroupMemberTypeBot:
+		return true
+	case GroupMemberTypeUser:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for LlmMode.
 const (
 	Api LlmMode = "api"
@@ -306,6 +390,27 @@ func (e SetBudgetRequestPeriod) Valid() bool {
 	}
 }
 
+// Defines values for UpdateGroupRequestAnswerPolicy.
+const (
+	UpdateGroupRequestAnswerPolicyLeadFirst         UpdateGroupRequestAnswerPolicy = "lead_first"
+	UpdateGroupRequestAnswerPolicyMentionedElseLead UpdateGroupRequestAnswerPolicy = "mentioned_else_lead"
+	UpdateGroupRequestAnswerPolicyRoundRobin        UpdateGroupRequestAnswerPolicy = "round_robin"
+)
+
+// Valid indicates whether the value is a known member of the UpdateGroupRequestAnswerPolicy enum.
+func (e UpdateGroupRequestAnswerPolicy) Valid() bool {
+	switch e {
+	case UpdateGroupRequestAnswerPolicyLeadFirst:
+		return true
+	case UpdateGroupRequestAnswerPolicyMentionedElseLead:
+		return true
+	case UpdateGroupRequestAnswerPolicyRoundRobin:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for WorkspaceRole.
 const (
 	Admin  WorkspaceRole = "admin"
@@ -336,6 +441,15 @@ type AcceptInvitationRequest struct {
 	Email       *openapi_types.Email `json:"email,omitempty"`
 	Password    *string              `json:"password,omitempty"`
 }
+
+// AskBeforeRule defines model for AskBeforeRule.
+type AskBeforeRule struct {
+	Kind  AskBeforeRuleKind `json:"kind"`
+	Label *string           `json:"label,omitempty"`
+}
+
+// AskBeforeRuleKind defines model for AskBeforeRule.Kind.
+type AskBeforeRuleKind string
 
 // AuthSessionResponse defines model for AuthSessionResponse.
 type AuthSessionResponse struct {
@@ -457,6 +571,23 @@ type CreateBotRequest struct {
 	Name          string      `json:"name"`
 	ReplyLanguage *string     `json:"replyLanguage,omitempty"`
 }
+
+// CreateGroupRequest defines model for CreateGroupRequest.
+type CreateGroupRequest struct {
+	AnswerPolicy      CreateGroupRequestAnswerPolicy `json:"answerPolicy"`
+	AskBefore         []AskBeforeRule                `json:"askBefore"`
+	BotTalk           bool                           `json:"botTalk"`
+	BudgetLimitMicros *int64                         `json:"budgetLimitMicros,omitempty"`
+	Goal              *string                        `json:"goal,omitempty"`
+	Id                openapi_types.UUID             `json:"id"`
+	LeadBotId         openapi_types.UUID             `json:"leadBotId"`
+	Members           []GroupMember                  `json:"members"`
+	Name              string                         `json:"name"`
+	TurnLimit         int                            `json:"turnLimit"`
+}
+
+// CreateGroupRequestAnswerPolicy defines model for CreateGroupRequest.AnswerPolicy.
+type CreateGroupRequestAnswerPolicy string
 
 // CreateInvitationRequest defines model for CreateInvitationRequest.
 type CreateInvitationRequest struct {
@@ -622,6 +753,38 @@ type FileListResponse struct {
 	Entries []FileEntry `json:"entries"`
 	Path    string      `json:"path"`
 }
+
+// Group defines model for Group.
+type Group struct {
+	AnswerPolicy      GroupAnswerPolicy  `json:"answerPolicy"`
+	AskBefore         []AskBeforeRule    `json:"askBefore"`
+	BotTalk           bool               `json:"botTalk"`
+	BudgetLimitMicros *int64             `json:"budgetLimitMicros,omitempty"`
+	Goal              string             `json:"goal"`
+	Id                openapi_types.UUID `json:"id"`
+	LeadBotId         openapi_types.UUID `json:"leadBotId"`
+	Members           []GroupMember      `json:"members"`
+	Name              string             `json:"name"`
+	PauseReason       string             `json:"pauseReason"`
+	Paused            bool               `json:"paused"`
+	TurnLimit         int                `json:"turnLimit"`
+	TurnsSinceHuman   int                `json:"turnsSinceHuman"`
+	Unread            int64              `json:"unread"`
+}
+
+// GroupAnswerPolicy defines model for Group.AnswerPolicy.
+type GroupAnswerPolicy string
+
+// GroupMember defines model for GroupMember.
+type GroupMember struct {
+	Id       openapi_types.UUID `json:"id"`
+	Name     *string            `json:"name,omitempty"`
+	RoleText string             `json:"roleText"`
+	Type     GroupMemberType    `json:"type"`
+}
+
+// GroupMemberType defines model for GroupMember.Type.
+type GroupMemberType string
 
 // HealthResponse defines model for HealthResponse.
 type HealthResponse struct {
@@ -793,6 +956,22 @@ type UpdateEgressPolicyRequest struct {
 	Policy       EgressPolicyMode `json:"policy"`
 }
 
+// UpdateGroupRequest defines model for UpdateGroupRequest.
+type UpdateGroupRequest struct {
+	AnswerPolicy      UpdateGroupRequestAnswerPolicy `json:"answerPolicy"`
+	AskBefore         []AskBeforeRule                `json:"askBefore"`
+	BotTalk           bool                           `json:"botTalk"`
+	BudgetLimitMicros *int64                         `json:"budgetLimitMicros,omitempty"`
+	Goal              *string                        `json:"goal,omitempty"`
+	LeadBotId         openapi_types.UUID             `json:"leadBotId"`
+	Members           []GroupMember                  `json:"members"`
+	Name              string                         `json:"name"`
+	TurnLimit         int                            `json:"turnLimit"`
+}
+
+// UpdateGroupRequestAnswerPolicy defines model for UpdateGroupRequest.AnswerPolicy.
+type UpdateGroupRequestAnswerPolicy string
+
 // UpdateMemberRoleRequest defines model for UpdateMemberRoleRequest.
 type UpdateMemberRoleRequest struct {
 	Role WorkspaceRole `json:"role"`
@@ -922,6 +1101,11 @@ type ListChatMessagesParams struct {
 	Before *int64 `form:"before,omitempty" json:"before,omitempty"`
 }
 
+// ListGroupMessagesParams defines parameters for ListGroupMessages.
+type ListGroupMessagesParams struct {
+	Before *int64 `form:"before,omitempty" json:"before,omitempty"`
+}
+
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody = LoginRequest
 
@@ -972,6 +1156,15 @@ type SetBudgetJSONRequestBody = SetBudgetRequest
 
 // SendChatMessageJSONRequestBody defines body for SendChatMessage for application/json ContentType.
 type SendChatMessageJSONRequestBody = SendChatMessageRequest
+
+// CreateGroupJSONRequestBody defines body for CreateGroup for application/json ContentType.
+type CreateGroupJSONRequestBody = CreateGroupRequest
+
+// UpdateGroupJSONRequestBody defines body for UpdateGroup for application/json ContentType.
+type UpdateGroupJSONRequestBody = UpdateGroupRequest
+
+// SendGroupMessageJSONRequestBody defines body for SendGroupMessage for application/json ContentType.
+type SendGroupMessageJSONRequestBody = SendChatMessageRequest
 
 // CreateInvitationJSONRequestBody defines body for CreateInvitation for application/json ContentType.
 type CreateInvitationJSONRequestBody = CreateInvitationRequest
