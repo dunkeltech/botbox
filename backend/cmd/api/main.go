@@ -134,6 +134,7 @@ func run(logger *slog.Logger) error {
 				return fmt.Errorf("initialize turn queue: %w", queueErr)
 			}
 			defer queue.Close()
+			worker.Enqueue = queue.Enqueue
 			worker.Publish = func(eventCtx context.Context, session engine.Session, event engine.Event) error {
 				data, err := json.Marshal(event)
 				if err != nil {

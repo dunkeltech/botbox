@@ -11,6 +11,53 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const applyGroupPlan = `-- name: ApplyGroupPlan :exec
+UPDATE conversations
+SET turns_since_human = $3, paused = $4, pause_reason = $5, rr_index = $6, summary = $7
+WHERE workspace_id = $1 AND id = $2 AND type = 'group'
+`
+
+type ApplyGroupPlanParams struct {
+	WorkspaceID     pgtype.UUID `json:"workspace_id"`
+	ID              pgtype.UUID `json:"id"`
+	TurnsSinceHuman int32       `json:"turns_since_human"`
+	Paused          bool        `json:"paused"`
+	PauseReason     string      `json:"pause_reason"`
+	RrIndex         int32       `json:"rr_index"`
+	Summary         string      `json:"summary"`
+}
+
+func (q *Queries) ApplyGroupPlan(ctx context.Context, arg ApplyGroupPlanParams) error {
+	_, err := q.db.Exec(ctx, applyGroupPlan,
+		arg.WorkspaceID,
+		arg.ID,
+		arg.TurnsSinceHuman,
+		arg.Paused,
+		arg.PauseReason,
+		arg.RrIndex,
+		arg.Summary,
+	)
+	return err
+}
+
+const createGroupBudgetApproval = `-- name: CreateGroupBudgetApproval :exec
+INSERT INTO approvals(workspace_id, bot_id, conversation_id, kind)
+VALUES ($1, $2, $3, 'raise_budget')
+ON CONFLICT (workspace_id, conversation_id) WHERE status = 'pending' AND kind = 'raise_budget' AND budget_id IS NULL
+DO NOTHING
+`
+
+type CreateGroupBudgetApprovalParams struct {
+	WorkspaceID    pgtype.UUID `json:"workspace_id"`
+	BotID          pgtype.UUID `json:"bot_id"`
+	ConversationID pgtype.UUID `json:"conversation_id"`
+}
+
+func (q *Queries) CreateGroupBudgetApproval(ctx context.Context, arg CreateGroupBudgetApprovalParams) error {
+	_, err := q.db.Exec(ctx, createGroupBudgetApproval, arg.WorkspaceID, arg.BotID, arg.ConversationID)
+	return err
+}
+
 const deleteGroupMember = `-- name: DeleteGroupMember :exec
 DELETE FROM conversation_members
 WHERE workspace_id = $1 AND conversation_id = $2
@@ -32,6 +79,58 @@ func (q *Queries) DeleteGroupMember(ctx context.Context, arg DeleteGroupMemberPa
 		arg.MemberID,
 	)
 	return err
+}
+
+const getConversationType = `-- name: GetConversationType :one
+SELECT type FROM conversations WHERE workspace_id = $1 AND id = $2
+`
+
+type GetConversationTypeParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ID          pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) GetConversationType(ctx context.Context, arg GetConversationTypeParams) (string, error) {
+	row := q.db.QueryRow(ctx, getConversationType, arg.WorkspaceID, arg.ID)
+	var type_ string
+	err := row.Scan(&type_)
+	return type_, err
+}
+
+const getGroup = `-- name: GetGroup :one
+SELECT id, workspace_id, type, user_id, bot_id, created_at, name, goal, lead_bot_id, bot_talk, turn_limit, answer_policy, ask_before, budget_limit_micros, turns_since_human, paused, pause_reason, summary, rr_index FROM conversations WHERE workspace_id = $1 AND id = $2 AND type = 'group'
+`
+
+type GetGroupParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ID          pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) GetGroup(ctx context.Context, arg GetGroupParams) (Conversation, error) {
+	row := q.db.QueryRow(ctx, getGroup, arg.WorkspaceID, arg.ID)
+	var i Conversation
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Type,
+		&i.UserID,
+		&i.BotID,
+		&i.CreatedAt,
+		&i.Name,
+		&i.Goal,
+		&i.LeadBotID,
+		&i.BotTalk,
+		&i.TurnLimit,
+		&i.AnswerPolicy,
+		&i.AskBefore,
+		&i.BudgetLimitMicros,
+		&i.TurnsSinceHuman,
+		&i.Paused,
+		&i.PauseReason,
+		&i.Summary,
+		&i.RrIndex,
+	)
+	return i, err
 }
 
 const getGroupForMember = `-- name: GetGroupForMember :one
@@ -97,6 +196,107 @@ func (q *Queries) GetGroupForMember(ctx context.Context, arg GetGroupForMemberPa
 		&i.Unread,
 	)
 	return i, err
+}
+
+const getGroupForUpdate = `-- name: GetGroupForUpdate :one
+SELECT id, workspace_id, type, user_id, bot_id, created_at, name, goal, lead_bot_id, bot_talk, turn_limit, answer_policy, ask_before, budget_limit_micros, turns_since_human, paused, pause_reason, summary, rr_index FROM conversations WHERE workspace_id = $1 AND id = $2 AND type = 'group' FOR UPDATE
+`
+
+type GetGroupForUpdateParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ID          pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) GetGroupForUpdate(ctx context.Context, arg GetGroupForUpdateParams) (Conversation, error) {
+	row := q.db.QueryRow(ctx, getGroupForUpdate, arg.WorkspaceID, arg.ID)
+	var i Conversation
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Type,
+		&i.UserID,
+		&i.BotID,
+		&i.CreatedAt,
+		&i.Name,
+		&i.Goal,
+		&i.LeadBotID,
+		&i.BotTalk,
+		&i.TurnLimit,
+		&i.AnswerPolicy,
+		&i.AskBefore,
+		&i.BudgetLimitMicros,
+		&i.TurnsSinceHuman,
+		&i.Paused,
+		&i.PauseReason,
+		&i.Summary,
+		&i.RrIndex,
+	)
+	return i, err
+}
+
+const groupSpend = `-- name: GroupSpend :one
+SELECT
+    COALESCE(sum(u.cost_micros) FILTER (WHERE u.cost_micros IS NOT NULL), 0)::bigint AS spent_micros,
+    (CASE WHEN bool_or(u.cost_micros IS NULL AND u.billing_kind = 'metered') THEN 1 ELSE 0 END)::int AS unknown_rows
+FROM usage_records u
+JOIN bot_turns t ON t.workspace_id = u.workspace_id AND t.id = u.turn_id
+WHERE u.workspace_id = $1 AND t.conversation_id = $2 AND u.turn_id IS NOT NULL
+`
+
+type GroupSpendParams struct {
+	WorkspaceID    pgtype.UUID `json:"workspace_id"`
+	ConversationID pgtype.UUID `json:"conversation_id"`
+}
+
+type GroupSpendRow struct {
+	SpentMicros int64 `json:"spent_micros"`
+	UnknownRows int32 `json:"unknown_rows"`
+}
+
+func (q *Queries) GroupSpend(ctx context.Context, arg GroupSpendParams) (GroupSpendRow, error) {
+	row := q.db.QueryRow(ctx, groupSpend, arg.WorkspaceID, arg.ConversationID)
+	var i GroupSpendRow
+	err := row.Scan(&i.SpentMicros, &i.UnknownRows)
+	return i, err
+}
+
+const hasGroupBudgetWarning = `-- name: HasGroupBudgetWarning :one
+SELECT EXISTS(
+    SELECT 1 FROM messages
+    WHERE workspace_id = $1 AND conversation_id = $2 AND kind = 'system'
+      AND metadata->>'budgetWarning' = 'true'
+) AS warned
+`
+
+type HasGroupBudgetWarningParams struct {
+	WorkspaceID    pgtype.UUID `json:"workspace_id"`
+	ConversationID pgtype.UUID `json:"conversation_id"`
+}
+
+func (q *Queries) HasGroupBudgetWarning(ctx context.Context, arg HasGroupBudgetWarningParams) (bool, error) {
+	row := q.db.QueryRow(ctx, hasGroupBudgetWarning, arg.WorkspaceID, arg.ConversationID)
+	var warned bool
+	err := row.Scan(&warned)
+	return warned, err
+}
+
+const incrementGroupTurnsSinceHuman = `-- name: IncrementGroupTurnsSinceHuman :execrows
+UPDATE conversations
+SET turns_since_human = turns_since_human + 1
+WHERE workspace_id = $1 AND id = $2 AND type = 'group'
+`
+
+type IncrementGroupTurnsSinceHumanParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ID          pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) IncrementGroupTurnsSinceHuman(ctx context.Context, arg IncrementGroupTurnsSinceHumanParams) (int64, error) {
+	result, err := q.db.Exec(ctx, incrementGroupTurnsSinceHuman, arg.WorkspaceID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const insertGroup = `-- name: InsertGroup :one
@@ -206,6 +406,50 @@ func (q *Queries) ListGroupMemberRows(ctx context.Context, arg ListGroupMemberRo
 	return items, nil
 }
 
+const listGroupTranscript = `-- name: ListGroupTranscript :many
+SELECT sender_type, sender_user_id, sender_bot_id, content
+FROM messages
+WHERE workspace_id = $1 AND conversation_id = $2 AND kind = 'text'
+ORDER BY position ASC
+`
+
+type ListGroupTranscriptParams struct {
+	WorkspaceID    pgtype.UUID `json:"workspace_id"`
+	ConversationID pgtype.UUID `json:"conversation_id"`
+}
+
+type ListGroupTranscriptRow struct {
+	SenderType   string      `json:"sender_type"`
+	SenderUserID pgtype.UUID `json:"sender_user_id"`
+	SenderBotID  pgtype.UUID `json:"sender_bot_id"`
+	Content      string      `json:"content"`
+}
+
+func (q *Queries) ListGroupTranscript(ctx context.Context, arg ListGroupTranscriptParams) ([]ListGroupTranscriptRow, error) {
+	rows, err := q.db.Query(ctx, listGroupTranscript, arg.WorkspaceID, arg.ConversationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListGroupTranscriptRow
+	for rows.Next() {
+		var i ListGroupTranscriptRow
+		if err := rows.Scan(
+			&i.SenderType,
+			&i.SenderUserID,
+			&i.SenderBotID,
+			&i.Content,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listGroupsForMember = `-- name: ListGroupsForMember :many
 SELECT c.id, c.workspace_id, c.name, c.goal, c.lead_bot_id, c.bot_talk, c.turn_limit,
        c.answer_policy, c.ask_before, c.budget_limit_micros, c.turns_since_human,
@@ -277,6 +521,39 @@ func (q *Queries) ListGroupsForMember(ctx context.Context, arg ListGroupsForMemb
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRecentGroupBotSpeakers = `-- name: ListRecentGroupBotSpeakers :many
+SELECT sender_bot_id FROM messages
+WHERE workspace_id = $1 AND conversation_id = $2
+  AND sender_type = 'bot' AND kind = 'text' AND sender_bot_id IS NOT NULL
+ORDER BY position DESC
+LIMIT 4
+`
+
+type ListRecentGroupBotSpeakersParams struct {
+	WorkspaceID    pgtype.UUID `json:"workspace_id"`
+	ConversationID pgtype.UUID `json:"conversation_id"`
+}
+
+func (q *Queries) ListRecentGroupBotSpeakers(ctx context.Context, arg ListRecentGroupBotSpeakersParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listRecentGroupBotSpeakers, arg.WorkspaceID, arg.ConversationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var sender_bot_id pgtype.UUID
+		if err := rows.Scan(&sender_bot_id); err != nil {
+			return nil, err
+		}
+		items = append(items, sender_bot_id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

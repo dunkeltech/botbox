@@ -335,9 +335,9 @@ Membership is the only read path, including for workspace admins. See
   `round_robin`), "ask me before" rules, and an optional lifetime budget in
   microdollars.
 - **Group HTTP:** members list and read a group, mark it read, and (except
-  viewers) create it, replace its settings, and post. A post stores the human
-  message and does not schedule a bot; the orchestrator does that. Someone who
-  is not a member, including a workspace admin, gets 404.
+  viewers) create it, replace its settings, and post. A human post stores the
+  message and queues the bots the orchestrator selects. A failed publish rolls
+  the post back. Someone who is not a member, including a workspace admin, gets 404.
 - **Orchestrator** (`internal/orchestrator`), used for groups only:
   - **Router:** mentioned bots, otherwise the lead; lead first plus mentions; or round robin.
   - **Context builder:** goal, roster with roles, rules, the last 50 messages, and an extractive summary of older text. The summary does not call a model. The prompt tells the bot to mention the colleague it hands work to. Secrets are not included.

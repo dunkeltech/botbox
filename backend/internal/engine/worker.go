@@ -11,6 +11,7 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/budgets"
 	"github.com/dunkeltech/botbox/backend/internal/events"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
+	"github.com/dunkeltech/botbox/backend/internal/groups"
 	"github.com/dunkeltech/botbox/backend/internal/secrets/llmproxy"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -19,10 +20,13 @@ import (
 )
 
 // Session contains only one conversation's context and public bot configuration.
+// Preface is the group brief for this turn. Direct messages leave it empty so
+// a DM prompt is not wrapped in a second session (ADR-0015).
 type Session struct {
 	WorkspaceID, BotID, ConversationID uuid.UUID
 	Bot                                db.Bot
 	Messages                           []db.Message
+	Preface                            string
 }
 
 // ExecuteTurn runs one bounded turn and propagates event sink failures.
@@ -37,6 +41,8 @@ type Worker struct {
 	Pool    *pgxpool.Pool
 	Execute ExecuteTurn
 	Publish func(context.Context, Session, Event) error
+	// Enqueue publishes the next group turn. Direct messages do not use it.
+	Enqueue func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) error
 }
 
 func pgID(id uuid.UUID) pgtype.UUID   { return pgtype.UUID{Bytes: id, Valid: true} }
@@ -119,6 +125,11 @@ func (w *Worker) Process(ctx context.Context, job events.TurnNotification) error
 	if err = q.UpdateBotTurn(ctx, db.UpdateBotTurnParams{WorkspaceID: turn.WorkspaceID, ID: turn.ID, Status: "running"}); err != nil {
 		return err
 	}
+	// The counter moves on claim, before the model runs, so a reply cannot
+	// schedule past the limit (ADR-0015). Direct messages update zero rows.
+	if err = groups.NoteClaim(ctx, q, turn.WorkspaceID, turn.ConversationID); err != nil {
+		return err
+	}
 	return w.executeClaimed(ctx, tx, turn, config)
 }
 
@@ -137,7 +148,24 @@ func (w *Worker) executeClaimed(ctx context.Context, tx pgx.Tx, turn db.BotTurn,
 	if err != nil {
 		return err
 	}
-	session := Session{WorkspaceID: uuidID(turn.WorkspaceID), BotID: uuidID(turn.BotID), ConversationID: uuidID(turn.ConversationID), Bot: bot, Messages: history}
+	preface, err := groups.Preface(ctx, q, turn.WorkspaceID, turn.ConversationID)
+	if err != nil {
+		return err
+	}
+	session := Session{WorkspaceID: uuidID(turn.WorkspaceID), BotID: uuidID(turn.BotID), ConversationID: uuidID(turn.ConversationID), Bot: bot, Messages: history, Preface: preface}
+	stop, err := groups.ScreenBudget(ctx, w.Pool, turn.WorkspaceID, turn.ConversationID, turn.BotID)
+	if err != nil {
+		return err
+	}
+	if stop {
+		if err = q.UpdateBotTurn(ctx, db.UpdateBotTurnParams{WorkspaceID: turn.WorkspaceID, ID: turn.ID, Status: "budget_exceeded", ErrorCode: "budget_exceeded"}); err != nil {
+			return err
+		}
+		if w.Publish != nil {
+			return w.Publish(ctx, session, Event{Kind: EventKindStatus, Status: "idle"})
+		}
+		return nil
+	}
 	var text replyText
 	emit := func(ev Event) error {
 		ev.TurnID = uuidID(turn.ID).String()
@@ -246,9 +274,20 @@ func (w *Worker) executeClaimed(ctx context.Context, tx pgx.Tx, turn db.BotTurn,
 	}
 	finalCtx, finalCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer finalCancel()
+	kind, err := q.GetConversationType(finalCtx, db.GetConversationTypeParams{WorkspaceID: turn.WorkspaceID, ID: turn.ConversationID})
+	if err != nil {
+		return err
+	}
+	var reply db.Message
 	if text.Len() > 0 {
-		if _, err = q.CreateChatMessage(finalCtx, db.CreateChatMessageParams{ID: pgID(uuid.New()), WorkspaceID: turn.WorkspaceID, ConversationID: turn.ConversationID, SenderType: "bot", SenderBotID: turn.BotID, Kind: "text", Content: text.String(), Metadata: []byte("{}")}); err != nil {
+		reply, err = q.CreateChatMessage(finalCtx, db.CreateChatMessageParams{ID: pgID(uuid.New()), WorkspaceID: turn.WorkspaceID, ConversationID: turn.ConversationID, SenderType: "bot", SenderBotID: turn.BotID, Kind: "text", Content: text.String(), Metadata: []byte("{}")})
+		if err != nil {
 			return fmt.Errorf("persist bot reply: %w", err)
+		}
+	}
+	if kind == "group" && text.Len() > 0 && status == "completed" {
+		if err = w.routeGroupReply(finalCtx, turn, reply); err != nil {
+			return err
 		}
 	}
 	if err = q.UpdateBotTurn(finalCtx, db.UpdateBotTurnParams{WorkspaceID: turn.WorkspaceID, ID: turn.ID, Status: status, ErrorCode: code}); err != nil {
@@ -258,6 +297,33 @@ func (w *Worker) executeClaimed(ctx context.Context, tx pgx.Tx, turn db.BotTurn,
 		return w.Publish(finalCtx, session, Event{Kind: EventKindStatus, Status: "idle"})
 	}
 	return nil
+}
+
+func (w *Worker) routeGroupReply(ctx context.Context, turn db.BotTurn, reply db.Message) error {
+	tx, err := w.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := db.New(tx)
+	next, err := groups.PlanBotReply(ctx, q, turn.WorkspaceID, turn.ConversationID, uuidID(turn.BotID), reply)
+	if errors.Is(err, groups.ErrQueueFull) {
+		// The reply is already stored. Leave the follow-up unqueued rather than
+		// publishing a partial handoff.
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if len(next) > 0 && w.Enqueue == nil {
+		return errors.New("group turn queue is not configured")
+	}
+	for _, item := range next {
+		if err = w.Enqueue(ctx, item.WorkspaceID, item.BotID, item.TurnID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 // Interrupt cancels the active local turn; queued turns keep their position.

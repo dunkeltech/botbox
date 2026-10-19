@@ -117,7 +117,7 @@ func TestRunnerRejectsInvalidAndForeignInput(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = r.Stop() }()
-	for _, change := range []func(*db.Message){func(m *db.Message) { m.WorkspaceID.Bytes = uuid.New() }, func(m *db.Message) { m.ConversationID.Bytes = uuid.New() }, func(m *db.Message) { m.Content = "" }, func(m *db.Message) { m.SenderType = "bot" }, func(m *db.Message) { m.WorkspaceID.Valid = false }} {
+	for _, change := range []func(*db.Message){func(m *db.Message) { m.WorkspaceID.Bytes = uuid.New() }, func(m *db.Message) { m.ConversationID.Bytes = uuid.New() }, func(m *db.Message) { m.Content = "" }, func(m *db.Message) { m.SenderType = "system" }, func(m *db.Message) { m.WorkspaceID.Valid = false }} {
 		invalid := m
 		change(&invalid)
 		if err := r.Send(context.Background(), invalid); err == nil {
@@ -132,6 +132,27 @@ func TestRunnerRejectsInvalidAndForeignInput(t *testing.T) {
 	bad := engine.NewFunctionRunner(nil)
 	if err := bad.Start(context.Background(), s); err == nil {
 		t.Fatal("nil executor accepted")
+	}
+}
+
+func TestRunnerAcceptsBotHandoff(t *testing.T) {
+	session, input := runnerInput()
+	input.SenderType = "bot"
+	input.Content = "@Atlas your turn"
+	r := engine.NewFunctionRunner(func(_ context.Context, s engine.Session, emit func(engine.Event) error) error {
+		if len(s.Messages) != 1 || s.Messages[0].SenderType != "bot" || s.Messages[0].Content != "@Atlas your turn" {
+			t.Errorf("handoff context: %+v", s.Messages)
+		}
+		return emit(engine.Event{Kind: engine.EventKindTextDelta, Text: "done"})
+	})
+	if err := r.Start(context.Background(), session); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Send(context.Background(), input); err != nil {
+		t.Fatal(err)
+	}
+	_ = r.Stop()
+	for range r.Events() {
 	}
 }
 

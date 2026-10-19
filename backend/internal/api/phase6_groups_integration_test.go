@@ -160,8 +160,8 @@ func TestPhase6GroupConversationAPI(t *testing.T) {
 			t.Fatalf("post=%d want=%d body=%s", r.status, tc.status, r.body)
 		}
 	}
-	if len(queue.jobs) != 0 {
-		t.Fatalf("group post scheduled %d turns", len(queue.jobs))
+	if len(queue.jobs) != 1 || queue.jobs[0].BotID != atlas.Id {
+		t.Fatalf("group post scheduled %#v", queue.jobs)
 	}
 	input := map[string]any{"id": uuid.New(), "content": "Ship the notes"}
 	for range 2 {
@@ -169,6 +169,9 @@ func TestPhase6GroupConversationAPI(t *testing.T) {
 		if r.status != http.StatusAccepted {
 			t.Fatalf("replay post=%d %s", r.status, r.body)
 		}
+	}
+	if len(queue.jobs) != 2 || queue.jobs[1].BotID != atlas.Id {
+		t.Fatalf("replay scheduled %#v", queue.jobs)
 	}
 	input["content"] = "Changed"
 	if r := h.request(http.MethodPost, messages, input, member.AccessToken, nil, true); r.status != http.StatusConflict {
@@ -182,7 +185,7 @@ func TestPhase6GroupConversationAPI(t *testing.T) {
 	history := h.request(http.MethodGet, messages, nil, viewer.AccessToken, nil, false)
 	var chat apigen.ChatHistory
 	history.decode(t, &chat)
-	if len(chat.Messages) != 2 || len(chat.Turns) != 0 || chat.Messages[1].Content != "Ship the notes" {
+	if len(chat.Messages) != 2 || len(chat.Turns) != 2 || chat.Messages[1].Content != "Ship the notes" || chat.Turns[0].Status != "queued" || chat.Turns[1].Status != "queued" {
 		t.Fatalf("history=%s", history.body)
 	}
 	if r := h.request(http.MethodGet, messages+"?before=0", nil, viewer.AccessToken, nil, false); r.status != http.StatusBadRequest {
@@ -280,8 +283,8 @@ func TestPhase6GroupMessageRateLimit(t *testing.T) {
 	if r := h.request(http.MethodPost, messages, first, owner.AccessToken, nil, true); r.status != http.StatusAccepted {
 		t.Fatalf("replay under limit=%d %s", r.status, r.body)
 	}
-	if len(queue.jobs) != 0 {
-		t.Fatal("rate limited group post scheduled a turn")
+	if len(queue.jobs) != 1 {
+		t.Fatalf("rate limit scheduled %#v", queue.jobs)
 	}
 }
 

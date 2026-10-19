@@ -61,6 +61,59 @@ SET name = $3, goal = $4, lead_bot_id = $5, bot_talk = $6, turn_limit = $7,
     answer_policy = $8, ask_before = $9, budget_limit_micros = $10
 WHERE workspace_id = $1 AND id = $2 AND type = 'group';
 
+-- name: GetGroup :one
+SELECT * FROM conversations WHERE workspace_id = $1 AND id = $2 AND type = 'group';
+
+-- name: GetGroupForUpdate :one
+SELECT * FROM conversations WHERE workspace_id = $1 AND id = $2 AND type = 'group' FOR UPDATE;
+
+-- name: GetConversationType :one
+SELECT type FROM conversations WHERE workspace_id = $1 AND id = $2;
+
+-- name: ApplyGroupPlan :exec
+UPDATE conversations
+SET turns_since_human = $3, paused = $4, pause_reason = $5, rr_index = $6, summary = $7
+WHERE workspace_id = $1 AND id = $2 AND type = 'group';
+
+-- name: IncrementGroupTurnsSinceHuman :execrows
+UPDATE conversations
+SET turns_since_human = turns_since_human + 1
+WHERE workspace_id = $1 AND id = $2 AND type = 'group';
+
+-- name: ListRecentGroupBotSpeakers :many
+SELECT sender_bot_id FROM messages
+WHERE workspace_id = $1 AND conversation_id = $2
+  AND sender_type = 'bot' AND kind = 'text' AND sender_bot_id IS NOT NULL
+ORDER BY position DESC
+LIMIT 4;
+
+-- name: ListGroupTranscript :many
+SELECT sender_type, sender_user_id, sender_bot_id, content
+FROM messages
+WHERE workspace_id = $1 AND conversation_id = $2 AND kind = 'text'
+ORDER BY position ASC;
+
+-- name: GroupSpend :one
+SELECT
+    COALESCE(sum(u.cost_micros) FILTER (WHERE u.cost_micros IS NOT NULL), 0)::bigint AS spent_micros,
+    (CASE WHEN bool_or(u.cost_micros IS NULL AND u.billing_kind = 'metered') THEN 1 ELSE 0 END)::int AS unknown_rows
+FROM usage_records u
+JOIN bot_turns t ON t.workspace_id = u.workspace_id AND t.id = u.turn_id
+WHERE u.workspace_id = $1 AND t.conversation_id = $2 AND u.turn_id IS NOT NULL;
+
+-- name: HasGroupBudgetWarning :one
+SELECT EXISTS(
+    SELECT 1 FROM messages
+    WHERE workspace_id = $1 AND conversation_id = $2 AND kind = 'system'
+      AND metadata->>'budgetWarning' = 'true'
+) AS warned;
+
+-- name: CreateGroupBudgetApproval :exec
+INSERT INTO approvals(workspace_id, bot_id, conversation_id, kind)
+VALUES ($1, $2, $3, 'raise_budget')
+ON CONFLICT (workspace_id, conversation_id) WHERE status = 'pending' AND kind = 'raise_budget' AND budget_id IS NULL
+DO NOTHING;
+
 -- name: MarkGroupRead :execrows
 UPDATE conversation_members
 SET last_read_position = COALESCE((

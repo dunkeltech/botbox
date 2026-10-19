@@ -11,6 +11,7 @@ import (
 
 	apigen "github.com/dunkeltech/botbox/backend/internal/gen/api"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
+	"github.com/dunkeltech/botbox/backend/internal/groups"
 	"github.com/dunkeltech/botbox/backend/internal/workspaces"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -229,8 +230,8 @@ func (s *server) handleListGroupMessages(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *server) handleSendGroupMessage(w http.ResponseWriter, r *http.Request) {
-	// Store only. Scheduling a turn here would skip mention routing, bot-talk
-	// and the turn limit. The orchestrator queues the next bot (ADR-0015).
+	// Publish before commit so a failed queue write rolls the human message back
+	// instead of leaving a group post that never reaches a bot (ADR-0015).
 	row, ok := s.groupForMember(w, r, true)
 	if !ok {
 		return
@@ -264,7 +265,15 @@ func (s *server) handleSendGroupMessage(w http.ResponseWriter, r *http.Request) 
 		writeError(w, s.logger, http.StatusTooManyRequests, "chat.rate_limited", "message rate limit exceeded")
 		return
 	}
-	msg, err := s.queries.CreateChatMessage(r.Context(), db.CreateChatMessageParams{
+	tx, err := s.pool.Begin(r.Context())
+	if err != nil {
+		s.logger.Error("begin group message", "err", err)
+		s.chatFailure(w)
+		return
+	}
+	defer rollbackTx(r.Context(), tx)
+	q := s.queries.WithTx(tx)
+	msg, err := q.CreateChatMessage(r.Context(), db.CreateChatMessageParams{
 		ID:             toPGUUID(req.Id),
 		WorkspaceID:    row.WorkspaceID,
 		ConversationID: row.ID,
@@ -275,6 +284,7 @@ func (s *server) handleSendGroupMessage(w http.ResponseWriter, r *http.Request) 
 		Metadata:       []byte("{}"),
 	})
 	if isUniqueViolation(err) {
+		_ = tx.Rollback(r.Context())
 		previous, found, ok := s.existingChatMessage(w, r, row.WorkspaceID, toPGUUID(req.Id))
 		if !ok || !found {
 			if ok {
@@ -291,6 +301,32 @@ func (s *server) handleSendGroupMessage(w http.ResponseWriter, r *http.Request) 
 	}
 	if err != nil {
 		s.logger.Error("store group message", "err", err)
+		s.chatFailure(w)
+		return
+	}
+	turns, err := groups.PlanHuman(r.Context(), q, row.WorkspaceID, row.ID, claims.Subject, msg)
+	if errors.Is(err, groups.ErrQueueFull) {
+		writeError(w, s.logger, http.StatusTooManyRequests, "chat.queue_full", "bot queue is full")
+		return
+	}
+	if err != nil {
+		s.logger.Error("route group message", "err", err)
+		s.chatFailure(w)
+		return
+	}
+	if len(turns) > 0 && s.turnQueue == nil {
+		s.chatFailure(w)
+		return
+	}
+	for _, turn := range turns {
+		if err = s.turnQueue.Enqueue(r.Context(), turn.WorkspaceID, turn.BotID, turn.TurnID); err != nil {
+			s.logger.Error("enqueue group turn", "err", err)
+			s.chatFailure(w)
+			return
+		}
+	}
+	if err = tx.Commit(r.Context()); err != nil {
+		s.logger.Error("commit group message", "err", err)
 		s.chatFailure(w)
 		return
 	}

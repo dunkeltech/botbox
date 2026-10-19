@@ -65,14 +65,16 @@ func (r *FunctionRunner) Start(ctx context.Context, s Session) error {
 	return nil
 }
 
-// Send appends one user message to the session and runs a single bounded turn.
+// Send appends the message that triggered this turn and runs one bounded turn.
+// A direct message is always a human post. A group handoff is another bot's
+// text, so both sender types are valid input (ADR-0015).
 func (r *FunctionRunner) Send(ctx context.Context, message db.Message) error {
 	r.mu.Lock()
 	if r.stopped || r.lifetime == nil || r.done != nil {
 		r.mu.Unlock()
 		return errors.New("runner is not ready")
 	}
-	if message.Content == "" || !message.WorkspaceID.Valid || !message.ConversationID.Valid || message.WorkspaceID.Bytes != r.session.WorkspaceID || message.ConversationID.Bytes != r.session.ConversationID || message.SenderType != "user" {
+	if message.Content == "" || !message.WorkspaceID.Valid || !message.ConversationID.Valid || message.WorkspaceID.Bytes != r.session.WorkspaceID || message.ConversationID.Bytes != r.session.ConversationID || (message.SenderType != "user" && message.SenderType != "bot") {
 		r.mu.Unlock()
 		return errors.New("invalid runner message")
 	}
