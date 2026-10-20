@@ -115,6 +115,118 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/workspaces/{workspaceID}/groups': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+      };
+      cookie?: never;
+    };
+    get: operations['listGroups'];
+    put?: never;
+    post: operations['createGroup'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/workspaces/{workspaceID}/groups/{groupID}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+        groupID: string;
+      };
+      cookie?: never;
+    };
+    get: operations['getGroup'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch: operations['updateGroup'];
+    trace?: never;
+  };
+  '/api/workspaces/{workspaceID}/groups/{groupID}/messages': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+        groupID: string;
+      };
+      cookie?: never;
+    };
+    get: operations['listGroupMessages'];
+    put?: never;
+    post: operations['sendGroupMessage'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/workspaces/{workspaceID}/groups/{groupID}/read': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+        groupID: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations['markGroupRead'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/workspaces/{workspaceID}/approvals': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+      };
+      cookie?: never;
+    };
+    get: operations['listApprovals'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/workspaces/{workspaceID}/approvals/{approvalID}/decision': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+        approvalID: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations['decideApproval'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/workspaces/{workspaceID}/conversations/{conversationID}/messages/{messageID}/tool-image': {
     parameters: {
       query?: never;
@@ -754,10 +866,40 @@ export interface components {
       /** @enum {string} */
       senderType: 'user' | 'bot' | 'system';
       /** @enum {string} */
-      kind: 'text' | 'tool' | 'system' | 'card';
+      kind: 'text' | 'tool' | 'system' | 'card' | 'approval';
       content: string;
       /** Format: date-time */
       createdAt: string;
+    };
+    Approval: {
+      /** Format: uuid */
+      id: string;
+      /** Format: uuid */
+      botId: string;
+      /** Format: uuid */
+      conversationId?: string;
+      /** Format: uuid */
+      budgetId?: string;
+      /** Format: uuid */
+      messageId?: string;
+      /** @enum {string} */
+      kind: 'new_host' | 'raise_budget' | 'push_protected' | 'custom';
+      /** @enum {string} */
+      status: 'pending' | 'approved' | 'denied';
+      host?: string;
+      branch?: string;
+      label?: string;
+      /** Format: date-time */
+      createdAt: string;
+      /** Format: date-time */
+      decidedAt?: string;
+    };
+    ApprovalList: {
+      approvals: components['schemas']['Approval'][];
+    };
+    ApprovalDecisionRequest: {
+      /** @enum {string} */
+      decision: 'approved' | 'denied';
     };
     ChatTurn: {
       /** Format: uuid */
@@ -782,6 +924,70 @@ export interface components {
       /** Format: uuid */
       id: string;
       content: string;
+    };
+    AskBeforeRule: {
+      /** @enum {string} */
+      kind: 'new_host' | 'raise_budget' | 'push_protected' | 'custom';
+      label?: string;
+    };
+    GroupMember: {
+      /** @enum {string} */
+      type: 'user' | 'bot';
+      /** Format: uuid */
+      id: string;
+      roleText: string;
+      name?: string;
+    };
+    Group: {
+      /** Format: uuid */
+      id: string;
+      name: string;
+      goal: string;
+      /** Format: uuid */
+      leadBotId: string;
+      botTalk: boolean;
+      turnLimit: number;
+      /** @enum {string} */
+      answerPolicy: 'mentioned_else_lead' | 'lead_first' | 'round_robin';
+      askBefore: components['schemas']['AskBeforeRule'][];
+      /** Format: int64 */
+      budgetLimitMicros?: number | null;
+      paused: boolean;
+      pauseReason: string;
+      turnsSinceHuman: number;
+      /** Format: int64 */
+      unread: number;
+      members: components['schemas']['GroupMember'][];
+    };
+    CreateGroupRequest: {
+      /** Format: uuid */
+      id: string;
+      name: string;
+      goal?: string;
+      /** Format: uuid */
+      leadBotId: string;
+      botTalk: boolean;
+      turnLimit: number;
+      /** @enum {string} */
+      answerPolicy: 'mentioned_else_lead' | 'lead_first' | 'round_robin';
+      askBefore: components['schemas']['AskBeforeRule'][];
+      /** Format: int64 */
+      budgetLimitMicros?: number | null;
+      members: components['schemas']['GroupMember'][];
+    };
+    UpdateGroupRequest: {
+      name: string;
+      goal?: string;
+      /** Format: uuid */
+      leadBotId: string;
+      botTalk: boolean;
+      turnLimit: number;
+      /** @enum {string} */
+      answerPolicy: 'mentioned_else_lead' | 'lead_first' | 'round_robin';
+      askBefore: components['schemas']['AskBeforeRule'][];
+      /** Format: int64 */
+      budgetLimitMicros?: number | null;
+      members: components['schemas']['GroupMember'][];
     };
     HealthResponse: {
       status: string;
@@ -1630,6 +1836,466 @@ export interface operations {
         content?: never;
       };
       /** @description Queue unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  listGroups: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Groups the caller belongs to */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Group'][];
+        };
+      };
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Workspace not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  createGroup: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateGroupRequest'];
+      };
+    };
+    responses: {
+      /** @description Same request id and body replayed */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Group'];
+        };
+      };
+      /** @description Group created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Group'];
+        };
+      };
+      /** @description Invalid group */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Viewers cannot create groups */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Workspace not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Request id reused with a different body */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  getGroup: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+        groupID: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Group visible to a member */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Group'];
+        };
+      };
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Group not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  updateGroup: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+        groupID: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateGroupRequest'];
+      };
+    };
+    responses: {
+      /** @description Settings replaced */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Group'];
+        };
+      };
+      /** @description Invalid settings */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Viewers cannot change a group */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Group not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  listGroupMessages: {
+    parameters: {
+      query?: {
+        before?: number;
+      };
+      header?: never;
+      path: {
+        workspaceID: string;
+        groupID: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Group history */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ChatHistory'];
+        };
+      };
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Group not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  sendGroupMessage: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+        groupID: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SendChatMessageRequest'];
+      };
+    };
+    responses: {
+      /** @description Stored. Bots are not queued by this call. */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ChatMessage'];
+        };
+      };
+      /** @description Invalid message */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Viewers cannot post */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Group not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Request id reused with different content */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Message rate limit exceeded */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  markGroupRead: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+        groupID: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Read cursor moved to the latest message */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Group not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  listApprovals: {
+    parameters: {
+      query?: {
+        status?: 'pending' | 'approved' | 'denied';
+      };
+      header?: never;
+      path: {
+        workspaceID: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Approvals visible to the caller. Workspace budget rows are included for owners and admins. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApprovalList'];
+        };
+      };
+      /** @description Invalid status filter */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Workspace not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  decideApproval: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+        approvalID: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ApprovalDecisionRequest'];
+      };
+    };
+    responses: {
+      /** @description Decision stored. An approval pause queues the waiting bot. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Missing or invalid decision */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Viewer cannot decide */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Approval not visible to the caller */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Already decided */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Bot queue is full */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Turn queue is unavailable */
       503: {
         headers: {
           [name: string]: unknown;

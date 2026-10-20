@@ -213,7 +213,7 @@ func Preface(ctx context.Context, q *db.Queries, workspaceID, conversationID pgt
 // ScreenBudget applies the conversation cap before a group turn calls a model.
 // Unknown metered cost blocks the turn. A direct message is always allowed here;
 // workspace and bot budgets stay in the existing check.
-func ScreenBudget(ctx context.Context, pool *pgxpool.Pool, workspaceID, conversationID, botID pgtype.UUID) (bool, error) {
+func ScreenBudget(ctx context.Context, pool *pgxpool.Pool, workspaceID, conversationID, botID, triggerMessageID pgtype.UUID) (bool, error) {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return false, err
@@ -283,10 +283,38 @@ func ScreenBudget(ctx context.Context, pool *pgxpool.Pool, workspaceID, conversa
 			return false, err
 		}
 	}
-	if err = q.CreateGroupBudgetApproval(ctx, db.CreateGroupBudgetApprovalParams{
+	payload, err := json.Marshal(map[string]string{"triggerMessageId": uuid.UUID(triggerMessageID.Bytes).String()})
+	if err != nil {
+		return false, err
+	}
+	approvalID, err := q.CreateGroupBudgetApproval(ctx, db.CreateGroupBudgetApprovalParams{
 		WorkspaceID:    workspaceID,
 		BotID:          botID,
 		ConversationID: conversationID,
+		Payload:        payload,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return true, tx.Commit(ctx)
+	}
+	if err != nil {
+		return false, err
+	}
+	card, err := q.CreateChatMessage(ctx, db.CreateChatMessageParams{
+		ID:             pgID(uuid.New()),
+		WorkspaceID:    workspaceID,
+		ConversationID: conversationID,
+		SenderType:     "system",
+		Kind:           "approval",
+		Content:        "Raise the group budget",
+		Metadata:       []byte(`{"kind":"raise_budget"}`),
+	})
+	if err != nil {
+		return false, err
+	}
+	if err = q.AttachApprovalMessage(ctx, db.AttachApprovalMessageParams{
+		WorkspaceID: workspaceID,
+		ID:          approvalID,
+		MessageID:   card.ID,
 	}); err != nil {
 		return false, err
 	}

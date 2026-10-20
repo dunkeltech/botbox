@@ -40,22 +40,31 @@ func (q *Queries) ApplyGroupPlan(ctx context.Context, arg ApplyGroupPlanParams) 
 	return err
 }
 
-const createGroupBudgetApproval = `-- name: CreateGroupBudgetApproval :exec
-INSERT INTO approvals(workspace_id, bot_id, conversation_id, kind)
-VALUES ($1, $2, $3, 'raise_budget')
+const createGroupBudgetApproval = `-- name: CreateGroupBudgetApproval :one
+INSERT INTO approvals(workspace_id, bot_id, conversation_id, kind, payload)
+VALUES ($1, $2, $3, 'raise_budget', $4)
 ON CONFLICT (workspace_id, conversation_id) WHERE status = 'pending' AND kind = 'raise_budget' AND budget_id IS NULL
 DO NOTHING
+RETURNING id
 `
 
 type CreateGroupBudgetApprovalParams struct {
 	WorkspaceID    pgtype.UUID `json:"workspace_id"`
 	BotID          pgtype.UUID `json:"bot_id"`
 	ConversationID pgtype.UUID `json:"conversation_id"`
+	Payload        []byte      `json:"payload"`
 }
 
-func (q *Queries) CreateGroupBudgetApproval(ctx context.Context, arg CreateGroupBudgetApprovalParams) error {
-	_, err := q.db.Exec(ctx, createGroupBudgetApproval, arg.WorkspaceID, arg.BotID, arg.ConversationID)
-	return err
+func (q *Queries) CreateGroupBudgetApproval(ctx context.Context, arg CreateGroupBudgetApprovalParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, createGroupBudgetApproval,
+		arg.WorkspaceID,
+		arg.BotID,
+		arg.ConversationID,
+		arg.Payload,
+	)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const deleteGroupMember = `-- name: DeleteGroupMember :exec

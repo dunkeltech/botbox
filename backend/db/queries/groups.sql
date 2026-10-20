@@ -108,11 +108,12 @@ SELECT EXISTS(
       AND metadata->>'budgetWarning' = 'true'
 ) AS warned;
 
--- name: CreateGroupBudgetApproval :exec
-INSERT INTO approvals(workspace_id, bot_id, conversation_id, kind)
-VALUES ($1, $2, $3, 'raise_budget')
+-- name: CreateGroupBudgetApproval :one
+INSERT INTO approvals(workspace_id, bot_id, conversation_id, kind, payload)
+VALUES ($1, $2, $3, 'raise_budget', sqlc.arg(payload))
 ON CONFLICT (workspace_id, conversation_id) WHERE status = 'pending' AND kind = 'raise_budget' AND budget_id IS NULL
-DO NOTHING;
+DO NOTHING
+RETURNING id;
 
 -- name: MarkGroupRead :execrows
 UPDATE conversation_members

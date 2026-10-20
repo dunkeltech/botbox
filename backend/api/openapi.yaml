@@ -275,6 +275,44 @@ paths:
         '204': {description: Read cursor moved to the latest message}
         '401': {description: Authentication required}
         '404': {description: Group not found}
+  /api/workspaces/{workspaceID}/approvals:
+    parameters:
+      - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      operationId: listApprovals
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: status, in: query, schema: {type: string, enum: [pending, approved, denied]}}
+      responses:
+        '200':
+          description: Approvals visible to the caller. Workspace budget rows are included for owners and admins.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApprovalList'}
+        '400': {description: Invalid status filter}
+        '401': {description: Authentication required}
+        '404': {description: Workspace not found}
+  /api/workspaces/{workspaceID}/approvals/{approvalID}/decision:
+    parameters:
+      - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: approvalID, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      operationId: decideApproval
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ApprovalDecisionRequest'}
+      responses:
+        '204': {description: Decision stored. An approval pause queues the waiting bot.}
+        '400': {description: Missing or invalid decision}
+        '401': {description: Authentication required}
+        '403': {description: Viewer cannot decide}
+        '404': {description: Approval not visible to the caller}
+        '409': {description: Already decided, host already allowed, or cap still exhausted}
+        '429': {description: Bot queue is full}
+        '503': {description: Turn queue is unavailable}
   /api/workspaces/{workspaceID}/conversations/{conversationID}/messages/{messageID}/tool-image:
     parameters:
       - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
@@ -2047,9 +2085,35 @@ components:
         id: {type: string, format: uuid}
         position: {type: integer, format: int64}
         senderType: {type: string, enum: [user, bot, system]}
-        kind: {type: string, enum: [text, tool, system, card]}
+        kind: {type: string, enum: [text, tool, system, card, approval]}
         content: {type: string}
         createdAt: {type: string, format: date-time}
+    Approval:
+      type: object
+      required: [id, botId, kind, status, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        botId: {type: string, format: uuid}
+        conversationId: {type: string, format: uuid}
+        budgetId: {type: string, format: uuid}
+        messageId: {type: string, format: uuid}
+        kind: {type: string, enum: [new_host, raise_budget, push_protected, custom]}
+        status: {type: string, enum: [pending, approved, denied]}
+        host: {type: string}
+        branch: {type: string}
+        label: {type: string}
+        createdAt: {type: string, format: date-time}
+        decidedAt: {type: string, format: date-time}
+    ApprovalList:
+      type: object
+      required: [approvals]
+      properties:
+        approvals: {type: array, items: {$ref: '#/components/schemas/Approval'}}
+    ApprovalDecisionRequest:
+      type: object
+      required: [decision]
+      properties:
+        decision: {type: string, enum: [approved, denied]}
     ChatTurn:
       type: object
       required: [id, status, queueAhead, errorCode]

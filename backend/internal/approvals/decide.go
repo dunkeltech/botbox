@@ -1,0 +1,300 @@
+package approvals
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"strings"
+	"time"
+
+	"github.com/dunkeltech/botbox/backend/internal/gen/db"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
+const queueCap = 100
+
+var (
+	// ErrConflict means the approval was already decided.
+	ErrConflict = errors.New("approval already decided")
+	// ErrHostNotBlocked means the host is already allowed, so the card stays pending.
+	ErrHostNotBlocked = errors.New("host is not blocked")
+	// ErrCapNotRaised means spend is still at the cap or a cost is unknown.
+	ErrCapNotRaised = errors.New("budget cap is not above spend")
+	// ErrQueueFull means the resumed bot already has 100 queued or running turns.
+	ErrQueueFull = errors.New("bot queue is full")
+	// ErrInvalid means the decision or the stored card cannot be applied.
+	ErrInvalid = errors.New("invalid approval decision")
+)
+
+// Turn is the bot turn the caller must publish before committing an approval.
+type Turn struct {
+	WorkspaceID uuid.UUID
+	BotID       uuid.UUID
+	TurnID      uuid.UUID
+}
+
+// Apply records a decision. Approving an approval pause queues the waiting
+// bot and does not reset the turn counter. A turn-limit, loop, or budget
+// pause stays. Denying posts a system line and leaves the group paused.
+// The caller publishes Turn before commit.
+func Apply(ctx context.Context, q *db.Queries, approval db.Approval, decision string, actor pgtype.UUID, now time.Time) (*Turn, error) {
+	if decision != "approved" && decision != "denied" {
+		return nil, ErrInvalid
+	}
+	if approval.Status != "pending" {
+		return nil, ErrConflict
+	}
+	if decision == "approved" {
+		if err := allow(ctx, q, approval, now); err != nil {
+			return nil, err
+		}
+	}
+	n, err := q.DecideApproval(ctx, db.DecideApprovalParams{
+		WorkspaceID: approval.WorkspaceID,
+		ID:          approval.ID,
+		Status:      decision,
+		DecidedBy:   actor,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if n == 0 {
+		return nil, ErrConflict
+	}
+	meta, err := json.Marshal(map[string]string{"decision": decision, "kind": approval.Kind})
+	if err != nil {
+		return nil, err
+	}
+	if _, err = q.CreateAuditLog(ctx, db.CreateAuditLogParams{
+		WorkspaceID: approval.WorkspaceID,
+		ActorUserID: actor,
+		Action:      "approval.decided",
+		TargetType:  pgtype.Text{String: "approval", Valid: true},
+		TargetID:    approval.ID,
+		Metadata:    meta,
+	}); err != nil {
+		return nil, err
+	}
+	if !approval.ConversationID.Valid {
+		return nil, nil
+	}
+	if decision == "denied" {
+		_, err = q.CreateChatMessage(ctx, db.CreateChatMessageParams{
+			ID:             pgID(uuid.New()),
+			WorkspaceID:    approval.WorkspaceID,
+			ConversationID: approval.ConversationID,
+			SenderType:     "system",
+			Kind:           "system",
+			Content:        "Denied · this request stays blocked",
+			Metadata:       []byte("{}"),
+		})
+		return nil, err
+	}
+	cleared, err := q.ClearApprovalPause(ctx, db.ClearApprovalPauseParams{
+		WorkspaceID: approval.WorkspaceID,
+		ID:          approval.ConversationID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	// Only an approval pause resumes the bot. A turn limit stays in place.
+	if cleared != 1 {
+		return nil, nil
+	}
+	return queueResume(ctx, q, approval)
+}
+
+func allow(ctx context.Context, q *db.Queries, approval db.Approval, now time.Time) error {
+	switch approval.Kind {
+	case kindNewHost:
+		return allowHost(ctx, q, approval)
+	case kindRaiseBudget:
+		if approval.ConversationID.Valid {
+			return allowGroupCap(ctx, q, approval)
+		}
+		return allowBudget(ctx, q, approval, now)
+	default:
+		return nil
+	}
+}
+
+func allowHost(ctx context.Context, q *db.Queries, approval db.Approval) error {
+	var payload cardPayload
+	if err := json.Unmarshal(approval.Payload, &payload); err != nil || payload.Host == "" {
+		return ErrInvalid
+	}
+	rule, err := q.GetEgressRuleByWorkspaceAndBot(ctx, db.GetEgressRuleByWorkspaceAndBotParams{
+		WorkspaceID: approval.WorkspaceID,
+		BotID:       approval.BotID,
+	})
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+	policy, hosts := "allowlist", []string(nil)
+	if err == nil {
+		policy, hosts = rule.Policy, rule.AllowedHosts
+	}
+	if hostAllowed(policy, hosts, payload.Host) {
+		return ErrHostNotBlocked
+	}
+	_, err = q.AddEgressHost(ctx, db.AddEgressHostParams{
+		BotID:       approval.BotID,
+		WorkspaceID: approval.WorkspaceID,
+		Host:        payload.Host,
+	})
+	return err
+}
+
+func allowGroupCap(ctx context.Context, q *db.Queries, approval db.Approval) error {
+	group, err := q.GetGroupForUpdate(ctx, db.GetGroupForUpdateParams{
+		WorkspaceID: approval.WorkspaceID,
+		ID:          approval.ConversationID,
+	})
+	if err != nil {
+		return err
+	}
+	spend, err := q.GroupSpend(ctx, db.GroupSpendParams{
+		WorkspaceID:    approval.WorkspaceID,
+		ConversationID: approval.ConversationID,
+	})
+	if err != nil {
+		return err
+	}
+	if !group.BudgetLimitMicros.Valid || spend.UnknownRows != 0 || spend.SpentMicros >= group.BudgetLimitMicros.Int64 {
+		return ErrCapNotRaised
+	}
+	return nil
+}
+
+func allowBudget(ctx context.Context, q *db.Queries, approval db.Approval, now time.Time) error {
+	budget, err := q.GetBudgetForUpdate(ctx, db.GetBudgetForUpdateParams{
+		WorkspaceID: approval.WorkspaceID,
+		ID:          approval.BudgetID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrInvalid
+	}
+	if err != nil {
+		return err
+	}
+	states, err := q.ListBudgetState(ctx, db.ListBudgetStateParams{
+		WorkspaceID: approval.WorkspaceID,
+		BotID:       budget.BotID,
+		AsOf:        pgtype.Timestamptz{Time: now, Valid: true},
+	})
+	if err != nil {
+		return err
+	}
+	var spent int64
+	var limit int64
+	found := false
+	for _, state := range states {
+		if state.ID == budget.ID {
+			spent, limit, found = state.SpentMicros, state.LimitMicros, true
+			break
+		}
+	}
+	if !found || spent >= limit {
+		return ErrCapNotRaised
+	}
+	unknown, err := q.HasUnpricedAPIUsage(ctx, db.HasUnpricedAPIUsageParams{
+		WorkspaceID: approval.WorkspaceID,
+		BotID:       budget.BotID,
+		Period:      budget.Period,
+		AsOf:        pgtype.Timestamptz{Time: now, Valid: true},
+	})
+	if err != nil {
+		return err
+	}
+	if unknown {
+		return ErrCapNotRaised
+	}
+	return nil
+}
+
+func queueResume(ctx context.Context, q *db.Queries, approval db.Approval) (*Turn, error) {
+	messageID, err := resumeMessage(ctx, q, approval)
+	if err != nil {
+		return nil, err
+	}
+	if err = q.LockBotQueue(ctx, uuid.UUID(approval.WorkspaceID.Bytes).String()+"/"+uuid.UUID(approval.BotID.Bytes).String()); err != nil {
+		return nil, err
+	}
+	pending, err := q.CountPendingBotTurns(ctx, db.CountPendingBotTurnsParams{
+		WorkspaceID: approval.WorkspaceID,
+		BotID:       approval.BotID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if pending >= queueCap {
+		return nil, ErrQueueFull
+	}
+	row, err := q.CreateBotTurn(ctx, db.CreateBotTurnParams{
+		WorkspaceID:    approval.WorkspaceID,
+		BotID:          approval.BotID,
+		ConversationID: approval.ConversationID,
+		MessageID:      messageID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &Turn{
+		WorkspaceID: uuid.UUID(approval.WorkspaceID.Bytes),
+		BotID:       uuid.UUID(approval.BotID.Bytes),
+		TurnID:      uuid.UUID(row.ID.Bytes),
+	}, nil
+}
+
+func resumeMessage(ctx context.Context, q *db.Queries, approval db.Approval) (pgtype.UUID, error) {
+	var payload cardPayload
+	_ = json.Unmarshal(approval.Payload, &payload)
+	if id, err := uuid.Parse(payload.TriggerMessageID); err == nil {
+		msg, err := q.GetTurnMessage(ctx, db.GetTurnMessageParams{
+			WorkspaceID: approval.WorkspaceID,
+			ID:          pgID(id),
+		})
+		if err == nil && msg.ConversationID == approval.ConversationID && msg.Kind == "text" && (msg.SenderType == "user" || msg.SenderType == "bot") {
+			return msg.ID, nil
+		}
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return pgtype.UUID{}, err
+		}
+	}
+	id, err := q.LatestRunnableGroupMessage(ctx, db.LatestRunnableGroupMessageParams{
+		WorkspaceID:    approval.WorkspaceID,
+		ConversationID: approval.ConversationID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return pgtype.UUID{}, ErrInvalid
+	}
+	return id, err
+}
+
+// hostAllowed mirrors the egress proxy: an open policy or a matching pattern
+// means this card must not add the host again.
+func hostAllowed(policy string, patterns []string, host string) bool {
+	if policy == "open" {
+		return true
+	}
+	host = strings.ToLower(host)
+	for _, pattern := range patterns {
+		pattern = strings.ToLower(strings.TrimSpace(pattern))
+		if pattern == "" {
+			continue
+		}
+		if strings.HasPrefix(pattern, "*.") {
+			base := strings.TrimPrefix(pattern, "*.")
+			if base != "" && strings.HasSuffix(host, "."+base) {
+				return true
+			}
+			continue
+		}
+		if host == pattern {
+			return true
+		}
+	}
+	return false
+}

@@ -264,6 +264,7 @@
     "eyebrow": "Secrets & egress network",
     "title": "{name} · Secrets & network",
     "lead": "Secrets stay encrypted outside the sandbox. The outbound proxy selectively intercepts configured domains to inject credentials after stripping placeholders.",
+    "protectedPushNote": "A protected push asks before it is treated as allowed. bot.Box does not run git push and stores no git credential on the card. The git host and the token's rights still decide whether that branch can be updated.",
     "backToWorkspace": "Back to workspace",
     "readOnlyNotice": "You have read-only access for this bot's secrets and egress rules.",
     "howTitle": "How a secret leaves the sandbox",

@@ -370,6 +370,9 @@ describe('Phase 3 Secrets & Outbound Egress UI', () => {
     expect(
       await screen.findByText('Atlas · Secrets & network'),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText(/The git host and the token's rights/),
+    ).toBeInTheDocument();
     expect(await screen.findByText('OPENAI_API_KEY')).toBeInTheDocument();
     expect(screen.getByText('••••9f2a')).toBeInTheDocument();
     expect(screen.getByText('3 uses')).toBeInTheDocument();

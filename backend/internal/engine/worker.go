@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dunkeltech/botbox/backend/internal/approvals"
 	"github.com/dunkeltech/botbox/backend/internal/budgets"
 	"github.com/dunkeltech/botbox/backend/internal/events"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
@@ -153,7 +154,7 @@ func (w *Worker) executeClaimed(ctx context.Context, tx pgx.Tx, turn db.BotTurn,
 		return err
 	}
 	session := Session{WorkspaceID: uuidID(turn.WorkspaceID), BotID: uuidID(turn.BotID), ConversationID: uuidID(turn.ConversationID), Bot: bot, Messages: history, Preface: preface}
-	stop, err := groups.ScreenBudget(ctx, w.Pool, turn.WorkspaceID, turn.ConversationID, turn.BotID)
+	stop, err := groups.ScreenBudget(ctx, w.Pool, turn.WorkspaceID, turn.ConversationID, turn.BotID, turn.MessageID)
 	if err != nil {
 		return err
 	}
@@ -177,6 +178,11 @@ func (w *Worker) executeClaimed(ctx context.Context, tx pgx.Tx, turn db.BotTurn,
 		case EventKindToolCall, EventKindToolResult:
 			if ev.Kind == EventKindToolCall {
 				ev.Text = ev.ToolName + "\n" + string(ev.ToolInput)
+				// The card is the gate. bot.Box does not push; the git host still
+				// has to reject a protected branch (ADR-0015).
+				if err := approvals.NoteTool(ctx, w.Pool, turn, ev.Text); err != nil {
+					return err
+				}
 			}
 			data, marshalErr := json.Marshal(ev)
 			if marshalErr != nil {
@@ -286,6 +292,9 @@ func (w *Worker) executeClaimed(ctx context.Context, tx pgx.Tx, turn db.BotTurn,
 		}
 	}
 	if kind == "group" && text.Len() > 0 && status == "completed" {
+		if err = approvals.NoteReply(finalCtx, w.Pool, turn, text.String()); err != nil {
+			return err
+		}
 		if err = w.routeGroupReply(finalCtx, turn, reply); err != nil {
 			return err
 		}

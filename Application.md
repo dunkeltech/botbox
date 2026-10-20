@@ -350,8 +350,9 @@ Membership is the only read path, including for workspace admins. See
 - **Approvals:**
   - Kinds: `new_host`, `raise_budget`, `push_protected`, `custom`.
   - Who decides: a non-viewer human member of the group, or a workspace owner or admin. Viewers can read.
-  - A human chat message clears every pause. Approving an ask-before card clears only an approval pause and does not reset the turn counter.
-  - `new_host` is enforced by the egress allowlist. `raise_budget` for a bot or workspace stays on the Phase 4 budget row. A group cap is an approval with `conversation_id` and no `budget_id`. `push_protected` records a card and does not push.
+  - `POST /api/workspaces/{workspaceID}/approvals/{approvalID}/decision` stores `approved` or `denied`. A viewer gets 403. Anyone else who is not a member of that group gets 404, except a workspace owner or admin, who may decide. A second decision gets 409.
+  - A human chat message clears every pause. Approving an ask-before card clears only an approval pause, queues the waiting bot, and does not reset the turn counter. Denying leaves the pause. A turn-limit pause stays when some other approval is decided.
+  - `new_host` is enforced by the egress allowlist. Approval appends that one host. `raise_budget` for a bot or workspace stays on the Phase 4 budget row and still opens and clears through the budget endpoints. A group cap is an approval with `conversation_id` and no `budget_id`. Approving it does not change the number. `push_protected` records a card and does not push. The git host and the token's rights remain the enforcement.
 - **UI:**
   - Slack-style sidebar listing approvals, activity, group chats and colleagues. Bots use the existing avatar and status. Humans are listed without a live presence dot.
   - Unread counts come from `last_read_position`. Mentions, approvals, and budget warnings create notification rows.

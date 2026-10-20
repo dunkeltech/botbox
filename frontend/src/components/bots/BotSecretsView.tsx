@@ -528,6 +528,9 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
         <p className="max-w-3xl text-[16px] leading-[1.6] text-ink-2">
           {t('lead')}
         </p>
+        <p className="max-w-3xl text-[16px] leading-[1.6] text-ink-2">
+          {t('protectedPushNote')}
+        </p>
 
         <nav
           aria-label={tTabs('ariaLabel')}

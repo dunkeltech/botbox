@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dunkeltech/botbox/backend/internal/approvals"
 	"github.com/dunkeltech/botbox/backend/internal/gen/api"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
 	"github.com/dunkeltech/botbox/backend/internal/secrets"
@@ -1117,6 +1118,14 @@ func NewBotEgressProxyHandler(deps BotEgressProxyDeps) (*mitmproxy.Handler, erro
 				LatencyMs:        latency,
 			}); logErr != nil {
 				logger.Error("persist egress audit log failed", slog.Any("error", logErr))
+			}
+
+			// Only a real host denial on 443 opens a card. A forbidden port uses the
+			// same audit action and must not ask a human to allow the host (ADR-0015).
+			if ev.Action == mitmproxy.ActionBlockedHost && ev.Port == "443" {
+				if noteErr := approvals.NoteBlockedHost(auditCtx, deps.Pool, deps.WorkspaceID, deps.BotID, ev.Host); noteErr != nil {
+					logger.Error("record blocked host approval failed", slog.Any("error", noteErr))
+				}
 			}
 
 			if ev.Action == mitmproxy.ActionMITMTokenAdded && parsedSecretID != uuid.Nil {

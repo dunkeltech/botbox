@@ -198,6 +198,8 @@ func (s *server) mountRoutes(r chi.Router) {
 			r.Get("/groups/{groupID}/messages", s.handleListGroupMessages)
 			r.Post("/groups/{groupID}/messages", s.handleSendGroupMessage)
 			r.Post("/groups/{groupID}/read", s.handleMarkGroupRead)
+			r.Get("/approvals", s.handleListApprovals)
+			r.Post("/approvals/{approvalID}/decision", s.handleDecideApproval)
 			r.Get("/bots", s.handleListBots)
 			r.Post("/bots", s.handleCreateBot)
 			r.Get("/bots/{botID}/runtime", s.handleBotRuntime)

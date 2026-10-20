@@ -9,24 +9,87 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for ApprovalKind.
+const (
+	ApprovalKindCustom        ApprovalKind = "custom"
+	ApprovalKindNewHost       ApprovalKind = "new_host"
+	ApprovalKindPushProtected ApprovalKind = "push_protected"
+	ApprovalKindRaiseBudget   ApprovalKind = "raise_budget"
+)
+
+// Valid indicates whether the value is a known member of the ApprovalKind enum.
+func (e ApprovalKind) Valid() bool {
+	switch e {
+	case ApprovalKindCustom:
+		return true
+	case ApprovalKindNewHost:
+		return true
+	case ApprovalKindPushProtected:
+		return true
+	case ApprovalKindRaiseBudget:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ApprovalStatus.
+const (
+	ApprovalStatusApproved ApprovalStatus = "approved"
+	ApprovalStatusDenied   ApprovalStatus = "denied"
+	ApprovalStatusPending  ApprovalStatus = "pending"
+)
+
+// Valid indicates whether the value is a known member of the ApprovalStatus enum.
+func (e ApprovalStatus) Valid() bool {
+	switch e {
+	case ApprovalStatusApproved:
+		return true
+	case ApprovalStatusDenied:
+		return true
+	case ApprovalStatusPending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ApprovalDecisionRequestDecision.
+const (
+	ApprovalDecisionRequestDecisionApproved ApprovalDecisionRequestDecision = "approved"
+	ApprovalDecisionRequestDecisionDenied   ApprovalDecisionRequestDecision = "denied"
+)
+
+// Valid indicates whether the value is a known member of the ApprovalDecisionRequestDecision enum.
+func (e ApprovalDecisionRequestDecision) Valid() bool {
+	switch e {
+	case ApprovalDecisionRequestDecisionApproved:
+		return true
+	case ApprovalDecisionRequestDecisionDenied:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AskBeforeRuleKind.
 const (
-	Custom        AskBeforeRuleKind = "custom"
-	NewHost       AskBeforeRuleKind = "new_host"
-	PushProtected AskBeforeRuleKind = "push_protected"
-	RaiseBudget   AskBeforeRuleKind = "raise_budget"
+	AskBeforeRuleKindCustom        AskBeforeRuleKind = "custom"
+	AskBeforeRuleKindNewHost       AskBeforeRuleKind = "new_host"
+	AskBeforeRuleKindPushProtected AskBeforeRuleKind = "push_protected"
+	AskBeforeRuleKindRaiseBudget   AskBeforeRuleKind = "raise_budget"
 )
 
 // Valid indicates whether the value is a known member of the AskBeforeRuleKind enum.
 func (e AskBeforeRuleKind) Valid() bool {
 	switch e {
-	case Custom:
+	case AskBeforeRuleKindCustom:
 		return true
-	case NewHost:
+	case AskBeforeRuleKindNewHost:
 		return true
-	case PushProtected:
+	case AskBeforeRuleKindPushProtected:
 		return true
-	case RaiseBudget:
+	case AskBeforeRuleKindRaiseBudget:
 		return true
 	default:
 		return false
@@ -101,15 +164,18 @@ func (e BudgetStatePeriod) Valid() bool {
 
 // Defines values for ChatMessageKind.
 const (
-	ChatMessageKindCard   ChatMessageKind = "card"
-	ChatMessageKindSystem ChatMessageKind = "system"
-	ChatMessageKindText   ChatMessageKind = "text"
-	ChatMessageKindTool   ChatMessageKind = "tool"
+	ChatMessageKindApproval ChatMessageKind = "approval"
+	ChatMessageKindCard     ChatMessageKind = "card"
+	ChatMessageKindSystem   ChatMessageKind = "system"
+	ChatMessageKindText     ChatMessageKind = "text"
+	ChatMessageKindTool     ChatMessageKind = "tool"
 )
 
 // Valid indicates whether the value is a known member of the ChatMessageKind enum.
 func (e ChatMessageKind) Valid() bool {
 	switch e {
+	case ChatMessageKindApproval:
+		return true
 	case ChatMessageKindCard:
 		return true
 	case ChatMessageKindSystem:
@@ -435,11 +501,67 @@ func (e WorkspaceRole) Valid() bool {
 	}
 }
 
+// Defines values for ListApprovalsParamsStatus.
+const (
+	ListApprovalsParamsStatusApproved ListApprovalsParamsStatus = "approved"
+	ListApprovalsParamsStatusDenied   ListApprovalsParamsStatus = "denied"
+	ListApprovalsParamsStatusPending  ListApprovalsParamsStatus = "pending"
+)
+
+// Valid indicates whether the value is a known member of the ListApprovalsParamsStatus enum.
+func (e ListApprovalsParamsStatus) Valid() bool {
+	switch e {
+	case ListApprovalsParamsStatusApproved:
+		return true
+	case ListApprovalsParamsStatusDenied:
+		return true
+	case ListApprovalsParamsStatusPending:
+		return true
+	default:
+		return false
+	}
+}
+
 // AcceptInvitationRequest defines model for AcceptInvitationRequest.
 type AcceptInvitationRequest struct {
 	DisplayName *string              `json:"displayName,omitempty"`
 	Email       *openapi_types.Email `json:"email,omitempty"`
 	Password    *string              `json:"password,omitempty"`
+}
+
+// Approval defines model for Approval.
+type Approval struct {
+	BotId          openapi_types.UUID  `json:"botId"`
+	Branch         *string             `json:"branch,omitempty"`
+	BudgetId       *openapi_types.UUID `json:"budgetId,omitempty"`
+	ConversationId *openapi_types.UUID `json:"conversationId,omitempty"`
+	CreatedAt      time.Time           `json:"createdAt"`
+	DecidedAt      *time.Time          `json:"decidedAt,omitempty"`
+	Host           *string             `json:"host,omitempty"`
+	Id             openapi_types.UUID  `json:"id"`
+	Kind           ApprovalKind        `json:"kind"`
+	Label          *string             `json:"label,omitempty"`
+	MessageId      *openapi_types.UUID `json:"messageId,omitempty"`
+	Status         ApprovalStatus      `json:"status"`
+}
+
+// ApprovalKind defines model for Approval.Kind.
+type ApprovalKind string
+
+// ApprovalStatus defines model for Approval.Status.
+type ApprovalStatus string
+
+// ApprovalDecisionRequest defines model for ApprovalDecisionRequest.
+type ApprovalDecisionRequest struct {
+	Decision ApprovalDecisionRequestDecision `json:"decision"`
+}
+
+// ApprovalDecisionRequestDecision defines model for ApprovalDecisionRequest.Decision.
+type ApprovalDecisionRequestDecision string
+
+// ApprovalList defines model for ApprovalList.
+type ApprovalList struct {
+	Approvals []Approval `json:"approvals"`
 }
 
 // AskBeforeRule defines model for AskBeforeRule.
@@ -1069,6 +1191,14 @@ type UserID = openapi_types.UUID
 // WorkspaceID defines model for WorkspaceID.
 type WorkspaceID = openapi_types.UUID
 
+// ListApprovalsParams defines parameters for ListApprovals.
+type ListApprovalsParams struct {
+	Status *ListApprovalsParamsStatus `form:"status,omitempty" json:"status,omitempty"`
+}
+
+// ListApprovalsParamsStatus defines parameters for ListApprovals.
+type ListApprovalsParamsStatus string
+
 // ListBotEgressLogsParams defines parameters for ListBotEgressLogs.
 type ListBotEgressLogsParams struct {
 	Action *EgressLogAction `form:"action,omitempty" json:"action,omitempty"`
@@ -1123,6 +1253,9 @@ type CreateWorkspaceJSONRequestBody = CreateWorkspaceRequest
 
 // UpdateWorkspaceJSONRequestBody defines body for UpdateWorkspace for application/json ContentType.
 type UpdateWorkspaceJSONRequestBody = UpdateWorkspaceRequest
+
+// DecideApprovalJSONRequestBody defines body for DecideApproval for application/json ContentType.
+type DecideApprovalJSONRequestBody = ApprovalDecisionRequest
 
 // CreateBotJSONRequestBody defines body for CreateBot for application/json ContentType.
 type CreateBotJSONRequestBody = CreateBotRequest
