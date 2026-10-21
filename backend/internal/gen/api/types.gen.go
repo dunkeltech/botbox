@@ -399,6 +399,27 @@ func (e LlmMode) Valid() bool {
 	}
 }
 
+// Defines values for NotificationKind.
+const (
+	NotificationKindApproval NotificationKind = "approval"
+	NotificationKindBudget   NotificationKind = "budget"
+	NotificationKindMention  NotificationKind = "mention"
+)
+
+// Valid indicates whether the value is a known member of the NotificationKind enum.
+func (e NotificationKind) Valid() bool {
+	switch e {
+	case NotificationKindApproval:
+		return true
+	case NotificationKindBudget:
+		return true
+	case NotificationKindMention:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SecretAuthScheme.
 const (
 	Basic  SecretAuthScheme = "basic"
@@ -964,6 +985,26 @@ type ModelPriceRequest struct {
 	Provider               string `json:"provider"`
 }
 
+// Notification defines model for Notification.
+type Notification struct {
+	ApprovalId     *openapi_types.UUID `json:"approvalId,omitempty"`
+	ConversationId *openapi_types.UUID `json:"conversationId,omitempty"`
+	CreatedAt      time.Time           `json:"createdAt"`
+	Id             openapi_types.UUID  `json:"id"`
+	Kind           NotificationKind    `json:"kind"`
+	MessageId      *openapi_types.UUID `json:"messageId,omitempty"`
+	ReadAt         *time.Time          `json:"readAt,omitempty"`
+}
+
+// NotificationKind defines model for Notification.Kind.
+type NotificationKind string
+
+// NotificationList defines model for NotificationList.
+type NotificationList struct {
+	NextCursor    *string        `json:"nextCursor,omitempty"`
+	Notifications []Notification `json:"notifications"`
+}
+
 // RefreshRequest defines model for RefreshRequest.
 type RefreshRequest struct {
 	RefreshToken *string `json:"refreshToken,omitempty"`
@@ -1234,6 +1275,12 @@ type ListChatMessagesParams struct {
 // ListGroupMessagesParams defines parameters for ListGroupMessages.
 type ListGroupMessagesParams struct {
 	Before *int64 `form:"before,omitempty" json:"before,omitempty"`
+}
+
+// ListNotificationsParams defines parameters for ListNotifications.
+type ListNotificationsParams struct {
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // LoginJSONRequestBody defines body for Login for application/json ContentType.

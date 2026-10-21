@@ -12,7 +12,9 @@ import (
 
 	"github.com/dunkeltech/botbox/backend/internal/api"
 	"github.com/dunkeltech/botbox/backend/internal/budgets"
+	"github.com/dunkeltech/botbox/backend/internal/events"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
+	"github.com/dunkeltech/botbox/backend/internal/notify"
 	"github.com/dunkeltech/botbox/backend/internal/secrets"
 	"github.com/dunkeltech/botbox/backend/internal/secrets/llmproxy"
 	"github.com/dunkeltech/botbox/backend/internal/secrets/mitmproxy"
@@ -29,11 +31,11 @@ type egressDeps struct {
 	CACert   []byte
 }
 
-func databaseHandler(pool *pgxpool.Pool, ring *secrets.KeyRing, workspace, bot uuid.UUID, ca *mitmproxy.BotCA, logger *slog.Logger) (http.Handler, error) {
+func databaseHandler(pool *pgxpool.Pool, ring *secrets.KeyRing, workspace, bot uuid.UUID, ca *mitmproxy.BotCA, logger *slog.Logger, signal notify.Signal) (http.Handler, error) {
 	if pool == nil || ring == nil || workspace == uuid.Nil || bot == uuid.Nil || ca == nil {
 		return nil, errors.New("proxy configuration incomplete")
 	}
-	connect, err := api.NewBotEgressProxyHandler(api.BotEgressProxyDeps{Pool: pool, KeyRing: ring, WorkspaceID: workspace, BotID: bot, CA: ca, Logger: logger})
+	connect, err := api.NewBotEgressProxyHandler(api.BotEgressProxyDeps{Pool: pool, KeyRing: ring, WorkspaceID: workspace, BotID: bot, CA: ca, Logger: logger, Notify: signal})
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +126,7 @@ func isLLMHost(host string) bool {
 	return false
 }
 
-func openDatabaseProxy(ctx context.Context, dsn, keySpec, workspace, bot string, ca *mitmproxy.BotCA, logger *slog.Logger) (http.Handler, func(), error) {
+func openDatabaseProxy(ctx context.Context, dsn, keySpec, workspace, bot, natsURL string, ca *mitmproxy.BotCA, logger *slog.Logger) (http.Handler, func(), error) {
 	ws, err := uuid.Parse(workspace)
 	if err != nil {
 		return nil, nil, errors.New("invalid proxy workspace identity")
@@ -147,11 +149,36 @@ func openDatabaseProxy(ctx context.Context, dsn, keySpec, workspace, bot string,
 		pool.Close()
 		return nil, nil, errors.New("proxy database unavailable")
 	}
+	// A missed signal is recovered from the notification list. The proxy still
+	// has to block the host when NATS is down (issue #17).
+	var signal notify.Signal
+	closeAll := func() { pool.Close() }
+	if strings.TrimSpace(natsURL) != "" {
+		publisher, pubErr := events.OpenPublisher(natsURL)
+		if pubErr != nil {
+			logger.Warn("notification signal unavailable", "err", pubErr)
+		} else {
+			closeAll = func() {
+				publisher.Close()
+				pool.Close()
+			}
+			signal = func(sigCtx context.Context, workspaceID, conversationID uuid.UUID, ids []uuid.UUID) {
+				data, err := notify.MarshalSignal(conversationID, ids)
+				if err != nil {
+					logger.Error("encode notification signal", "err", err)
+					return
+				}
+				if err = publisher.PublishConversation(sigCtx, workspaceID, conversationID, data); err != nil {
+					logger.Error("publish notification signal", "err", err)
+				}
+			}
+		}
+	}
 	//nolint:contextcheck // handlers receive independent HTTP request contexts after startup
-	handler, err := databaseHandler(pool, ring, ws, botID, ca, logger)
+	handler, err := databaseHandler(pool, ring, ws, botID, ca, logger, signal)
 	if err != nil {
-		pool.Close()
+		closeAll()
 		return nil, nil, err
 	}
-	return handler, pool.Close, nil
+	return handler, closeAll, nil
 }

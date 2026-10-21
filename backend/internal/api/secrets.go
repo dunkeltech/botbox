@@ -20,6 +20,7 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/approvals"
 	"github.com/dunkeltech/botbox/backend/internal/gen/api"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
+	"github.com/dunkeltech/botbox/backend/internal/notify"
 	"github.com/dunkeltech/botbox/backend/internal/secrets"
 	"github.com/dunkeltech/botbox/backend/internal/secrets/mitmproxy"
 	"github.com/dunkeltech/botbox/backend/internal/workspaces"
@@ -983,6 +984,9 @@ type BotEgressProxyDeps struct {
 	UpstreamRootCAs *x509.CertPool
 	DialContext     func(ctx context.Context, network, addr string) (net.Conn, error)
 	Logger          *slog.Logger
+	// Notify publishes ids after a new host card commits. Nil leaves the row
+	// and the client reloads the list (issue #17).
+	Notify notify.Signal
 }
 
 // NewBotEgressProxyHandler builds a dynamic per-bot CONNECT egress handler backed by
@@ -1123,7 +1127,7 @@ func NewBotEgressProxyHandler(deps BotEgressProxyDeps) (*mitmproxy.Handler, erro
 			// Only a real host denial on 443 opens a card. A forbidden port uses the
 			// same audit action and must not ask a human to allow the host (ADR-0015).
 			if ev.Action == mitmproxy.ActionBlockedHost && ev.Port == "443" {
-				if noteErr := approvals.NoteBlockedHost(auditCtx, deps.Pool, deps.WorkspaceID, deps.BotID, ev.Host); noteErr != nil {
+				if noteErr := approvals.NoteBlockedHost(auditCtx, deps.Pool, deps.WorkspaceID, deps.BotID, ev.Host, deps.Notify); noteErr != nil {
 					logger.Error("record blocked host approval failed", slog.Any("error", noteErr))
 				}
 			}

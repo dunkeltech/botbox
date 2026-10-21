@@ -13,6 +13,7 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/events"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
 	"github.com/dunkeltech/botbox/backend/internal/groups"
+	"github.com/dunkeltech/botbox/backend/internal/notify"
 	"github.com/dunkeltech/botbox/backend/internal/secrets/llmproxy"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -44,6 +45,9 @@ type Worker struct {
 	Publish func(context.Context, Session, Event) error
 	// Enqueue publishes the next group turn. Direct messages do not use it.
 	Enqueue func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) error
+	// Signal publishes notification ids on the conversation channel. Nil skips it.
+	// The payload must not include message text (issue #17).
+	Signal notify.Signal
 }
 
 func pgID(id uuid.UUID) pgtype.UUID   { return pgtype.UUID{Bytes: id, Valid: true} }
@@ -154,7 +158,7 @@ func (w *Worker) executeClaimed(ctx context.Context, tx pgx.Tx, turn db.BotTurn,
 		return err
 	}
 	session := Session{WorkspaceID: uuidID(turn.WorkspaceID), BotID: uuidID(turn.BotID), ConversationID: uuidID(turn.ConversationID), Bot: bot, Messages: history, Preface: preface}
-	stop, err := groups.ScreenBudget(ctx, w.Pool, turn.WorkspaceID, turn.ConversationID, turn.BotID, turn.MessageID)
+	stop, err := groups.ScreenBudget(ctx, w.Pool, turn.WorkspaceID, turn.ConversationID, turn.BotID, turn.MessageID, w.Signal)
 	if err != nil {
 		return err
 	}
@@ -180,7 +184,7 @@ func (w *Worker) executeClaimed(ctx context.Context, tx pgx.Tx, turn db.BotTurn,
 				ev.Text = ev.ToolName + "\n" + string(ev.ToolInput)
 				// The card is the gate. bot.Box does not push; the git host still
 				// has to reject a protected branch (ADR-0015).
-				if err := approvals.NoteTool(ctx, w.Pool, turn, ev.Text); err != nil {
+				if err := approvals.NoteTool(ctx, w.Pool, turn, ev.Text, w.Signal); err != nil {
 					return err
 				}
 			}
@@ -292,7 +296,7 @@ func (w *Worker) executeClaimed(ctx context.Context, tx pgx.Tx, turn db.BotTurn,
 		}
 	}
 	if kind == "group" && text.Len() > 0 && status == "completed" {
-		if err = approvals.NoteReply(finalCtx, w.Pool, turn, text.String()); err != nil {
+		if err = approvals.NoteReply(finalCtx, w.Pool, turn, text.String(), w.Signal); err != nil {
 			return err
 		}
 		if err = w.routeGroupReply(finalCtx, turn, reply); err != nil {
@@ -309,6 +313,13 @@ func (w *Worker) executeClaimed(ctx context.Context, tx pgx.Tx, turn db.BotTurn,
 }
 
 func (w *Worker) routeGroupReply(ctx context.Context, turn db.BotTurn, reply db.Message) error {
+	// Commit the mention before the handoff plan. A full bot queue rolls that
+	// plan back, and the reply itself is already stored.
+	ids, err := notify.HumanMentionsCommit(ctx, w.Pool, turn.WorkspaceID, turn.ConversationID, reply.ID, reply.Content)
+	if err != nil {
+		return err
+	}
+	w.Signal.Send(ctx, uuidID(turn.WorkspaceID), uuidID(turn.ConversationID), ids)
 	tx, err := w.Pool.Begin(ctx)
 	if err != nil {
 		return err

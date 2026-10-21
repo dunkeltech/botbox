@@ -355,7 +355,7 @@ Membership is the only read path, including for workspace admins. See
   - `new_host` is enforced by the egress allowlist. Approval appends that one host. `raise_budget` for a bot or workspace stays on the Phase 4 budget row and still opens and clears through the budget endpoints. A group cap is an approval with `conversation_id` and no `budget_id`. Approving it does not change the number. `push_protected` records a card and does not push. The git host and the token's rights remain the enforcement.
 - **UI:**
   - Slack-style sidebar listing approvals, activity, group chats and colleagues. Bots use the existing avatar and status. Humans are listed without a live presence dot.
-  - Unread counts come from `last_read_position`. Mentions, approvals, and budget warnings create notification rows.
+  - Unread counts come from `last_read_position`. Marking a group read clears that badge and leaves notification rows in place. Mentions, approvals, and budget warnings insert those rows. `notify` is `all`, `mentions`, or `mute`. `GET /api/workspaces/{workspaceID}/notifications` lists the caller's rows, newest first, with a cursor and no message text. `POST .../notifications/{id}/read` marks one. `POST .../notifications/read` marks all of the caller's rows in that workspace. Another user's id and a cross-workspace id return 404. A new row publishes notification ids on the conversation's NATS subject. A missed signal is recovered by reloading the list.
   - A details pane per group: goal, members, how bots talk, and links to their computers.
 
 ### 4.9 Usage & budgets
@@ -368,7 +368,7 @@ Membership is the only read path, including for workspace admins. See
 ### 4.10 Real-time events
 
 - Each browser has one WebSocket with subscriptions to conversations, bot status, presence, control locks, approvals, egress events and stats.
-- Internally, events go through NATS, so several API instances can serve the same workspace.
+- Internally, events go through NATS, so several API instances can serve the same workspace. A notification insert publishes ids only on `chat.{workspace}.{conversation}`. The payload has no message text. The conversation WebSocket already checks membership. A slow client drops the signal and reloads the list.
 - VNC and terminal streams use their own authenticated WebSocket relays.
 
 ### 4.11 UI, design system & internationalisation

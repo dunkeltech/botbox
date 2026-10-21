@@ -146,6 +146,37 @@ func (q *Queue) Interrupt(ctx context.Context, ws, bot uuid.UUID) error {
 	return q.conn.Publish("control."+ws.String()+"."+bot.String(), data)
 }
 
+// Publisher emits conversation signals without consuming the turn queue.
+// The egress proxy uses it so a blocked host can ping the conversation
+// channel without starting a second worker.
+type Publisher struct {
+	conn *nats.Conn
+}
+
+// OpenPublisher connects for PublishConversation only.
+func OpenPublisher(url string) (*Publisher, error) {
+	nc, err := nats.Connect(url, nats.Timeout(5*time.Second))
+	if err != nil {
+		return nil, err
+	}
+	return &Publisher{conn: nc}, nil
+}
+
+// PublishConversation emits private events; HTTP subscribers enforce membership.
+func (p *Publisher) PublishConversation(ctx context.Context, ws, conversation uuid.UUID, data []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return p.conn.Publish("chat."+ws.String()+"."+conversation.String(), data)
+}
+
+// Close closes the NATS connection.
+func (p *Publisher) Close() {
+	if p != nil && p.conn != nil {
+		p.conn.Close()
+	}
+}
+
 // Healthy reports whether durable scheduling can reach NATS.
 func (q *Queue) Healthy() error {
 	if !q.conn.IsConnected() {

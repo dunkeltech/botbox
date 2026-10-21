@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
+	"github.com/dunkeltech/botbox/backend/internal/notify"
 	"github.com/dunkeltech/botbox/backend/internal/orchestrator"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -212,8 +213,9 @@ func Preface(ctx context.Context, q *db.Queries, workspaceID, conversationID pgt
 
 // ScreenBudget applies the conversation cap before a group turn calls a model.
 // Unknown metered cost blocks the turn. A direct message is always allowed here;
-// workspace and bot budgets stay in the existing check.
-func ScreenBudget(ctx context.Context, pool *pgxpool.Pool, workspaceID, conversationID, botID, triggerMessageID pgtype.UUID) (bool, error) {
+// workspace and bot budgets stay in the existing check. signal is ids only and
+// runs after commit. Nil is safe.
+func ScreenBudget(ctx context.Context, pool *pgxpool.Pool, workspaceID, conversationID, botID, triggerMessageID pgtype.UUID, signal notify.Signal) (bool, error) {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return false, err
@@ -235,14 +237,15 @@ func ScreenBudget(ctx context.Context, pool *pgxpool.Pool, workspaceID, conversa
 		return false, err
 	}
 	limit := group.BudgetLimitMicros.Int64
-	// 80% is a single marker. Later turns must not repeat it.
+	var noteIDs []uuid.UUID
+	// 80% is a single marker. Later turns must not repeat the message or the notice.
 	if spend.UnknownRows == 0 && spend.SpentMicros < limit && spend.SpentMicros*100 >= limit*80 {
 		warned, err := q.HasGroupBudgetWarning(ctx, db.HasGroupBudgetWarningParams{WorkspaceID: workspaceID, ConversationID: conversationID})
 		if err != nil {
 			return false, err
 		}
 		if !warned {
-			if _, err = q.CreateChatMessage(ctx, db.CreateChatMessageParams{
+			warning, err := q.CreateChatMessage(ctx, db.CreateChatMessageParams{
 				ID:             pgID(uuid.New()),
 				WorkspaceID:    workspaceID,
 				ConversationID: conversationID,
@@ -250,13 +253,22 @@ func ScreenBudget(ctx context.Context, pool *pgxpool.Pool, workspaceID, conversa
 				Kind:           "system",
 				Content:        "Budget 80% · this group is close to its cap",
 				Metadata:       []byte(`{"budgetWarning":true}`),
-			}); err != nil {
+			})
+			if err != nil {
+				return false, err
+			}
+			noteIDs, err = notify.BudgetWarning(ctx, q, workspaceID, conversationID, warning.ID)
+			if err != nil {
 				return false, err
 			}
 		}
 	}
 	if spend.UnknownRows == 0 && spend.SpentMicros < limit {
-		return false, tx.Commit(ctx)
+		if err = tx.Commit(ctx); err != nil {
+			return false, err
+		}
+		signal.Send(ctx, uuid.UUID(workspaceID.Bytes), uuid.UUID(conversationID.Bytes), noteIDs)
+		return false, nil
 	}
 	// At the cap, or when a metered row has no cost, do not call the model.
 	if err = q.ApplyGroupPlan(ctx, db.ApplyGroupPlanParams{
@@ -294,7 +306,10 @@ func ScreenBudget(ctx context.Context, pool *pgxpool.Pool, workspaceID, conversa
 		Payload:        payload,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		return true, tx.Commit(ctx)
+		if err = tx.Commit(ctx); err != nil {
+			return false, err
+		}
+		return true, nil
 	}
 	if err != nil {
 		return false, err
@@ -318,9 +333,14 @@ func ScreenBudget(ctx context.Context, pool *pgxpool.Pool, workspaceID, conversa
 	}); err != nil {
 		return false, err
 	}
+	noteIDs, err = notify.Approval(ctx, q, workspaceID, conversationID, card.ID, approvalID)
+	if err != nil {
+		return false, err
+	}
 	if err = tx.Commit(ctx); err != nil {
 		return false, err
 	}
+	signal.Send(ctx, uuid.UUID(workspaceID.Bytes), uuid.UUID(conversationID.Bytes), noteIDs)
 	return true, nil
 }
 

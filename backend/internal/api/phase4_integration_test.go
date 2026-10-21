@@ -22,6 +22,7 @@ type fakeTurnQueue struct {
 	jobs      []events.TurnNotification
 	interrupt func(uuid.UUID, uuid.UUID)
 	err       error
+	signals   [][]byte
 }
 
 func (q *fakeTurnQueue) Enqueue(_ context.Context, ws, bot, turn uuid.UUID) error {
@@ -29,6 +30,12 @@ func (q *fakeTurnQueue) Enqueue(_ context.Context, ws, bot, turn uuid.UUID) erro
 		return q.err
 	}
 	q.jobs = append(q.jobs, events.TurnNotification{WorkspaceID: ws, BotID: bot, TurnID: turn})
+	return nil
+}
+
+// PublishConversation records the conversation signal. Notification payloads are ids only.
+func (q *fakeTurnQueue) PublishConversation(_ context.Context, _, _ uuid.UUID, data []byte) error {
+	q.signals = append(q.signals, append([]byte(nil), data...))
 	return nil
 }
 

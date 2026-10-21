@@ -173,7 +173,7 @@ func TestPhase6ApprovalDecisions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = approvals.Open(context.Background(), db.New(tx), approvals.Card{
+	if _, err = approvals.Open(context.Background(), db.New(tx), approvals.Card{
 		WorkspaceID:      pgtype.UUID{Bytes: ws, Valid: true},
 		ConversationID:   pgtype.UUID{Bytes: limited.Id, Valid: true},
 		BotID:            pgtype.UUID{Bytes: atlas.Id, Valid: true},

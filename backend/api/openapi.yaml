@@ -313,6 +313,48 @@ paths:
         '409': {description: Already decided, host already allowed, or cap still exhausted}
         '429': {description: Bot queue is full}
         '503': {description: Turn queue is unavailable}
+  /api/workspaces/{workspaceID}/notifications:
+    parameters:
+      - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      operationId: listNotifications
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: cursor, in: query, required: false, schema: {type: string}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100}}
+      responses:
+        '200':
+          description: The caller's notifications, newest first. Rows have no message text.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/NotificationList'}
+        '400': {description: Invalid cursor or limit}
+        '401': {description: Authentication required}
+        '404': {description: Workspace not found}
+  /api/workspaces/{workspaceID}/notifications/read:
+    parameters:
+      - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      operationId: markNotificationsRead
+      security: [{bearerAuth: []}]
+      responses:
+        '204': {description: The caller's unread rows in this workspace are marked read}
+        '401': {description: Authentication required}
+        '403': {description: Missing CSRF header}
+        '404': {description: Workspace not found}
+  /api/workspaces/{workspaceID}/notifications/{notificationID}/read:
+    parameters:
+      - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: notificationID, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      operationId: markNotificationRead
+      security: [{bearerAuth: []}]
+      responses:
+        '204': {description: The caller's row is marked read}
+        '400': {description: Invalid notification id}
+        '401': {description: Authentication required}
+        '403': {description: Missing CSRF header}
+        '404': {description: Notification is not the caller's row}
   /api/workspaces/{workspaceID}/conversations/{conversationID}/messages/{messageID}/tool-image:
     parameters:
       - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
@@ -2114,6 +2156,23 @@ components:
       required: [decision]
       properties:
         decision: {type: string, enum: [approved, denied]}
+    Notification:
+      type: object
+      required: [id, kind, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        kind: {type: string, enum: [mention, approval, budget]}
+        conversationId: {type: string, format: uuid}
+        messageId: {type: string, format: uuid}
+        approvalId: {type: string, format: uuid}
+        readAt: {type: string, format: date-time}
+        createdAt: {type: string, format: date-time}
+    NotificationList:
+      type: object
+      required: [notifications]
+      properties:
+        notifications: {type: array, items: {$ref: '#/components/schemas/Notification'}}
+        nextCursor: {type: string}
     ChatTurn:
       type: object
       required: [id, status, queueAhead, errorCode]

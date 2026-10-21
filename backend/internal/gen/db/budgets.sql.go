@@ -11,9 +11,10 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const createBudgetApproval = `-- name: CreateBudgetApproval :exec
+const createBudgetApproval = `-- name: CreateBudgetApproval :one
 INSERT INTO approvals(workspace_id,bot_id,budget_id) VALUES($1,$2,$3)
 ON CONFLICT(workspace_id,budget_id) WHERE status='pending' DO NOTHING
+RETURNING id
 `
 
 type CreateBudgetApprovalParams struct {
@@ -22,9 +23,12 @@ type CreateBudgetApprovalParams struct {
 	BudgetID    pgtype.UUID `json:"budget_id"`
 }
 
-func (q *Queries) CreateBudgetApproval(ctx context.Context, arg CreateBudgetApprovalParams) error {
-	_, err := q.db.Exec(ctx, createBudgetApproval, arg.WorkspaceID, arg.BotID, arg.BudgetID)
-	return err
+// RETURNING nothing on conflict so a later turn does not notify again for the same pending card.
+func (q *Queries) CreateBudgetApproval(ctx context.Context, arg CreateBudgetApprovalParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, createBudgetApproval, arg.WorkspaceID, arg.BotID, arg.BudgetID)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const getModelPrice = `-- name: GetModelPrice :one

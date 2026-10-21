@@ -6,8 +6,10 @@ import (
 	"time"
 
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
+	"github.com/dunkeltech/botbox/backend/internal/notify"
 	"github.com/dunkeltech/botbox/backend/internal/secrets/llmproxy"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -30,7 +32,16 @@ func Check(ctx context.Context, q *db.Queries, workspaceID, botID uuid.UUID, now
 		}
 
 		if b.SpentMicros >= b.LimitMicros {
-			if err = q.CreateBudgetApproval(ctx, db.CreateBudgetApprovalParams{WorkspaceID: ws, BotID: bot, BudgetID: b.ID}); err != nil {
+			approvalID, err := q.CreateBudgetApproval(ctx, db.CreateBudgetApprovalParams{WorkspaceID: ws, BotID: bot, BudgetID: b.ID})
+			if errors.Is(err, pgx.ErrNoRows) {
+				return llmproxy.ErrBudgetExceeded
+			}
+			if err != nil {
+				return err
+			}
+			// Only the insert that created the card notifies. A later exhausted
+			// check hits the conflict and must not add another row.
+			if _, err = notify.WorkspaceApproval(ctx, q, ws, approvalID); err != nil {
 				return err
 			}
 			return llmproxy.ErrBudgetExceeded

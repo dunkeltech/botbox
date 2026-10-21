@@ -7,9 +7,11 @@ FROM budgets b WHERE b.workspace_id=$1 AND (b.bot_id IS NULL OR b.bot_id=sqlc.ar
 INSERT INTO budgets(workspace_id,bot_id,period,limit_micros) VALUES($1,$2,$3,$4)
 ON CONFLICT(workspace_id,bot_id,period) DO UPDATE SET limit_micros=EXCLUDED.limit_micros RETURNING *;
 
--- name: CreateBudgetApproval :exec
+-- name: CreateBudgetApproval :one
+-- RETURNING nothing on conflict so a later turn does not notify again for the same pending card.
 INSERT INTO approvals(workspace_id,bot_id,budget_id) VALUES($1,$2,$3)
-ON CONFLICT(workspace_id,budget_id) WHERE status='pending' DO NOTHING;
+ON CONFLICT(workspace_id,budget_id) WHERE status='pending' DO NOTHING
+RETURNING id;
 
 -- name: RecordTurnUsage :exec
 INSERT INTO usage_records(workspace_id,bot_id,turn_id,request_id,source,model,input_tokens,output_tokens,cache_tokens,cost_micros,created_at,billing_kind)

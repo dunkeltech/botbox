@@ -12,6 +12,7 @@ import (
 	apigen "github.com/dunkeltech/botbox/backend/internal/gen/api"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
 	"github.com/dunkeltech/botbox/backend/internal/groups"
+	"github.com/dunkeltech/botbox/backend/internal/notify"
 	"github.com/dunkeltech/botbox/backend/internal/workspaces"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -314,6 +315,12 @@ func (s *server) handleSendGroupMessage(w http.ResponseWriter, r *http.Request) 
 		s.chatFailure(w)
 		return
 	}
+	noteIDs, err := notify.HumanMentions(r.Context(), q, row.WorkspaceID, row.ID, msg.ID, msg.Content)
+	if err != nil {
+		s.logger.Error("store mention notifications", "err", err)
+		s.chatFailure(w)
+		return
+	}
 	if len(turns) > 0 && s.turnQueue == nil {
 		s.chatFailure(w)
 		return
@@ -330,6 +337,7 @@ func (s *server) handleSendGroupMessage(w http.ResponseWriter, r *http.Request) 
 		s.chatFailure(w)
 		return
 	}
+	s.signalNotifications(r.Context(), fromPGUUID(row.WorkspaceID), fromPGUUID(row.ID), noteIDs)
 	writeJSON(w, s.logger, http.StatusAccepted, chatMessage(msg))
 }
 

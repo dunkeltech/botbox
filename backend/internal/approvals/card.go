@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
+	"github.com/dunkeltech/botbox/backend/internal/notify"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -52,17 +53,19 @@ type cardPayload struct {
 
 // Open inserts one pending approval and a kind=approval message. A direct
 // message, a kind the group did not list, or a duplicate pending payload is
-// ignored. An existing pause is left as it is.
-func Open(ctx context.Context, q *db.Queries, card Card) error {
+// ignored. An existing pause is left as it is. The returned ids are new
+// notification rows for the humans who may decide. The caller publishes them
+// after commit.
+func Open(ctx context.Context, q *db.Queries, card Card) ([]uuid.UUID, error) {
 	group, err := q.GetGroup(ctx, db.GetGroupParams{WorkspaceID: card.WorkspaceID, ID: card.ConversationID})
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil
+		return nil, nil
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if !ruleListed(group.AskBefore, card.Kind) {
-		return nil
+		return nil, nil
 	}
 	payload, err := json.Marshal(cardPayload{
 		Host:             card.Host,
@@ -71,7 +74,7 @@ func Open(ctx context.Context, q *db.Queries, card Card) error {
 		TriggerMessageID: triggerID(card.TriggerMessageID),
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	approvalID, err := q.CreateAskApproval(ctx, db.CreateAskApprovalParams{
 		WorkspaceID:    card.WorkspaceID,
@@ -81,14 +84,14 @@ func Open(ctx context.Context, q *db.Queries, card Card) error {
 		Payload:        payload,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil
+		return nil, nil
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
 	meta, err := json.Marshal(map[string]string{"kind": card.Kind})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	message, err := q.CreateChatMessage(ctx, db.CreateChatMessageParams{
 		ID:             pgID(uuid.New()),
@@ -100,24 +103,28 @@ func Open(ctx context.Context, q *db.Queries, card Card) error {
 		Metadata:       meta,
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err = q.AttachApprovalMessage(ctx, db.AttachApprovalMessageParams{
 		WorkspaceID: card.WorkspaceID,
 		ID:          approvalID,
 		MessageID:   message.ID,
 	}); err != nil {
-		return err
+		return nil, err
 	}
-	return q.PauseGroupForApproval(ctx, db.PauseGroupForApprovalParams{
+	if err = q.PauseGroupForApproval(ctx, db.PauseGroupForApprovalParams{
 		WorkspaceID: card.WorkspaceID,
 		ID:          card.ConversationID,
-	})
+	}); err != nil {
+		return nil, err
+	}
+	return notify.Approval(ctx, q, card.WorkspaceID, card.ConversationID, message.ID, approvalID)
 }
 
 // NoteBlockedHost records a new_host card when a group turn is running and
 // the group asked before a new host. An allowed host never reaches here.
-func NoteBlockedHost(ctx context.Context, pool *pgxpool.Pool, workspaceID, botID uuid.UUID, host string) error {
+// signal runs after commit and may be nil.
+func NoteBlockedHost(ctx context.Context, pool *pgxpool.Pool, workspaceID, botID uuid.UUID, host string, signal notify.Signal) error {
 	host, ok := normalizeHost(host)
 	if !ok {
 		return nil
@@ -138,36 +145,41 @@ func NoteBlockedHost(ctx context.Context, pool *pgxpool.Pool, workspaceID, botID
 	if err != nil {
 		return err
 	}
-	if err = Open(ctx, q, Card{
+	ids, err := Open(ctx, q, Card{
 		WorkspaceID:      turn.WorkspaceID,
 		ConversationID:   turn.ConversationID,
 		BotID:            turn.BotID,
 		TriggerMessageID: turn.MessageID,
 		Kind:             kindNewHost,
 		Host:             host,
-	}); err != nil {
+	})
+	if err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
+	if err = tx.Commit(ctx); err != nil {
+		return err
+	}
+	signal.Send(ctx, workspaceID, uuid.UUID(turn.ConversationID.Bytes), ids)
+	return nil
 }
 
 // NoteTool records a push_protected card from a tool-call sentence. The card
 // is the gate: bot.Box does not push, and a write failure fails the turn.
-func NoteTool(ctx context.Context, pool *pgxpool.Pool, turn db.BotTurn, text string) error {
-	return note(ctx, pool, turn, func(raw []byte) []Card {
+func NoteTool(ctx context.Context, pool *pgxpool.Pool, turn db.BotTurn, text string, signal notify.Signal) error {
+	return note(ctx, pool, turn, signal, func(raw []byte) []Card {
 		return pushMatchesFor(raw, text)
 	})
 }
 
 // NoteReply records a custom card when the stored bot reply contains a listed
 // label. It runs before the next bots are queued, so the pause stops the handoff.
-func NoteReply(ctx context.Context, pool *pgxpool.Pool, turn db.BotTurn, text string) error {
-	return note(ctx, pool, turn, func(raw []byte) []Card {
+func NoteReply(ctx context.Context, pool *pgxpool.Pool, turn db.BotTurn, text string, signal notify.Signal) error {
+	return note(ctx, pool, turn, signal, func(raw []byte) []Card {
 		return customMatchesText(raw, text)
 	})
 }
 
-func note(ctx context.Context, pool *pgxpool.Pool, turn db.BotTurn, match func([]byte) []Card) error {
+func note(ctx context.Context, pool *pgxpool.Pool, turn db.BotTurn, signal notify.Signal, match func([]byte) []Card) error {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -181,16 +193,23 @@ func note(ctx context.Context, pool *pgxpool.Pool, turn db.BotTurn, match func([
 	if err != nil {
 		return err
 	}
+	var ids []uuid.UUID
 	for _, card := range match(group.AskBefore) {
 		card.WorkspaceID = turn.WorkspaceID
 		card.ConversationID = turn.ConversationID
 		card.BotID = turn.BotID
 		card.TriggerMessageID = turn.MessageID
-		if err = Open(ctx, q, card); err != nil {
+		more, err := Open(ctx, q, card)
+		if err != nil {
 			return err
 		}
+		ids = append(ids, more...)
 	}
-	return tx.Commit(ctx)
+	if err = tx.Commit(ctx); err != nil {
+		return err
+	}
+	signal.Send(ctx, uuid.UUID(turn.WorkspaceID.Bytes), uuid.UUID(turn.ConversationID.Bytes), ids)
+	return nil
 }
 
 func pushMatchesFor(raw []byte, text string) []Card {

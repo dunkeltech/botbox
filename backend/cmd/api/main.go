@@ -25,7 +25,9 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/engine"
 	"github.com/dunkeltech/botbox/backend/internal/events"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
+	"github.com/dunkeltech/botbox/backend/internal/notify"
 	"github.com/dunkeltech/botbox/backend/internal/secrets"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -135,6 +137,17 @@ func run(logger *slog.Logger) error {
 			}
 			defer queue.Close()
 			worker.Enqueue = queue.Enqueue
+			worker.Signal = func(eventCtx context.Context, ws, conversation uuid.UUID, ids []uuid.UUID) {
+				data, err := notify.MarshalSignal(conversation, ids)
+				if err != nil {
+					logger.Error("encode notification signal", "err", err)
+					return
+				}
+				if err = queue.PublishConversation(eventCtx, ws, conversation, data); err != nil {
+					// A missed signal is recovered by reloading the list (issue #17).
+					logger.Error("publish notification signal", "err", err)
+				}
+			}
 			worker.Publish = func(eventCtx context.Context, session engine.Session, event engine.Event) error {
 				data, err := json.Marshal(event)
 				if err != nil {

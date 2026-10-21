@@ -83,7 +83,7 @@ func main() {
 
 	var handler http.Handler = rootHandler
 	if database := strings.TrimSpace(os.Getenv("DATABASE_URL")); database != "" {
-		bound, closeDB, err := openDatabaseProxy(context.Background(), database, os.Getenv("BOTBOX_SECRETS_KEK"), os.Getenv("BOTBOX_WORKSPACE_ID"), os.Getenv("BOTBOX_BOT_ID"), ca, logger)
+		bound, closeDB, err := openDatabaseProxy(context.Background(), database, os.Getenv("BOTBOX_SECRETS_KEK"), os.Getenv("BOTBOX_WORKSPACE_ID"), os.Getenv("BOTBOX_BOT_ID"), os.Getenv("NATS_URL"), ca, logger)
 		if err != nil {
 			logger.Error("database proxy initialization failed", "error", err)
 			os.Exit(1)

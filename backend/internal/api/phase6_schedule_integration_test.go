@@ -274,6 +274,7 @@ type groupSettings struct {
 	botTalk   bool
 	turnLimit int
 	budget    int64
+	ask       []any
 	members   []any
 }
 
@@ -287,6 +288,9 @@ func createGroup(t *testing.T, h *testHarness, base, token string, in groupSetti
 	}
 	if in.budget > 0 {
 		body["budgetLimitMicros"] = in.budget
+	}
+	if len(in.ask) > 0 {
+		body["askBefore"] = in.ask
 	}
 	r := h.request(http.MethodPost, base+"/groups", body, token, nil, true)
 	if r.status != http.StatusCreated {
