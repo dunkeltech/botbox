@@ -2127,6 +2127,9 @@ components:
         id: {type: string, format: uuid}
         position: {type: integer, format: int64}
         senderType: {type: string, enum: [user, bot, system]}
+        # A group transcript has several speakers. The ids are omitted for system rows.
+        senderUserId: {type: string, format: uuid}
+        senderBotId: {type: string, format: uuid}
         kind: {type: string, enum: [text, tool, system, card, approval]}
         content: {type: string}
         createdAt: {type: string, format: date-time}

@@ -920,6 +920,10 @@ export interface components {
       position: number;
       /** @enum {string} */
       senderType: 'user' | 'bot' | 'system';
+      /** Format: uuid */
+      senderUserId?: string;
+      /** Format: uuid */
+      senderBotId?: string;
       /** @enum {string} */
       kind: 'text' | 'tool' | 'system' | 'card' | 'approval';
       content: string;

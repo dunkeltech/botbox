@@ -671,12 +671,14 @@ type ChatHistory struct {
 
 // ChatMessage defines model for ChatMessage.
 type ChatMessage struct {
-	Content    string                `json:"content"`
-	CreatedAt  time.Time             `json:"createdAt"`
-	Id         openapi_types.UUID    `json:"id"`
-	Kind       ChatMessageKind       `json:"kind"`
-	Position   int64                 `json:"position"`
-	SenderType ChatMessageSenderType `json:"senderType"`
+	Content      string                `json:"content"`
+	CreatedAt    time.Time             `json:"createdAt"`
+	Id           openapi_types.UUID    `json:"id"`
+	Kind         ChatMessageKind       `json:"kind"`
+	Position     int64                 `json:"position"`
+	SenderBotId  *openapi_types.UUID   `json:"senderBotId,omitempty"`
+	SenderType   ChatMessageSenderType `json:"senderType"`
+	SenderUserId *openapi_types.UUID   `json:"senderUserId,omitempty"`
 }
 
 // ChatMessageKind defines model for ChatMessage.Kind.

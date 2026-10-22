@@ -185,9 +185,11 @@ dependency errors are never displayed. See
 
 Phase 4 implementation: private DM APIs persist conversation-local history and
 turns. JetStream notifications drive the API worker, and authorized conversation
-WebSockets stream normalized events. `/team` and the bot workspace share the DM
-panel; workspace and bot settings show spend and budget limits. The workspace
-provides a persisted bot-wide Pause/Resume control. Pausing cancels the active
+WebSockets stream normalized events. `/team` is the group chat and still opens
+the same DM panel for a colleague. A chat message carries the sender's user or
+bot id so a group transcript can name the speaker. Workspace and bot settings
+show spend and budget limits. The workspace provides a persisted bot-wide
+Pause/Resume control. Pausing cancels the active
 turn, keeps queued messages in order, and survives API restarts. Taking desktop
 control also blocks new turns until release. Interrupted turns are never replayed;
 resuming only permits queued work. Bot managers can change pause state; viewers

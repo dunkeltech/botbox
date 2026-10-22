@@ -118,7 +118,17 @@ func (s *server) privateConversation(w http.ResponseWriter, r *http.Request, sen
 }
 
 func chatMessage(m db.Message) apigen.ChatMessage {
-	return apigen.ChatMessage{Id: fromPGUUID(m.ID), Position: m.Position, SenderType: apigen.ChatMessageSenderType(m.SenderType), Kind: apigen.ChatMessageKind(m.Kind), Content: m.Content, CreatedAt: m.CreatedAt.Time}
+	// A group has several humans and bots. System rows have neither id.
+	out := apigen.ChatMessage{Id: fromPGUUID(m.ID), Position: m.Position, SenderType: apigen.ChatMessageSenderType(m.SenderType), Kind: apigen.ChatMessageKind(m.Kind), Content: m.Content, CreatedAt: m.CreatedAt.Time}
+	if m.SenderUserID.Valid {
+		id := fromPGUUID(m.SenderUserID)
+		out.SenderUserId = &id
+	}
+	if m.SenderBotID.Valid {
+		id := fromPGUUID(m.SenderBotID)
+		out.SenderBotId = &id
+	}
+	return out
 }
 
 func (s *server) handleChatHistory(w http.ResponseWriter, r *http.Request) {

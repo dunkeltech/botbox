@@ -66,6 +66,35 @@ function ToolImage({ path, alt }: { path: string; alt: string }) {
   );
 }
 
+export function ToolMessageView({
+  workspaceId,
+  conversationId,
+  messageId,
+  kind,
+  content,
+}: {
+  workspaceId: string;
+  conversationId: string;
+  messageId: string;
+  kind: string;
+  content: string;
+}) {
+  const t = useTranslations('chat');
+  const copy = describeToolMessage(kind, content);
+  if (!copy) {
+    return (
+      <p className="whitespace-pre-wrap break-words text-[15px]">{content}</p>
+    );
+  }
+  return (
+    <ToolLine
+      copy={copy}
+      imagePath={`/api/workspaces/${workspaceId}/conversations/${conversationId}/messages/${messageId}/tool-image`}
+      alt={t('toolImageAlt')}
+    />
+  );
+}
+
 function ToolLine({
   copy,
   imagePath,
@@ -94,6 +123,7 @@ export function ChatPanel({
   name,
   avatarSeed,
   canChat = true,
+  transcriptQuery = '',
 }: {
   workspaceId: string;
   userId: string;
@@ -101,6 +131,8 @@ export function ChatPanel({
   name: string;
   avatarSeed: string;
   canChat?: boolean;
+  /** Client-side filter for the team search field. Empty shows the whole history. */
+  transcriptQuery?: string;
 }) {
   const t = useTranslations('chat');
   const client = useQueryClient();
@@ -255,6 +287,12 @@ export function ChatPanel({
             (message, index, all) =>
               all.findIndex((m) => m.id === message.id) === index,
           )
+          .filter((message) => {
+            const needle = transcriptQuery.trim().toLowerCase();
+            return (
+              needle === '' || message.content.toLowerCase().includes(needle)
+            );
+          })
           .map((message) => {
             const tool = describeToolMessage(message.kind, message.content);
             return (
