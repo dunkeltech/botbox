@@ -6,6 +6,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { ChatPanel } from '@/components/chat/ChatPanel';
 import { GroupConversation } from '@/components/team/GroupConversation';
+import { useApprovalList } from '@/components/team/useApprovals';
 import { DirectDetails, GroupDetails } from '@/components/team/GroupDetails';
 import { NewGroupDialog } from '@/components/team/NewGroupDialog';
 import { groupSettingsBody } from '@/components/team/text';
@@ -115,13 +116,9 @@ export function TeamScreen({
     queryKey: ['members', workspaceId],
     queryFn: () => requestJson<WorkspaceMemberListResponse>(`${base}/members`),
   });
-  const approvals = useQuery({
-    queryKey: ['approvals', workspaceId, 'pending'],
-    queryFn: () =>
-      requestJson<components['schemas']['ApprovalList']>(
-        `${base}/approvals?status=pending`,
-      ),
-  });
+  // The badge is the pending slice of the shared list, so a decision here
+  // or in the inbox updates it without a reload.
+  const approvals = useApprovalList(workspaceId);
   const notifications = useQuery({
     queryKey: ['notifications', workspaceId],
     queryFn: () =>
@@ -323,6 +320,7 @@ export function TeamScreen({
           workspaceId={workspaceId}
           userId={userId}
           group={selectedGroup}
+          role={role}
           canPost={canChange}
           query={query}
         />
@@ -395,7 +393,9 @@ export function TeamScreen({
               {approvals.data ? (
                 <span className="rounded-pill bg-amber px-2 py-0.5 text-[12px] font-black text-terminal">
                   {t('approvalsCount', {
-                    count: approvals.data.approvals.length,
+                    count: approvals.data.approvals.filter(
+                      (row) => row.status === 'pending',
+                    ).length,
                   })}
                 </span>
               ) : null}

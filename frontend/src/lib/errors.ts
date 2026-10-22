@@ -29,6 +29,12 @@ export type ErrorTranslationKey =
   | 'secretAlreadyExists'
   | 'securityViolation'
   | 'sandboxUnavailable'
+  | 'approvalNotFound'
+  | 'approvalConflict'
+  | 'approvalHostNotBlocked'
+  | 'approvalCapNotRaised'
+  | 'chatQueueFull'
+  | 'chatUnavailable'
   | 'unknownError';
 
 const ERROR_CODE_TO_KEY: Record<string, ErrorTranslationKey> = {
@@ -60,6 +66,12 @@ const ERROR_CODE_TO_KEY: Record<string, ErrorTranslationKey> = {
   'secret.already_exists': 'secretAlreadyExists',
   security_violation: 'securityViolation',
   sandbox_unavailable: 'sandboxUnavailable',
+  'approval.not_found': 'approvalNotFound',
+  'approval.conflict': 'approvalConflict',
+  'approval.host_not_blocked': 'approvalHostNotBlocked',
+  'approval.cap_not_raised': 'approvalCapNotRaised',
+  'chat.queue_full': 'chatQueueFull',
+  'chat.unavailable': 'chatUnavailable',
 };
 
 /**

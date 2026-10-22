@@ -10,8 +10,18 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { ToolMessageView } from '@/components/chat/ChatPanel';
+import { ApprovalCard } from '@/components/team/ApprovalCard';
+import {
+  approvalForMessage,
+  canDecideApproval,
+} from '@/components/team/approvals';
+import {
+  useApprovalDecision,
+  useApprovalList,
+} from '@/components/team/useApprovals';
 import { Alert, BotAvatar, Button } from '@/components/ui';
 import { getAccessToken, requestJson } from '@/lib/api-client';
+import type { WorkspaceRole } from '@/types/api';
 import type { components } from '@/types/openapi.gen';
 import {
   activeMention,
@@ -63,12 +73,14 @@ export function GroupConversation({
   workspaceId,
   userId,
   group,
+  role,
   canPost,
   query,
 }: {
   workspaceId: string;
   userId: string;
   group: Group;
+  role: WorkspaceRole;
   canPost: boolean;
   query: string;
 }) {
@@ -86,6 +98,12 @@ export function GroupConversation({
     queryFn: () => requestJson<History>(`${base}/groups/${group.id}/messages`),
     refetchInterval: 3000,
   });
+  const approvalList = useApprovalList(workspaceId);
+  const {
+    decide,
+    busyId,
+    error: decisionError,
+  } = useApprovalDecision(workspaceId);
   useEffect(() => {
     const token = getAccessToken();
     if (!token) return;
@@ -193,9 +211,43 @@ export function GroupConversation({
             t('human'),
             t('system'),
           );
+          // Kind approval is the ask-before card. System and card rows stay
+          // notices, including the deny line the API appends after a decision.
+          if (message.kind === 'approval') {
+            const matched = approvalForMessage(
+              approvalList.data?.approvals ?? [],
+              message.id,
+              group.id,
+            );
+            const bot = group.members.find(
+              (member) => member.id === matched?.botId,
+            );
+            return (
+              <ApprovalCard
+                key={message.id}
+                className="mx-5"
+                approval={matched}
+                content={message.content}
+                botName={bot?.name}
+                where={matched ? group.name : undefined}
+                avatarSeed={bot?.id ?? matched?.botId}
+                canDecide={matched ? canDecideApproval(role, matched) : false}
+                busy={busyId === matched?.id}
+                errorKey={
+                  matched && decisionError?.id === matched.id
+                    ? decisionError.key
+                    : null
+                }
+                onDecide={
+                  matched
+                    ? (decision) => void decide(matched.id, decision)
+                    : undefined
+                }
+              />
+            );
+          }
           if (
             message.kind === 'system' ||
-            message.kind === 'approval' ||
             message.kind === 'card' ||
             message.senderType === 'system'
           ) {

@@ -202,7 +202,7 @@ afterEach(() => {
 });
 
 describe('Phase 6 team chat', () => {
-  it('inserts a mention from the keyboard and keeps approval text as a banner', async () => {
+  it('inserts a mention from the keyboard and leaves an unmatched approval without decision buttons', async () => {
     show();
     const composer = await screen.findByLabelText(messages.team.composer);
     expect(await screen.findByText('3 unread')).toBeInTheDocument();
@@ -279,6 +279,10 @@ describe('Phase 6 team chat', () => {
         screen.getByRole('log', { name: messages.team.messages }),
       ).toHaveTextContent('Waiting on a protected push'),
     );
+    expect(await screen.findByText('2 pending')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /^(Approve|Deny)/ }),
+    ).toBeNull();
   });
 
   it('shows an empty group list without a composer', async () => {
