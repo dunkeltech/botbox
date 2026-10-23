@@ -237,7 +237,7 @@ acceptance run is implied by fixture or Docker tests. See
 
 Each bot gets its own isolated Debian-based container:
 
-- **Desktop:** XFCE with a VNC server on `:0` at a fixed 1280×800 resolution, and websockify on `127.0.0.1:6080` inside the sandbox. The browser connects through an authenticated relay in the API (short-lived ticket). The relay reaches websockify through the Docker socket, because the API process cannot route the container bridge address. Caddy and Next forward that socket, so the page origin and the API host differ; the relay allows the site origin after the ticket check.
+- **Desktop:** XFCE with a VNC server on `:0` at a fixed 1280×800 resolution, and websockify on `127.0.0.1:6080` inside the sandbox. The browser connects through an authenticated relay in the API (short-lived ticket). The relay reaches websockify through the Docker socket, because the API process cannot route the container bridge address. Caddy and Next forward that socket, so the page origin and the API host differ; the relay allows the site origin after the ticket check. The machine can report running before websockify accepts; the viewer retries that ticket and renews it before the 60 second lifetime ends, so starting a machine does not need a reload.
 - **Software:** Chromium, git, build tools, Python, Node.js, and `claude`, `codex` and `agy` at pinned versions.
 - **Rights:**
   - User `bot` with passwordless `sudo` **inside** the container, so it can install with `apt-get`, `pip` and `npm`.

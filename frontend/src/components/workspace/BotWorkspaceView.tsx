@@ -16,7 +16,13 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { type FormEvent, useCallback, useEffect, useState } from 'react';
+import {
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslations } from 'next-intl';
 
 import {
@@ -104,6 +110,14 @@ function mapEnvMood(
   return 'offline';
 }
 
+/**
+ * Viewport retries reuse the current ticket. A new ticket aborts that
+ * socket, so refresh slowly. 15s stays inside the 60s HMAC lifetime
+ * (defaultVNCTicketTTL) and still replaces a ticket that would expire
+ * while websockify is booting.
+ */
+export const VNC_TICKET_REFRESH_MS = 15_000;
+
 function buildVncWsUrl(wsPath: string): string {
   if (typeof window === 'undefined' || !wsPath) {
     return '';
@@ -162,7 +176,24 @@ export function BotWorkspaceView() {
   const [handbackNote, setHandbackNote] = useState('');
 
   const [ticket, setTicket] = useState<StreamTicketResponse | null>(null);
+  const [ticketNonce, setTicketNonce] = useState(0);
   const [vncConnected, setVncConnected] = useState(false);
+  const ticketRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearTicketRefresh = useCallback(() => {
+    if (ticketRefreshTimer.current !== null) {
+      clearTimeout(ticketRefreshTimer.current);
+      ticketRefreshTimer.current = null;
+    }
+  }, []);
+
+  const handleConnectFailed = useCallback(() => {
+    if (ticketRefreshTimer.current !== null) return;
+    ticketRefreshTimer.current = setTimeout(() => {
+      ticketRefreshTimer.current = null;
+      setTicketNonce((nonce) => nonce + 1);
+    }, VNC_TICKET_REFRESH_MS);
+  }, []);
 
   const [terminalEntries, setTerminalEntries] = useState<TerminalEntry[]>([]);
   const [terminalCommand, setTerminalCommand] = useState('');
@@ -228,6 +259,16 @@ export function BotWorkspaceView() {
   const envId = env?.envId ?? '';
   const controlHolderId = env?.controlHolder?.userId ?? '';
 
+  // A recovered desktop, a stopped machine, or another tab must not mint
+  // a ticket that would tear down the socket the viewport just opened.
+  useEffect(() => {
+    if (vncConnected || envStatus !== 'running' || activeTab !== 'desktop') {
+      clearTicketRefresh();
+    }
+  }, [vncConnected, envStatus, activeTab, clearTicketRefresh]);
+
+  useEffect(() => clearTicketRefresh, [clearTicketRefresh]);
+
   useEffect(() => {
     if (
       !activeWorkspace ||
@@ -259,7 +300,15 @@ export function BotWorkspaceView() {
     return () => {
       cancelled = true;
     };
-  }, [activeWorkspace, bot, envStatus, envId, controlHolderId, activeTab]);
+  }, [
+    activeWorkspace,
+    bot,
+    envStatus,
+    envId,
+    controlHolderId,
+    activeTab,
+    ticketNonce,
+  ]);
 
   const loadDirectory = useCallback(
     async (targetPath: string) => {
@@ -914,6 +963,7 @@ export function BotWorkspaceView() {
                 canTakeControl={canToggleControl}
                 controlBusy={controlBusy}
                 onConnectionChange={setVncConnected}
+                onConnectFailed={handleConnectFailed}
                 showCursor={
                   !userHoldsControl &&
                   cursorPoint?.coordX != null &&

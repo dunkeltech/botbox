@@ -17,6 +17,48 @@ export type RFBConnector = (
   url: string,
 ) => Promise<RFBClient>;
 
+/** First wait after a closed socket. Each later wait doubles until the cap. */
+export const VNC_RETRY_BASE_MS = 500;
+
+/** Upper bound so a desktop that never opens does not back off forever. */
+export const VNC_RETRY_CAP_MS = 4000;
+
+/**
+ * noVNC prints this when the relay closes the socket during connect.
+ * Startup does that until websockify is listening; it is not a user error.
+ */
+export const EXPECTED_VNC_CLOSE = 'Failed when connecting: Connection closed';
+
+/** Delay before opening another RFB object. `failedAttempts` is how many closes already happened. */
+export function vncRetryDelayMs(failedAttempts: number): number {
+  const exponent = Math.max(0, Math.min(failedAttempts, 6));
+  return Math.min(VNC_RETRY_BASE_MS * 2 ** exponent, VNC_RETRY_CAP_MS);
+}
+
+/**
+ * Hides the expected startup close and forwards every other error.
+ * noVNC binds `console.error` once, at module evaluation, so the caller
+ * must install this wrapper before the first `import('@novnc/novnc')`.
+ */
+export function silenceExpectedVncClose(
+  report: (...args: unknown[]) => void,
+): (...args: unknown[]) => void {
+  return (...args: unknown[]) => {
+    const text = args.map((arg) => String(arg)).join(' ');
+    if (text.includes(EXPECTED_VNC_CLOSE)) return;
+    report(...args);
+  };
+}
+
+let novncConsolePatched = false;
+
+function installExpectedVncCloseFilter(): void {
+  if (novncConsolePatched) return;
+  novncConsolePatched = true;
+  const report = console.error.bind(console);
+  console.error = silenceExpectedVncClose(report) as typeof console.error;
+}
+
 export interface VncViewportProps {
   /** Base WebSocket URL (e.g. wss://host/ws/bots/{ws}/{bot}/vnc). */
   wsUrl: string;
@@ -36,6 +78,12 @@ export interface VncViewportProps {
   connectRFB?: RFBConnector;
   onControlChange?: (inControl: boolean) => void;
   onConnectionChange?: (connected: boolean) => void;
+  /**
+   * Socket closed while this view is still mounted.
+   * Not called for cleanup, so the parent can renew the ticket without
+   * aborting the fast retries on every unmount.
+   */
+  onConnectFailed?: () => void;
   /** Optional handler invoked instead of mutating local state in controlled mode. */
   onRequestControlToggle?: (nextControl: boolean) => void | Promise<void>;
   /** Bot pointer in desktop pixels. Shown only while the human does not hold the lock. */
@@ -47,8 +95,24 @@ async function defaultConnectRFB(
   target: HTMLElement,
   url: string,
 ): Promise<RFBClient> {
+  // The library copies console.error at import time. Patch first, or the
+  // startup close still reaches the Next.js error overlay.
+  installExpectedVncCloseFilter();
   const { default: RFB } = await import('@novnc/novnc');
   return new RFB(target, url, { wsProtocols: ['binary'] });
+}
+
+/**
+ * Drops a client that is still open. noVNC keeps `disconnected` forever, and
+ * disconnect() after the socket already closed logs
+ * "Tried changing state of a disconnected RFB object". That happens when the
+ * machine stops: the relay closes the socket, then this view unmounts.
+ */
+function releaseRfb(client: RFBClient) {
+  const state = (client as { _rfbConnectionState?: string })
+    ._rfbConnectionState;
+  if (state === 'disconnected' || state === 'disconnecting') return;
+  client.disconnect();
 }
 
 /**
@@ -66,6 +130,7 @@ export function VncViewport({
   connectRFB = defaultConnectRFB,
   onControlChange,
   onConnectionChange,
+  onConnectFailed,
   onRequestControlToggle,
   cursor = null,
   showCursor = false,
@@ -77,9 +142,11 @@ export function VncViewport({
   const effectiveControl = controlledInControl ?? internalControl;
   const inControlRef = useRef(effectiveControl);
   const onConnectionChangeRef = useRef(onConnectionChange);
+  const onConnectFailedRef = useRef(onConnectFailed);
   const [connected, setConnected] = useState(false);
 
   onConnectionChangeRef.current = onConnectionChange;
+  onConnectFailedRef.current = onConnectFailed;
 
   const hasValidEndpoint = wsUrl.trim().length > 0 && ticket.trim().length > 0;
 
@@ -99,31 +166,80 @@ export function VncViewport({
     }
 
     let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let failedAttempts = 0;
+    let attempt = 0;
     const separator = wsUrl.includes('?') ? '&' : '?';
     const fullUrl = `${wsUrl}${separator}ticket=${encodeURIComponent(ticket)}`;
 
-    void connectRFB(stage, fullUrl).then((client) => {
-      if (cancelled) {
-        client.disconnect();
-        return;
+    const clearRetry = () => {
+      if (retryTimer !== null) {
+        clearTimeout(retryTimer);
+        retryTimer = null;
       }
-      client.viewOnly = !inControlRef.current;
-      client.scaleViewport = true;
-      client.addEventListener('connect', () => {
-        setConnected(true);
-        onConnectionChangeRef.current?.(true);
-      });
-      client.addEventListener('disconnect', () => {
-        setConnected(false);
-        onConnectionChangeRef.current?.(false);
-      });
-      clientRef.current = client;
-    });
+    };
+
+    // The sandbox reports running before websockify accepts. The relay then
+    // closes the socket (1006) and noVNC will not reuse that RFB object.
+    // A new object on the same ticket covers the usual few seconds of boot.
+    // Cleanup sets `cancelled` first so our own disconnect is not a failure.
+    const scheduleRetry = () => {
+      if (cancelled) return;
+      onConnectFailedRef.current?.();
+      if (retryTimer !== null) return;
+      const delay = vncRetryDelayMs(failedAttempts);
+      failedAttempts += 1;
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        open();
+      }, delay);
+    };
+
+    const open = () => {
+      if (cancelled) return;
+      const previous = clientRef.current;
+      clientRef.current = null;
+      if (previous) releaseRfb(previous);
+      const generation = ++attempt;
+      void connectRFB(stage, fullUrl)
+        .then((client) => {
+          if (cancelled || generation !== attempt) {
+            releaseRfb(client);
+            return;
+          }
+          client.addEventListener('disconnect', () => {
+            // The socket is already gone. Cleanup must not call disconnect() again.
+            if (clientRef.current === client) clientRef.current = null;
+            if (cancelled) return;
+            setConnected(false);
+            onConnectionChangeRef.current?.(false);
+            scheduleRetry();
+          });
+          client.viewOnly = !inControlRef.current;
+          client.scaleViewport = true;
+          client.addEventListener('connect', () => {
+            if (cancelled || generation !== attempt) return;
+            failedAttempts = 0;
+            clearRetry();
+            setConnected(true);
+            onConnectionChangeRef.current?.(true);
+          });
+          clientRef.current = client;
+        })
+        .catch(() => {
+          if (cancelled || generation !== attempt) return;
+          scheduleRetry();
+        });
+    };
+
+    open();
 
     return () => {
       cancelled = true;
-      clientRef.current?.disconnect();
+      clearRetry();
+      const client = clientRef.current;
       clientRef.current = null;
+      if (client) releaseRfb(client);
       onConnectionChangeRef.current?.(false);
     };
   }, [wsUrl, ticket, hasValidEndpoint, connectRFB]);
