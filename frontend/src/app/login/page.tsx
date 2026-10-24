@@ -77,76 +77,92 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-paper-2 px-4 py-12">
-      <Card className="flex w-full max-w-[460px] flex-col gap-6 p-7 sm:p-8">
-        <BrandLogo />
-
-        <div className="flex flex-col gap-2">
-          <Eyebrow>{t('eyebrow')}</Eyebrow>
-          <h1 className="text-[30px] font-black leading-[1.2] tracking-[-0.01em] text-ink">
-            {t('title')}
-          </h1>
-          <p className="text-[15px] leading-[1.6] text-ink-2">{t('lead')}</p>
+    <div className="flex min-h-screen flex-col bg-paper-2">
+      <header className="border-b border-line bg-paper">
+        <div className="mx-auto flex min-h-16 max-w-[1360px] items-center justify-between gap-4 px-4 sm:px-6">
+          <BrandLogo size={34} />
         </div>
-
-        {setupRequired ? (
-          <Alert
-            tone="info"
-            title={t('setupBannerTitle')}
-            action={
-              <Link
-                href="/setup"
-                className="inline-flex min-h-[44px] items-center rounded-sm bg-green-600 px-4 text-[14px] font-bold text-paper transition duration-150 hover:bg-dark"
-              >
-                {t('setupBannerAction')}
-              </Link>
-            }
-          >
-            {t('setupBannerBody')}
-          </Alert>
-        ) : null}
-
-        <form
-          onSubmit={(event) => void handleSubmit(event)}
-          className="flex flex-col gap-5"
-        >
-          {errorKey ? <Alert tone="warning">{tErrors(errorKey)}</Alert> : null}
-
-          <Input
-            label={t('emailLabel')}
-            placeholder={t('emailPlaceholder')}
-            type="email"
-            autoComplete="email"
-            value={email}
-            required
-            onChange={(event) => setEmail(event.target.value)}
-          />
-
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-            <div className="flex-1">
-              <Input
-                label={t('passwordLabel')}
-                type={showPassword ? 'text' : 'password'}
-                autoComplete="current-password"
-                value={password}
-                required
-                onChange={(event) => setPassword(event.target.value)}
-              />
-            </div>
-            <Button
-              variant="secondary"
-              type="button"
-              onClick={() => setShowPassword((prev) => !prev)}
-            >
-              {showPassword ? t('hidePassword') : t('showPassword')}
-            </Button>
+      </header>
+      <main className="flex flex-1 items-center justify-center px-4 py-10">
+        <Card className="flex w-full max-w-[480px] flex-col gap-6 p-7 sm:p-8">
+          <div className="flex flex-col gap-2">
+            <Eyebrow>{t('eyebrow')}</Eyebrow>
+            <h1 className="text-[30px] font-black leading-[1.2] tracking-[-0.01em] text-ink">
+              {t('title')}
+            </h1>
+            <p className="text-[15px] leading-[1.6] text-ink-2">{t('lead')}</p>
           </div>
 
-          <Button type="submit" arrow disabled={submitting} className="w-full">
-            {submitting ? t('submitting') : t('submit')}
-          </Button>
-        </form>
-      </Card>
-    </main>
+          {setupRequired ? (
+            <Alert
+              tone="info"
+              title={t('setupBannerTitle')}
+              action={
+                <Link
+                  href="/setup"
+                  className="inline-flex min-h-[44px] items-center rounded-sm bg-green-600 px-4 text-[14px] font-bold text-paper transition duration-150 hover:bg-dark"
+                >
+                  {t('setupBannerAction')}
+                </Link>
+              }
+            >
+              {t('setupBannerBody')}
+            </Alert>
+          ) : null}
+
+          <form
+            onSubmit={(event) => void handleSubmit(event)}
+            className="flex flex-col gap-5"
+          >
+            {errorKey ? (
+              <Alert tone="warning">{tErrors(errorKey)}</Alert>
+            ) : null}
+
+            <Input
+              label={t('emailLabel')}
+              placeholder={t('emailPlaceholder')}
+              type="email"
+              autoComplete="email"
+              value={email}
+              required
+              onChange={(event) => setEmail(event.target.value)}
+            />
+
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+              <div className="flex-1">
+                <Input
+                  label={t('passwordLabel')}
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  value={password}
+                  required
+                  onChange={(event) => setPassword(event.target.value)}
+                />
+              </div>
+              <Button
+                variant="secondary"
+                type="button"
+                onClick={() => setShowPassword((prev) => !prev)}
+              >
+                {showPassword ? t('hidePassword') : t('showPassword')}
+              </Button>
+            </div>
+
+            <Button
+              type="submit"
+              arrow
+              disabled={submitting}
+              className="w-full"
+            >
+              {submitting ? t('submitting') : t('submit')}
+            </Button>
+          </form>
+
+          <p className="rounded-sm border border-line bg-paper-2 px-3.5 py-2.5 text-center font-mono text-[12px] text-muted">
+            {t('securityFooter')}
+          </p>
+        </Card>
+      </main>
+    </div>
   );
 }

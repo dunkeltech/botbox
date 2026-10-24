@@ -18,10 +18,10 @@ function TeamContent() {
   );
 }
 
-/** Team chat for the active workspace. */
+/** Team chat for the active workspace using the full-bleed dark Team shell. */
 export default function TeamPage() {
   return (
-    <AppShell>
+    <AppShell variant="team">
       <TeamContent />
     </AppShell>
   );

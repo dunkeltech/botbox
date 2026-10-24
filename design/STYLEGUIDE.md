@@ -133,8 +133,8 @@ The fleet shows known spend today. Budget meters follow the Stitch project `1359
 
 | Shell | Measurements |
 |---|---|
-| App header (light) | 64 px tall, white, bottom border `line`; current nav item `green-600` with a 2 px `green` underline; workspace switcher pill `<workspace> · <role>` on the right |
-| Team chat | Dark top bar (`terminal`, ~52 px), sidebar 264 px (`dark-2`), main pane flexible, details pane 280 px (`paper-2`) |
+| App header | Full-width `terminal` (`#14201a`) top bar (~54 px tall) across all authenticated views; current nav item white with a 2 px `green-light` (`#5eab60`) underline; workspace switcher pill `<workspace> · <role>`, approvals bell and account menu on the right |
+| Team chat | Same full-width `terminal` top bar with integrated search input, sidebar 264 px (`dark-2`), main pane flexible, details pane 280 px (`paper-2`) |
 | Bot workspace | Chat column 380–460 px, computer column flexible, 16:10 desktop viewport |
 | Phone shell (390 px) | 16 px side gutters, ≥ 44 × 44 px header and noVNC touch controls (`Tap / Pan`), sticky bottom composer, and a slide-over `dark-2` team sidebar drawer with `overlay` scrim |
 
@@ -193,7 +193,7 @@ The fleet shows known spend today. Budget meters follow the Stitch project `1359
 - **Composer:** 1.5 px `line-strong` border, radius 12. Toolbar: mention (@), attach and a hint text, with the send button on the right (`green-600`, 44 × 40).
 
 ### Navigation
-- **App header nav:** items are 44 px tall, weight 700. The current item is `green-600` with a 2 px `green` inset underline.
+- **App header nav:** full-width `terminal` (`#14201a`) top bar; items are 44 px tall, weight 700, `on-dark`. The current item is white (`#ffffff`) with a 2 px `green-light` (`#5eab60`) inset underline.
 - **Workspace switcher pill:** header pill showing `<workspace> · <role>` (e.g. `dunkel.Tech · Owner`), switching workspaces with strict `workspace_id` isolation (cross-workspace resource IDs return `404`).
 - **First-run setup wizard:** displayed when zero users exist, pairing a 3-step main form (`01 · Server setup secret`, `02 · Initial Owner account`, `03 · First workspace`) with an `Uninitialized instance` amber status pill, amber rate-limit callout, and a right-hand `terminal` stdout reference block + completion invariants list.
 - **Team sidebar:** `dark-2` background (`264 px` on desktop; slide-over drawer over an `overlay` scrim at `390 px`). Section headers are overlines in `on-dark-muted`. Items are 44–48 px tall with radius 8. The active item has a `green-600` background and white text. Unread items are white at weight 900 with a counter. Bot items show a 30 px avatar with a presence dot (10 px, 2 px ring in the sidebar colour) and the current activity in 12 px; human items show initials badges, role labels (`Owner`, `Reviewer`, `Viewer`), and online/away state.

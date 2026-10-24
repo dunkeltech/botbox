@@ -2,6 +2,7 @@
 
 import {
   ArrowLeft,
+  ArrowRight,
   CheckCircle2,
   Globe,
   KeyRound,
@@ -23,6 +24,8 @@ import {
   useId,
   useState,
 } from 'react';
+
+import { BudgetPanel } from '@/components/chat/BudgetPanel';
 
 import {
   Alert,
@@ -534,18 +537,18 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
 
         <nav
           aria-label={tTabs('ariaLabel')}
-          className="mt-1 flex flex-wrap gap-2 border-b border-line pb-3"
+          className="mt-1 flex flex-wrap gap-1 border-b border-line"
         >
           <Link
             href={`/bots/${bot.id}/settings`}
-            className="inline-flex min-h-[44px] items-center rounded-sm border border-line bg-paper px-4 text-[14px] font-bold text-ink-2 transition duration-150 hover:border-green-light hover:bg-mint-soft hover:text-green-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+            className="inline-flex min-h-[44px] items-center px-3.5 text-[14px] font-bold text-ink-2 transition duration-150 hover:text-green-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
           >
             {tTabs('general')}
           </Link>
           <Link
             href={`/bots/${bot.id}/secrets`}
             aria-current="page"
-            className="inline-flex min-h-[44px] items-center rounded-sm border border-green bg-mint-soft px-4 text-[14px] font-bold text-green-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+            className="inline-flex min-h-[44px] items-center px-3.5 text-[14px] font-bold text-green-600 shadow-[inset_0_-2px_0_#3f9147] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
           >
             {tTabs('secrets')}
           </Link>
@@ -603,559 +606,617 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
         <>
           <section
             aria-labelledby="how-secrets-heading"
-            className="flex flex-col gap-3"
+            className="flex flex-col gap-3 rounded-lg border border-line bg-paper p-5 shadow-card"
           >
-            <h2
-              id="how-secrets-heading"
-              className="text-[22px] font-black tracking-[-0.01em] text-ink"
-            >
-              {t('howTitle')}
-            </h2>
-            <ol className="grid gap-4 md:grid-cols-3">
-              {HOW_IT_WORKS_STEPS.map((step) => {
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2
+                id="how-secrets-heading"
+                className="text-[20px] font-black tracking-[-0.01em] text-ink"
+              >
+                {t('howTitle')}
+              </h2>
+              <p className="text-[13px] text-muted">{t('howSubtitle')}</p>
+            </div>
+            <ol className="grid items-stretch gap-3 lg:grid-cols-[1fr_auto_1fr_auto_1fr]">
+              {HOW_IT_WORKS_STEPS.map((step, index) => {
                 const Icon = step.icon;
+                const isFirst = index === 0;
+                const isMiddle = index === 1;
                 return (
-                  <li key={step.id}>
-                    <Card className="flex h-full flex-col gap-2 bg-paper-2/60">
+                  <li key={step.id} className="contents">
+                    <div
+                      className={`flex flex-col justify-between gap-2 rounded-md border p-4 ${
+                        isFirst
+                          ? 'border-dark bg-terminal text-on-dark'
+                          : isMiddle
+                            ? 'border-mint-line bg-mint-soft text-ink'
+                            : 'border-line bg-paper-2 text-ink'
+                      }`}
+                    >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="rounded-xs border border-mint-line bg-mint-soft px-2 py-0.5 font-mono text-[12px] font-bold text-green-600">
+                        <span
+                          className={`rounded-xs px-2 py-0.5 font-mono text-[11px] font-bold uppercase ${
+                            isFirst
+                              ? 'bg-dark-2 text-green-light'
+                              : isMiddle
+                                ? 'border border-mint-line bg-paper text-green-600'
+                                : 'border border-line bg-paper text-ink-2'
+                          }`}
+                        >
                           {t(step.numKey)}
                         </span>
                         <Icon
-                          className="h-4 w-4 text-green-600"
+                          className={`h-4 w-4 ${
+                            isFirst ? 'text-green-light' : 'text-green-600'
+                          }`}
                           aria-hidden="true"
                         />
                       </div>
-                      <h3 className="text-[16px] font-black text-ink">
+                      <h3
+                        className={`text-[15px] font-black ${
+                          isFirst ? 'text-paper' : 'text-ink'
+                        }`}
+                      >
                         {t(step.titleKey)}
                       </h3>
-                      <p className="text-[14px] leading-[1.55] text-ink-2">
+                      <p
+                        className={`text-[13px] leading-[1.5] ${
+                          isFirst ? 'text-on-dark-muted' : 'text-ink-2'
+                        }`}
+                      >
                         {t(step.descKey)}
                       </p>
-                    </Card>
+                      {index === 2 ? (
+                        <div className="mt-1 flex flex-wrap gap-1.5 font-mono text-[11px]">
+                          <span className="rounded-xs border border-mint-line bg-mint-soft px-2 py-0.5 font-bold text-green-600">
+                            {t('howAllowBadge')}
+                          </span>
+                          <span className="rounded-xs border border-dashed border-amber-line bg-amber-tint px-2 py-0.5 font-bold text-amber">
+                            {t('howBlockBadge')}
+                          </span>
+                        </div>
+                      ) : null}
+                    </div>
+                    {index < 2 ? (
+                      <div
+                        aria-hidden="true"
+                        className="hidden items-center justify-center text-green-600 lg:flex"
+                      >
+                        <ArrowRight className="h-5 w-5" />
+                      </div>
+                    ) : null}
                   </li>
                 );
               })}
             </ol>
           </section>
 
-          <section
-            aria-labelledby="configured-secrets-heading"
-            className="flex flex-col gap-4"
-          >
-            <div className="flex flex-col gap-1">
-              <h2
-                id="configured-secrets-heading"
-                className="text-[22px] font-black tracking-[-0.01em] text-ink"
-              >
-                {t('sectionTitle')}
-              </h2>
-              <p className="text-[15px] leading-[1.55] text-ink-2">
-                {t('sectionLead')}
-              </p>
-            </div>
-
-            {secretBannerKey ? (
-              <div role="status">
-                <Alert tone="success">{t(secretBannerKey)}</Alert>
-              </div>
-            ) : null}
-
-            {secretErrorKey ? (
-              <Alert tone="warning">{tErrors(secretErrorKey)}</Alert>
-            ) : null}
-
-            <Card className="overflow-hidden p-0">
-              {secrets.length === 0 ? (
-                <p className="p-6 text-[15px] text-ink-2">
-                  {t('emptySecrets')}
-                </p>
-              ) : (
-                <div
-                  tabIndex={0}
-                  role="region"
-                  aria-labelledby="configured-secrets-heading"
-                  className="overflow-x-auto"
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
+            <section
+              aria-labelledby="configured-secrets-heading"
+              className="flex min-w-0 flex-col gap-4"
+            >
+              <div className="flex flex-col gap-1">
+                <h2
+                  id="configured-secrets-heading"
+                  className="text-[22px] font-black tracking-[-0.01em] text-ink"
                 >
-                  <table
-                    aria-label={t('tableAria')}
-                    className="w-full min-w-[720px] border-collapse text-left text-[14px]"
-                  >
-                    <thead className="border-b border-line bg-paper-2 text-[12px] font-bold uppercase tracking-[0.04em] text-muted">
-                      <tr>
-                        <th scope="col" className="px-4 py-3">
-                          {t('colName')}
-                        </th>
-                        <th scope="col" className="px-4 py-3">
-                          {t('colDestination')}
-                        </th>
-                        <th scope="col" className="px-4 py-3">
-                          {t('colInjection')}
-                        </th>
-                        <th scope="col" className="px-4 py-3">
-                          {t('colPreview')}
-                        </th>
-                        <th scope="col" className="px-4 py-3">
-                          {t('colUsage')}
-                        </th>
-                        <th scope="col" className="px-4 py-3 text-right">
-                          {t('colActions')}
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-line">
-                      {secrets.map((secret) => {
-                        const editable = canMutateSecret(secret);
-                        const isConfirmingDelete =
-                          confirmDeleteId === secret.id;
-                        const deleteLabel = isConfirmingDelete
-                          ? t('deleteConfirmAction')
-                          : t('deleteAction');
-                        return (
-                          <tr
-                            key={secret.id}
-                            className="bg-paper transition-colors hover:bg-paper-2/50"
-                          >
-                            <th scope="row" className="px-4 py-3 align-top">
-                              <div className="flex flex-col items-start gap-1">
-                                <span className="font-mono text-[13px] font-bold text-ink">
-                                  {secret.name}
-                                </span>
-                                <span
-                                  className={`rounded-xs border px-2 py-0.5 text-[11px] font-bold ${
-                                    secret.scope === 'workspace'
-                                      ? 'border-blue-line bg-blue-tint text-blue'
-                                      : 'border-mint-line bg-mint-soft text-green-600'
-                                  }`}
-                                >
-                                  {secret.scope === 'workspace'
-                                    ? t('scopeWorkspaceBadge')
-                                    : t('scopeBotBadge')}
-                                </span>
-                              </div>
-                            </th>
-                            <td className="px-4 py-3 align-top">
-                              <div className="flex flex-col items-start gap-1">
-                                <span className="font-mono text-[13px] text-ink">
-                                  {formatDestinationTarget(secret)}
-                                </span>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {!secret.pathPrefix ? (
-                                    <span className="rounded-xs border border-line bg-paper-2 px-1.5 py-0.5 text-[11px] text-ink-2">
-                                      {t('allPaths')}
-                                    </span>
-                                  ) : null}
-                                  {secret.matchSubdomains ? (
-                                    <span className="rounded-xs border border-line bg-paper-2 px-1.5 py-0.5 font-mono text-[11px] text-ink-2">
-                                      {t('subdomainsTag')}
-                                    </span>
-                                  ) : null}
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-4 py-3 align-top font-mono text-[13px] text-ink-2">
-                              {renderInjectionLabel(secret)}
-                            </td>
-                            <td className="px-4 py-3 align-top font-mono text-[13px] text-ink-2">
-                              {secret.maskedPreview}
-                            </td>
-                            <td className="px-4 py-3 align-top text-[13px] text-ink-2">
-                              {secret.usedCount === 0
-                                ? t('neverUsed')
-                                : t('usageCountLabel', {
-                                    count: secret.usedCount,
-                                  })}
-                            </td>
-                            <td className="px-4 py-3 align-top">
-                              <div className="flex justify-end gap-2">
-                                <Button
-                                  type="button"
-                                  variant="secondary"
-                                  disabled={!editable || savingSecret}
-                                  aria-label={`${t('editAction')} ${secret.name}`}
-                                  className="px-3 text-[13px]"
-                                  onClick={() => startEditSecret(secret)}
-                                >
-                                  <Pencil
-                                    className="h-3.5 w-3.5"
-                                    aria-hidden="true"
-                                  />
-                                  <span>{t('editAction')}</span>
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="secondary"
-                                  disabled={
-                                    !editable || deletingSecretId === secret.id
-                                  }
-                                  aria-label={`${deleteLabel} ${secret.name}`}
-                                  className={`px-3 text-[13px] ${
-                                    isConfirmingDelete
-                                      ? 'border-dashed border-amber-line bg-amber-tint text-amber hover:border-amber-line hover:bg-amber-tint'
-                                      : ''
-                                  }`.trim()}
-                                  onClick={() =>
-                                    void handleDeleteSecret(secret)
-                                  }
-                                >
-                                  <Trash2
-                                    className="h-3.5 w-3.5"
-                                    aria-hidden="true"
-                                  />
-                                  <span>{deleteLabel}</span>
-                                </Button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </Card>
+                  {t('sectionTitle')}
+                </h2>
+                <p className="text-[15px] leading-[1.55] text-ink-2">
+                  {t('sectionLead')}
+                </p>
+              </div>
 
-            <Card className="p-6">
-              <form
-                id="secret-form"
-                aria-labelledby="secret-form-heading"
-                onSubmit={(event) => void handleSecretSubmit(event)}
-                className="flex flex-col gap-5"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h3
-                    id="secret-form-heading"
-                    className="text-[18px] font-black text-ink"
+              {secretBannerKey ? (
+                <div role="status">
+                  <Alert tone="success">{t(secretBannerKey)}</Alert>
+                </div>
+              ) : null}
+
+              {secretErrorKey ? (
+                <Alert tone="warning">{tErrors(secretErrorKey)}</Alert>
+              ) : null}
+
+              <Card className="overflow-hidden p-0">
+                {secrets.length === 0 ? (
+                  <p className="p-6 text-[15px] text-ink-2">
+                    {t('emptySecrets')}
+                  </p>
+                ) : (
+                  <div
+                    tabIndex={0}
+                    role="region"
+                    aria-labelledby="configured-secrets-heading"
+                    className="overflow-x-auto"
                   >
-                    {editingSecret
-                      ? t('editFormTitle', { name: editingSecret.name })
-                      : t('addFormTitle')}
-                  </h3>
-                  {editingSecret ? (
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={resetSecretForm}
+                    <table
+                      aria-label={t('tableAria')}
+                      className="w-full min-w-[720px] border-collapse text-left text-[14px]"
                     >
-                      {t('cancelEdit')}
-                    </Button>
-                  ) : null}
-                </div>
-
-                <RadioCardGroup<SecretScope>
-                  legend={t('scopeLabel')}
-                  name="secret-scope"
-                  value={effectiveScope}
-                  onChange={setScope}
-                  disabled={!canEditBotSecrets || editingSecret !== null}
-                  options={[
-                    { value: 'bot', title: t('scopeBot') },
-                    {
-                      value: 'workspace',
-                      title: t('scopeWorkspace'),
-                      description: !canEditWorkspaceSecrets
-                        ? t('workspaceScopeAdminOnly')
-                        : undefined,
-                      disabled: !canEditWorkspaceSecrets,
-                    },
-                  ]}
-                />
-
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Input
-                    name="secretName"
-                    label={t('nameLabel')}
-                    placeholder={t('namePlaceholder')}
-                    mono
-                    autoCorrect="off"
-                    autoCapitalize="none"
-                    spellCheck={false}
-                    value={secretName}
-                    disabled={!formEditable || savingSecret}
-                    required
-                    onChange={(event) => setSecretName(event.target.value)}
-                  />
-                  <Input
-                    name="domainMatch"
-                    label={t('domainLabel')}
-                    placeholder={t('domainPlaceholder')}
-                    mono
-                    autoCorrect="off"
-                    autoCapitalize="none"
-                    spellCheck={false}
-                    value={domainMatch}
-                    disabled={!formEditable || savingSecret}
-                    required
-                    onChange={(event) => setDomainMatch(event.target.value)}
-                  />
-                </div>
-
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Input
-                    name="pathPrefix"
-                    label={t('pathPrefixLabel')}
-                    placeholder={t('pathPrefixPlaceholder')}
-                    mono
-                    autoCorrect="off"
-                    autoCapitalize="none"
-                    spellCheck={false}
-                    value={pathPrefix}
-                    disabled={!formEditable || savingSecret}
-                    onChange={(event) => setPathPrefix(event.target.value)}
-                  />
-                  <div className="flex items-end">
-                    <div className="flex min-h-[44px] w-full items-center gap-3 rounded-sm border border-line bg-paper-2 px-3.5 py-2">
-                      <input
-                        id={subdomainsCheckboxId}
-                        name="matchSubdomains"
-                        type="checkbox"
-                        checked={matchSubdomains}
-                        disabled={!formEditable || savingSecret}
-                        onChange={(event) =>
-                          setMatchSubdomains(event.target.checked)
-                        }
-                        className="h-4 w-4 shrink-0 accent-green-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
-                      />
-                      <label
-                        htmlFor={subdomainsCheckboxId}
-                        className="cursor-pointer text-[14px] font-bold text-ink"
-                      >
-                        {t('subdomainsLabel')}
-                      </label>
-                    </div>
+                      <thead className="border-b border-line bg-paper-2 text-[12px] font-bold uppercase tracking-[0.04em] text-muted">
+                        <tr>
+                          <th scope="col" className="px-4 py-3">
+                            {t('colName')}
+                          </th>
+                          <th scope="col" className="px-4 py-3">
+                            {t('colDestination')}
+                          </th>
+                          <th scope="col" className="px-4 py-3">
+                            {t('colInjection')}
+                          </th>
+                          <th scope="col" className="px-4 py-3">
+                            {t('colPreview')}
+                          </th>
+                          <th scope="col" className="px-4 py-3">
+                            {t('colUsage')}
+                          </th>
+                          <th scope="col" className="px-4 py-3 text-right">
+                            {t('colActions')}
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-line">
+                        {secrets.map((secret) => {
+                          const editable = canMutateSecret(secret);
+                          const isConfirmingDelete =
+                            confirmDeleteId === secret.id;
+                          const deleteLabel = isConfirmingDelete
+                            ? t('deleteConfirmAction')
+                            : t('deleteAction');
+                          return (
+                            <tr
+                              key={secret.id}
+                              className="bg-paper transition-colors hover:bg-paper-2/50"
+                            >
+                              <th scope="row" className="px-4 py-3 align-top">
+                                <div className="flex flex-col items-start gap-1">
+                                  <span className="font-mono text-[13px] font-bold text-ink">
+                                    {secret.name}
+                                  </span>
+                                  <span
+                                    className={`rounded-xs border px-2 py-0.5 text-[11px] font-bold ${
+                                      secret.scope === 'workspace'
+                                        ? 'border-blue-line bg-blue-tint text-blue'
+                                        : 'border-mint-line bg-mint-soft text-green-600'
+                                    }`}
+                                  >
+                                    {secret.scope === 'workspace'
+                                      ? t('scopeWorkspaceBadge')
+                                      : t('scopeBotBadge')}
+                                  </span>
+                                </div>
+                              </th>
+                              <td className="px-4 py-3 align-top">
+                                <div className="flex flex-col items-start gap-1">
+                                  <span className="font-mono text-[13px] text-ink">
+                                    {formatDestinationTarget(secret)}
+                                  </span>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {!secret.pathPrefix ? (
+                                      <span className="rounded-xs border border-line bg-paper-2 px-1.5 py-0.5 text-[11px] text-ink-2">
+                                        {t('allPaths')}
+                                      </span>
+                                    ) : null}
+                                    {secret.matchSubdomains ? (
+                                      <span className="rounded-xs border border-line bg-paper-2 px-1.5 py-0.5 font-mono text-[11px] text-ink-2">
+                                        {t('subdomainsTag')}
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 align-top font-mono text-[13px] text-ink-2">
+                                {renderInjectionLabel(secret)}
+                              </td>
+                              <td className="px-4 py-3 align-top font-mono text-[13px] text-ink-2">
+                                {secret.maskedPreview}
+                              </td>
+                              <td className="px-4 py-3 align-top text-[13px] text-ink-2">
+                                {secret.usedCount === 0
+                                  ? t('neverUsed')
+                                  : t('usageCountLabel', {
+                                      count: secret.usedCount,
+                                    })}
+                              </td>
+                              <td className="px-4 py-3 align-top">
+                                <div className="flex justify-end gap-2">
+                                  <Button
+                                    type="button"
+                                    variant="secondary"
+                                    disabled={!editable || savingSecret}
+                                    aria-label={`${t('editAction')} ${secret.name}`}
+                                    className="px-3 text-[13px]"
+                                    onClick={() => startEditSecret(secret)}
+                                  >
+                                    <Pencil
+                                      className="h-3.5 w-3.5"
+                                      aria-hidden="true"
+                                    />
+                                    <span>{t('editAction')}</span>
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="secondary"
+                                    disabled={
+                                      !editable ||
+                                      deletingSecretId === secret.id
+                                    }
+                                    aria-label={`${deleteLabel} ${secret.name}`}
+                                    className={`px-3 text-[13px] ${
+                                      isConfirmingDelete
+                                        ? 'border-dashed border-amber-line bg-amber-tint text-amber hover:border-amber-line hover:bg-amber-tint'
+                                        : ''
+                                    }`.trim()}
+                                    onClick={() =>
+                                      void handleDeleteSecret(secret)
+                                    }
+                                  >
+                                    <Trash2
+                                      className="h-3.5 w-3.5"
+                                      aria-hidden="true"
+                                    />
+                                    <span>{deleteLabel}</span>
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
-                </div>
+                )}
+              </Card>
 
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Select
-                    name="authScheme"
-                    label={t('schemeLabel')}
-                    value={authScheme}
-                    disabled={!formEditable || savingSecret}
-                    onChange={(event) =>
-                      setAuthScheme(event.target.value as SecretAuthScheme)
-                    }
-                  >
-                    <option value="bearer">{t('schemeBearer')}</option>
-                    <option value="header">{t('schemeHeader')}</option>
-                    <option value="basic">{t('schemeBasic')}</option>
-                  </Select>
+              <Card className="p-6">
+                <form
+                  id="secret-form"
+                  aria-labelledby="secret-form-heading"
+                  onSubmit={(event) => void handleSecretSubmit(event)}
+                  className="flex flex-col gap-5"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3
+                      id="secret-form-heading"
+                      className="text-[18px] font-black text-ink"
+                    >
+                      {editingSecret
+                        ? t('editFormTitle', { name: editingSecret.name })
+                        : t('addFormTitle')}
+                    </h3>
+                    {editingSecret ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={resetSecretForm}
+                      >
+                        {t('cancelEdit')}
+                      </Button>
+                    ) : null}
+                  </div>
 
-                  {authScheme === 'header' ? (
+                  <RadioCardGroup<SecretScope>
+                    legend={t('scopeLabel')}
+                    name="secret-scope"
+                    value={effectiveScope}
+                    onChange={setScope}
+                    disabled={!canEditBotSecrets || editingSecret !== null}
+                    options={[
+                      { value: 'bot', title: t('scopeBot') },
+                      {
+                        value: 'workspace',
+                        title: t('scopeWorkspace'),
+                        description: !canEditWorkspaceSecrets
+                          ? t('workspaceScopeAdminOnly')
+                          : undefined,
+                        disabled: !canEditWorkspaceSecrets,
+                      },
+                    ]}
+                  />
+
+                  <div className="grid gap-4 sm:grid-cols-2">
                     <Input
-                      name="headerName"
-                      label={t('headerNameLabel')}
-                      placeholder={t('headerNamePlaceholder')}
+                      name="secretName"
+                      label={t('nameLabel')}
+                      placeholder={t('namePlaceholder')}
                       mono
                       autoCorrect="off"
                       autoCapitalize="none"
                       spellCheck={false}
-                      value={headerName}
+                      value={secretName}
                       disabled={!formEditable || savingSecret}
                       required
-                      onChange={(event) => setHeaderName(event.target.value)}
+                      onChange={(event) => setSecretName(event.target.value)}
                     />
-                  ) : null}
-
-                  {authScheme === 'basic' ? (
                     <Input
-                      name="username"
-                      label={t('usernameLabel')}
-                      placeholder={t('usernamePlaceholder')}
+                      name="domainMatch"
+                      label={t('domainLabel')}
+                      placeholder={t('domainPlaceholder')}
                       mono
                       autoCorrect="off"
                       autoCapitalize="none"
                       spellCheck={false}
-                      value={username}
+                      value={domainMatch}
                       disabled={!formEditable || savingSecret}
-                      onChange={(event) => setUsername(event.target.value)}
+                      required
+                      onChange={(event) => setDomainMatch(event.target.value)}
                     />
-                  ) : null}
-                </div>
-
-                <Input
-                  name="secretValue"
-                  type="password"
-                  autoComplete="new-password"
-                  autoCorrect="off"
-                  autoCapitalize="none"
-                  spellCheck={false}
-                  label={
-                    editingSecret
-                      ? t('valueReplaceLabel')
-                      : t('valueCreateLabel')
-                  }
-                  placeholder={t('valuePlaceholder')}
-                  mono
-                  value={secretValue}
-                  disabled={!formEditable || savingSecret}
-                  required={editingSecret === null}
-                  onChange={(event) => setSecretValue(event.target.value)}
-                />
-
-                {formEditable ? (
-                  <div className="flex justify-end border-t border-line pt-4">
-                    <Button type="submit" arrow disabled={savingSecret}>
-                      {savingSecret
-                        ? t('savingSecret')
-                        : editingSecret
-                          ? t('updateSubmit')
-                          : t('createSubmit')}
-                    </Button>
                   </div>
-                ) : null}
-              </form>
-            </Card>
-          </section>
 
-          <section
-            aria-labelledby="outbound-policy-heading"
-            className="flex flex-col gap-4"
-          >
-            <div className="flex flex-col gap-1">
-              <h2
-                id="outbound-policy-heading"
-                className="text-[22px] font-black tracking-[-0.01em] text-ink"
-              >
-                {t('policyTitle')}
-              </h2>
-              <p className="text-[15px] leading-[1.55] text-ink-2">
-                {t('policyLead')}
-              </p>
-            </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Input
+                      name="pathPrefix"
+                      label={t('pathPrefixLabel')}
+                      placeholder={t('pathPrefixPlaceholder')}
+                      mono
+                      autoCorrect="off"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      value={pathPrefix}
+                      disabled={!formEditable || savingSecret}
+                      onChange={(event) => setPathPrefix(event.target.value)}
+                    />
+                    <div className="flex items-end">
+                      <div className="flex min-h-[44px] w-full items-center gap-3 rounded-sm border border-line bg-paper-2 px-3.5 py-2">
+                        <input
+                          id={subdomainsCheckboxId}
+                          name="matchSubdomains"
+                          type="checkbox"
+                          checked={matchSubdomains}
+                          disabled={!formEditable || savingSecret}
+                          onChange={(event) =>
+                            setMatchSubdomains(event.target.checked)
+                          }
+                          className="h-4 w-4 shrink-0 accent-green-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+                        />
+                        <label
+                          htmlFor={subdomainsCheckboxId}
+                          className="cursor-pointer text-[14px] font-bold text-ink"
+                        >
+                          {t('subdomainsLabel')}
+                        </label>
+                      </div>
+                    </div>
+                  </div>
 
-            {policySaved ? (
-              <div role="status">
-                <Alert tone="success">{t('policySavedBanner')}</Alert>
-              </div>
-            ) : null}
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Select
+                      name="authScheme"
+                      label={t('schemeLabel')}
+                      value={authScheme}
+                      disabled={!formEditable || savingSecret}
+                      onChange={(event) =>
+                        setAuthScheme(event.target.value as SecretAuthScheme)
+                      }
+                    >
+                      <option value="bearer">{t('schemeBearer')}</option>
+                      <option value="header">{t('schemeHeader')}</option>
+                      <option value="basic">{t('schemeBasic')}</option>
+                    </Select>
 
-            {policyErrorKey ? (
-              <Alert tone="warning">{tErrors(policyErrorKey)}</Alert>
-            ) : null}
-
-            <Card className="p-6">
-              <form
-                aria-labelledby="outbound-policy-heading"
-                onSubmit={(event) => void handleSavePolicy(event)}
-                className="flex flex-col gap-6"
-              >
-                <RadioCardGroup<EgressPolicyMode>
-                  legend={t('policyTitle')}
-                  name="egress-policy-mode"
-                  value={policyMode}
-                  onChange={(nextMode) => {
-                    setPolicyMode(nextMode);
-                    setPolicySaved(false);
-                  }}
-                  disabled={!canEditBotSecrets || savingPolicy}
-                  options={[
-                    {
-                      value: 'allowlist',
-                      title: t('policyAllowlistTitle'),
-                      description: t('policyAllowlistDesc'),
-                    },
-                    {
-                      value: 'open',
-                      title: t('policyOpenTitle'),
-                      description: t('policyOpenDesc'),
-                    },
-                  ]}
-                />
-
-                <div className="flex flex-col gap-3">
-                  <h3 className="text-[15px] font-bold text-ink">
-                    {t('allowedHostsTitle')}
-                  </h3>
-
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-                    <div className="flex-1">
+                    {authScheme === 'header' ? (
                       <Input
-                        name="allowedHostDraft"
-                        label={t('hostInputLabel')}
-                        placeholder={t('hostInputPlaceholder')}
+                        name="headerName"
+                        label={t('headerNameLabel')}
+                        placeholder={t('headerNamePlaceholder')}
                         mono
                         autoCorrect="off"
                         autoCapitalize="none"
                         spellCheck={false}
-                        value={hostDraft}
-                        disabled={!canEditBotSecrets || savingPolicy}
-                        onKeyDown={handleHostInputKeyDown}
-                        onChange={(event) => setHostDraft(event.target.value)}
+                        value={headerName}
+                        disabled={!formEditable || savingSecret}
+                        required
+                        onChange={(event) => setHeaderName(event.target.value)}
                       />
+                    ) : null}
+
+                    {authScheme === 'basic' ? (
+                      <Input
+                        name="username"
+                        label={t('usernameLabel')}
+                        placeholder={t('usernamePlaceholder')}
+                        mono
+                        autoCorrect="off"
+                        autoCapitalize="none"
+                        spellCheck={false}
+                        value={username}
+                        disabled={!formEditable || savingSecret}
+                        onChange={(event) => setUsername(event.target.value)}
+                      />
+                    ) : null}
+                  </div>
+
+                  <Input
+                    name="secretValue"
+                    type="password"
+                    autoComplete="new-password"
+                    autoCorrect="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    label={
+                      editingSecret
+                        ? t('valueReplaceLabel')
+                        : t('valueCreateLabel')
+                    }
+                    placeholder={t('valuePlaceholder')}
+                    mono
+                    value={secretValue}
+                    disabled={!formEditable || savingSecret}
+                    required={editingSecret === null}
+                    onChange={(event) => setSecretValue(event.target.value)}
+                  />
+
+                  {formEditable ? (
+                    <div className="flex justify-end border-t border-line pt-4">
+                      <Button type="submit" arrow disabled={savingSecret}>
+                        {savingSecret
+                          ? t('savingSecret')
+                          : editingSecret
+                            ? t('updateSubmit')
+                            : t('createSubmit')}
+                      </Button>
                     </div>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      disabled={
-                        !canEditBotSecrets || savingPolicy || !hostDraft.trim()
-                      }
-                      onClick={handleAddAllowedHost}
-                    >
-                      <Plus className="h-4 w-4" aria-hidden="true" />
-                      <span>{t('addHostAction')}</span>
-                    </Button>
+                  ) : null}
+                </form>
+              </Card>
+            </section>
+
+            <section
+              aria-labelledby="outbound-policy-heading"
+              className="flex flex-col gap-4"
+            >
+              <div className="flex flex-col gap-1">
+                <h2
+                  id="outbound-policy-heading"
+                  className="text-[22px] font-black tracking-[-0.01em] text-ink"
+                >
+                  {t('policyTitle')}
+                </h2>
+                <p className="text-[15px] leading-[1.55] text-ink-2">
+                  {t('policyLead')}
+                </p>
+              </div>
+
+              {policySaved ? (
+                <div role="status">
+                  <Alert tone="success">{t('policySavedBanner')}</Alert>
+                </div>
+              ) : null}
+
+              {policyErrorKey ? (
+                <Alert tone="warning">{tErrors(policyErrorKey)}</Alert>
+              ) : null}
+
+              <Card className="p-6">
+                <form
+                  aria-labelledby="outbound-policy-heading"
+                  onSubmit={(event) => void handleSavePolicy(event)}
+                  className="flex flex-col gap-6"
+                >
+                  <RadioCardGroup<EgressPolicyMode>
+                    legend={t('policyTitle')}
+                    name="egress-policy-mode"
+                    value={policyMode}
+                    onChange={(nextMode) => {
+                      setPolicyMode(nextMode);
+                      setPolicySaved(false);
+                    }}
+                    disabled={!canEditBotSecrets || savingPolicy}
+                    options={[
+                      {
+                        value: 'allowlist',
+                        title: t('policyAllowlistTitle'),
+                        description: t('policyAllowlistDesc'),
+                      },
+                      {
+                        value: 'open',
+                        title: t('policyOpenTitle'),
+                        description: t('policyOpenDesc'),
+                      },
+                    ]}
+                  />
+
+                  <div className="flex flex-col gap-3">
+                    <h3 className="text-[15px] font-bold text-ink">
+                      {t('allowedHostsTitle')}
+                    </h3>
+
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                      <div className="flex-1">
+                        <Input
+                          name="allowedHostDraft"
+                          label={t('hostInputLabel')}
+                          placeholder={t('hostInputPlaceholder')}
+                          mono
+                          autoCorrect="off"
+                          autoCapitalize="none"
+                          spellCheck={false}
+                          value={hostDraft}
+                          disabled={!canEditBotSecrets || savingPolicy}
+                          onKeyDown={handleHostInputKeyDown}
+                          onChange={(event) => setHostDraft(event.target.value)}
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        disabled={
+                          !canEditBotSecrets ||
+                          savingPolicy ||
+                          !hostDraft.trim()
+                        }
+                        onClick={handleAddAllowedHost}
+                      >
+                        <Plus className="h-4 w-4" aria-hidden="true" />
+                        <span>{t('addHostAction')}</span>
+                      </Button>
+                    </div>
+
+                    {allowedHosts.length === 0 ? (
+                      <p className="text-[14px] text-muted">
+                        {t('emptyHosts')}
+                      </p>
+                    ) : (
+                      <ul className="flex flex-wrap gap-2">
+                        {allowedHosts.map((host) => (
+                          <li
+                            key={host}
+                            className="inline-flex min-h-[44px] items-center gap-2 rounded-sm border border-line bg-paper-2 pl-3 pr-1.5 font-mono text-[13px] text-ink"
+                          >
+                            <span>{host}</span>
+                            {canEditBotSecrets ? (
+                              <button
+                                type="button"
+                                aria-label={t('removeHostAria', { host })}
+                                disabled={savingPolicy}
+                                onClick={() => handleRemoveAllowedHost(host)}
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-xs text-ink-2 transition hover:bg-mint-soft hover:text-green-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+                              >
+                                <X className="h-3.5 w-3.5" aria-hidden="true" />
+                              </button>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
 
-                  {allowedHosts.length === 0 ? (
-                    <p className="text-[14px] text-muted">{t('emptyHosts')}</p>
-                  ) : (
-                    <ul className="flex flex-wrap gap-2">
-                      {allowedHosts.map((host) => (
-                        <li
-                          key={host}
-                          className="inline-flex min-h-[44px] items-center gap-2 rounded-sm border border-line bg-paper-2 pl-3 pr-1.5 font-mono text-[13px] text-ink"
-                        >
-                          <span>{host}</span>
-                          {canEditBotSecrets ? (
-                            <button
-                              type="button"
-                              aria-label={t('removeHostAria', { host })}
-                              disabled={savingPolicy}
-                              onClick={() => handleRemoveAllowedHost(host)}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-xs text-ink-2 transition hover:bg-mint-soft hover:text-green-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
-                            >
-                              <X className="h-3.5 w-3.5" aria-hidden="true" />
-                            </button>
-                          ) : null}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-
-                <div className="flex flex-col gap-2 border-t border-line pt-4">
-                  <h3 className="text-[14px] font-bold text-ink">
-                    {t('effectiveSecretHostsTitle')}
-                  </h3>
-                  {effectiveSecretHosts.length === 0 ? (
-                    <p className="text-[14px] text-muted">
-                      {t('effectiveSecretHostsEmpty')}
-                    </p>
-                  ) : (
-                    <ul className="flex flex-wrap gap-2">
-                      {effectiveSecretHosts.map((host) => (
-                        <li
-                          key={host}
-                          className="rounded-xs border border-mint-line bg-mint-soft px-2.5 py-1 font-mono text-[13px] font-bold text-green-600"
-                        >
-                          {host}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-
-                {canEditBotSecrets ? (
-                  <div className="flex justify-end border-t border-line pt-4">
-                    <Button type="submit" arrow disabled={savingPolicy}>
-                      {savingPolicy ? t('savingPolicy') : t('savePolicyAction')}
-                    </Button>
+                  <div className="flex flex-col gap-2 border-t border-line pt-4">
+                    <h3 className="text-[14px] font-bold text-ink">
+                      {t('effectiveSecretHostsTitle')}
+                    </h3>
+                    {effectiveSecretHosts.length === 0 ? (
+                      <p className="text-[14px] text-muted">
+                        {t('effectiveSecretHostsEmpty')}
+                      </p>
+                    ) : (
+                      <ul className="flex flex-wrap gap-2">
+                        {effectiveSecretHosts.map((host) => (
+                          <li
+                            key={host}
+                            className="rounded-xs border border-mint-line bg-mint-soft px-2.5 py-1 font-mono text-[13px] font-bold text-green-600"
+                          >
+                            {host}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
-                ) : null}
-              </form>
-            </Card>
-          </section>
+
+                  {canEditBotSecrets ? (
+                    <div className="flex justify-end border-t border-line pt-4">
+                      <Button type="submit" arrow disabled={savingPolicy}>
+                        {savingPolicy
+                          ? t('savingPolicy')
+                          : t('savePolicyAction')}
+                      </Button>
+                    </div>
+                  ) : null}
+                </form>
+              </Card>
+            </section>
+          </div>
 
           <section
             aria-labelledby="egress-activity-heading"
@@ -1308,6 +1369,30 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
                 </div>
               )}
             </div>
+          </section>
+
+          <section className="flex flex-col gap-4">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <Eyebrow>{t('budgetsEyebrow')}</Eyebrow>
+                <h2 className="mt-1 text-[22px] font-black tracking-[-0.01em] text-ink">
+                  {t('budgetsTitle')}
+                </h2>
+              </div>
+              <Link
+                href="/settings/members#budgets"
+                className="inline-flex min-h-[44px] items-center gap-1.5 rounded-sm border-[1.5px] border-line bg-paper px-4 text-[14px] font-bold text-green-600 transition duration-150 hover:border-green-light hover:bg-mint-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+              >
+                <span>{t('workspaceBudgetsLink')}</span>
+                <ArrowRight className="h-4 w-4" aria-hidden="true" />
+              </Link>
+            </div>
+            <BudgetPanel
+              workspaceId={workspace.id}
+              botId={bot.id}
+              canManage={canManageMembers(workspace.role)}
+              ignoreMissing
+            />
           </section>
         </>
       )}

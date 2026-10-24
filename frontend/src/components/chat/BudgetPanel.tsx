@@ -3,21 +3,23 @@
 import { useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations, useFormatter } from 'next-intl';
-import { Alert, Button, Card, Input } from '@/components/ui';
-import { requestJson } from '@/lib/api-client';
+import { Alert, BudgetMeter, Button, Card, Input } from '@/components/ui';
+import { ApiClientError, requestJson } from '@/lib/api-client';
 import type { components } from '@/types/openapi.gen';
 
 type Summary = components['schemas']['BudgetSummary'];
 
-/** Shows metered workspace spend and lets workspace administrators set bot limits. */
+/** Shows metered workspace or bot spend with 80%/100% threshold markers and lets administrators set limits. */
 export function BudgetPanel({
   workspaceId,
   botId,
   canManage = false,
+  ignoreMissing = false,
 }: {
   workspaceId: string;
   botId?: string;
   canManage?: boolean;
+  ignoreMissing?: boolean;
 }) {
   const t = useTranslations('budgets');
   const format = useFormatter();
@@ -31,9 +33,25 @@ export function BudgetPanel({
   const base = `/api/workspaces/${workspaceId}`;
   const query = useQuery({
     queryKey: ['budget', workspaceId, botId],
-    queryFn: () =>
-      requestJson<Summary>(`${base}/budgets${botId ? `?botId=${botId}` : ''}`),
+    retry: false,
+    queryFn: async () => {
+      try {
+        return await requestJson<Summary>(
+          `${base}/budgets${botId ? `?botId=${botId}` : ''}`,
+        );
+      } catch (err) {
+        if (
+          ignoreMissing &&
+          err instanceof ApiClientError &&
+          err.status === 404
+        ) {
+          return null;
+        }
+        throw err;
+      }
+    },
   });
+
   async function save(event: FormEvent) {
     event.preventDefault();
     setError(false);
@@ -48,98 +66,124 @@ export function BudgetPanel({
         },
       });
       await client.invalidateQueries({ queryKey: ['budget', workspaceId] });
+      setLimit('');
     } catch {
       setError(true);
     } finally {
       setSaving(false);
     }
   }
+
   return (
-    <Card className="flex flex-col gap-4 p-5">
-      <h2 className="text-[20px] font-black">
-        {t(botId ? 'botTitle' : 'title')}
-      </h2>
-      {query.data ? (
-        <p>
-          {t('today', {
-            amount: format.number(query.data.spendTodayMicros / 1000000, {
-              style: 'currency',
-              currency: 'USD',
-            }),
-          })}
-        </p>
-      ) : null}
+    <Card className="flex flex-col gap-5 p-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-[20px] font-black text-ink">
+            {t(botId ? 'botTitle' : 'title')}
+          </h2>
+          {query.data ? (
+            <p className="mt-0.5 text-[14px] text-ink-2">
+              {t('today', {
+                amount: format.number(query.data.spendTodayMicros / 1000000, {
+                  style: 'currency',
+                  currency: 'USD',
+                }),
+              })}
+            </p>
+          ) : null}
+        </div>
+        {botId ? (
+          <span className="rounded-pill border border-amber-line bg-amber-tint px-2.5 py-0.5 font-mono text-[12px] font-bold text-amber">
+            {t('hardCapCode')}
+          </span>
+        ) : null}
+      </div>
+
       {error || query.isError ? (
         <Alert tone="warning">{t('error')}</Alert>
       ) : null}
-      {query.data?.budgets.map((b) => (
-        <div
-          key={b.id}
-          className={`rounded-md border p-3 ${b.warning ? 'border-amber-line bg-amber-tint' : 'border-line bg-paper-2'} ${b.exceeded ? 'border-dashed' : ''}`}
-        >
-          <p>
-            {t(b.period, {
-              spent: format.number(b.spentMicros / 1000000, {
-                style: 'currency',
-                currency: 'USD',
-              }),
-              limit: format.number(b.limitMicros / 1000000, {
-                style: 'currency',
-                currency: 'USD',
-              }),
-            })}
-          </p>
-          <div className="mt-3 flex items-center justify-between gap-3 font-mono text-[12px] text-muted">
-            <span>
-              {t('used', {
-                percent: Math.round((b.spentMicros / b.limitMicros) * 100),
-              })}
-            </span>
-            <span>{t('threshold')}</span>
-          </div>
-          <div
-            role="progressbar"
-            aria-label={t(b.period, {
-              spent: format.number(b.spentMicros / 1000000, {
-                style: 'currency',
-                currency: 'USD',
-              }),
-              limit: format.number(b.limitMicros / 1000000, {
-                style: 'currency',
-                currency: 'USD',
-              }),
-            })}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={Math.min(
-              100,
-              Math.round((b.spentMicros / b.limitMicros) * 100),
-            )}
-            className="my-2 h-2 overflow-hidden rounded-full bg-mint-soft"
-          >
-            <div
-              className={`h-full rounded-full ${b.warning ? 'bg-amber' : 'bg-green-600'}`}
-              style={{
-                width: `${Math.min(100, (b.spentMicros / b.limitMicros) * 100)}%`,
-              }}
-            />
-          </div>
-          {b.exceeded ? (
-            <p>{t('exceeded')}</p>
-          ) : b.warning ? (
-            <p>{t('warning')}</p>
-          ) : null}
+
+      {query.data && query.data.budgets.length > 0 ? (
+        <div className="grid gap-4 md:grid-cols-2">
+          {query.data.budgets.map((b) => {
+            const spentText = format.number(b.spentMicros / 1000000, {
+              style: 'currency',
+              currency: 'USD',
+            });
+            const limitText = format.number(b.limitMicros / 1000000, {
+              style: 'currency',
+              currency: 'USD',
+            });
+            const percent =
+              b.limitMicros > 0
+                ? Math.round((b.spentMicros / b.limitMicros) * 100)
+                : 0;
+            const label = t(b.period, {
+              spent: spentText,
+              limit: limitText,
+            });
+            return (
+              <div
+                key={b.id}
+                className={`flex flex-col gap-3 rounded-md border p-4 ${
+                  b.exceeded
+                    ? 'border-dashed border-amber-line bg-amber-tint'
+                    : b.warning
+                      ? 'border-amber-line bg-amber-tint/70'
+                      : 'border-line bg-paper-2'
+                }`}
+              >
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <span className="text-[12px] font-bold uppercase tracking-[0.06em] text-muted">
+                    {b.period === 'day'
+                      ? t('dailyCapLabel')
+                      : t('monthlyCapLabel')}
+                  </span>
+                  <span className="font-mono text-[14px] font-black text-ink">
+                    {t('ofLimit', { spent: spentText, limit: limitText })}
+                  </span>
+                </div>
+                <p className="sr-only">{label}</p>
+                <BudgetMeter
+                  ariaLabel={label}
+                  spentMicros={b.spentMicros}
+                  limitMicros={b.limitMicros}
+                  warning={b.warning}
+                  exceeded={b.exceeded}
+                  leftCaption={t('used', { percent })}
+                  rightCaption={t('threshold')}
+                />
+                {b.exceeded ? (
+                  <p className="text-[13px] font-bold text-amber">
+                    {t('exceeded')}
+                  </p>
+                ) : b.warning ? (
+                  <p className="text-[13px] font-bold text-amber">
+                    {t('warning')}
+                  </p>
+                ) : null}
+              </div>
+            );
+          })}
         </div>
-      ))}
-      {botId ? (
-        <p className="rounded-md border border-dashed border-amber-line bg-amber-tint p-4 text-[13px] text-amber">
-          {t('hardCap')}
-        </p>
       ) : null}
+
+      {botId ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-dashed border-amber-line bg-amber-tint px-4 py-3 text-[13px] text-amber">
+          <div>
+            <p className="font-bold">{t('hardCapTitle')}</p>
+            <p className="text-ink-2">{t('hardCap')}</p>
+          </div>
+          <span className="rounded-xs border border-amber-line bg-paper px-2 py-0.5 font-mono text-[12px] font-bold text-amber">
+            {t('hardCapCode')}
+          </span>
+        </div>
+      ) : null}
+
       {canManage ? (
         <form
           onSubmit={(event) => void save(event)}
-          className="flex flex-col gap-3"
+          className="grid items-end gap-3 border-t border-line pt-4 sm:grid-cols-[1fr_180px_auto]"
         >
           <Input
             label={t('limit')}
@@ -147,14 +191,21 @@ export function BudgetPanel({
             min="0.000001"
             max="1000000"
             step="0.000001"
+            mono
             value={limit}
             required
             onChange={(event) => setLimit(event.target.value)}
           />
-          <label className="flex flex-col gap-2 text-[14px] font-bold">
-            {t('period')}
+          <div className="flex flex-col gap-1.5">
+            <label
+              htmlFor={`budget-period-${botId ?? 'workspace'}`}
+              className="text-[14px] font-bold text-ink"
+            >
+              {t('period')}
+            </label>
             <select
-              className="min-h-[44px] rounded-sm border border-line-strong bg-paper p-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-green"
+              id={`budget-period-${botId ?? 'workspace'}`}
+              className="min-h-[44px] rounded-sm border-[1.5px] border-line-strong bg-paper px-3 py-2 text-[15px] text-ink focus:border-green-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
               value={period}
               onChange={(event) =>
                 setPeriod(event.target.value as 'day' | 'month')
@@ -163,7 +214,7 @@ export function BudgetPanel({
               {botId ? <option value="day">{t('daily')}</option> : null}
               <option value="month">{t('monthly')}</option>
             </select>
-          </label>
+          </div>
           <Button type="submit" disabled={saving || !limit}>
             {t('save')}
           </Button>

@@ -19,7 +19,11 @@ it('proxies desktop websocket paths to the API', async () => {
   const rewrites = await development.rewrites();
   const list = Array.isArray(rewrites)
     ? rewrites
-    : [...(rewrites.beforeFiles ?? []), ...(rewrites.afterFiles ?? []), ...(rewrites.fallback ?? [])];
+    : [
+        ...(rewrites.beforeFiles ?? []),
+        ...(rewrites.afterFiles ?? []),
+        ...(rewrites.fallback ?? []),
+      ];
   const ws = list.find((rule) => rule.source === '/ws/:path*');
   expect(ws?.destination).toMatch(/^https?:\/\/.+\/ws\/:path\*$/);
 });

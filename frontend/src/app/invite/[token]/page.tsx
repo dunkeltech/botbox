@@ -150,133 +150,153 @@ export default function InvitePage() {
   const formattedExpiry = new Date(preview.expiresAt).toLocaleDateString();
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-paper-2 px-4 py-12">
-      <Card className="flex w-full max-w-[540px] flex-col gap-6 p-7 sm:p-8">
-        <BrandLogo />
-
-        <div className="flex flex-col gap-2">
-          <Eyebrow>{t('eyebrow')}</Eyebrow>
-          <h1 className="text-[30px] font-black leading-[1.2] text-ink">
-            {t('title', { workspaceName: preview.workspaceName })}
-          </h1>
-          <p className="text-[15px] leading-[1.6] text-ink-2">
-            {t('lead', { workspaceSlug: preview.workspaceSlug })}
-          </p>
-        </div>
-
-        <dl className="grid gap-3 rounded-sm border border-line bg-paper-2 p-4 sm:grid-cols-3">
-          <div className="flex flex-col gap-1">
-            <dt className="text-[12px] font-bold uppercase tracking-[0.06em] text-muted">
-              {t('roleLabel')}
-            </dt>
-            <dd>
-              <RoleBadge role={preview.role} />
-            </dd>
-          </div>
-          <div className="flex flex-col gap-1">
-            <dt className="text-[12px] font-bold uppercase tracking-[0.06em] text-muted">
-              {t('invitedEmailLabel')}
-            </dt>
-            <dd className="truncate font-mono text-[13px] text-ink">
-              {preview.email ?? t('anyEmailAllowed')}
-            </dd>
-          </div>
-          <div className="flex flex-col gap-1">
-            <dt className="text-[12px] font-bold uppercase tracking-[0.06em] text-muted">
-              {t('expiresLabel')}
-            </dt>
-            <dd className="text-[14px] font-bold text-ink">
-              {formattedExpiry}
-            </dd>
-          </div>
-        </dl>
-
-        {submitErrorKey ? (
-          <Alert tone="warning">{tErrors(submitErrorKey)}</Alert>
-        ) : null}
-
-        {user ? (
-          <div className="flex flex-col gap-4 border-t border-line pt-5">
-            <p className="text-[15px] font-bold text-ink">
-              {t('signedInAsTitle', { email: user.email })}
-            </p>
-            <Button
-              type="button"
-              arrow
-              disabled={submitting}
-              onClick={() => void handleAcceptAuthenticated()}
-            >
-              {submitting
-                ? t('signedInAccepting')
-                : t('signedInAcceptButton', {
-                    workspaceName: preview.workspaceName,
-                  })}
-            </Button>
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-              <p className="text-[13px] text-muted">{t('switchAccountHint')}</p>
-              <Button
-                variant="secondary"
-                type="button"
-                disabled={submitting}
-                onClick={() => void signOut()}
-              >
-                {t('signOutButton')}
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <form
-            onSubmit={(event) => void handleAcceptNewAccount(event)}
-            className="flex flex-col gap-4 border-t border-line pt-5"
+    <div className="flex min-h-screen flex-col bg-paper-2">
+      <header className="border-b border-line bg-paper">
+        <div className="mx-auto flex min-h-16 max-w-[1360px] items-center justify-between gap-4 px-4 sm:px-6">
+          <Link href="/">
+            <BrandLogo size={34} />
+          </Link>
+          <Link
+            href="/"
+            className="inline-flex min-h-[44px] items-center rounded-sm border-[1.5px] border-line bg-paper px-4 text-[14px] font-bold text-ink transition duration-150 hover:border-green-light hover:bg-mint-soft"
           >
-            <h2 className="text-[18px] font-black text-ink">
-              {t('newAccountHeading')}
-            </h2>
+            {t('backToFleet')}
+          </Link>
+        </div>
+      </header>
+      <main className="flex flex-1 items-center justify-center px-4 py-10">
+        <Card className="flex w-full max-w-[540px] flex-col gap-6 p-7 sm:p-8">
+          <div className="flex flex-col gap-2">
+            <Eyebrow>{t('eyebrow')}</Eyebrow>
+            <h1 className="text-[30px] font-black leading-[1.2] text-ink">
+              {t('title', { workspaceName: preview.workspaceName })}
+            </h1>
+            <p className="text-[15px] leading-[1.6] text-ink-2">
+              {t('lead', { workspaceSlug: preview.workspaceSlug })}
+            </p>
+          </div>
 
-            <Input
-              label={t('emailLabel')}
-              type="email"
-              autoComplete="email"
-              value={preview.email ?? email}
-              readOnly={Boolean(preview.email)}
-              required
-              onChange={(event) => setEmail(event.target.value)}
-            />
-
-            <Input
-              label={t('displayNameLabel')}
-              placeholder={t('displayNamePlaceholder')}
-              autoComplete="name"
-              value={displayName}
-              required
-              onChange={(event) => setDisplayName(event.target.value)}
-            />
-
-            <Input
-              label={t('passwordLabel')}
-              type="password"
-              autoComplete="new-password"
-              value={password}
-              required
-              onChange={(event) => setPassword(event.target.value)}
-            />
-
-            <Button type="submit" arrow disabled={submitting} className="mt-1">
-              {submitting ? t('submitting') : t('submitNewAccount')}
-            </Button>
-
-            <div className="flex flex-wrap items-center gap-2 pt-2 text-[14px] text-ink-2">
-              <span>{t('haveAccountText')}</span>
-              <Link
-                href="/login"
-                className="font-bold text-green-600 underline-offset-4 hover:underline"
-              >
-                {t('signInLink')}
-              </Link>
+          <dl className="grid gap-3 rounded-sm border border-line bg-paper-2 p-4 sm:grid-cols-3">
+            <div className="flex flex-col gap-1">
+              <dt className="text-[12px] font-bold uppercase tracking-[0.06em] text-muted">
+                {t('roleLabel')}
+              </dt>
+              <dd>
+                <RoleBadge role={preview.role} />
+              </dd>
             </div>
-          </form>
-        )}
-      </Card>
-    </main>
+            <div className="flex flex-col gap-1">
+              <dt className="text-[12px] font-bold uppercase tracking-[0.06em] text-muted">
+                {t('invitedEmailLabel')}
+              </dt>
+              <dd className="truncate font-mono text-[13px] text-ink">
+                {preview.email ?? t('anyEmailAllowed')}
+              </dd>
+            </div>
+            <div className="flex flex-col gap-1">
+              <dt className="text-[12px] font-bold uppercase tracking-[0.06em] text-muted">
+                {t('expiresLabel')}
+              </dt>
+              <dd className="text-[14px] font-bold text-ink">
+                {formattedExpiry}
+              </dd>
+            </div>
+          </dl>
+
+          {submitErrorKey ? (
+            <Alert tone="warning">{tErrors(submitErrorKey)}</Alert>
+          ) : null}
+
+          {user ? (
+            <div className="flex flex-col gap-4 border-t border-line pt-5">
+              <p className="text-[15px] font-bold text-ink">
+                {t('signedInAsTitle', { email: user.email })}
+              </p>
+              <Button
+                type="button"
+                arrow
+                disabled={submitting}
+                onClick={() => void handleAcceptAuthenticated()}
+              >
+                {submitting
+                  ? t('signedInAccepting')
+                  : t('signedInAcceptButton', {
+                      workspaceName: preview.workspaceName,
+                    })}
+              </Button>
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                <p className="text-[13px] text-muted">
+                  {t('switchAccountHint')}
+                </p>
+                <Button
+                  variant="secondary"
+                  type="button"
+                  disabled={submitting}
+                  onClick={() => void signOut()}
+                >
+                  {t('signOutButton')}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <form
+              onSubmit={(event) => void handleAcceptNewAccount(event)}
+              className="flex flex-col gap-4 border-t border-line pt-5"
+            >
+              <h2 className="text-[18px] font-black text-ink">
+                {t('newAccountHeading')}
+              </h2>
+
+              <Input
+                label={t('emailLabel')}
+                type="email"
+                autoComplete="email"
+                value={preview.email ?? email}
+                readOnly={Boolean(preview.email)}
+                required
+                onChange={(event) => setEmail(event.target.value)}
+              />
+
+              <Input
+                label={t('displayNameLabel')}
+                placeholder={t('displayNamePlaceholder')}
+                autoComplete="name"
+                value={displayName}
+                required
+                onChange={(event) => setDisplayName(event.target.value)}
+              />
+
+              <Input
+                label={t('passwordLabel')}
+                type="password"
+                autoComplete="new-password"
+                value={password}
+                required
+                onChange={(event) => setPassword(event.target.value)}
+              />
+
+              <Button
+                type="submit"
+                arrow
+                disabled={submitting}
+                className="mt-1"
+              >
+                {submitting ? t('submitting') : t('submitNewAccount')}
+              </Button>
+
+              <div className="flex flex-wrap items-center gap-2 pt-2 text-[14px] text-ink-2">
+                <span>{t('haveAccountText')}</span>
+                <Link
+                  href="/login"
+                  className="font-bold text-green-600 underline-offset-4 hover:underline"
+                >
+                  {t('signInLink')}
+                </Link>
+              </div>
+            </form>
+          )}
+        </Card>
+      </main>
+    </div>
   );
 }

@@ -1,5 +1,6 @@
 'use client';
 
+import { Pause, Play } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -32,6 +33,7 @@ export function RunnerControl({
     queryFn: () => requestJson<Runtime>(path),
     refetchInterval: 3000,
   });
+
   async function toggle() {
     if (!state.data || saving) return;
     setSaving(true);
@@ -50,26 +52,41 @@ export function RunnerControl({
       setSaving(false);
     }
   }
+
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-3">
-        <span role="status" className="text-[13px] font-bold text-ink-2">
+    <div className="flex flex-col items-start gap-1.5 sm:items-end">
+      <div className="flex flex-wrap items-center gap-2.5">
+        <span
+          role="status"
+          className={`inline-flex items-center gap-1.5 rounded-pill border px-2.5 py-0.5 text-[12px] font-bold ${
+            state.data?.paused
+              ? 'border-amber-line bg-amber-tint text-amber'
+              : 'border-line bg-paper text-ink-2'
+          }`}
+        >
           {t(state.data?.paused ? 'paused' : state.data ? 'ready' : 'loading')}
         </span>
-        {canManage && (
+        {canManage ? (
           <Button
             variant="secondary"
             disabled={!state.data || saving}
             onClick={() => void toggle()}
           >
-            {t(state.data?.paused ? 'resume' : 'pause')}
+            {state.data?.paused ? (
+              <Play className="h-4 w-4" aria-hidden="true" />
+            ) : (
+              <Pause className="h-4 w-4" aria-hidden="true" />
+            )}
+            <span>{t(state.data?.paused ? 'resume' : 'pause')}</span>
           </Button>
-        )}
+        ) : null}
       </div>
-      {state.data?.paused && (
-        <p className="text-[13px] text-ink-2">{t('queuePreserved')}</p>
-      )}
-      {(failed || state.isError) && <Alert tone="warning">{t('failed')}</Alert>}
+      {state.data?.paused ? (
+        <p className="text-[12px] text-ink-2">{t('queuePreserved')}</p>
+      ) : null}
+      {failed || state.isError ? (
+        <Alert tone="warning">{t('failed')}</Alert>
+      ) : null}
     </div>
   );
 }

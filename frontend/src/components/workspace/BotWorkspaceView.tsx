@@ -169,6 +169,7 @@ export function BotWorkspaceView() {
     useState<ErrorTranslationKey | null>(null);
 
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('desktop');
+  const [mobileChatOpen, setMobileChatOpen] = useState(false);
   const [envBusy, setEnvBusy] = useState<'start' | 'stop' | 'restart' | null>(
     null,
   );
@@ -590,63 +591,75 @@ export function BotWorkspaceView() {
 
   return (
     <div className="flex flex-col gap-5">
-      <Card className="p-5">
-        <div className="flex flex-col gap-4">
-          <Link
-            href="/"
-            className="inline-flex min-h-[44px] w-fit items-center gap-2 rounded-sm px-1 text-[14px] font-bold text-green-600 transition duration-150 hover:bg-mint-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
-          >
-            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-            <span>{t('backToFleet')}</span>
-          </Link>
+      <div className="flex flex-col gap-3">
+        <Link
+          href="/"
+          className="inline-flex min-h-[44px] w-fit items-center gap-2 rounded-sm px-1 text-[14px] font-bold text-green-600 transition duration-150 hover:bg-mint-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          <span>{t('backToFleet')}</span>
+        </Link>
 
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex min-w-0 flex-1 items-center gap-4">
-              <BotAvatar
-                seed={bot.avatarSeed}
-                mood={mapEnvMood(envStatus, bot.mood)}
-                size={64}
-                tile
-                decorative
-              />
-              <div className="flex min-w-0 flex-1 flex-col gap-2">
-                <div className="flex flex-wrap items-center gap-3">
-                  <h1 className="text-[30px] font-black leading-[1.15] tracking-[-0.01em] text-ink">
-                    {bot.name}
-                  </h1>
-                  <StatusChip
-                    status={mapEnvStatusToChip(envStatus, bot.status)}
-                    label={t(`status.${envStatus}`)}
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex min-w-0 flex-1 items-center gap-4">
+            <BotAvatar
+              seed={bot.avatarSeed}
+              mood={mapEnvMood(envStatus, bot.mood)}
+              size={64}
+              tile
+              decorative
+            />
+            <div className="flex min-w-0 flex-1 flex-col gap-2">
+              <div className="flex flex-wrap items-center gap-3">
+                <h1 className="text-[30px] font-black leading-[1.15] tracking-[-0.01em] text-ink">
+                  {bot.name}
+                </h1>
+                <StatusChip
+                  status={mapEnvStatusToChip(envStatus, bot.status)}
+                  label={t(`status.${envStatus}`)}
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 text-[13px]">
+                <span className="rounded-xs border border-line bg-paper px-2.5 py-0.5 font-mono text-ink-2">
+                  {t('llmChip', { mode: bot.llmMode, model: bot.llmModel })}
+                </span>
+                {env ? (
+                  <span className="rounded-xs border border-line bg-paper px-2.5 py-0.5 font-mono text-ink-2">
+                    {t('driverChip', {
+                      driver: env.driver,
+                      volumeRef: env.volumeRef,
+                    })}
+                  </span>
+                ) : null}
+                {secretCount !== null ? (
+                  <Link
+                    href={`/bots/${bot.id}/secrets`}
+                    className="inline-flex items-center gap-1.5 rounded-xs border border-mint-line bg-mint-soft px-2.5 py-0.5 font-bold text-green-600 transition duration-150 hover:border-green hover:bg-mint focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+                  >
+                    <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>{t('egressChip', { count: secretCount })}</span>
+                  </Link>
+                ) : null}
+                <span className="inline-flex items-center gap-1.5 rounded-xs border border-blue-line bg-blue-tint px-2.5 py-0.5 font-bold text-blue">
+                  <span
+                    aria-hidden="true"
+                    className="h-2 w-2 rounded-full bg-blue"
                   />
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2 text-[13px]">
-                  <span className="rounded-xs border border-line bg-paper-2 px-2.5 py-0.5 font-mono text-ink-2">
-                    {t('llmChip', { mode: bot.llmMode, model: bot.llmModel })}
+                  <span>
+                    {t('watchersCount', {
+                      count: env?.watchers.length ?? 0,
+                    })}
                   </span>
-                  {env ? (
-                    <span className="rounded-xs border border-line bg-paper-2 px-2.5 py-0.5 font-mono text-ink-2">
-                      {t('driverChip', {
-                        driver: env.driver,
-                        volumeRef: env.volumeRef,
-                      })}
-                    </span>
-                  ) : null}
-                  <span className="inline-flex items-center gap-1.5 rounded-xs border border-blue-line bg-blue-tint px-2.5 py-0.5 font-bold text-blue">
-                    <span
-                      aria-hidden="true"
-                      className="h-2 w-2 rounded-full bg-blue"
-                    />
-                    <span>
-                      {t('watchersCount', {
-                        count: env?.watchers.length ?? 0,
-                      })}
-                    </span>
-                  </span>
-                </div>
+                </span>
               </div>
             </div>
+          </div>
 
+          <div
+            id="computer-controls"
+            className="flex flex-wrap items-center gap-2.5"
+          >
             <RunnerControl
               key={`${workspaceId}:${bot.id}:${user?.id}`}
               workspaceId={workspaceId}
@@ -654,100 +667,113 @@ export function BotWorkspaceView() {
               userId={user?.id ?? ''}
               canManage={canManage}
             />
-            <div
-              id="computer-controls"
-              className="flex flex-wrap items-center gap-2"
-            >
-              {envStatus === 'running' ? (
-                <>
-                  <Button
-                    variant="secondary"
-                    disabled={!canManage || envBusy !== null}
-                    onClick={() => void handleLifecycle('restart')}
-                  >
-                    <RotateCcw className="h-4 w-4" aria-hidden="true" />
-                    <span>
-                      {envBusy === 'restart'
-                        ? t('restartingSandbox')
-                        : t('restartSandbox')}
-                    </span>
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    disabled={!canManage || envBusy !== null}
-                    onClick={() => void handleLifecycle('stop')}
-                  >
-                    <Square className="h-4 w-4" aria-hidden="true" />
-                    <span>
-                      {envBusy === 'stop'
-                        ? t('stoppingSandbox')
-                        : t('stopSandbox')}
-                    </span>
-                  </Button>
-                </>
-              ) : (
+            {envStatus === 'running' ? (
+              <>
                 <Button
-                  variant="primary"
-                  disabled={
-                    !canManage || envBusy !== null || envStatus === 'creating'
-                  }
-                  onClick={() => void handleLifecycle('start')}
+                  variant="secondary"
+                  disabled={!canManage || envBusy !== null}
+                  onClick={() => void handleLifecycle('restart')}
                 >
-                  <Play className="h-4 w-4" aria-hidden="true" />
+                  <RotateCcw className="h-4 w-4" aria-hidden="true" />
                   <span>
-                    {envBusy === 'start'
-                      ? t('startingSandbox')
-                      : t('startSandbox')}
+                    {envBusy === 'restart'
+                      ? t('restartingSandbox')
+                      : t('restartSandbox')}
                   </span>
                 </Button>
-              )}
-
-              {secretCount !== null ? (
-                <Link
-                  href={`/bots/${bot.id}/secrets`}
-                  className="inline-flex min-h-[44px] items-center gap-2 rounded-sm border-[1.5px] border-mint-line bg-mint-soft px-4 text-[14px] font-bold text-green-600 transition duration-150 hover:border-green hover:bg-mint focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+                <Button
+                  variant="secondary"
+                  disabled={!canManage || envBusy !== null}
+                  onClick={() => void handleLifecycle('stop')}
                 >
-                  <ShieldCheck className="h-4 w-4" aria-hidden="true" />
-                  <span>{t('egressChip', { count: secretCount })}</span>
-                </Link>
-              ) : null}
-              <Link
-                href={`/bots/${bot.id}/settings`}
-                className="inline-flex min-h-[44px] items-center gap-2 rounded-sm border-[1.5px] border-line bg-paper px-4 text-[15px] font-bold text-ink transition duration-150 hover:border-green-light hover:bg-mint-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+                  <Square className="h-4 w-4" aria-hidden="true" />
+                  <span>
+                    {envBusy === 'stop'
+                      ? t('stoppingSandbox')
+                      : t('stopSandbox')}
+                  </span>
+                </Button>
+              </>
+            ) : (
+              <Button
+                variant="primary"
+                disabled={
+                  !canManage || envBusy !== null || envStatus === 'creating'
+                }
+                onClick={() => void handleLifecycle('start')}
               >
-                <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
-                <span>{t('settingsLink')}</span>
-              </Link>
-            </div>
+                <Play className="h-4 w-4" aria-hidden="true" />
+                <span>
+                  {envBusy === 'start'
+                    ? t('startingSandbox')
+                    : t('startSandbox')}
+                </span>
+              </Button>
+            )}
+
+            <Link
+              href={`/bots/${bot.id}/settings`}
+              className="inline-flex min-h-[44px] items-center gap-2 rounded-sm border-[1.5px] border-line bg-paper px-4 text-[15px] font-bold text-ink transition duration-150 hover:border-green-light hover:bg-mint-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+            >
+              <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
+              <span>{t('settingsLink')}</span>
+            </Link>
           </div>
         </div>
-      </Card>
+      </div>
 
       {actionErrorKey ? (
         <Alert tone="warning">{tErrors(actionErrorKey)}</Alert>
       ) : null}
 
-      <div className="grid gap-5 lg:grid-cols-[360px_1fr] lg:items-start">
-        <Card className="flex flex-col gap-4 p-5">
-          <div className="flex flex-col gap-1">
-            <Eyebrow>{t('session.eyebrow')}</Eyebrow>
-            <h2 className="text-[20px] font-black leading-[1.25] text-ink">
-              {t('session.title')}
-            </h2>
+      <div className="flex gap-1 rounded-md border border-line bg-paper p-1 lg:hidden">
+        <button
+          type="button"
+          aria-pressed={mobileChatOpen}
+          onClick={() => setMobileChatOpen(true)}
+          className={`inline-flex min-h-[44px] flex-1 items-center justify-center rounded-sm px-3 text-[14px] font-bold ${
+            mobileChatOpen ? 'bg-dark text-paper' : 'text-ink-2'
+          }`}
+        >
+          {t('computer.tabs.chat')}
+        </button>
+        <button
+          type="button"
+          aria-pressed={!mobileChatOpen}
+          onClick={() => setMobileChatOpen(false)}
+          className={`inline-flex min-h-[44px] flex-1 items-center justify-center rounded-sm px-3 text-[14px] font-bold ${
+            !mobileChatOpen ? 'bg-dark text-paper' : 'text-ink-2'
+          }`}
+        >
+          {t('computer.tabs.computer')}
+        </button>
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-[400px_minmax(0,1fr)] lg:items-start">
+        <Card
+          className={`flex flex-col gap-3 p-5 ${
+            mobileChatOpen ? 'flex' : 'hidden lg:flex'
+          }`}
+        >
+          <div className="flex items-center justify-between gap-2 border-b border-line pb-3">
+            <div>
+              <h2 className="text-[18px] font-black leading-[1.25] text-ink">
+                {t('session.title')}
+              </h2>
+              <p className="text-[12px] text-muted">
+                {envStatus === 'running'
+                  ? t('session.stateRunning')
+                  : envStatus === 'creating'
+                    ? t('session.stateCreating')
+                    : envStatus === 'error'
+                      ? t('session.stateError')
+                      : t('session.stateStopped')}
+              </p>
+            </div>
           </div>
 
-          <p className="text-[14px] leading-[1.55] text-ink-2">
-            {envStatus === 'running'
-              ? t('session.stateRunning')
-              : envStatus === 'creating'
-                ? t('session.stateCreating')
-                : envStatus === 'error'
-                  ? t('session.stateError')
-                  : t('session.stateStopped')}
-          </p>
-
           <div
-            className={`rounded-md border p-3.5 text-[14px] leading-[1.5] ${
+            className={`rounded-sm border px-3 py-2 text-[13px] leading-[1.45] ${
               lockedByOther
                 ? 'border-dashed border-amber-line bg-amber-tint text-amber'
                 : userHoldsControl
@@ -766,9 +792,9 @@ export function BotWorkspaceView() {
           </div>
 
           {env?.controlNote ? (
-            <div className="rounded-md border border-mint-line bg-mint-soft p-3.5">
+            <div className="rounded-sm border border-mint-line bg-mint-soft px-3 py-2.5">
               <Eyebrow>{t('session.handbackNoteEyebrow')}</Eyebrow>
-              <p className="mt-1 text-[14px] font-bold text-ink">
+              <p className="mt-1 text-[13px] font-bold text-ink">
                 {env.controlNote}
               </p>
             </div>
@@ -782,32 +808,36 @@ export function BotWorkspaceView() {
             name={bot.name}
             avatarSeed={bot.avatarSeed}
             canChat={activeWorkspace.role !== 'viewer'}
+            variant="session"
+            hideHeader
           />
 
-          <p className="border-t border-line pt-3 text-[13px] text-muted">
+          <p className="border-t border-line pt-2.5 text-[12px] text-muted">
             {t('session.footerHint')}
           </p>
         </Card>
 
         <section
           aria-label={t('computer.regionLabel', { name: bot.name })}
-          className="flex min-w-0 flex-col gap-4"
+          className={`min-w-0 flex-col gap-4 ${
+            mobileChatOpen ? 'hidden lg:flex' : 'flex'
+          }`}
         >
           <Card className="overflow-hidden p-0">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3">
               <div
                 role="group"
                 aria-label={t('computer.tabsLabel')}
-                className="flex flex-wrap gap-1"
+                className="flex flex-wrap gap-1 rounded-md bg-paper-2 p-1"
               >
                 <button
                   type="button"
                   aria-pressed={activeTab === 'desktop'}
                   onClick={() => setActiveTab('desktop')}
-                  className={`inline-flex min-h-[44px] items-center gap-2 rounded-sm px-3.5 text-[14px] font-bold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${
+                  className={`inline-flex min-h-[40px] items-center gap-2 rounded-sm px-3.5 text-[14px] font-bold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${
                     activeTab === 'desktop'
                       ? 'bg-dark text-paper'
-                      : 'bg-paper text-ink hover:bg-mint-soft'
+                      : 'text-ink-2 hover:bg-paper hover:text-ink'
                   }`}
                 >
                   <Monitor className="h-4 w-4" aria-hidden="true" />
@@ -815,12 +845,36 @@ export function BotWorkspaceView() {
                 </button>
                 <button
                   type="button"
+                  aria-label={t('computer.tabs.actions')}
+                  aria-pressed={activeTab === 'actions'}
+                  onClick={() => setActiveTab('actions')}
+                  className={`inline-flex min-h-[40px] items-center gap-2 rounded-sm px-3.5 text-[14px] font-bold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${
+                    activeTab === 'actions'
+                      ? 'bg-dark text-paper'
+                      : 'text-ink-2 hover:bg-paper hover:text-ink'
+                  }`}
+                >
+                  <ListChecks className="h-4 w-4" aria-hidden="true" />
+                  <span>{t('computer.tabs.actions')}</span>
+                  {desktopActions.length > 0 ? (
+                    <span
+                      aria-hidden="true"
+                      className={`text-[12px] ${
+                        activeTab === 'actions' ? 'text-on-dark' : 'text-muted'
+                      }`}
+                    >
+                      {desktopActions.length}
+                    </span>
+                  ) : null}
+                </button>
+                <button
+                  type="button"
                   aria-pressed={activeTab === 'terminal'}
                   onClick={() => setActiveTab('terminal')}
-                  className={`inline-flex min-h-[44px] items-center gap-2 rounded-sm px-3.5 text-[14px] font-bold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${
+                  className={`inline-flex min-h-[40px] items-center gap-2 rounded-sm px-3.5 text-[14px] font-bold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${
                     activeTab === 'terminal'
                       ? 'bg-dark text-paper'
-                      : 'bg-paper text-ink hover:bg-mint-soft'
+                      : 'text-ink-2 hover:bg-paper hover:text-ink'
                   }`}
                 >
                   <TerminalIcon className="h-4 w-4" aria-hidden="true" />
@@ -830,27 +884,14 @@ export function BotWorkspaceView() {
                   type="button"
                   aria-pressed={activeTab === 'files'}
                   onClick={() => setActiveTab('files')}
-                  className={`inline-flex min-h-[44px] items-center gap-2 rounded-sm px-3.5 text-[14px] font-bold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${
+                  className={`inline-flex min-h-[40px] items-center gap-2 rounded-sm px-3.5 text-[14px] font-bold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${
                     activeTab === 'files'
                       ? 'bg-dark text-paper'
-                      : 'bg-paper text-ink hover:bg-mint-soft'
+                      : 'text-ink-2 hover:bg-paper hover:text-ink'
                   }`}
                 >
                   <Folder className="h-4 w-4" aria-hidden="true" />
                   <span>{t('computer.tabs.files')}</span>
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={activeTab === 'actions'}
-                  onClick={() => setActiveTab('actions')}
-                  className={`inline-flex min-h-[44px] items-center gap-2 rounded-sm px-3.5 text-[14px] font-bold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${
-                    activeTab === 'actions'
-                      ? 'bg-dark text-paper'
-                      : 'bg-paper text-ink hover:bg-mint-soft'
-                  }`}
-                >
-                  <ListChecks className="h-4 w-4" aria-hidden="true" />
-                  <span>{t('computer.tabs.actions')}</span>
                 </button>
               </div>
 

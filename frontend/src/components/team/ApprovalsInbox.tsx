@@ -65,43 +65,49 @@ export function ApprovalsInbox({
     { status: 'denied', label: 'tabDenied' },
   ];
 
+  const recentDecisions = rows
+    .filter((row) => row.status === 'approved' || row.status === 'denied')
+    .slice(0, 4);
+
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <Link
         href="/team"
-        className="inline-flex min-h-11 w-fit items-center font-bold text-green-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+        className="inline-flex min-h-11 w-fit items-center gap-1.5 text-[14px] font-bold text-green-600 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
       >
         {t('backToTeam')}
       </Link>
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
         <section
           role="region"
           aria-labelledby="approvals-heading"
           className="flex min-w-0 flex-col gap-4"
         >
-          <header className="flex flex-wrap items-end justify-between gap-3 border-b border-line pb-3">
+          <header className="flex flex-wrap items-end justify-between gap-3 border-b border-line pb-4">
             <div>
               <Eyebrow>{t('inboxEyebrow')}</Eyebrow>
               <h1
                 id="approvals-heading"
-                className="text-[28px] font-black leading-tight"
+                className="mt-1 text-[32px] font-black leading-[1.15] tracking-[-0.01em] text-ink"
               >
                 {t('inboxTitle')}
               </h1>
-              <p className="mt-1 text-[14px] text-muted">{t('inboxLead')}</p>
+              <p className="mt-1 text-[14px] text-ink-2">{t('inboxLead')}</p>
             </div>
             <div
               role="group"
               aria-label={t('filterStatus')}
-              className="inline-flex gap-0.5 rounded-md border border-line bg-paper-2 p-0.5"
+              className="inline-flex gap-1 rounded-md border border-line bg-paper p-1"
             >
               {tabs.map((tab) => (
                 <button
                   key={tab.status}
                   type="button"
                   aria-pressed={filter === tab.status}
-                  className={`min-h-11 rounded-sm px-3 text-[14px] font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${
-                    filter === tab.status ? 'bg-dark text-paper' : 'text-ink'
+                  className={`min-h-11 rounded-sm px-3.5 text-[14px] font-bold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${
+                    filter === tab.status
+                      ? 'bg-dark text-paper'
+                      : 'text-ink-2 hover:bg-paper-2 hover:text-ink'
                   }`}
                   onClick={() => setFilter(tab.status)}
                 >
@@ -114,7 +120,9 @@ export function ApprovalsInbox({
             <Alert tone="warning">{t('inboxLoadFailed')}</Alert>
           ) : null}
           {list.data && visible.length === 0 ? (
-            <p className="text-[15px] text-ink-2">{t(emptyKey)}</p>
+            <p className="rounded-md border border-line bg-paper p-6 text-[15px] text-ink-2">
+              {t(emptyKey)}
+            </p>
           ) : null}
           <div className="flex flex-col gap-3">
             {visible.map((row) => {
@@ -142,33 +150,73 @@ export function ApprovalsInbox({
             })}
           </div>
         </section>
-        <aside
-          aria-label={t('whoDecides')}
-          className="flex flex-col gap-2 rounded-md bg-paper-2 p-4"
-        >
-          <h2 className="text-[12px] font-bold uppercase tracking-wide text-muted">
-            {t('whoDecides')}
-          </h2>
-          <div className="flex flex-col gap-2 rounded-md border border-line bg-paper p-3 text-[13px]">
-            <p>
-              <span className="font-black">{t('whoOwner')}</span>
-              <span className="mt-0.5 block text-muted">
-                {t('whoOwnerDetail')}
-              </span>
-            </p>
-            <p className="border-t border-line pt-2">
-              <span className="font-black">{t('whoMember')}</span>
-              <span className="mt-0.5 block text-muted">
-                {t('whoMemberDetail')}
-              </span>
-            </p>
-            <p className="border-t border-line pt-2">
-              <span className="font-black">{t('whoViewer')}</span>
-              <span className="mt-0.5 block text-muted">
-                {t('whoViewerDetail')}
-              </span>
-            </p>
+        <aside aria-label={t('whoDecides')} className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <h2 className="text-[12px] font-bold uppercase tracking-[0.08em] text-muted">
+              {t('whoDecides')}
+            </h2>
+            <div className="flex flex-col gap-2.5 rounded-lg border border-line bg-paper p-4 text-[13px] shadow-card">
+              <p>
+                <span className="font-black text-ink">{t('whoOwner')}</span>
+                <span className="mt-0.5 block text-muted">
+                  {t('whoOwnerDetail')}
+                </span>
+              </p>
+              <p className="border-t border-line pt-2.5">
+                <span className="font-black text-ink">{t('whoMember')}</span>
+                <span className="mt-0.5 block text-muted">
+                  {t('whoMemberDetail')}
+                </span>
+              </p>
+              <p className="border-t border-line pt-2.5">
+                <span className="font-black text-ink">{t('whoViewer')}</span>
+                <span className="mt-0.5 block text-muted">
+                  {t('whoViewerDetail')}
+                </span>
+              </p>
+            </div>
           </div>
+
+          {recentDecisions.length > 0 ? (
+            <div className="flex flex-col gap-2">
+              <h2 className="text-[12px] font-bold uppercase tracking-[0.08em] text-muted">
+                {t('recentDecisions')}
+              </h2>
+              <ul className="flex flex-col gap-2">
+                {recentDecisions.map((item) => {
+                  const bot = bots.data?.bots.find(
+                    (row) => row.id === item.botId,
+                  );
+                  return (
+                    <li
+                      key={item.id}
+                      className="rounded-md border border-line bg-paper p-3 text-[13px] shadow-card"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="rounded-xs border border-line bg-paper-2 px-1.5 py-0.5 font-mono text-[11px] font-bold text-ink-2">
+                          {item.kind}
+                        </span>
+                        <span
+                          className={`text-[12px] font-bold ${
+                            item.status === 'approved'
+                              ? 'text-green-600'
+                              : 'text-amber'
+                          }`}
+                        >
+                          {item.status === 'approved'
+                            ? t('statusApproved')
+                            : t('statusDenied')}
+                        </span>
+                      </div>
+                      <p className="mt-1.5 truncate font-bold text-ink">
+                        {item.host || bot?.name || t('workspaceBudget')}
+                      </p>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ) : null}
         </aside>
       </div>
     </div>

@@ -1,11 +1,13 @@
 'use client';
 
+import { Check } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { useTranslations } from 'next-intl';
 import {
   Alert,
   BotAvatar,
   Button,
+  Eyebrow,
   Input,
   ModalDialog,
   Textarea,
@@ -135,6 +137,7 @@ export function NewGroupDialog({
         onSubmit={(event) => void submit(event)}
         className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto"
       >
+        <Eyebrow>{t('dialogEyebrow')}</Eyebrow>
         <Input
           label={t('name')}
           value={name}
@@ -159,7 +162,7 @@ export function NewGroupDialog({
               })}
             </span>
           </legend>
-          <div className="grid gap-2">
+          <div className="grid gap-2 sm:grid-cols-2">
             {bots.map((bot) => {
               const pressed = botIds.includes(bot.id);
               return (
@@ -168,27 +171,41 @@ export function NewGroupDialog({
                   type="button"
                   aria-pressed={pressed}
                   onClick={() => toggleBot(bot.id)}
-                  className={`flex min-h-11 items-center gap-2 rounded-sm border-[1.5px] px-2.5 py-1.5 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${pressed ? 'border-mint-line bg-mint-soft' : 'border-line bg-paper'}`}
+                  className={`flex min-h-[48px] items-center gap-2.5 rounded-sm border-[1.5px] px-3 py-2 text-left transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${
+                    pressed
+                      ? 'border-green bg-mint-soft'
+                      : 'border-line bg-paper hover:border-green-light'
+                  }`}
                 >
                   <BotAvatar
                     seed={bot.avatarSeed}
                     mood={bot.mood}
-                    size={36}
+                    size={34}
                     showStatusDot
                     decorative
                   />
                   <span className="min-w-0 flex-1">
-                    <span className="block font-black">{bot.name}</span>
+                    <span className="block truncate font-black text-ink">
+                      {bot.name}
+                    </span>
                     <span className="block truncate text-[12px] text-muted">
                       {t(statusKey(bot.status))}
                       {bot.description ? ` · ${bot.description}` : ''}
                     </span>
                   </span>
+                  <span
+                    aria-hidden="true"
+                    className={`grid h-[22px] w-[22px] shrink-0 place-items-center rounded-xs border ${
+                      pressed
+                        ? 'border-green-600 bg-green-600 text-paper'
+                        : 'border-line-strong bg-paper'
+                    }`}
+                  >
+                    {pressed ? <Check className="h-3.5 w-3.5" /> : null}
+                  </span>
                 </button>
               );
             })}
-          </div>
-          <div className="grid gap-2">
             {people.map((human) => {
               const pressed = humanIds.includes(human.userId);
               return (
@@ -197,18 +214,32 @@ export function NewGroupDialog({
                   type="button"
                   aria-pressed={pressed}
                   onClick={() => toggleHuman(human.userId)}
-                  className={`flex min-h-11 items-center gap-2 rounded-sm border-[1.5px] px-2.5 py-1.5 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${pressed ? 'border-mint-line bg-mint-soft' : 'border-line bg-paper'}`}
+                  className={`flex min-h-[48px] items-center gap-2.5 rounded-sm border-[1.5px] px-3 py-2 text-left transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${
+                    pressed
+                      ? 'border-blue bg-blue-tint'
+                      : 'border-line bg-paper hover:border-blue-line'
+                  }`}
                 >
-                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-sm bg-hex-3 text-[12px] font-black text-paper">
+                  <span className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-sm bg-hex-3 text-[12px] font-black text-paper">
                     {initials(human.displayName)}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block font-black">
+                    <span className="block truncate font-black text-ink">
                       {human.displayName}
                     </span>
                     <span className="block text-[12px] text-muted">
                       {t('humanBadge')} · {roles(human.role)}
                     </span>
+                  </span>
+                  <span
+                    aria-hidden="true"
+                    className={`grid h-[22px] w-[22px] shrink-0 place-items-center rounded-xs border ${
+                      pressed
+                        ? 'border-blue bg-blue text-paper'
+                        : 'border-line-strong bg-paper'
+                    }`}
+                  >
+                    {pressed ? <Check className="h-3.5 w-3.5" /> : null}
                   </span>
                 </button>
               );

@@ -15,31 +15,60 @@ import { Button } from '@/components/ui/Button';
 import type { WorkspaceRole } from '@/types/api';
 
 /**
- * Shared bot.Box geometric hexagon logo mark + brand wordmark rendered with translated spans.
+ * Shared bot.Box robot-face hexagon logo mark + brand wordmark rendered with translated spans.
  */
-export function BrandLogo({ dark = false }: { dark?: boolean }) {
+export function BrandLogo({
+  dark = false,
+  size = 34,
+}: {
+  dark?: boolean;
+  size?: number;
+}) {
   const common = useTranslations('common');
+  const strokeColor = dark ? '#c9d8c9' : '#1a2a1a';
+  const eyeColor = dark ? '#5eab60' : '#49b24d';
 
   return (
     <span className="inline-flex items-center gap-2.5">
       <svg
-        width="28"
-        height="28"
-        viewBox="0 0 32 32"
+        width={size}
+        height={size}
+        viewBox="0 0 160 160"
         fill="none"
         aria-hidden="true"
         className="shrink-0"
       >
+        <line
+          x1="80"
+          y1="20"
+          x2="80"
+          y2="10"
+          stroke={strokeColor}
+          strokeWidth="6"
+          strokeLinecap="round"
+        />
+        <circle cx="80" cy="8" r="7" fill={eyeColor} />
+        <path
+          d="M49 20.3 111 20.3 142 74 111 127.7 49 127.7 18 74Z"
+          fill="none"
+          stroke={strokeColor}
+          strokeWidth="6"
+          strokeLinejoin="round"
+        />
+        <circle cx="60" cy="64" r="12" fill={eyeColor} />
+        <circle cx="100" cy="64" r="12" fill={eyeColor} />
         <polygon
-          points="16,2 28,9 28,23 16,30 4,23 4,9"
-          className="fill-hex-2 stroke-hex-1"
-          strokeWidth="2"
+          points="62,91 68.1,94.5 68.1,101.5 62,105 55.9,101.5 55.9,94.5"
+          fill="#8aa8db"
         />
         <polygon
-          points="16,2 28,9 16,16 4,9"
-          className="fill-hex-1 opacity-90"
+          points="80,91 86.1,94.5 86.1,101.5 80,105 73.9,101.5 73.9,94.5"
+          fill="#6d8fce"
         />
-        <polygon points="16,16 28,9 28,23 16,30" className="fill-hex-3" />
+        <polygon
+          points="98,91 104.1,94.5 104.1,101.5 98,105 91.9,101.5 91.9,94.5"
+          fill="#3f5f9c"
+        />
       </svg>
       <span
         className={`text-[21px] font-black tracking-[-0.01em] ${dark ? 'text-paper' : 'text-ink'}`}
@@ -401,7 +430,7 @@ export function ModalDialog({
           onClose();
         }
       }}
-      className="m-auto w-[min(520px,calc(100vw-2rem))] rounded-md border border-line bg-paper p-0 text-ink shadow-card"
+      className="m-auto w-[min(620px,calc(100vw-2rem))] rounded-lg border border-line bg-paper p-0 text-ink shadow-card-hover"
     >
       <div className="flex flex-col gap-4 p-6">
         <div className="flex items-start justify-between gap-4">

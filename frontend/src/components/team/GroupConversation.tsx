@@ -1,5 +1,6 @@
 'use client';
 
+import { ArrowLeftRight, Paperclip, Send } from 'lucide-react';
 import {
   useEffect,
   useRef,
@@ -35,6 +36,12 @@ import {
 type Group = components['schemas']['Group'];
 type History = components['schemas']['ChatHistory'];
 type ChatMessage = components['schemas']['ChatMessage'];
+
+function formatTime(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
 
 function targets(group: Group): MentionTarget[] {
   return group.members.flatMap((member) => {
@@ -150,29 +157,40 @@ export function GroupConversation({
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (!mention || choices.length === 0) return;
-    if (event.key === 'ArrowDown') {
+    if (mention && choices.length > 0) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setPicked((index) => (index + 1) % choices.length);
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setPicked((index) => (index - 1 + choices.length) % choices.length);
+        return;
+      }
+      if (event.key === 'Escape') {
+        // Move the caret onto the @ so the query stops without deleting the draft.
+        event.preventDefault();
+        const pos = mention.start;
+        setCaret(pos);
+        requestAnimationFrame(() => {
+          field.current?.setSelectionRange(pos, pos);
+        });
+        return;
+      }
+      if ((event.key === 'Enter' || event.key === 'Tab') && selected) {
+        event.preventDefault();
+        apply(selected.name);
+        return;
+      }
+    }
+    if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
-      setPicked((index) => (index + 1) % choices.length);
-    } else if (event.key === 'ArrowUp') {
-      event.preventDefault();
-      setPicked((index) => (index - 1 + choices.length) % choices.length);
-    } else if (event.key === 'Escape') {
-      // Move the caret onto the @ so the query stops without deleting the draft.
-      event.preventDefault();
-      const pos = mention.start;
-      setCaret(pos);
-      requestAnimationFrame(() => {
-        field.current?.setSelectionRange(pos, pos);
-      });
-    } else if ((event.key === 'Enter' || event.key === 'Tab') && selected) {
-      event.preventDefault();
-      apply(selected.name);
+      void submitDraft();
     }
   }
 
-  async function send(event: FormEvent) {
-    event.preventDefault();
+  async function submitDraft() {
     if (!canPost || !draft.trim() || sending) return;
     setSending(true);
     setError(false);
@@ -194,13 +212,27 @@ export function GroupConversation({
     }
   }
 
+  async function send(event: FormEvent) {
+    event.preventDefault();
+    await submitDraft();
+  }
+
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div
         role="log"
         aria-label={t('messages')}
-        className="flex min-h-[280px] flex-1 flex-col gap-2 overflow-y-auto py-3"
+        className="flex min-h-[280px] flex-1 flex-col gap-3 overflow-y-auto py-4"
       >
+        {messages.length > 0 ? (
+          <div className="mx-5 my-1 flex items-center gap-3">
+            <span className="h-px flex-1 bg-line" />
+            <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-muted">
+              {t('todayDivider')}
+            </span>
+            <span className="h-px flex-1 bg-line" />
+          </div>
+        ) : null}
         {messages.map((message) => {
           const who = speaker(
             message,
@@ -252,17 +284,22 @@ export function GroupConversation({
             message.senderType === 'system'
           ) {
             return (
-              <p
+              <div
                 key={message.id}
-                className="mx-5 rounded-sm border border-mint-line bg-mint-soft px-3 py-2 text-[13px] text-dark"
+                className="mx-5 flex items-center gap-2 rounded-sm border border-mint-line bg-mint-soft px-3.5 py-2 text-[13px] text-dark"
               >
-                {message.content}
-              </p>
+                <ArrowLeftRight
+                  className="h-4 w-4 shrink-0 text-green-600"
+                  aria-hidden="true"
+                />
+                <span>{message.content}</span>
+              </div>
             );
           }
           const botMember = group.members.find(
             (member) => member.id === message.senderBotId,
           );
+          const timeLabel = formatTime(message.createdAt);
           return (
             <article key={message.id} className="flex gap-3 px-5 py-1">
               {who.kind === 'bot' ? (
@@ -272,16 +309,27 @@ export function GroupConversation({
                   decorative
                 />
               ) : (
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-sm bg-hex-3 text-[13px] font-black text-paper">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-sm bg-dark text-[13px] font-black text-paper">
                   {initials(who.name)}
                 </span>
               )}
               <div className="min-w-0 flex-1">
                 <p className="flex flex-wrap items-baseline gap-2">
-                  <span className="font-black">{who.name}</span>
-                  <span className="rounded-xs bg-mint-soft px-1.5 text-[11px] font-black uppercase tracking-wide text-green-600">
+                  <span className="text-[15px] font-black text-ink">
+                    {who.name}
+                  </span>
+                  <span
+                    className={`rounded-xs px-1.5 py-0.5 text-[11px] font-black uppercase tracking-[0.06em] ${
+                      who.kind === 'bot'
+                        ? 'bg-mint-soft text-green-600'
+                        : 'bg-blue-tint text-blue'
+                    }`}
+                  >
                     {who.kind === 'bot' ? t('botBadge') : t('humanBadge')}
                   </span>
+                  {timeLabel ? (
+                    <span className="text-[12px] text-muted">{timeLabel}</span>
+                  ) : null}
                 </p>
                 {message.kind === 'tool' ? (
                   <ToolMessageView
@@ -292,12 +340,12 @@ export function GroupConversation({
                     content={message.content}
                   />
                 ) : (
-                  <p className="whitespace-pre-wrap break-words text-[15px] leading-[1.55]">
+                  <p className="mt-0.5 whitespace-pre-wrap break-words text-[15px] leading-[1.55] text-ink">
                     {mentionParts(message.content, names).map((part, index) =>
                       part.mention ? (
                         <span
                           key={`${message.id}-${index}`}
-                          className="rounded-xs bg-blue-tint px-0.5 font-bold text-blue"
+                          className="rounded-xs bg-blue-tint px-1 font-bold text-blue"
                         >
                           {part.text}
                         </span>
@@ -313,7 +361,7 @@ export function GroupConversation({
         })}
       </div>
       {canPost ? (
-        <form onSubmit={(event) => void send(event)} className="px-5 pb-4">
+        <form onSubmit={(event) => void send(event)} className="px-5 pb-4 pt-1">
           {mention && choices.length > 0 ? (
             <div
               id="group-mentions"
@@ -342,7 +390,7 @@ export function GroupConversation({
               ))}
             </div>
           ) : null}
-          <div className="overflow-hidden rounded-md border-[1.5px] border-line-strong bg-paper">
+          <div className="overflow-hidden rounded-md border-[1.5px] border-line-strong bg-paper focus-within:border-green-600">
             <label htmlFor="group-composer" className="sr-only">
               {t('composer')}
             </label>
@@ -357,18 +405,18 @@ export function GroupConversation({
               aria-controls={
                 mention && choices.length > 0 ? 'group-mentions' : undefined
               }
-              className="block w-full resize-none border-0 bg-transparent px-3.5 py-3 text-[15px] text-ink outline-none"
+              className="block w-full resize-none border-0 bg-transparent px-3.5 py-3 text-[15px] text-ink outline-none placeholder:text-muted"
               onChange={(event) =>
                 rememberCaret(event.target.value, event.target.selectionStart)
               }
               onKeyDown={onKeyDown}
               onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
             />
-            <div className="flex items-center gap-1 px-1.5 pb-1.5">
+            <div className="flex items-center gap-2 px-2 pb-2">
               <button
                 type="button"
                 aria-label={t('mention')}
-                className="grid h-11 w-11 place-items-center rounded-sm text-[18px] font-black text-ink-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+                className="grid h-11 w-11 place-items-center rounded-sm text-[18px] font-black text-ink-2 hover:bg-paper-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
                 onClick={() => {
                   const pos = caret;
                   const next = `${draft.slice(0, pos)}@${draft.slice(pos)}`;
@@ -381,9 +429,26 @@ export function GroupConversation({
               >
                 @
               </button>
-              <span className="flex-1" />
-              <Button type="submit" disabled={sending || !draft.trim()}>
-                {sending ? t('sending') : t('send')}
+              <span
+                aria-hidden="true"
+                className="grid h-9 w-9 place-items-center text-muted"
+              >
+                <Paperclip className="h-4 w-4" />
+              </span>
+              <span className="hidden flex-1 truncate text-[12px] text-muted sm:inline">
+                {t('groupPrivacyHint')}
+              </span>
+              <span className="flex-1 sm:hidden" />
+              <Button
+                type="submit"
+                aria-label={sending ? t('sending') : t('send')}
+                disabled={sending || !draft.trim()}
+                className="min-h-[40px] px-3.5"
+              >
+                <Send className="h-4 w-4" aria-hidden="true" />
+                <span className="sr-only">
+                  {sending ? t('sending') : t('send')}
+                </span>
               </Button>
             </div>
           </div>
@@ -394,7 +459,9 @@ export function GroupConversation({
           ) : null}
         </form>
       ) : (
-        <p className="px-5 pb-4 text-[14px] text-ink-2">{t('viewerRead')}</p>
+        <p className="border-t border-line bg-paper-2 px-5 py-3 text-[14px] text-ink-2">
+          {t('viewerRead')}
+        </p>
       )}
     </div>
   );

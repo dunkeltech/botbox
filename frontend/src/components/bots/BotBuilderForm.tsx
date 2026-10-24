@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, Dices } from 'lucide-react';
+import { ArrowLeft, Check, Dices } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
@@ -182,18 +182,18 @@ export function BotBuilderForm({ mode, workspace, bot }: BotBuilderFormProps) {
         {mode === 'edit' && bot ? (
           <nav
             aria-label={t('tabs.ariaLabel')}
-            className="mt-1 flex flex-wrap gap-2 border-b border-line pb-3"
+            className="mt-1 flex flex-wrap gap-1 border-b border-line"
           >
             <Link
               href={`/bots/${bot.id}/settings`}
               aria-current="page"
-              className="inline-flex min-h-[44px] items-center rounded-sm border border-green bg-mint-soft px-4 text-[14px] font-bold text-green-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+              className="inline-flex min-h-[44px] items-center px-3.5 text-[14px] font-bold text-green-600 shadow-[inset_0_-2px_0_#3f9147] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
             >
               {t('tabs.general')}
             </Link>
             <Link
               href={`/bots/${bot.id}/secrets`}
-              className="inline-flex min-h-[44px] items-center rounded-sm border border-line bg-paper px-4 text-[14px] font-bold text-ink-2 transition duration-150 hover:border-green-light hover:bg-mint-soft hover:text-green-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+              className="inline-flex min-h-[44px] items-center px-3.5 text-[14px] font-bold text-ink-2 transition duration-150 hover:text-green-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
             >
               {t('tabs.secrets')}
             </Link>
@@ -207,83 +207,22 @@ export function BotBuilderForm({ mode, workspace, bot }: BotBuilderFormProps) {
 
       {savedBanner ? <Alert tone="success">{t('savedBanner')}</Alert> : null}
 
-      <div className="grid gap-6 lg:grid-cols-[340px_1fr] lg:items-start">
-        <Card className="flex flex-col gap-5 p-6">
-          <h2 className="text-[18px] font-black text-ink">
-            {t('avatarCardTitle')}
-          </h2>
-
-          <div className="flex items-center justify-center rounded-sm border border-line bg-paper-2 p-6">
-            <BotAvatar
-              seed={effectiveSeed}
-              mood={previewMood}
-              size={112}
-              tile
-              showStatusDot
-            />
-          </div>
-
-          <div className="flex flex-col gap-3">
-            <Input
-              label={t('avatarSeedLabel')}
-              helperText={t('avatarSeedHelper')}
-              mono
-              autoCorrect="off"
-              autoCapitalize="none"
-              spellCheck={false}
-              value={avatarSeed}
-              disabled={!canEdit}
-              required
-              onChange={(event) => setAvatarSeed(event.target.value)}
-            />
-
-            {canEdit ? (
-              <Button
-                variant="secondary"
-                type="button"
-                onClick={() =>
-                  setAvatarSeed(generateRandomAvatarSeed(name || 'bot'))
-                }
-              >
-                <Dices className="h-4 w-4" aria-hidden="true" />
-                <span>{t('randomizeSeed')}</span>
-              </Button>
-            ) : null}
-          </div>
-
-          <div className="flex flex-col gap-2 border-t border-line pt-4">
-            <span className="text-[13px] font-bold text-muted">
-              {t('moodPreviewLabel')}
-            </span>
-            <div className="grid grid-cols-2 gap-2">
-              {MOOD_OPTIONS.map((mood) => {
-                const active = previewMood === mood;
-                return (
-                  <button
-                    key={mood}
-                    type="button"
-                    aria-pressed={active}
-                    onClick={() => setPreviewMood(mood)}
-                    className={`min-h-[44px] rounded-sm border px-3 text-[13px] font-bold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${
-                      active
-                        ? 'border-green bg-mint-soft text-green-600'
-                        : 'border-line-strong bg-paper text-ink-2 hover:border-green-light'
-                    }`}
-                  >
-                    {t(`moods.${mood}`)}
-                  </button>
-                );
-              })}
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
+        <form
+          onSubmit={(event) => void handleSubmit(event)}
+          className="flex flex-col gap-5"
+        >
+          <Card className="flex flex-col gap-5 p-6">
+            <div className="flex items-center gap-3">
+              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-pill bg-dark text-[13px] font-black text-paper">
+                {t('step1Num')}
+              </span>
+              <h2 className="text-[20px] font-black text-ink">
+                {t('sectionIdentity')}
+              </h2>
             </div>
-          </div>
-        </Card>
 
-        <div className="flex flex-col gap-6">
-          <Card className="p-6 sm:p-7">
-            <form
-              onSubmit={(event) => void handleSubmit(event)}
-              className="flex flex-col gap-5"
-            >
+            <div className="grid gap-4 sm:grid-cols-2">
               <Input
                 label={t('nameLabel')}
                 placeholder={t('namePlaceholder')}
@@ -292,112 +231,279 @@ export function BotBuilderForm({ mode, workspace, bot }: BotBuilderFormProps) {
                 required
                 onChange={(event) => setName(event.target.value)}
               />
-
               <Textarea
                 label={t('descriptionLabel')}
                 placeholder={t('descriptionPlaceholder')}
                 value={description}
                 disabled={!canEdit}
+                className="min-h-[44px]"
                 onChange={(event) => setDescription(event.target.value)}
               />
+            </div>
 
-              <RadioCardGroup<LlmMode>
-                legend={t('llmModeLegend')}
-                name="bot-llm-mode"
-                value={llmMode}
-                onChange={setLlmMode}
-                disabled={!canEdit}
-                options={[
-                  {
-                    value: 'cli',
-                    title: t('llmModeCliTitle'),
-                    description: t('llmModeCliDesc'),
-                  },
-                  {
-                    value: 'api',
-                    title: t('llmModeApiTitle'),
-                    description: t('llmModeApiDesc'),
-                  },
-                ]}
-              />
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Select
-                  label={t('providerLabel')}
-                  value={llmProvider}
-                  disabled={!canEdit}
-                  onChange={(event) => setLlmProvider(event.target.value)}
-                >
-                  {STANDARD_PROVIDERS.map((provider) => (
-                    <option key={provider} value={provider}>
-                      {t(`providers.${provider}`)}
-                    </option>
-                  ))}
-                  {hasCustomProvider ? (
-                    <option value={llmProvider}>{llmProvider}</option>
-                  ) : null}
-                </Select>
-
-                <Input
-                  label={t('modelLabel')}
-                  placeholder={t('modelPlaceholder')}
-                  mono
-                  autoCorrect="off"
-                  autoCapitalize="none"
-                  spellCheck={false}
-                  value={llmModel}
-                  disabled={!canEdit}
-                  required
-                  onChange={(event) => setLlmModel(event.target.value)}
+            <div className="flex flex-col gap-3">
+              <span className="text-[14px] font-bold text-ink">
+                {t('avatarCardTitle')}
+              </span>
+              <div className="flex flex-wrap items-center gap-5 rounded-md border border-line bg-paper-2 p-4">
+                <BotAvatar
+                  seed={effectiveSeed}
+                  mood={previewMood}
+                  size={84}
+                  tile
+                  showStatusDot
                 />
+                <div className="flex min-w-[220px] flex-1 flex-col gap-3">
+                  <div className="flex flex-wrap items-end gap-2">
+                    <div className="min-w-[180px] flex-1">
+                      <Input
+                        label={t('avatarSeedLabel')}
+                        helperText={t('avatarSeedHelper')}
+                        mono
+                        autoCorrect="off"
+                        autoCapitalize="none"
+                        spellCheck={false}
+                        value={avatarSeed}
+                        disabled={!canEdit}
+                        required
+                        onChange={(event) => setAvatarSeed(event.target.value)}
+                      />
+                    </div>
+                    {canEdit ? (
+                      <Button
+                        variant="secondary"
+                        type="button"
+                        onClick={() =>
+                          setAvatarSeed(generateRandomAvatarSeed(name || 'bot'))
+                        }
+                        className="mb-6"
+                      >
+                        <Dices className="h-4 w-4" aria-hidden="true" />
+                        <span>{t('randomizeSeed')}</span>
+                      </Button>
+                    ) : null}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="mr-1 text-[12px] font-bold text-muted">
+                      {t('moodPreviewLabel')}
+                    </span>
+                    {MOOD_OPTIONS.map((mood) => {
+                      const active = previewMood === mood;
+                      return (
+                        <button
+                          key={mood}
+                          type="button"
+                          aria-pressed={active}
+                          onClick={() => setPreviewMood(mood)}
+                          className={`min-h-[36px] rounded-pill border px-3 text-[12px] font-bold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${
+                            active
+                              ? 'border-dark bg-dark text-paper'
+                              : 'border-line bg-paper text-ink-2 hover:border-green-light'
+                          }`}
+                        >
+                          {t(`moods.${mood}`)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
+            </div>
+          </Card>
 
-              <RadioCardGroup<DriverType>
-                legend={t('driverLegend')}
-                name="bot-driver-type"
-                value={driverType}
-                onChange={setDriverType}
-                disabled={!canEdit}
-                options={[
-                  { value: 'docker', title: t('driverDocker') },
-                  { value: 'kubernetes', title: t('driverK8s') },
-                ]}
-              />
+          <Card className="flex flex-col gap-5 p-6">
+            <div className="flex items-center gap-3">
+              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-pill bg-dark text-[13px] font-black text-paper">
+                {t('step2Num')}
+              </span>
+              <h2 className="text-[20px] font-black text-ink">
+                {t('sectionBrain')}
+              </h2>
+            </div>
 
+            <RadioCardGroup<LlmMode>
+              legend={t('llmModeLegend')}
+              name="bot-llm-mode"
+              value={llmMode}
+              onChange={setLlmMode}
+              disabled={!canEdit}
+              options={[
+                {
+                  value: 'cli',
+                  title: t('llmModeCliTitle'),
+                  description: t('llmModeCliDesc'),
+                },
+                {
+                  value: 'api',
+                  title: t('llmModeApiTitle'),
+                  description: t('llmModeApiDesc'),
+                },
+              ]}
+            />
+
+            <div className="grid gap-4 sm:grid-cols-2">
               <Select
-                label={t('replyLanguageLabel')}
-                value={replyLanguage}
+                label={t('providerLabel')}
+                value={llmProvider}
                 disabled={!canEdit}
-                onChange={(event) => setReplyLanguage(event.target.value)}
+                onChange={(event) => setLlmProvider(event.target.value)}
               >
-                {STANDARD_LANGUAGES.map((lang) => (
-                  <option key={lang} value={lang}>
-                    {t(`languages.${lang}`)}
+                {STANDARD_PROVIDERS.map((provider) => (
+                  <option key={provider} value={provider}>
+                    {t(`providers.${provider}`)}
                   </option>
                 ))}
-                {hasCustomLanguage ? (
-                  <option value={replyLanguage}>{replyLanguage}</option>
+                {hasCustomProvider ? (
+                  <option value={llmProvider}>{llmProvider}</option>
                 ) : null}
               </Select>
 
-              {canEdit ? (
-                <div className="flex justify-end border-t border-line pt-4">
-                  <Button type="submit" arrow disabled={submitting}>
-                    {submitting
-                      ? mode === 'create'
-                        ? t('creating')
-                        : t('saving')
-                      : mode === 'create'
-                        ? t('createSubmit')
-                        : t('saveSubmit')}
-                  </Button>
-                </div>
+              <Input
+                label={t('modelLabel')}
+                placeholder={t('modelPlaceholder')}
+                mono
+                autoCorrect="off"
+                autoCapitalize="none"
+                spellCheck={false}
+                value={llmModel}
+                disabled={!canEdit}
+                required
+                onChange={(event) => setLlmModel(event.target.value)}
+              />
+            </div>
+          </Card>
+
+          <Card className="flex flex-col gap-5 p-6">
+            <div className="flex items-center gap-3">
+              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-pill bg-dark text-[13px] font-black text-paper">
+                {t('step3Num')}
+              </span>
+              <h2 className="text-[20px] font-black text-ink">
+                {t('sectionComputer')}
+              </h2>
+            </div>
+
+            <RadioCardGroup<DriverType>
+              legend={t('driverLegend')}
+              name="bot-driver-type"
+              value={driverType}
+              onChange={setDriverType}
+              disabled={!canEdit}
+              options={[
+                { value: 'docker', title: t('driverDocker') },
+                { value: 'kubernetes', title: t('driverK8s') },
+              ]}
+            />
+
+            <Select
+              label={t('replyLanguageLabel')}
+              value={replyLanguage}
+              disabled={!canEdit}
+              onChange={(event) => setReplyLanguage(event.target.value)}
+            >
+              {STANDARD_LANGUAGES.map((lang) => (
+                <option key={lang} value={lang}>
+                  {t(`languages.${lang}`)}
+                </option>
+              ))}
+              {hasCustomLanguage ? (
+                <option value={replyLanguage}>{replyLanguage}</option>
               ) : null}
-            </form>
+            </Select>
+          </Card>
+
+          {canEdit ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-dark px-5 py-3.5 text-paper shadow-card">
+              <p className="text-[13px] font-bold text-on-dark">
+                {mode === 'create'
+                  ? t('stickySummaryCreate', { driver: driverType })
+                  : t('stickySummaryEdit', {
+                      name: name || bot?.name || 'bot',
+                      driver: driverType,
+                    })}
+              </p>
+              <div className="flex items-center gap-2.5">
+                <Link
+                  href={backHref}
+                  className="inline-flex min-h-[44px] items-center rounded-sm border border-on-dark-faint/40 px-4 text-[14px] font-bold text-on-dark hover:text-paper focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-light"
+                >
+                  {tActions('cancel')}
+                </Link>
+                <Button type="submit" arrow disabled={submitting}>
+                  {submitting
+                    ? mode === 'create'
+                      ? t('creating')
+                      : t('saving')
+                    : mode === 'create'
+                      ? t('createSubmit')
+                      : t('saveSubmit')}
+                </Button>
+              </div>
+            </div>
+          ) : null}
+        </form>
+
+        <aside className="flex flex-col gap-4 lg:sticky lg:top-6">
+          <Card className="flex flex-col gap-4 p-5">
+            <Eyebrow>{t('previewEyebrow')}</Eyebrow>
+            <div className="flex items-center gap-3.5">
+              <BotAvatar
+                seed={effectiveSeed}
+                mood={previewMood}
+                size={60}
+                tile
+                decorative
+              />
+              <div className="min-w-0">
+                <p className="truncate text-[18px] font-black text-ink">
+                  {name.trim() || t('namePlaceholder')}
+                </p>
+                <p className="truncate font-mono text-[12px] text-muted">
+                  {effectiveSeed}
+                </p>
+              </div>
+            </div>
+            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 border-t border-line pt-3 text-[13px]">
+              <dt className="text-muted">{t('sectionBrain')}</dt>
+              <dd className="truncate font-mono text-ink">
+                {`${llmMode} · ${llmModel}`}
+              </dd>
+              <dt className="text-muted">{t('sectionComputer')}</dt>
+              <dd className="truncate font-mono text-ink">{driverType}</dd>
+            </dl>
+          </Card>
+
+          <Card className="flex flex-col gap-3 p-5">
+            <h3 className="text-[16px] font-black text-ink">
+              {t('checklistTitle')}
+            </h3>
+            <ul className="flex flex-col gap-2.5 text-[13px] text-ink-2">
+              <li className="flex items-start gap-2">
+                <Check
+                  className="mt-0.5 h-4 w-4 shrink-0 text-green-600"
+                  aria-hidden="true"
+                />
+                <span>{t('checklistItem1')}</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <Check
+                  className="mt-0.5 h-4 w-4 shrink-0 text-green-600"
+                  aria-hidden="true"
+                />
+                <span>{t('checklistItem2')}</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <Check
+                  className="mt-0.5 h-4 w-4 shrink-0 text-green-600"
+                  aria-hidden="true"
+                />
+                <span>{t('checklistItem3')}</span>
+              </li>
+            </ul>
           </Card>
 
           {mode === 'edit' && bot && canEdit ? (
-            <Card className="flex flex-col gap-3 border-dashed border-amber-line bg-amber-tint/40 p-6">
+            <Card className="flex flex-col gap-3 border-dashed border-amber-line bg-amber-tint/40 p-5">
               <h2 className="text-[18px] font-black text-ink">
                 {t('deleteSectionTitle')}
               </h2>
@@ -437,7 +543,7 @@ export function BotBuilderForm({ mode, workspace, bot }: BotBuilderFormProps) {
               </div>
             </Card>
           ) : null}
-        </div>
+        </aside>
       </div>
     </div>
   );

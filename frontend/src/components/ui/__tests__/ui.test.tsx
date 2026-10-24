@@ -5,10 +5,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { StyleguideShowcase } from '@/components/dev/StyleguideShowcase';
 import {
+  BrandLogo,
+  BudgetMeter,
   Button,
   Card,
   Eyebrow,
   Input,
+  SegmentedControl,
   StatusChip,
   type ChipStatus,
 } from '@/components/ui';
@@ -122,6 +125,87 @@ describe('UI primitives', () => {
     expect(screen.getByTestId('interactive-card')).toHaveClass(
       'hover:-translate-y-1',
     );
+  });
+
+  it('renders BudgetMeter thresholds including 80% warning, 100% dashed cap, and zero-limit safety', () => {
+    const { rerender } = render(
+      <BudgetMeter
+        ariaLabel="Daily cap"
+        spentMicros={5_000_000}
+        limitMicros={10_000_000}
+        leftCaption="50% used"
+        rightCaption="80% warn · 100% stop"
+      />,
+    );
+
+    const bar = screen.getByRole('progressbar', { name: 'Daily cap' });
+    expect(bar).toHaveAttribute('aria-valuenow', '50');
+    expect(bar.className).not.toContain('ring-dashed');
+    expect(screen.getByText('50% used')).toBeInTheDocument();
+
+    rerender(
+      <BudgetMeter
+        ariaLabel="Daily cap"
+        spentMicros={8_500_000}
+        limitMicros={10_000_000}
+        warning
+        leftCaption="85% used"
+        rightCaption="80% warn · 100% stop"
+      />,
+    );
+    expect(
+      screen.getByRole('progressbar', { name: 'Daily cap' }),
+    ).toHaveAttribute('aria-valuenow', '85');
+    expect(screen.getByText('80% warn · 100% stop')).toHaveClass('text-amber');
+
+    rerender(
+      <BudgetMeter
+        ariaLabel="Daily cap"
+        spentMicros={12_000_000}
+        limitMicros={10_000_000}
+        warning
+        exceeded
+      />,
+    );
+    const exceededBar = screen.getByRole('progressbar', { name: 'Daily cap' });
+    expect(exceededBar).toHaveAttribute('aria-valuenow', '100');
+    expect(exceededBar.className).toContain('ring-dashed');
+
+    rerender(
+      <BudgetMeter ariaLabel="Zero limit" spentMicros={500} limitMicros={0} />,
+    );
+    expect(
+      screen.getByRole('progressbar', { name: 'Zero limit' }),
+    ).toHaveAttribute('aria-valuenow', '0');
+  });
+
+  it('toggles SegmentedControl buttons with aria-pressed and renders BrandLogo robot mark', () => {
+    const onChange = vi.fn();
+    const { container } = render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <BrandLogo dark />
+        <SegmentedControl<'all' | 'running'>
+          ariaLabel="Filter by status"
+          value="all"
+          onChange={onChange}
+          options={[
+            { value: 'all', label: 'All', badge: 4 },
+            { value: 'running', label: 'Running', badge: 2 },
+          ]}
+        />
+      </NextIntlClientProvider>,
+    );
+
+    const allBtn = screen.getByRole('button', { name: 'All 4' });
+    const runningBtn = screen.getByRole('button', { name: 'Running 2' });
+    expect(allBtn).toHaveAttribute('aria-pressed', 'true');
+    expect(runningBtn).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(runningBtn);
+    expect(onChange).toHaveBeenCalledWith('running');
+
+    // Robot-face hexagon has three blue mouth polygons
+    expect(container.querySelectorAll('polygon')).toHaveLength(3);
   });
 });
 

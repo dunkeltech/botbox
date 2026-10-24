@@ -1,5 +1,6 @@
 'use client';
 
+import { Check, Lock } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { type FormEvent, useEffect, useState } from 'react';
@@ -121,211 +122,269 @@ export default function SetupPage() {
     );
   }
 
-  const steps = [
-    { num: t('step1Num'), title: t('step1Title'), desc: t('step1Desc') },
-    { num: t('step2Num'), title: t('step2Title'), desc: t('step2Desc') },
-    { num: t('step3Num'), title: t('step3Title'), desc: t('step3Desc') },
-  ];
-
   return (
-    <div className="min-h-screen bg-paper-2 px-4 py-8 sm:px-6 lg:py-12">
-      <div className="mx-auto grid max-w-[1160px] gap-8 lg:grid-cols-[400px_1fr] lg:items-start">
-        <aside className="flex flex-col gap-6 rounded-md bg-dark p-6 text-on-dark shadow-card sm:p-7">
-          <BrandLogo dark />
-
-          <ol aria-label={t('stepsAria')} className="flex flex-col gap-4">
-            {steps.map((step) => (
-              <li
-                key={step.num}
-                className="flex items-start gap-3.5 rounded-sm border border-on-dark-faint/30 bg-terminal/60 p-3.5"
-              >
-                <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-pill bg-green-light font-mono text-[12px] font-bold text-terminal">
-                  {step.num}
-                </span>
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-[14px] font-bold text-paper">
-                    {step.title}
-                  </span>
-                  <span className="text-[13px] leading-[1.5] text-on-dark-muted">
-                    {step.desc}
-                  </span>
-                </div>
-              </li>
-            ))}
-          </ol>
-
-          <div className="flex flex-col gap-2 rounded-sm border border-on-dark-faint/30 bg-terminal p-4 font-mono text-[12px] leading-[1.6]">
-            <div className="flex items-center justify-between text-on-dark-muted">
-              <span>{t('terminalTitle')}</span>
-              <span>{t('terminalHint')}</span>
-            </div>
-            <p className="text-paper">{t('terminalCmd')}</p>
-            <p className="text-on-dark-muted">{t('terminalLine1')}</p>
-            <p className="text-amber-on-dark">{t('terminalLine2')}</p>
-            <p className="rounded-xs bg-dark-2 px-2.5 py-1.5 text-green-light">
-              {t('terminalSecretSample')}
-            </p>
+    <div className="flex min-h-screen flex-col bg-paper-2">
+      <header className="border-b border-line bg-paper">
+        <div className="mx-auto flex min-h-16 max-w-[1360px] flex-wrap items-center justify-between gap-3 px-4 py-2 sm:px-6">
+          <div className="flex flex-wrap items-center gap-3">
+            <BrandLogo size={34} />
+            <span className="inline-flex items-center gap-1.5 rounded-pill border border-amber-line bg-amber-tint px-3 py-1 text-[12px] font-bold text-amber">
+              <span
+                aria-hidden="true"
+                className="h-2 w-2 rounded-pill bg-amber"
+              />
+              <span>{t('uninitializedBadge')}</span>
+            </span>
           </div>
-        </aside>
+          <ol
+            aria-label={t('stepsAria')}
+            className="hidden flex-wrap items-center gap-2 text-[13px] font-bold lg:flex"
+          >
+            <li className="rounded-pill border border-mint-line bg-mint-soft px-3 py-1 text-green-600">
+              {t('stepPill1')}
+            </li>
+            <li aria-hidden="true" className="text-muted">
+              →
+            </li>
+            <li className="rounded-pill border border-line bg-paper px-3 py-1 text-ink-2">
+              {t('stepPill2')}
+            </li>
+            <li aria-hidden="true" className="text-muted">
+              →
+            </li>
+            <li className="rounded-pill border border-line bg-paper px-3 py-1 text-ink-2">
+              {t('stepPill3')}
+            </li>
+          </ol>
+        </div>
+      </header>
 
-        <main>
-          <Card className="p-6 sm:p-8">
-            <div className="mb-6 flex flex-col gap-2">
-              <Eyebrow>{t('eyebrow')}</Eyebrow>
-              <h1 className="text-[32px] font-black leading-[1.15] tracking-[-0.01em] text-ink sm:text-[38px]">
-                {t('title')}
-              </h1>
-              <p className="text-[16px] leading-[1.6] text-ink-2">
-                {t('lead')}
-              </p>
-            </div>
+      <div className="mx-auto w-full max-w-[1360px] flex-1 px-4 py-8 sm:px-6">
+        <div className="mb-6 flex flex-col gap-1.5">
+          <Eyebrow>{t('eyebrow')}</Eyebrow>
+          <h1 className="text-[34px] font-black leading-[1.15] tracking-[-0.01em] text-ink sm:text-[42px]">
+            {t('title')}
+          </h1>
+          <p className="max-w-2xl text-[16px] leading-[1.6] text-ink-2">
+            {t('lead')}
+          </p>
+        </div>
 
-            <form
-              onSubmit={(event) => void handleSubmit(event)}
-              className="flex flex-col gap-7"
-            >
-              {errorKey ? (
-                <Alert tone="warning">{tErrors(errorKey)}</Alert>
-              ) : null}
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start">
+          <main>
+            <Card className="p-6 sm:p-8">
+              <form
+                onSubmit={(event) => void handleSubmit(event)}
+                className="flex flex-col gap-7"
+              >
+                {errorKey ? (
+                  <Alert tone="warning">{tErrors(errorKey)}</Alert>
+                ) : null}
 
-              <section className="flex flex-col gap-4 border-t border-line pt-6">
-                <h2 className="text-[18px] font-black text-ink">
-                  {t('sectionSecret')}
-                </h2>
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-                  <div className="flex-1">
+                <section className="flex flex-col gap-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h2 className="text-[19px] font-black text-ink">
+                      {t('sectionSecret')}
+                    </h2>
+                  </div>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                    <div className="flex-1">
+                      <Input
+                        label={t('secretLabel')}
+                        helperText={t('secretHelper')}
+                        placeholder={t('secretPlaceholder')}
+                        warning={
+                          secretInvalid
+                            ? tErrors('setupInvalidSecret')
+                            : undefined
+                        }
+                        type={showSecret ? 'text' : 'password'}
+                        mono
+                        autoComplete="off"
+                        autoCorrect="off"
+                        autoCapitalize="none"
+                        spellCheck={false}
+                        value={setupSecret}
+                        required
+                        onChange={(event) => {
+                          setSetupSecret(event.target.value);
+                          if (secretInvalid) {
+                            setSecretInvalid(false);
+                          }
+                        }}
+                      />
+                    </div>
+                    <Button
+                      variant="secondary"
+                      type="button"
+                      onClick={() => setShowSecret((prev) => !prev)}
+                      className="sm:mb-6"
+                    >
+                      {showSecret ? t('hideSecret') : t('showSecret')}
+                    </Button>
+                  </div>
+                  <div className="flex items-center gap-2 rounded-sm border border-dashed border-amber-line bg-amber-tint px-3.5 py-2.5 text-[13px] font-bold text-amber">
+                    <Lock className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    <span>{t('rateLimitNotice')}</span>
+                  </div>
+                </section>
+
+                <section className="flex flex-col gap-4 border-t border-line pt-6">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h2 className="text-[19px] font-black text-ink">
+                      {t('sectionOwner')}
+                    </h2>
+                    <span className="rounded-pill border border-mint-line bg-mint-soft px-2.5 py-0.5 text-[12px] font-bold text-green-600">
+                      {t('ownerRoleBadge')}
+                    </span>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
                     <Input
-                      label={t('secretLabel')}
-                      helperText={t('secretHelper')}
-                      placeholder={t('secretPlaceholder')}
-                      warning={
-                        secretInvalid
-                          ? tErrors('setupInvalidSecret')
-                          : undefined
-                      }
-                      type={showSecret ? 'text' : 'password'}
-                      mono
-                      autoComplete="off"
-                      autoCorrect="off"
-                      autoCapitalize="none"
-                      spellCheck={false}
-                      value={setupSecret}
+                      label={t('displayNameLabel')}
+                      placeholder={t('displayNamePlaceholder')}
+                      autoComplete="name"
+                      value={displayName}
+                      required
+                      onChange={(event) => setDisplayName(event.target.value)}
+                    />
+                    <Input
+                      label={t('emailLabel')}
+                      placeholder={t('emailPlaceholder')}
+                      type="email"
+                      autoComplete="email"
+                      value={email}
+                      required
+                      onChange={(event) => setEmail(event.target.value)}
+                    />
+                  </div>
+                  <Input
+                    label={t('passwordLabel')}
+                    helperText={t('passwordHelper')}
+                    type="password"
+                    autoComplete="new-password"
+                    value={password}
+                    required
+                    onChange={(event) => setPassword(event.target.value)}
+                  />
+                </section>
+
+                <section className="flex flex-col gap-4 border-t border-line pt-6">
+                  <h2 className="text-[19px] font-black text-ink">
+                    {t('sectionWorkspace')}
+                  </h2>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Input
+                      label={t('workspaceNameLabel')}
+                      placeholder={t('workspaceNamePlaceholder')}
+                      value={workspaceName}
                       required
                       onChange={(event) => {
-                        setSetupSecret(event.target.value);
-                        if (secretInvalid) {
-                          setSecretInvalid(false);
+                        const nextName = event.target.value;
+                        setWorkspaceName(nextName);
+                        if (!slugTouched) {
+                          setWorkspaceSlug(slugifyName(nextName));
                         }
                       }}
                     />
+                    <Input
+                      label={t('workspaceSlugLabel')}
+                      helperText={t('workspaceSlugHelper')}
+                      placeholder={t('workspaceSlugPlaceholder')}
+                      mono
+                      autoCorrect="off"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      value={workspaceSlug}
+                      required
+                      onChange={(event) => {
+                        setSlugTouched(true);
+                        setWorkspaceSlug(event.target.value);
+                      }}
+                    />
                   </div>
-                  <Button
-                    variant="secondary"
-                    type="button"
-                    onClick={() => setShowSecret((prev) => !prev)}
-                  >
-                    {showSecret ? t('hideSecret') : t('showSecret')}
+
+                  <RadioCardGroup<DriverType>
+                    legend={t('driverLegend')}
+                    name="setup-default-driver"
+                    value={defaultDriver}
+                    onChange={setDefaultDriver}
+                    options={[
+                      {
+                        value: 'docker',
+                        title: t('driverDockerTitle'),
+                        description: t('driverDockerDesc'),
+                      },
+                      {
+                        value: 'kubernetes',
+                        title: t('driverK8sTitle'),
+                        description: t('driverK8sDesc'),
+                      },
+                    ]}
+                  />
+                </section>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-6">
+                  <span className="font-mono text-[12px] text-muted">
+                    {t('submitMeta')}
+                  </span>
+                  <Button type="submit" arrow disabled={submitting}>
+                    {submitting ? t('submitting') : t('submit')}
                   </Button>
                 </div>
-              </section>
+              </form>
+            </Card>
+          </main>
 
-              <section className="flex flex-col gap-4 border-t border-line pt-6">
-                <h2 className="text-[18px] font-black text-ink">
-                  {t('sectionOwner')}
-                </h2>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Input
-                    label={t('displayNameLabel')}
-                    placeholder={t('displayNamePlaceholder')}
-                    autoComplete="name"
-                    value={displayName}
-                    required
-                    onChange={(event) => setDisplayName(event.target.value)}
-                  />
-                  <Input
-                    label={t('emailLabel')}
-                    placeholder={t('emailPlaceholder')}
-                    type="email"
-                    autoComplete="email"
-                    value={email}
-                    required
-                    onChange={(event) => setEmail(event.target.value)}
-                  />
-                </div>
-                <Input
-                  label={t('passwordLabel')}
-                  helperText={t('passwordHelper')}
-                  type="password"
-                  autoComplete="new-password"
-                  value={password}
-                  required
-                  onChange={(event) => setPassword(event.target.value)}
-                />
-              </section>
-
-              <section className="flex flex-col gap-4 border-t border-line pt-6">
-                <h2 className="text-[18px] font-black text-ink">
-                  {t('sectionWorkspace')}
-                </h2>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Input
-                    label={t('workspaceNameLabel')}
-                    placeholder={t('workspaceNamePlaceholder')}
-                    value={workspaceName}
-                    required
-                    onChange={(event) => {
-                      const nextName = event.target.value;
-                      setWorkspaceName(nextName);
-                      if (!slugTouched) {
-                        setWorkspaceSlug(slugifyName(nextName));
-                      }
-                    }}
-                  />
-                  <Input
-                    label={t('workspaceSlugLabel')}
-                    helperText={t('workspaceSlugHelper')}
-                    placeholder={t('workspaceSlugPlaceholder')}
-                    mono
-                    autoCorrect="off"
-                    autoCapitalize="none"
-                    spellCheck={false}
-                    value={workspaceSlug}
-                    required
-                    onChange={(event) => {
-                      setSlugTouched(true);
-                      setWorkspaceSlug(event.target.value);
-                    }}
-                  />
-                </div>
-
-                <RadioCardGroup<DriverType>
-                  legend={t('driverLegend')}
-                  name="setup-default-driver"
-                  value={defaultDriver}
-                  onChange={setDefaultDriver}
-                  options={[
-                    {
-                      value: 'docker',
-                      title: t('driverDockerTitle'),
-                      description: t('driverDockerDesc'),
-                    },
-                    {
-                      value: 'kubernetes',
-                      title: t('driverK8sTitle'),
-                      description: t('driverK8sDesc'),
-                    },
-                  ]}
-                />
-              </section>
-
-              <div className="flex justify-end border-t border-line pt-6">
-                <Button type="submit" arrow disabled={submitting}>
-                  {submitting ? t('submitting') : t('submit')}
-                </Button>
+          <aside className="flex flex-col gap-5">
+            <div className="flex flex-col gap-2.5 rounded-lg bg-terminal p-5 font-mono text-[12px] leading-[1.6] text-on-dark shadow-card">
+              <div className="flex items-center justify-between text-on-dark-muted">
+                <span className="font-sans text-[11px] font-bold uppercase tracking-[0.06em]">
+                  {`// ${t('terminalEyebrow')}`}
+                </span>
+                <span className="rounded-xs bg-dark px-2 py-0.5 text-[11px] text-green-light">
+                  {t('terminalTitle')}
+                </span>
               </div>
-            </form>
-          </Card>
-        </main>
+              <p className="text-green-light">{t('terminalCmd')}</p>
+              <p className="text-on-dark-muted">{t('terminalLine1')}</p>
+              <p className="text-on-dark">{t('terminalLine2')}</p>
+              <div className="mt-1 rounded-sm border border-green/40 bg-dark-2 p-3">
+                <p className="text-[11px] uppercase tracking-[0.06em] text-green-light">
+                  {t('terminalSecretLabel')}
+                </p>
+                <p className="mt-1 font-bold text-paper">
+                  {t('terminalSecretSample')}
+                </p>
+                <p className="mt-0.5 text-[11px] text-on-dark-muted">
+                  {t('terminalHint')}
+                </p>
+              </div>
+            </div>
+
+            <Card className="flex flex-col gap-3 p-5">
+              <Eyebrow>{t('invariantsEyebrow')}</Eyebrow>
+              <h2 className="text-[18px] font-black text-ink">
+                {t('invariantsTitle')}
+              </h2>
+              <ul className="flex flex-col gap-2.5 text-[13px] leading-[1.5] text-ink-2">
+                {[
+                  t('invariant1'),
+                  t('invariant2'),
+                  t('invariant3'),
+                  t('invariant4'),
+                ].map((item) => (
+                  <li key={item} className="flex items-start gap-2">
+                    <Check
+                      className="mt-0.5 h-4 w-4 shrink-0 text-green-600"
+                      aria-hidden="true"
+                    />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          </aside>
+        </div>
       </div>
     </div>
   );
