@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -193,6 +194,20 @@ func (w *Worker) executeClaimed(ctx context.Context, tx pgx.Tx, turn db.BotTurn,
 				return marshalErr
 			}
 			if _, e := q.CreateChatMessage(ctx, db.CreateChatMessageParams{ID: pgID(uuid.New()), WorkspaceID: turn.WorkspaceID, ConversationID: turn.ConversationID, SenderType: "bot", SenderBotID: turn.BotID, Kind: "tool", Content: ev.Text, Metadata: data}); e != nil {
+				return e
+			}
+		case EventKindCard:
+			if strings.TrimSpace(ev.Text) == "" {
+				return errors.New("card text is required")
+			}
+			data := []byte("{}")
+			if len(ev.Metadata) > 0 {
+				if !json.Valid(ev.Metadata) {
+					return errors.New("invalid card metadata")
+				}
+				data = ev.Metadata
+			}
+			if _, e := q.CreateChatMessage(ctx, db.CreateChatMessageParams{ID: pgID(uuid.New()), WorkspaceID: turn.WorkspaceID, ConversationID: turn.ConversationID, SenderType: "bot", SenderBotID: turn.BotID, Kind: "card", Content: ev.Text, Metadata: data}); e != nil {
 				return e
 			}
 		case EventKindError:

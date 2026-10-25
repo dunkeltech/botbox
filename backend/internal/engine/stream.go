@@ -18,6 +18,7 @@ const maxStreamLineBytes = 1 << 20
 const (
 	EventKindMessage        EventKind = "message"
 	EventKindApprovalNeeded EventKind = "approval_needed"
+	EventKindCard           EventKind = "card"
 	EventKindStatus         EventKind = "status"
 	EventKindTextDelta      EventKind = "text_delta"
 	EventKindToolCall       EventKind = "tool_call"
@@ -39,6 +40,7 @@ type Event struct {
 	SessionID    string
 	Kind         EventKind
 	Text         string
+	Metadata     json.RawMessage
 	ToolID       string
 	ToolName     string
 	ToolInput    json.RawMessage
