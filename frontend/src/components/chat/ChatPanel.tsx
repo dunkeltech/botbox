@@ -17,6 +17,7 @@ import {
   describeToolMessage,
   type ToolCopy,
 } from '@/components/chat/toolMessage';
+import { useChatScroll } from '@/components/chat/useChatScroll';
 import type { components } from '@/types/openapi.gen';
 
 type Conversation = components['schemas']['ChatConversation'];
@@ -238,6 +239,7 @@ export function ChatPanel({
         body: { id: crypto.randomUUID(), content },
       });
       setContent('');
+      scrollToBottom();
       await client.invalidateQueries({
         queryKey: ['chat', workspaceId, userId, conversationId],
       });
@@ -268,6 +270,9 @@ export function ChatPanel({
       const page = await requestJson<History>(
         `${base}/conversations/${conversationId}/messages?before=${first.position}`,
       );
+      if (page.messages.length > 0) {
+        preparePrepend();
+      }
       setOlder((previous) => [...page.messages, ...previous]);
     } catch {
       setError(true);
@@ -289,6 +294,13 @@ export function ChatPanel({
     });
 
   const isSlack = variant === 'slack';
+  const { logRef, onScroll, onMediaLoad, scrollToBottom, preparePrepend } =
+    useChatScroll({
+      conversationKey: conversationId ?? '',
+      messageCount: messages.length,
+      lastMessageId: messages[messages.length - 1]?.id ?? '',
+      liveText: live,
+    });
 
   return (
     <section
@@ -333,6 +345,9 @@ export function ChatPanel({
       ) : null}
 
       <div
+        ref={logRef}
+        onScroll={onScroll}
+        onLoadCapture={onMediaLoad}
         className={`flex min-h-[220px] flex-1 flex-col gap-3 overflow-y-auto pr-1 ${
           isSlack ? '' : 'max-h-[480px]'
         }`}

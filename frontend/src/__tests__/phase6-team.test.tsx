@@ -379,4 +379,117 @@ describe('Phase 6 team chat', () => {
     ).toBeInTheDocument();
     expect(screen.queryByText('secret message body')).toBeNull();
   });
+
+  it('scrolls group chat to bottom, pauses while reading older messages, and resets on group switch', async () => {
+    class FakeSocket {
+      static current: FakeSocket;
+      onmessage: ((event: MessageEvent<string>) => void) | null = null;
+      close = vi.fn();
+      constructor() {
+        FakeSocket.current = this;
+      }
+      emit(data: unknown) {
+        this.onmessage?.({
+          data: JSON.stringify(data),
+        } as MessageEvent<string>);
+      }
+    }
+    vi.stubGlobal('WebSocket', FakeSocket);
+    vi.mocked(getAccessToken).mockReturnValue('fixture-token');
+
+    const secondGroup: Group = {
+      ...group,
+      id: 'group-2',
+      name: 'Ops',
+      unread: 0,
+    };
+    groupRows = [group, secondGroup];
+
+    let group1Messages = [...history];
+    const group2Messages: ChatMessage[] = [
+      {
+        id: 'g2-msg-1',
+        position: 1,
+        senderType: 'user',
+        senderUserId: 'user-2',
+        kind: 'text',
+        content: 'Ops latest',
+        createdAt: '2026-11-16T00:05:00Z',
+      },
+    ];
+
+    request.mockImplementation(
+      (path: string, options?: { method?: string }) => {
+        if (path.includes('/groups/group-1/messages')) {
+          if (options?.method === 'POST') {
+            return Promise.resolve({ id: 'g1-sent' });
+          }
+          return Promise.resolve({ messages: group1Messages, turns: [] });
+        }
+        if (path.includes('/groups/group-2/messages')) {
+          return Promise.resolve({ messages: group2Messages, turns: [] });
+        }
+        return handler(path, options);
+      },
+    );
+
+    show();
+
+    const log = await screen.findByRole('log', {
+      name: messages.team.messages,
+    });
+    let currentScrollHeight = 1000;
+    Object.defineProperty(log, 'scrollHeight', {
+      configurable: true,
+      get: () => currentScrollHeight,
+    });
+    Object.defineProperty(log, 'clientHeight', {
+      configurable: true,
+      get: () => 400,
+    });
+
+    await waitFor(() => expect(log).toHaveTextContent('Ask @Atlas'));
+    await waitFor(() =>
+      expect(FakeSocket.current?.onmessage).toBeTypeOf('function'),
+    );
+    expect(log.scrollTop).toBe(1000);
+
+    // Negative path: user scrolled up, new incoming message must not jump to bottom.
+    log.scrollTop = 120;
+    fireEvent.scroll(log);
+    group1Messages = [
+      ...group1Messages,
+      {
+        id: 'message-3',
+        position: 3,
+        senderType: 'bot',
+        senderBotId: 'bot-1',
+        kind: 'text',
+        content: 'New reply from Atlas',
+        createdAt: '2026-11-16T00:00:02Z',
+      },
+    ];
+    currentScrollHeight = 1200;
+    FakeSocket.current.emit({ Kind: 'message' });
+    expect(await screen.findByText('New reply from Atlas')).toBeInTheDocument();
+    expect(log.scrollTop).toBe(120);
+
+    // Sending a message re-pins to the bottom.
+    fireEvent.change(screen.getByLabelText(messages.team.composer), {
+      target: { value: 'Looks good' },
+    });
+    fireEvent.submit(
+      screen.getByRole('button', { name: messages.team.send }).closest('form')!,
+    );
+    await waitFor(() => expect(log.scrollTop).toBe(1200));
+
+    // Switching to another group resets scroll-to-bottom even if user was scrolled up.
+    log.scrollTop = 100;
+    fireEvent.scroll(log);
+    currentScrollHeight = 900;
+    fireEvent.click(screen.getByRole('button', { name: /Ops/ }));
+    expect(await screen.findByText('Ops latest')).toBeInTheDocument();
+    expect(log.scrollTop).toBe(900);
+    vi.unstubAllGlobals();
+  });
 });

@@ -11,6 +11,7 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { ToolMessageView } from '@/components/chat/ChatPanel';
+import { useChatScroll } from '@/components/chat/useChatScroll';
 import { ApprovalCard } from '@/components/team/ApprovalCard';
 import {
   approvalForMessage,
@@ -139,6 +140,11 @@ export function GroupConversation({
       needle === '' || message.content.toLowerCase().includes(needle),
   );
   const names = targets(group).map((target) => target.name);
+  const { logRef, onScroll, onMediaLoad, scrollToBottom } = useChatScroll({
+    conversationKey: group.id,
+    messageCount: messages.length,
+    lastMessageId: messages[messages.length - 1]?.id ?? '',
+  });
 
   function rememberCaret(value: string, nextCaret: number) {
     setDraft(value);
@@ -201,6 +207,7 @@ export function GroupConversation({
       });
       setDraft('');
       setCaret(0);
+      scrollToBottom();
       await client.invalidateQueries({
         queryKey: ['group-messages', workspaceId, group.id],
       });
@@ -220,6 +227,9 @@ export function GroupConversation({
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div
+        ref={logRef}
+        onScroll={onScroll}
+        onLoadCapture={onMediaLoad}
         role="log"
         aria-label={t('messages')}
         className="flex min-h-[280px] flex-1 flex-col gap-3 overflow-y-auto py-4"

@@ -364,3 +364,122 @@ describe('turn failure recovery', () => {
     expect(screen.queryByText('fixture-private-key')).not.toBeInTheDocument();
   });
 });
+
+describe('chat scroll behavior', () => {
+  it('scrolls to the newest message, pauses auto-scroll while reading older messages, and preserves position on loadOlder', async () => {
+    class FakeSocket {
+      static current: FakeSocket;
+      onmessage: ((event: MessageEvent<string>) => void) | null = null;
+      close = vi.fn();
+      constructor() {
+        FakeSocket.current = this;
+      }
+      emit(data: unknown) {
+        this.onmessage?.({
+          data: JSON.stringify(data),
+        } as MessageEvent<string>);
+      }
+    }
+    vi.stubGlobal('WebSocket', FakeSocket);
+    vi.mocked(getAccessToken).mockReturnValue('fixture-token');
+
+    const initialMessages = Array.from({ length: 50 }, (_, index) => ({
+      id: `msg-${index + 1}`,
+      position: index + 51,
+      senderType: 'bot',
+      kind: 'text',
+      content: `Message ${index + 51}`,
+      createdAt: '2026-11-15T10:00:00Z',
+    }));
+    const olderMessages = [
+      {
+        id: 'msg-older-1',
+        position: 50,
+        senderType: 'user',
+        kind: 'text',
+        content: 'Older message 50',
+        createdAt: '2026-11-15T09:59:00Z',
+      },
+    ];
+
+    request.mockImplementation(
+      (path: string, options?: { method?: string }) => {
+        if (path.endsWith('/dm')) {
+          return Promise.resolve({ id: 'conversation-1', botId: 'bot-1' });
+        }
+        if (path.includes('/messages?before=')) {
+          return Promise.resolve({ messages: olderMessages, turns: [] });
+        }
+        if (path.includes('/messages') && options?.method === 'POST') {
+          return Promise.resolve({ id: 'msg-sent' });
+        }
+        if (path.includes('/messages')) {
+          return Promise.resolve({ messages: initialMessages, turns: [] });
+        }
+        return Promise.resolve({ spendTodayMicros: 0, budgets: [] });
+      },
+    );
+
+    show(
+      <ChatPanel
+        workspaceId="ws-1"
+        userId="user-1"
+        botId="bot-1"
+        name="Atlas"
+        avatarSeed="atlas-seed"
+      />,
+    );
+
+    const log = screen.getByRole('log', { name: messages.chat.history });
+    let currentScrollHeight = 1200;
+    Object.defineProperty(log, 'scrollHeight', {
+      configurable: true,
+      get: () =>
+        log.textContent?.includes('Older message 50')
+          ? 2300
+          : currentScrollHeight,
+    });
+    Object.defineProperty(log, 'clientHeight', {
+      configurable: true,
+      get: () => 400,
+    });
+
+    await screen.findByText('Message 100');
+    await waitFor(() =>
+      expect(FakeSocket.current?.onmessage).toBeTypeOf('function'),
+    );
+    expect(log.scrollTop).toBe(1200);
+
+    // Streaming delta while pinned at the bottom keeps scrolling down.
+    currentScrollHeight = 1350;
+    act(() => {
+      FakeSocket.current.emit({ Kind: 'text_delta', Text: 'Streaming' });
+    });
+    expect(log.scrollTop).toBe(1350);
+
+    // Negative path: scrolling up to read older messages disables auto-scroll.
+    log.scrollTop = 200;
+    fireEvent.scroll(log);
+    currentScrollHeight = 1500;
+    act(() => {
+      FakeSocket.current.emit({ Kind: 'text_delta', Text: ' more text' });
+    });
+    expect(log.scrollTop).toBe(200);
+
+    // Sending a message re-pins the view to the bottom.
+    fireEvent.change(screen.getByLabelText(messages.chat.message), {
+      target: { value: 'Follow up' },
+    });
+    fireEvent.submit(
+      screen.getByRole('button', { name: messages.chat.send }).closest('form')!,
+    );
+    await waitFor(() => expect(log.scrollTop).toBe(1500));
+
+    // Loading older messages preserves the reader's position without jumping to bottom.
+    log.scrollTop = 100;
+    fireEvent.scroll(log);
+    fireEvent.click(screen.getByRole('button', { name: messages.chat.older }));
+    expect(await screen.findByText('Older message 50')).toBeInTheDocument();
+    expect(log.scrollTop).toBe(900);
+  });
+});
