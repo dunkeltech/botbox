@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"math"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 
 	apigen "github.com/dunkeltech/botbox/backend/internal/gen/api"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
+	"github.com/dunkeltech/botbox/backend/internal/secretrequests"
 	"github.com/dunkeltech/botbox/backend/internal/workspaces"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -127,6 +129,13 @@ func chatMessage(m db.Message) apigen.ChatMessage {
 	if m.SenderBotID.Valid {
 		id := fromPGUUID(m.SenderBotID)
 		out.SenderBotId = &id
+	}
+	if m.Kind == "secret_request" && len(m.Metadata) > 0 {
+		var card secretrequests.CardPayload
+		if json.Unmarshal(m.Metadata, &card) == nil && card.SecretRequestID != "" {
+			summary := presentSecretCard(card)
+			out.SecretRequest = &summary
+		}
 	}
 	return out
 }

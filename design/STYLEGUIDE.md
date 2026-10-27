@@ -334,3 +334,11 @@ write-only secret form with the fixed credential name, provider host and Bearer
 scheme, while preserving existing role permissions. Display the official setup
 command and optional project helper as code. The token itself remains a password
 input, is cleared on save, and is never rendered from a server response.
+
+### Egress blocklist, triage & pending enforcement
+
+The bot **Secrets & network** view (`#31`, Stitch screen `9134a93a74a544c48764366fbaac88ff`) pairs **Allowed hosts** with **Blocked hosts** using dashed `amber-line` / `amber-tint` chips (`amber` text, zero red). Inside the dark `terminal` **Recent egress activity** log:
+
+- Action buttons (**Allow**, **Block**, **Undo**, **Edit rule**) keep ≥ 44 px touch targets and explicit text labels.
+- **Pending enforcement** (`202 Accepted` while waiting on the running proxy) uses dashed `amber-line` / `amber-on-dark` (`Saved · proxy pending`) and never displays an `applied` badge (`mint-soft` / `green-600`) until proxy acknowledgement is confirmed.
+- **Conflicts & unknown state** (`409 policy_conflict`, Undo divergence, or failed reconciliation after an interrupted save) surface translated `amber-tint` alerts; failed reconciliation locks further policy writes behind an explicit **Reload policy** action until authoritative state reloads.

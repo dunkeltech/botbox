@@ -2,15 +2,19 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/dunkeltech/botbox/backend/internal/api"
+	"github.com/dunkeltech/botbox/backend/internal/authbroker"
 	"github.com/dunkeltech/botbox/backend/internal/budgets"
 	"github.com/dunkeltech/botbox/backend/internal/events"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
@@ -19,30 +23,105 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/secrets/llmproxy"
 	"github.com/dunkeltech/botbox/backend/internal/secrets/mitmproxy"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // egressDeps is the per-bot proxy surface. AuthMode must not return credential material.
 type egressDeps struct {
-	Connect  http.Handler
-	LLM      http.Handler
-	AuthMode func(context.Context) (string, error)
-	Health   func(context.Context) error
-	CACert   []byte
+	Connect         http.Handler
+	LLM             http.Handler
+	AuthMode        func(context.Context) (string, error)
+	Health          func(context.Context) error
+	CACert          []byte
+	Broker          authbroker.Client
+	BrokerWorkspace uuid.UUID
+	BrokerBot       uuid.UUID
 }
 
-func databaseHandler(pool *pgxpool.Pool, ring *secrets.KeyRing, workspace, bot uuid.UUID, ca *mitmproxy.BotCA, logger *slog.Logger, signal notify.Signal) (http.Handler, error) {
+func databaseHandlerWithLifecycle(
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	ring *secrets.KeyRing,
+	workspace, bot uuid.UUID,
+	ca *mitmproxy.BotCA,
+	logger *slog.Logger,
+	signal notify.Signal,
+	pub *events.Publisher,
+	broker authbroker.Client,
+) (http.Handler, func(), error) {
 	if pool == nil || ring == nil || workspace == uuid.Nil || bot == uuid.Nil || ca == nil {
-		return nil, errors.New("proxy configuration incomplete")
+		return nil, nil, errors.New("proxy configuration incomplete")
 	}
-	connect, err := api.NewBotEgressProxyHandler(api.BotEgressProxyDeps{Pool: pool, KeyRing: ring, WorkspaceID: workspace, BotID: bot, CA: ca, Logger: logger, Notify: signal})
+	q := db.New(pool)
+	wsPG := pgtype.UUID{Bytes: workspace, Valid: true}
+	botPG := pgtype.UUID{Bytes: bot, Valid: true}
+
+	//nolint:contextcheck // OnAudit creates a bounded cleanup context per request outside startup ctx
+	connect, err := api.NewBotEgressProxyHandler(api.BotEgressProxyDeps{
+		Pool:               pool,
+		KeyRing:            ring,
+		WorkspaceID:        workspace,
+		BotID:              bot,
+		CA:                 ca,
+		Logger:             logger,
+		Notify:             signal,
+		PolicyFreshnessMax: time.Second,
+		OnPolicyAdopted: func(ackCtx context.Context, revision int64) error {
+			return q.AcknowledgeEgressPolicyRevision(ackCtx, db.AcknowledgeEgressPolicyRevisionParams{
+				WorkspaceID: wsPG,
+				BotID:       botPG,
+				Column3:     revision,
+			})
+		},
+	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	resolve := secrets.CLIProviderResolver(db.New(pool), ring, workspace, bot)
+
+	// Load and adopt the authoritative policy before accepting any traffic.
+	initCtx, initCancel := context.WithTimeout(ctx, 5*time.Second)
+	err = connect.RevalidatePassthrough(initCtx)
+	initCancel()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	stopReval := connect.StartRevalidation(ctx, 500*time.Millisecond)
+	unsub := func() {}
+
+	if pub != nil {
+		//nolint:contextcheck // NATS message handler creates a per-event timeout context
+		subStop, subErr := pub.SubscribeEgressPolicyInvalidate(workspace, bot, func(evCtx context.Context, ev events.EgressInvalidationEvent) (int64, error) {
+			if ev.Revision > 0 && ev.Revision <= connect.AcknowledgedRevision() {
+				return connect.AcknowledgedRevision(), nil
+			}
+			if ev.Host != "" && ev.Revision == 0 {
+				connect.InvalidateHost(ev.Host)
+			}
+			if err := connect.RevalidatePassthrough(evCtx); err != nil {
+				return 0, err
+			}
+			return connect.AcknowledgedRevision(), nil
+		})
+		if subErr != nil {
+			if logger != nil {
+				logger.Warn("egress invalidation subscription unavailable", "err", subErr)
+			}
+		} else {
+			unsub = subStop
+		}
+	}
+	resolve := secrets.CLIProviderResolver(q, ring, workspace, bot)
 	llm, err := llmproxy.NewScopedHandler(workspace.String(), bot.String(), resolve, &llmproxy.Options{Logger: logger, Admit: budgets.ProxyAdmission(pool, workspace, bot, time.Now), Client: &http.Client{Timeout: 10 * time.Minute}})
 	if err != nil {
-		return nil, err
+		unsub()
+		stopReval()
+		return nil, nil, err
+	}
+	stopAll := func() {
+		unsub()
+		stopReval()
 	}
 	return newEgressHandler(egressDeps{
 		Connect: connect,
@@ -50,9 +129,12 @@ func databaseHandler(pool *pgxpool.Pool, ring *secrets.KeyRing, workspace, bot u
 		AuthMode: func(ctx context.Context) (string, error) {
 			return llmproxy.AuthMode(ctx, resolve, bot.String(), llmproxy.ProviderAnthropic)
 		},
-		Health: pool.Ping,
-		CACert: ca.CertPEM(),
-	}), nil
+		Health:          pool.Ping,
+		CACert:          ca.CertPEM(),
+		Broker:          broker,
+		BrokerWorkspace: workspace,
+		BrokerBot:       bot,
+	}), stopAll, nil
 }
 
 func newEgressHandler(deps egressDeps) http.Handler {
@@ -112,8 +194,116 @@ func newEgressHandler(deps egressDeps) http.Handler {
 			deps.LLM.ServeHTTP(w, r)
 			return
 		}
+		if strings.HasPrefix(r.URL.Path, "/broker/") {
+			serveBrokerBridge(w, r, deps)
+			return
+		}
 		http.NotFound(w, r)
 	})
+}
+
+// serveBrokerBridge forwards strictly limited bot-scoped browser operations to
+// the external auth-broker using the proxy container's pinned workspace and bot IDs.
+func serveBrokerBridge(w http.ResponseWriter, r *http.Request, deps egressDeps) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if deps.Broker == nil || deps.BrokerWorkspace == uuid.Nil || deps.BrokerBot == uuid.Nil {
+		writeProxyJSON(w, http.StatusUnprocessableEntity, map[string]string{
+			"code":  "secret_request.unsupported_capability",
+			"error": "isolated authentication broker is not configured",
+		})
+		return
+	}
+	defer r.Body.Close() //nolint:errcheck // best-effort close
+	var in struct {
+		BrokerSessionID string `json:"broker_session_id"`
+		URL             string `json:"url"`
+		Selector        string `json:"selector"`
+	}
+	dec := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&in); err != nil {
+		writeProxyJSON(w, http.StatusBadRequest, map[string]string{"code": "validation_error", "error": "invalid broker request payload"})
+		return
+	}
+	sessID, err := uuid.Parse(strings.TrimSpace(in.BrokerSessionID))
+	if err != nil {
+		writeProxyJSON(w, http.StatusBadRequest, map[string]string{"code": "validation_error", "error": "invalid broker_session_id"})
+		return
+	}
+
+	switch r.URL.Path {
+	case "/broker/navigate":
+		sess, opErr := deps.Broker.BotNavigate(r.Context(), deps.BrokerWorkspace, deps.BrokerBot, sessID, in.URL)
+		if opErr != nil {
+			writeBrokerBridgeError(w, opErr)
+			return
+		}
+		writeProxyJSON(w, http.StatusOK, map[string]any{
+			"session_id": sess.SessionID.String(),
+			"origin":     sess.Origin,
+			"status":     sess.Status,
+			"page_url":   sess.Binding.PageURL,
+		})
+	case "/broker/read":
+		res, opErr := deps.Broker.BotRead(r.Context(), deps.BrokerWorkspace, deps.BrokerBot, sessID, in.Selector)
+		if opErr != nil {
+			writeBrokerBridgeError(w, opErr)
+			return
+		}
+		writeProxyJSON(w, http.StatusOK, res)
+	case "/broker/click":
+		res, opErr := deps.Broker.BotClick(r.Context(), deps.BrokerWorkspace, deps.BrokerBot, sessID, in.Selector)
+		if opErr != nil {
+			writeBrokerBridgeError(w, opErr)
+			return
+		}
+		writeProxyJSON(w, http.StatusOK, res)
+	case "/broker/screenshot":
+		img, binding, opErr := deps.Broker.BotScreenshot(r.Context(), deps.BrokerWorkspace, deps.BrokerBot, sessID)
+		if opErr != nil {
+			writeBrokerBridgeError(w, opErr)
+			return
+		}
+		writeProxyJSON(w, http.StatusOK, map[string]any{
+			"mime":      "image/png",
+			"image":     base64.StdEncoding.EncodeToString(img),
+			"page_url":  binding.PageURL,
+			"origin":    binding.Origin,
+			"sanitized": true,
+		})
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+func writeBrokerBridgeError(w http.ResponseWriter, err error) {
+	status := http.StatusBadGateway
+	code := "broker_error"
+	switch {
+	case errors.Is(err, authbroker.ErrTakeoverActive):
+		status, code = http.StatusLocked, "takeover_active"
+	case errors.Is(err, authbroker.ErrCaptureSuppressed):
+		status, code = http.StatusConflict, "capture_suppressed"
+	case errors.Is(err, authbroker.ErrNavigationForbidden):
+		status, code = http.StatusForbidden, "navigation_forbidden"
+	case errors.Is(err, authbroker.ErrActionForbidden):
+		status, code = http.StatusForbidden, "action_forbidden"
+	case errors.Is(err, authbroker.ErrSessionNotFound):
+		status, code = http.StatusNotFound, "session_not_found"
+	case errors.Is(err, authbroker.ErrSessionExpired):
+		status, code = http.StatusGone, "session_expired"
+	}
+	writeProxyJSON(w, status, map[string]string{"code": code, "error": err.Error()})
+}
+
+func writeProxyJSON(w http.ResponseWriter, status int, payload any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(payload)
 }
 
 func isLLMHost(host string) bool {
@@ -149,6 +339,16 @@ func openDatabaseProxy(ctx context.Context, dsn, keySpec, workspace, bot, natsUR
 		pool.Close()
 		return nil, nil, errors.New("proxy database unavailable")
 	}
+	var brokerClient authbroker.Client
+	if brokerURL := strings.TrimSpace(os.Getenv("EGRESS_PROXY_AUTH_BROKER_URL")); brokerURL != "" {
+		brokerToken := strings.TrimSpace(os.Getenv("EGRESS_PROXY_AUTH_BROKER_TOKEN"))
+		client, bErr := authbroker.NewHTTPClient(brokerURL, brokerToken)
+		if bErr != nil {
+			pool.Close()
+			return nil, nil, errors.New("invalid proxy auth broker configuration")
+		}
+		brokerClient = client
+	}
 	// A missed signal is recovered from the notification list. The proxy still
 	// has to block the host when NATS is down (issue #17).
 	var signal notify.Signal
@@ -172,13 +372,24 @@ func openDatabaseProxy(ctx context.Context, dsn, keySpec, workspace, bot, natsUR
 					logger.Error("publish notification signal", "err", err)
 				}
 			}
+			handler, stopHandler, err := databaseHandlerWithLifecycle(ctx, pool, ring, ws, botID, ca, logger, signal, publisher, brokerClient)
+			if err != nil {
+				closeAll()
+				return nil, nil, err
+			}
+			return handler, func() {
+				stopHandler()
+				closeAll()
+			}, nil
 		}
 	}
-	//nolint:contextcheck // handlers receive independent HTTP request contexts after startup
-	handler, err := databaseHandler(pool, ring, ws, botID, ca, logger, signal)
+	handler, stopHandler, err := databaseHandlerWithLifecycle(ctx, pool, ring, ws, botID, ca, logger, signal, nil, brokerClient)
 	if err != nil {
 		closeAll()
 		return nil, nil, err
 	}
-	return handler, closeAll, nil
+	return handler, func() {
+		stopHandler()
+		closeAll()
+	}, nil
 }

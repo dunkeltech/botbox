@@ -56,8 +56,10 @@ func main() {
 	}))
 
 	// MCP stays on loopback in this process so takeover cancels the live xdotool.
+	mcpHandler := agent.NewMCPHandler(desktop)
+	mcpHandler.BrokerEnabled = os.Getenv("BOTBOX_AUTH_BROKER_ENABLED") == "true"
 	mux := http.NewServeMux()
-	mux.Handle("POST /mcp", agent.NewMCPHandler(desktop))
+	mux.Handle("POST /mcp", mcpHandler)
 	mcpServer := &http.Server{
 		Addr:              "127.0.0.1:9091",
 		Handler:           mux,
@@ -92,7 +94,9 @@ func main() {
 
 func serveMCPStdio(ctx context.Context) error {
 	desktop := newSandboxDesktop()
-	return agent.NewMCPHandler(desktop).ServeStream(ctx, os.Stdin, os.Stdout)
+	h := agent.NewMCPHandler(desktop)
+	h.BrokerEnabled = os.Getenv("BOTBOX_AUTH_BROKER_ENABLED") == "true"
+	return h.ServeStream(ctx, os.Stdin, os.Stdout)
 }
 
 func newSandboxDesktop() *agent.DesktopService {

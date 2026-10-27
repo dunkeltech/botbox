@@ -23,6 +23,15 @@ var (
 // tools and refresh the screen after a human has used the desktop.
 const DesktopGuidance = "Desktop tools are available: screenshot, pointer, keyboard, and browser tools (navigate, click_selector, fill, read_text). Prefer shell commands and browser tools over pixel clicks. The desktop is 1280 by 800; coordinates on a downscaled screenshot are scaled back to that desktop. After a human uses the desktop, take a fresh screenshot before acting."
 
+// DesktopGuidanceFor appends isolated broker login guidance when the external
+// authentication broker is active on the control plane.
+func DesktopGuidanceFor(brokerEnabled bool) string {
+	if !brokerEnabled {
+		return DesktopGuidance
+	}
+	return DesktopGuidance + " For website logins on reviewed adapters (odoo_staging, gitlab_web, github_web), never enter credentials into the sandbox browser; call request_secret(kind=\"browser_login\", adapter_id=..., reason=...) and then use broker_open, broker_read, broker_click, and broker_screenshot with the returned broker_session_id."
+}
+
 // HandbackNote is the system note sent when a person returns the desktop to the bot.
 const HandbackNote = "A human used the desktop; take a fresh screenshot."
 

@@ -1,7 +1,9 @@
 package agent_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -13,9 +15,8 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/desk"
 )
 
-func TestCDPBrowserNavigateAndRejectsSchemes(t *testing.T) {
-	t.Parallel()
-	var methods []string
+func newMockCDPServer(t *testing.T, respond func(method string, params json.RawMessage) []byte) *httptest.Server {
+	t.Helper()
 	mux := http.NewServeMux()
 	var server *httptest.Server
 	mux.HandleFunc("/json/list", func(w http.ResponseWriter, _ *http.Request) {
@@ -41,15 +42,23 @@ func TestCDPBrowserNavigateAndRejectsSchemes(t *testing.T) {
 		if json.Unmarshal(data, &req) != nil {
 			return
 		}
-		methods = append(methods, req.Method)
-		payload := []byte(`{"id":1,"result":{}}`)
-		if req.Method == "Runtime.evaluate" {
-			payload = []byte(`{"id":1,"result":{"result":{"value":"clicked"}}}`)
-		}
-		_ = conn.Write(r.Context(), websocket.MessageText, payload)
+		_ = conn.Write(r.Context(), websocket.MessageText, respond(req.Method, req.Params))
 	})
 	server = httptest.NewServer(mux)
-	defer server.Close()
+	t.Cleanup(server.Close)
+	return server
+}
+
+func TestCDPBrowserNavigateAndRejectsSchemes(t *testing.T) {
+	t.Parallel()
+	var methods []string
+	server := newMockCDPServer(t, func(method string, _ json.RawMessage) []byte {
+		methods = append(methods, method)
+		if method == "Runtime.evaluate" {
+			return []byte(`{"id":1,"result":{"result":{"value":"clicked"}}}`)
+		}
+		return []byte(`{"id":1,"result":{}}`)
+	})
 	browser := agent.NewCDPBrowser(server.URL)
 	if err := browser.Navigate(context.Background(), "file:///etc/passwd"); err == nil {
 		t.Fatal("file url was accepted")
@@ -66,5 +75,56 @@ func TestCDPBrowserNavigateAndRejectsSchemes(t *testing.T) {
 	desktop := agent.NewDesktopService(nil)
 	if _, err := desktop.Perform(context.Background(), desk.Action{Kind: desk.KindBrowserNavigate, URL: desk.FormURL}); err == nil {
 		t.Fatal("missing browser should fail")
+	}
+}
+
+func TestCDPBrowserLargeResponsesAndLimitEnforcement(t *testing.T) {
+	t.Parallel()
+	largeText := strings.Repeat("x", 64<<10)
+	largeImage := bytes.Repeat([]byte{0x89, 0x50, 0x4e, 0x47}, 16<<10)
+	largeEncoded := base64.StdEncoding.EncodeToString(largeImage)
+
+	server := newMockCDPServer(t, func(method string, _ json.RawMessage) []byte {
+		if method == "Page.captureScreenshot" {
+			payload, _ := json.Marshal(map[string]any{
+				"id":     1,
+				"result": map[string]any{"data": largeEncoded},
+			})
+			return payload
+		}
+		payload, _ := json.Marshal(map[string]any{
+			"id":     1,
+			"result": map[string]any{"result": map[string]any{"value": largeText}},
+		})
+		return payload
+	})
+	browser := agent.NewCDPBrowser(server.URL)
+
+	shot, err := browser.Shot(context.Background(), "")
+	if err != nil {
+		t.Fatalf("Shot failed for >32 KiB response: %v", err)
+	}
+	if !bytes.Equal(shot, largeImage) {
+		t.Fatalf("shot len = %d, want %d", len(shot), len(largeImage))
+	}
+
+	readText, err := browser.Read(context.Background(), "")
+	if err != nil {
+		t.Fatalf("Read failed for >32 KiB response: %v", err)
+	}
+	if readText != largeText {
+		t.Fatalf("readText len = %d, want %d", len(readText), len(largeText))
+	}
+
+	oversized := make([]byte, agent.MaxCDPMessageBytes+1)
+	for i := range oversized {
+		oversized[i] = 'a'
+	}
+	oversizedServer := newMockCDPServer(t, func(string, json.RawMessage) []byte {
+		return oversized
+	})
+	oversizedBrowser := agent.NewCDPBrowser(oversizedServer.URL)
+	if _, err := oversizedBrowser.Read(context.Background(), ""); err == nil || !strings.Contains(err.Error(), "message too big") {
+		t.Fatalf("expected message too big error, got %v", err)
 	}
 }

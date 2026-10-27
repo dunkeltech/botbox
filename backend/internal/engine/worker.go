@@ -10,26 +10,34 @@ import (
 	"time"
 
 	"github.com/dunkeltech/botbox/backend/internal/approvals"
+	"github.com/dunkeltech/botbox/backend/internal/authbroker"
 	"github.com/dunkeltech/botbox/backend/internal/budgets"
 	"github.com/dunkeltech/botbox/backend/internal/events"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
 	"github.com/dunkeltech/botbox/backend/internal/groups"
 	"github.com/dunkeltech/botbox/backend/internal/notify"
+	"github.com/dunkeltech/botbox/backend/internal/secretrequests"
 	"github.com/dunkeltech/botbox/backend/internal/secrets/llmproxy"
+	"github.com/dunkeltech/botbox/backend/internal/secrets/mitmproxy"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// ErrTurnWaitingSecret indicates the turn paused on a durable secret_request
+// and must remain in waiting_secret until fulfilled, denied, expired, or cancelled.
+var ErrTurnWaitingSecret = errors.New("turn waiting for secret")
+
 // Session contains only one conversation's context and public bot configuration.
 // Preface is the group brief for this turn. Direct messages leave it empty so
 // a DM prompt is not wrapped in a second session (ADR-0015).
 type Session struct {
-	WorkspaceID, BotID, ConversationID uuid.UUID
-	Bot                                db.Bot
-	Messages                           []db.Message
-	Preface                            string
+	WorkspaceID, BotID, ConversationID, TurnID uuid.UUID
+	Bot                                        db.Bot
+	Messages                                   []db.Message
+	Preface                                    string
+	ContinuationPrompt                         string
 }
 
 // ExecuteTurn runs one bounded turn and propagates event sink failures.
@@ -38,12 +46,13 @@ type ExecuteTurn func(context.Context, Session, func(Event) error) error
 // Worker makes JetStream redelivery harmless using persisted turn states.
 // Running turns are never replayed automatically because tools may have side effects.
 type Worker struct {
-	Now     func() time.Time
-	mu      sync.Mutex
-	active  map[string]context.CancelFunc
-	Pool    *pgxpool.Pool
-	Execute ExecuteTurn
-	Publish func(context.Context, Session, Event) error
+	Now        func() time.Time
+	mu         sync.Mutex
+	active     map[string]context.CancelFunc
+	Pool       *pgxpool.Pool
+	AuthBroker authbroker.Client
+	Execute    ExecuteTurn
+	Publish    func(context.Context, Session, Event) error
 	// Enqueue publishes the next group turn. Direct messages do not use it.
 	Enqueue func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) error
 	// Signal publishes notification ids on the conversation channel. Nil skips it.
@@ -158,7 +167,16 @@ func (w *Worker) executeClaimed(ctx context.Context, tx pgx.Tx, turn db.BotTurn,
 	if err != nil {
 		return err
 	}
-	session := Session{WorkspaceID: uuidID(turn.WorkspaceID), BotID: uuidID(turn.BotID), ConversationID: uuidID(turn.ConversationID), Bot: bot, Messages: history, Preface: preface}
+	session := Session{
+		WorkspaceID:        uuidID(turn.WorkspaceID),
+		BotID:              uuidID(turn.BotID),
+		ConversationID:     uuidID(turn.ConversationID),
+		TurnID:             uuidID(turn.ID),
+		Bot:                bot,
+		Messages:           history,
+		Preface:            preface,
+		ContinuationPrompt: turn.ContinuationPrompt,
+	}
 	stop, err := groups.ScreenBudget(ctx, w.Pool, turn.WorkspaceID, turn.ConversationID, turn.BotID, turn.MessageID, w.Signal)
 	if err != nil {
 		return err
@@ -173,6 +191,7 @@ func (w *Worker) executeClaimed(ctx context.Context, tx pgx.Tx, turn db.BotTurn,
 		return nil
 	}
 	var text replyText
+	var waitingSecret bool
 	emit := func(ev Event) error {
 		ev.TurnID = uuidID(turn.ID).String()
 		switch ev.Kind {
@@ -181,6 +200,52 @@ func (w *Worker) executeClaimed(ctx context.Context, tx pgx.Tx, turn db.BotTurn,
 				return err
 			}
 		case EventKindToolCall, EventKindToolResult:
+			if ev.Kind == EventKindToolCall && IsRequestSecretTool(ev.ToolName) {
+				var reqArgs struct {
+					Kind               string `json:"kind"`
+					AdapterID          string `json:"adapter_id"`
+					TargetOrigin       string `json:"target_origin"`
+					Reason             string `json:"reason"`
+					EnvPlaceholderName string `json:"env_placeholder_name"`
+					UsernameHint       string `json:"username_hint"`
+				}
+				if uErr := json.Unmarshal(ev.ToolInput, &reqArgs); uErr == nil {
+					canCreate := false
+					switch reqArgs.Kind {
+					case secretrequests.KindCLIEgress:
+						_, ok := mitmproxy.LookupAdapter(reqArgs.AdapterID)
+						canCreate = ok && strings.TrimSpace(reqArgs.Reason) != "" && mitmproxy.ValidateEnvPlaceholderName(reqArgs.EnvPlaceholderName) == nil
+					case secretrequests.KindBrowserLogin:
+						_, ok := authbroker.LookupLoginAdapter(reqArgs.AdapterID)
+						canCreate = w.AuthBroker != nil && ok && strings.TrimSpace(reqArgs.Reason) != "" && strings.TrimSpace(reqArgs.EnvPlaceholderName) == ""
+					}
+					if canCreate {
+						res, srErr := secretrequests.CreateRequest(ctx, w.Pool, secretrequests.CreateInput{
+							WorkspaceID:        session.WorkspaceID,
+							BotID:              session.BotID,
+							ConversationID:     session.ConversationID,
+							TurnID:             session.TurnID,
+							ToolCallID:         ev.ToolID,
+							Kind:               reqArgs.Kind,
+							AdapterID:          reqArgs.AdapterID,
+							TargetOrigin:       reqArgs.TargetOrigin,
+							Reason:             reqArgs.Reason,
+							EnvPlaceholderName: reqArgs.EnvPlaceholderName,
+							UsernameHint:       reqArgs.UsernameHint,
+							Broker:             w.AuthBroker,
+							Now:                w.now(),
+						})
+						if srErr != nil {
+							return srErr
+						}
+						waitingSecret = true
+						if w.Publish != nil {
+							_ = w.Publish(ctx, session, Event{Kind: EventKindCard, Text: res.Card.Reason, Metadata: res.Message.Metadata, TurnID: ev.TurnID})
+						}
+						return ErrTurnWaitingSecret
+					}
+				}
+			}
 			if ev.Kind == EventKindToolCall {
 				ev.Text = ev.ToolName + "\n" + string(ev.ToolInput)
 				// The card is the gate. bot.Box does not push; the git host still
@@ -288,7 +353,9 @@ func (w *Worker) executeClaimed(ctx context.Context, tx pgx.Tx, turn db.BotTurn,
 		runErr = runWithLifecycle(runCtx, w.Execute, session, input, emit)
 	}
 	status, code := "completed", ""
-	if runErr != nil {
+	if waitingSecret || errors.Is(runErr, ErrTurnWaitingSecret) {
+		status = "waiting_secret"
+	} else if runErr != nil {
 		status, code = "failed", TurnFailureCode(runErr)
 		if errors.Is(runErr, llmproxy.ErrBudgetExceeded) {
 			status, code = "budget_exceeded", "budget_exceeded"
@@ -309,6 +376,24 @@ func (w *Worker) executeClaimed(ctx context.Context, tx pgx.Tx, turn db.BotTurn,
 		if err != nil {
 			return fmt.Errorf("persist bot reply: %w", err)
 		}
+	}
+	if status == "waiting_secret" {
+		if w.Publish != nil {
+			return w.Publish(finalCtx, session, Event{Kind: EventKindStatus, Status: "idle"})
+		}
+		return nil
+	}
+	// Terminal turn completion revokes ephemeral secret leases and cancels any dangling requests.
+	if _, revErr := q.RevokeSecretLeasesForTurn(finalCtx, db.RevokeSecretLeasesForTurnParams{
+		WorkspaceID: turn.WorkspaceID,
+		TurnID:      turn.ID,
+		RevokedAt:   pgtype.Timestamptz{Time: w.now(), Valid: true},
+		Reason:      "turn_" + status,
+	}); revErr != nil {
+		return revErr
+	}
+	if cancelErr := secretrequests.CancelForTurnWithBroker(finalCtx, w.Pool, w.AuthBroker, uuidID(turn.WorkspaceID), uuidID(turn.ID)); cancelErr != nil {
+		return cancelErr
 	}
 	if kind == "group" && text.Len() > 0 && status == "completed" {
 		if err = approvals.NoteReply(finalCtx, w.Pool, turn, text.String(), w.Signal); err != nil {

@@ -313,6 +313,129 @@ paths:
         '409': {description: Already decided, host already allowed, or cap still exhausted}
         '429': {description: Bot queue is full}
         '503': {description: Turn queue is unavailable}
+  /api/workspaces/{workspaceID}/secret-requests/{requestID}/fulfill:
+    parameters:
+      - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: requestID, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      operationId: fulfillSecretRequest
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/FulfillSecretRequestBody'}
+      responses:
+        '200':
+          description: Secret encrypted and stored outside the sandbox; turn queued for non-secret continuation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SecretRequestResult'}
+        '400': {description: Invalid request input}
+        '401': {description: Authentication required}
+        '403': {description: Insufficient role for secret fulfillment or scope}
+        '404': {description: Secret request not visible to caller}
+        '409': {description: Request already decided, expired, host not allowlisted, or conflicting secret rule}
+        '422': {description: Unsupported secret request capability (such as browser_login before isolated broker)}
+        '503': {description: Turn queue or encryption dependency unavailable}
+  /api/workspaces/{workspaceID}/secret-requests/{requestID}/deny:
+    parameters:
+      - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: requestID, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      operationId: denySecretRequest
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Secret request denied; turn queued for continuation without credentials.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SecretRequestResult'}
+        '400': {description: Invalid request identifier}
+        '401': {description: Authentication required}
+        '403': {description: Viewer cannot deny secret requests}
+        '404': {description: Secret request not visible to caller}
+        '409': {description: Request already decided or expired}
+        '503': {description: Turn queue unavailable}
+  /api/workspaces/{workspaceID}/secret-requests/{requestID}/broker-takeover/start:
+    parameters:
+      - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: requestID, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      operationId: startBrokerTakeover
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Human-only takeover started on isolated broker; bot access and captures disabled.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BrokerTakeoverState'}
+        '401': {description: Authentication required}
+        '403': {description: Insufficient role or takeover owned by another user}
+        '404': {description: Secret request not visible to caller}
+        '409': {description: Request not eligible for takeover}
+        '422': {description: Broker capability disabled}
+  /api/workspaces/{workspaceID}/secret-requests/{requestID}/broker-takeover/frame:
+    parameters:
+      - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: requestID, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: ticket, in: query, required: false, schema: {type: string}}
+    get:
+      operationId: getBrokerTakeoverFrame
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: PNG frame captured from the isolated broker viewport for the takeover owner only.
+          content:
+            image/png:
+              schema: {type: string, format: binary}
+        '401': {description: Authentication required}
+        '403': {description: Takeover belongs to another user or viewer}
+        '404': {description: Secret request not visible to caller}
+        '409': {description: Takeover is not active}
+        '422': {description: Broker capability disabled}
+  /api/workspaces/{workspaceID}/secret-requests/{requestID}/broker-takeover/input:
+    parameters:
+      - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: requestID, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      operationId: sendBrokerTakeoverInput
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/BrokerTakeoverInputBody'}
+      responses:
+        '200':
+          description: Takeover UI event forwarded exclusively to isolated broker viewport.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BrokerTakeoverState'}
+        '400': {description: Invalid takeover input}
+        '401': {description: Authentication required}
+        '403': {description: Takeover belongs to another user or viewer}
+        '404': {description: Secret request not visible to caller}
+        '409': {description: Takeover is not active}
+        '422': {description: Broker capability disabled}
+  /api/workspaces/{workspaceID}/secret-requests/{requestID}/broker-takeover/complete:
+    parameters:
+      - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: requestID, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      operationId: completeBrokerTakeover
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Human takeover verified and completed; bot turn resumed with non-secret broker session reference.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SecretRequestResult'}
+        '401': {description: Authentication required}
+        '403': {description: Takeover belongs to another user or viewer}
+        '404': {description: Secret request not visible to caller}
+        '409': {description: Takeover not active or broker landed outside adapter-permitted origin}
+        '422': {description: Broker capability disabled}
   /api/workspaces/{workspaceID}/notifications:
     parameters:
       - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
@@ -1946,7 +2069,13 @@ paths:
               $ref: '#/components/schemas/UpdateEgressPolicyRequest'
       responses:
         '200':
-          description: Bot egress policy updated
+          description: Bot egress policy updated and acknowledged by running proxy (or bot is not running)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EgressPolicyResponse'
+        '202':
+          description: Bot egress policy saved; running proxy acknowledgement is pending
           content:
             application/json:
               schema:
@@ -1971,6 +2100,18 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
         '404':
           description: Workspace or bot not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '409':
+          description: Stale policy revision conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '428':
+          description: Expected policy revision precondition required
           content:
             application/json:
               schema:
@@ -2130,9 +2271,73 @@ components:
         # A group transcript has several speakers. The ids are omitted for system rows.
         senderUserId: {type: string, format: uuid}
         senderBotId: {type: string, format: uuid}
-        kind: {type: string, enum: [text, tool, system, card, approval]}
+        kind: {type: string, enum: [text, tool, system, card, approval, secret_request]}
         content: {type: string}
+        secretRequest: {$ref: '#/components/schemas/SecretRequestSummary'}
         createdAt: {type: string, format: date-time}
+    SecretRequestKind:
+      type: string
+      enum: [cli_egress, browser_login]
+    SecretRequestStatus:
+      type: string
+      enum: [pending, fulfilling, fulfilled, denied, expired, cancelled, failed]
+    SecretRequestScope:
+      type: string
+      enum: [ephemeral, bot_secret, workspace_secret]
+    SecretRequestSummary:
+      type: object
+      required: [secretRequestId, kind, status, adapterId, targetOrigin, reason]
+      properties:
+        secretRequestId: {type: string, format: uuid}
+        kind: {$ref: '#/components/schemas/SecretRequestKind'}
+        status: {$ref: '#/components/schemas/SecretRequestStatus'}
+        adapterId: {type: string}
+        adapterLabel: {type: string}
+        targetOrigin: {type: string}
+        headerScheme: {type: string}
+        envPlaceholderName: {type: string}
+        placeholderValue: {type: string}
+        reason: {type: string}
+        grantedScope: {type: string}
+        expiresAt: {type: string}
+        errorCode: {type: string}
+        brokerEnabled: {type: boolean}
+        brokerSessionId: {type: string, format: uuid}
+        takeoverActive: {type: boolean}
+    FulfillSecretRequestBody:
+      type: object
+      required: [secretValue, scope]
+      properties:
+        secretValue: {type: string, minLength: 1, maxLength: 16384}
+        username: {type: string, maxLength: 255}
+        scope: {$ref: '#/components/schemas/SecretRequestScope'}
+        replaceExisting: {type: boolean}
+    SecretRequestResult:
+      type: object
+      required: [secretRequest]
+      properties:
+        secretRequest: {$ref: '#/components/schemas/SecretRequestSummary'}
+        mfaRequired: {type: boolean}
+    BrokerTakeoverState:
+      type: object
+      required: [secretRequest, brokerSessionId, origin, takeoverActive]
+      properties:
+        secretRequest: {$ref: '#/components/schemas/SecretRequestSummary'}
+        brokerSessionId: {type: string, format: uuid}
+        origin: {type: string}
+        pageUrl: {type: string}
+        takeoverActive: {type: boolean}
+        captureSuppressed: {type: boolean}
+        takeoverTicket: {type: string}
+    BrokerTakeoverInputBody:
+      type: object
+      required: [kind]
+      properties:
+        kind: {type: string, enum: [click, type, key]}
+        x: {type: number, format: double}
+        y: {type: number, format: double}
+        text: {type: string, maxLength: 1024}
+        key: {type: string, maxLength: 64}
     Approval:
       type: object
       required: [id, botId, kind, status, createdAt]
@@ -2181,7 +2386,7 @@ components:
       required: [id, status, queueAhead, errorCode]
       properties:
         id: {type: string, format: uuid}
-        status: {type: string, enum: [queued, running, completed, failed, interrupted, budget_exceeded]}
+        status: {type: string, enum: [queued, running, waiting_secret, completed, failed, interrupted, budget_exceeded]}
         queueAhead: {type: integer, format: int64}
         errorCode: {type: string}
     ChatHistory:
@@ -3065,9 +3270,23 @@ components:
       type: string
       enum: [allowlist, open]
 
+    EgressEnforcementStatus:
+      type: string
+      enum: [applied, pending, not_running]
+
     EgressPolicyResponse:
       type: object
-      required: [botId, workspaceId, policy, allowedHosts, effectiveSecretHosts, updatedAt]
+      required:
+        - botId
+        - workspaceId
+        - policy
+        - allowedHosts
+        - blockedHosts
+        - effectiveSecretHosts
+        - revision
+        - acknowledgedRevision
+        - enforcementStatus
+        - updatedAt
       properties:
         botId:
           type: string
@@ -3081,17 +3300,29 @@ components:
           type: array
           items:
             type: string
+        blockedHosts:
+          type: array
+          items:
+            type: string
         effectiveSecretHosts:
           type: array
           items:
             type: string
+        revision:
+          type: integer
+          format: int64
+        acknowledgedRevision:
+          type: integer
+          format: int64
+        enforcementStatus:
+          $ref: '#/components/schemas/EgressEnforcementStatus'
         updatedAt:
           type: string
           format: date-time
 
     UpdateEgressPolicyRequest:
       type: object
-      required: [policy, allowedHosts]
+      required: [policy, allowedHosts, expectedRevision]
       properties:
         policy:
           $ref: '#/components/schemas/EgressPolicyMode'
@@ -3099,6 +3330,13 @@ components:
           type: array
           items:
             type: string
+        blockedHosts:
+          type: array
+          items:
+            type: string
+        expectedRevision:
+          type: integer
+          format: int64
 
     EgressLogAction:
       type: string

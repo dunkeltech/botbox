@@ -76,6 +76,7 @@ type BotSecret struct {
 	CreatedBy       pgtype.UUID        `json:"created_by"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	AdapterID       string             `json:"adapter_id"`
 }
 
 type BotSession struct {
@@ -87,16 +88,38 @@ type BotSession struct {
 }
 
 type BotTurn struct {
-	ID             pgtype.UUID        `json:"id"`
-	Position       int64              `json:"position"`
-	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
-	BotID          pgtype.UUID        `json:"bot_id"`
-	ConversationID pgtype.UUID        `json:"conversation_id"`
-	MessageID      pgtype.UUID        `json:"message_id"`
-	Status         string             `json:"status"`
-	ErrorCode      string             `json:"error_code"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	ID                 pgtype.UUID        `json:"id"`
+	Position           int64              `json:"position"`
+	WorkspaceID        pgtype.UUID        `json:"workspace_id"`
+	BotID              pgtype.UUID        `json:"bot_id"`
+	ConversationID     pgtype.UUID        `json:"conversation_id"`
+	MessageID          pgtype.UUID        `json:"message_id"`
+	Status             string             `json:"status"`
+	ErrorCode          string             `json:"error_code"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	ContinuationPrompt string             `json:"continuation_prompt"`
+}
+
+type BrokerSession struct {
+	ID                pgtype.UUID        `json:"id"`
+	WorkspaceID       pgtype.UUID        `json:"workspace_id"`
+	BotID             pgtype.UUID        `json:"bot_id"`
+	ConversationID    pgtype.UUID        `json:"conversation_id"`
+	TurnID            pgtype.UUID        `json:"turn_id"`
+	AdapterID         string             `json:"adapter_id"`
+	Origin            string             `json:"origin"`
+	TargetID          string             `json:"target_id"`
+	FrameID           string             `json:"frame_id"`
+	DocumentID        string             `json:"document_id"`
+	FormAction        string             `json:"form_action"`
+	Status            string             `json:"status"`
+	CaptureSuppressed bool               `json:"capture_suppressed"`
+	TakeoverUserID    pgtype.UUID        `json:"takeover_user_id"`
+	ExpiresAt         pgtype.Timestamptz `json:"expires_at"`
+	RevokedAt         pgtype.Timestamptz `json:"revoked_at"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 }
 
 type Budget struct {
@@ -158,6 +181,14 @@ type DesktopAction struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
+type EgressInvalidationIntent struct {
+	BotID          pgtype.UUID        `json:"bot_id"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	TargetRevision int64              `json:"target_revision"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
 type EgressLog struct {
 	ID               pgtype.UUID        `json:"id"`
 	WorkspaceID      pgtype.UUID        `json:"workspace_id"`
@@ -177,11 +208,15 @@ type EgressLog struct {
 }
 
 type EgressRule struct {
-	BotID        pgtype.UUID        `json:"bot_id"`
-	WorkspaceID  pgtype.UUID        `json:"workspace_id"`
-	Policy       string             `json:"policy"`
-	AllowedHosts []string           `json:"allowed_hosts"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	BotID                pgtype.UUID        `json:"bot_id"`
+	WorkspaceID          pgtype.UUID        `json:"workspace_id"`
+	Policy               string             `json:"policy"`
+	AllowedHosts         []string           `json:"allowed_hosts"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	BlockedHosts         []string           `json:"blocked_hosts"`
+	Revision             int64              `json:"revision"`
+	AcknowledgedRevision int64              `json:"acknowledged_revision"`
+	AcknowledgedAt       pgtype.Timestamptz `json:"acknowledged_at"`
 }
 
 type Environment struct {
@@ -257,6 +292,62 @@ type RefreshToken struct {
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 }
 
+type SecretLease struct {
+	ID               pgtype.UUID        `json:"id"`
+	WorkspaceID      pgtype.UUID        `json:"workspace_id"`
+	BotID            pgtype.UUID        `json:"bot_id"`
+	SecretRequestID  pgtype.UUID        `json:"secret_request_id"`
+	TurnID           pgtype.UUID        `json:"turn_id"`
+	ConversationID   pgtype.UUID        `json:"conversation_id"`
+	AdapterID        string             `json:"adapter_id"`
+	DomainMatch      string             `json:"domain_match"`
+	Port             string             `json:"port"`
+	AuthScheme       string             `json:"auth_scheme"`
+	HeaderName       string             `json:"header_name"`
+	Username         string             `json:"username"`
+	PlaceholderEnv   string             `json:"placeholder_env"`
+	PlaceholderValue string             `json:"placeholder_value"`
+	KekID            string             `json:"kek_id"`
+	WrappedDek       []byte             `json:"wrapped_dek"`
+	EncryptedValue   []byte             `json:"encrypted_value"`
+	ExpiresAt        pgtype.Timestamptz `json:"expires_at"`
+	RevokedAt        pgtype.Timestamptz `json:"revoked_at"`
+	RevocationReason string             `json:"revocation_reason"`
+	CreatedBy        pgtype.UUID        `json:"created_by"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
+type SecretRequest struct {
+	ID                 pgtype.UUID        `json:"id"`
+	WorkspaceID        pgtype.UUID        `json:"workspace_id"`
+	BotID              pgtype.UUID        `json:"bot_id"`
+	ConversationID     pgtype.UUID        `json:"conversation_id"`
+	MessageID          pgtype.UUID        `json:"message_id"`
+	TurnID             pgtype.UUID        `json:"turn_id"`
+	ToolCallID         string             `json:"tool_call_id"`
+	Kind               string             `json:"kind"`
+	AdapterID          string             `json:"adapter_id"`
+	TargetOrigin       string             `json:"target_origin"`
+	Reason             string             `json:"reason"`
+	EnvPlaceholderName string             `json:"env_placeholder_name"`
+	PlaceholderValue   string             `json:"placeholder_value"`
+	UsernameHint       string             `json:"username_hint"`
+	Status             string             `json:"status"`
+	OperationID        pgtype.UUID        `json:"operation_id"`
+	GrantedScope       string             `json:"granted_scope"`
+	DecidedBy          pgtype.UUID        `json:"decided_by"`
+	DecidedAt          pgtype.Timestamptz `json:"decided_at"`
+	ExpiresAt          pgtype.Timestamptz `json:"expires_at"`
+	ErrorCode          string             `json:"error_code"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	BrokerSessionID    pgtype.UUID        `json:"broker_session_id"`
+	BrokerTargetID     string             `json:"broker_target_id"`
+	BrokerFrameID      string             `json:"broker_frame_id"`
+	BrokerDocumentID   string             `json:"broker_document_id"`
+	BrokerFormAction   string             `json:"broker_form_action"`
+}
+
 type SystemInfo struct {
 	Key       string             `json:"key"`
 	Value     string             `json:"value"`
@@ -325,4 +416,5 @@ type WorkspaceSecret struct {
 	CreatedBy       pgtype.UUID        `json:"created_by"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	AdapterID       string             `json:"adapter_id"`
 }

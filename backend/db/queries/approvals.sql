@@ -64,18 +64,5 @@ WHERE workspace_id = $1 AND conversation_id = $2 AND kind = 'text'
 ORDER BY position DESC
 LIMIT 1;
 
--- name: AddEgressHost :one
--- Insert only the approved host. An open policy is refused by the caller
--- before this write, so denial never reaches here (ADR-0015).
-INSERT INTO egress_rules (bot_id, workspace_id, policy, allowed_hosts)
-VALUES ($1, $2, 'allowlist', ARRAY[sqlc.arg(host)::text])
-ON CONFLICT (bot_id) DO UPDATE
-SET allowed_hosts = CASE
-        WHEN sqlc.arg(host)::text = ANY (egress_rules.allowed_hosts) THEN egress_rules.allowed_hosts
-        ELSE egress_rules.allowed_hosts || ARRAY[sqlc.arg(host)::text]
-    END,
-    updated_at = now()
-RETURNING bot_id, workspace_id, policy, allowed_hosts, updated_at;
-
 -- name: GetBudgetForUpdate :one
 SELECT * FROM budgets WHERE workspace_id = $1 AND id = $2 FOR UPDATE;

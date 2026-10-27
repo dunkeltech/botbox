@@ -39,6 +39,7 @@ type Provider struct {
 	MaxSteps       int
 	MaxScreenshots int
 	MaxTurnTokens  int64
+	BrokerEnabled  bool
 	// Computer selects anthropic, openai, or generic computer-use tools.
 	Computer string
 }
@@ -100,7 +101,89 @@ func (p *Provider) Run(ctx context.Context, messages []Message, emit func(engine
 				}
 				tools = append(tools, map[string]any{"type": "function", "function": map[string]any{"name": name, "parameters": map[string]any{"type": "object", "properties": properties, "required": required, "additionalProperties": false}}})
 			}
+			tools = append(tools, map[string]any{
+				"type": "function",
+				"function": map[string]any{
+					"name": "request_secret",
+					"parameters": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"kind":                 map[string]any{"type": "string", "enum": []string{"cli_egress", "browser_login"}},
+							"adapter_id":           map[string]any{"type": "string"},
+							"reason":               map[string]any{"type": "string"},
+							"target_origin":        map[string]any{"type": "string"},
+							"env_placeholder_name": map[string]any{"type": "string"},
+							"username_hint":        map[string]any{"type": "string"},
+						},
+						"required":             []string{"kind", "adapter_id", "reason"},
+						"additionalProperties": false,
+					},
+				},
+			})
 			tools = append(tools, computerTools(p.Computer)...)
+			if p.BrokerEnabled {
+				tools = append(tools,
+					map[string]any{
+						"type": "function",
+						"function": map[string]any{
+							"name": "broker_open",
+							"parameters": map[string]any{
+								"type": "object",
+								"properties": map[string]any{
+									"broker_session_id": map[string]any{"type": "string"},
+									"url":               map[string]any{"type": "string"},
+								},
+								"required":             []string{"broker_session_id", "url"},
+								"additionalProperties": false,
+							},
+						},
+					},
+					map[string]any{
+						"type": "function",
+						"function": map[string]any{
+							"name": "broker_read",
+							"parameters": map[string]any{
+								"type": "object",
+								"properties": map[string]any{
+									"broker_session_id": map[string]any{"type": "string"},
+									"selector":          map[string]any{"type": "string"},
+								},
+								"required":             []string{"broker_session_id", "selector"},
+								"additionalProperties": false,
+							},
+						},
+					},
+					map[string]any{
+						"type": "function",
+						"function": map[string]any{
+							"name": "broker_click",
+							"parameters": map[string]any{
+								"type": "object",
+								"properties": map[string]any{
+									"broker_session_id": map[string]any{"type": "string"},
+									"selector":          map[string]any{"type": "string"},
+								},
+								"required":             []string{"broker_session_id", "selector"},
+								"additionalProperties": false,
+							},
+						},
+					},
+					map[string]any{
+						"type": "function",
+						"function": map[string]any{
+							"name": "broker_screenshot",
+							"parameters": map[string]any{
+								"type": "object",
+								"properties": map[string]any{
+									"broker_session_id": map[string]any{"type": "string"},
+								},
+								"required":             []string{"broker_session_id"},
+								"additionalProperties": false,
+							},
+						},
+					},
+				)
+			}
 		}
 		payload := map[string]any{"model": p.Model, "messages": history, "stream": true, "stream_options": map[string]bool{"include_usage": true}, "max_tokens": 4096}
 		if len(tools) > 0 {

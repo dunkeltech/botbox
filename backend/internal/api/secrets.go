@@ -1,9 +1,11 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -18,6 +20,7 @@ import (
 	"time"
 
 	"github.com/dunkeltech/botbox/backend/internal/approvals"
+	"github.com/dunkeltech/botbox/backend/internal/egresspolicy"
 	"github.com/dunkeltech/botbox/backend/internal/gen/api"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
 	"github.com/dunkeltech/botbox/backend/internal/notify"
@@ -35,14 +38,12 @@ import (
 const (
 	maxSecretNameLen      = 128
 	maxSecretValueBytes   = 65536
-	maxAllowedHostsCount  = 200
 	defaultEgressLogLimit = 100
 	maxEgressLogLimit     = 200
 )
 
 var (
 	secretNamePattern   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
-	dnsLabelPattern     = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
 	httpHeaderNameRegex = regexp.MustCompile(`^[!#$%&'*+\-.^_` + "`" + `|~0-9A-Za-z]{1,128}$`)
 )
 
@@ -76,7 +77,7 @@ func mustEphemeralKeyRing(logger *slog.Logger) *secrets.KeyRing {
 }
 
 func secretAAD(workspaceID uuid.UUID, scope string, secretID uuid.UUID) []byte {
-	return fmt.Appendf(nil, "workspace:%s/scope:%s/id:%s", workspaceID, scope, secretID)
+	return secrets.SecretAAD(workspaceID, scope, secretID)
 }
 
 type validatedSecretInput struct {
@@ -177,36 +178,7 @@ func validateSecretValue(val string) (string, bool) {
 }
 
 func normalizeAndValidateHost(raw string) (string, bool) {
-	host := strings.ToLower(strings.TrimSpace(raw))
-	if host == "" || len(host) > 253 {
-		return "", false
-	}
-	if strings.Contains(host, "://") || strings.ContainsAny(host, "/?#@:* \t\r\n") || strings.HasSuffix(host, ".") {
-		return "", false
-	}
-	labels := strings.Split(host, ".")
-	if len(labels) < 2 {
-		return "", false
-	}
-	for _, label := range labels {
-		if !dnsLabelPattern.MatchString(label) {
-			return "", false
-		}
-	}
-	return host, true
-}
-
-func normalizeAndValidateAllowedHostPattern(raw string) (string, bool) {
-	pattern := strings.ToLower(strings.TrimSpace(raw))
-	if strings.HasPrefix(pattern, "*.") {
-		rest := strings.TrimPrefix(pattern, "*.")
-		host, ok := normalizeAndValidateHost(rest)
-		if !ok {
-			return "", false
-		}
-		return "*." + host, true
-	}
-	return normalizeAndValidateHost(pattern)
+	return egresspolicy.NormalizeAndValidateHost(raw)
 }
 
 func (s *server) loadWorkspaceBotForSecret(w http.ResponseWriter, r *http.Request, requireManage bool) (db.GetWorkspaceByIDForUserRow, db.Bot, uuid.UUID, bool) {
@@ -683,6 +655,65 @@ func (s *server) handleDeleteBotSecret(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+type egressPolicyRevisionNotifier interface {
+	PublishEgressPolicyRevision(context.Context, uuid.UUID, uuid.UUID, int64) (int64, error)
+}
+
+func isBotEnvironmentLive(ctx context.Context, q *db.Queries, wsPG, botPG pgtype.UUID) (bool, error) {
+	envRow, err := q.GetEnvironmentByWorkspaceAndBot(ctx, db.GetEnvironmentByWorkspaceAndBotParams{
+		WorkspaceID: wsPG,
+		ID:          botPG,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return envRow.Status == "running" || envRow.Status == "creating", nil
+}
+
+func computeEnforcementStatus(liveProxy bool, revision, ackedRevision int64) api.EgressEnforcementStatus {
+	if !liveProxy {
+		return api.EgressEnforcementStatusNotRunning
+	}
+	if ackedRevision >= revision {
+		return api.EgressEnforcementStatusApplied
+	}
+	return api.EgressEnforcementStatusPending
+}
+
+func buildEgressPolicyResponse(
+	wsID, botID uuid.UUID,
+	policy api.EgressPolicyMode,
+	allowedHosts, blockedHosts, effectiveHosts []string,
+	revision, ackedRevision int64,
+	liveProxy bool,
+	updatedAt time.Time,
+) api.EgressPolicyResponse {
+	if allowedHosts == nil {
+		allowedHosts = []string{}
+	}
+	if blockedHosts == nil {
+		blockedHosts = []string{}
+	}
+	if effectiveHosts == nil {
+		effectiveHosts = []string{}
+	}
+	return api.EgressPolicyResponse{
+		BotId:                botID,
+		WorkspaceId:          wsID,
+		Policy:               policy,
+		AllowedHosts:         allowedHosts,
+		BlockedHosts:         blockedHosts,
+		EffectiveSecretHosts: effectiveHosts,
+		Revision:             revision,
+		AcknowledgedRevision: ackedRevision,
+		EnforcementStatus:    computeEnforcementStatus(liveProxy, revision, ackedRevision),
+		UpdatedAt:            updatedAt,
+	}
+}
+
 func (s *server) handleGetBotEgressPolicy(w http.ResponseWriter, r *http.Request) {
 	wsRow, botRow, _, ok := s.loadWorkspaceBotForSecret(w, r, false)
 	if !ok {
@@ -691,6 +722,8 @@ func (s *server) handleGetBotEgressPolicy(w http.ResponseWriter, r *http.Request
 
 	policy := api.Allowlist
 	allowedHosts := []string{}
+	blockedHosts := []string{}
+	var revision, ackedRevision int64
 	updatedAt := botRow.UpdatedAt.Time.UTC()
 
 	ruleRow, err := s.queries.GetEgressRuleByWorkspaceAndBot(r.Context(), db.GetEgressRuleByWorkspaceAndBotParams{
@@ -707,24 +740,50 @@ func (s *server) handleGetBotEgressPolicy(w http.ResponseWriter, r *http.Request
 		if ruleRow.AllowedHosts != nil {
 			allowedHosts = ruleRow.AllowedHosts
 		}
+		if ruleRow.BlockedHosts != nil {
+			blockedHosts = ruleRow.BlockedHosts
+		}
+		revision = ruleRow.Revision
+		ackedRevision = ruleRow.AcknowledgedRevision
 		updatedAt = ruleRow.UpdatedAt.Time.UTC()
 	}
 
-	effectiveHosts, err := s.collectEffectiveSecretHosts(r.Context(), wsRow.ID, botRow.ID)
+	effectiveHosts, err := collectEffectiveSecretHostsWithQueries(r.Context(), s.queries, wsRow.ID, botRow.ID)
 	if err != nil {
 		s.logger.Error("collect secret hosts", "err", err)
 		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to load egress policy")
 		return
 	}
+	liveProxy, err := isBotEnvironmentLive(r.Context(), s.queries, wsRow.ID, botRow.ID)
+	if err != nil {
+		s.logger.Error("load environment status for egress policy", "err", err)
+		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to load egress policy")
+		return
+	}
 
-	writeJSON(w, s.logger, http.StatusOK, api.EgressPolicyResponse{
-		BotId:                fromPGUUID(botRow.ID),
-		WorkspaceId:          fromPGUUID(wsRow.ID),
-		Policy:               policy,
-		AllowedHosts:         allowedHosts,
-		EffectiveSecretHosts: effectiveHosts,
-		UpdatedAt:            updatedAt,
-	})
+	writeJSON(w, s.logger, http.StatusOK, buildEgressPolicyResponse(
+		fromPGUUID(wsRow.ID),
+		fromPGUUID(botRow.ID),
+		policy,
+		allowedHosts,
+		blockedHosts,
+		effectiveHosts,
+		revision,
+		ackedRevision,
+		liveProxy,
+		updatedAt,
+	))
+}
+
+type updateEgressPolicyPayload struct {
+	Policy           api.EgressPolicyMode `json:"policy"`
+	AllowedHosts     json.RawMessage      `json:"allowedHosts"`
+	BlockedHosts     json.RawMessage      `json:"blockedHosts"`
+	ExpectedRevision json.RawMessage      `json:"expectedRevision"`
+}
+
+func isNullJSON(raw json.RawMessage) bool {
+	return bytes.Equal(bytes.TrimSpace(raw), []byte("null"))
 }
 
 func (s *server) handleUpdateBotEgressPolicy(w http.ResponseWriter, r *http.Request) {
@@ -733,71 +792,160 @@ func (s *server) handleUpdateBotEgressPolicy(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	var req api.UpdateEgressPolicyRequest
-	if !decodeJSON(w, r, s.logger, &req) {
+	var rawReq updateEgressPolicyPayload
+	if !decodeJSON(w, r, s.logger, &rawReq) {
 		return
 	}
-	if !req.Policy.Valid() {
+	if len(rawReq.ExpectedRevision) == 0 {
+		writeError(w, s.logger, http.StatusPreconditionRequired, "precondition_required", "expectedRevision is required")
+		return
+	}
+	if isNullJSON(rawReq.ExpectedRevision) {
+		writeError(w, s.logger, http.StatusBadRequest, "validation_error", "expectedRevision must be a non-negative integer")
+		return
+	}
+	var expectedRevision int64
+	if err := json.Unmarshal(rawReq.ExpectedRevision, &expectedRevision); err != nil || expectedRevision < 0 {
+		writeError(w, s.logger, http.StatusBadRequest, "validation_error", "expectedRevision must be a non-negative integer")
+		return
+	}
+	if !rawReq.Policy.Valid() {
 		writeError(w, s.logger, http.StatusBadRequest, "validation_error", "policy must be allowlist or open")
 		return
 	}
-	if len(req.AllowedHosts) > maxAllowedHostsCount {
-		writeError(w, s.logger, http.StatusBadRequest, "validation_error", "at most 200 allowed hosts are supported")
+	if len(rawReq.AllowedHosts) == 0 || isNullJSON(rawReq.AllowedHosts) {
+		writeError(w, s.logger, http.StatusBadRequest, "validation_error", "allowedHosts must be an array of host patterns")
+		return
+	}
+	var allowedHosts []string
+	if err := json.Unmarshal(rawReq.AllowedHosts, &allowedHosts); err != nil || allowedHosts == nil {
+		writeError(w, s.logger, http.StatusBadRequest, "validation_error", "allowedHosts must be an array of host patterns")
 		return
 	}
 
-	cleanedHosts := make([]string, 0, len(req.AllowedHosts))
-	seen := make(map[string]bool, len(req.AllowedHosts))
-	for _, rawHost := range req.AllowedHosts {
-		norm, validHost := normalizeAndValidateAllowedHostPattern(rawHost)
-		if !validHost {
-			writeError(w, s.logger, http.StatusBadRequest, "validation_error", fmt.Sprintf("invalid host pattern %q", rawHost))
+	var hasBlockedHosts bool
+	var blockedHosts []string
+	if len(rawReq.BlockedHosts) > 0 {
+		if isNullJSON(rawReq.BlockedHosts) {
+			writeError(w, s.logger, http.StatusBadRequest, "validation_error", "blockedHosts must be an array of host patterns")
 			return
 		}
-		if !seen[norm] {
-			seen[norm] = true
-			cleanedHosts = append(cleanedHosts, norm)
+		if err := json.Unmarshal(rawReq.BlockedHosts, &blockedHosts); err != nil || blockedHosts == nil {
+			writeError(w, s.logger, http.StatusBadRequest, "validation_error", "blockedHosts must be an array of host patterns")
+			return
 		}
+		hasBlockedHosts = true
 	}
 
-	saved, err := s.queries.UpsertEgressRule(r.Context(), db.UpsertEgressRuleParams{
-		BotID:        botRow.ID,
-		WorkspaceID:  wsRow.ID,
-		Policy:       string(req.Policy),
-		AllowedHosts: cleanedHosts,
-	})
+	tx, err := s.pool.Begin(r.Context())
 	if err != nil {
-		s.logger.Error("upsert egress rule", "err", err)
+		s.logger.Error("begin update egress policy", "err", err)
 		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to save egress policy")
 		return
 	}
+	defer rollbackTx(r.Context(), tx)
+	txq := s.queries.WithTx(tx)
 
-	effectiveHosts, err := s.collectEffectiveSecretHosts(r.Context(), wsRow.ID, botRow.ID)
+	wsID := fromPGUUID(wsRow.ID)
+	botUUID := fromPGUUID(botRow.ID)
+	res, err := egresspolicy.ApplyUpdateTx(r.Context(), txq, egresspolicy.UpdateInput{
+		WorkspaceID:      wsID,
+		BotID:            botUUID,
+		ActorID:          actorID,
+		Policy:           mitmproxy.EgressPolicy(rawReq.Policy),
+		AllowedHosts:     allowedHosts,
+		HasBlockedHosts:  hasBlockedHosts,
+		BlockedHosts:     blockedHosts,
+		ExpectedRevision: expectedRevision,
+	})
+	if err != nil {
+		var valErr egresspolicy.ValidationError
+		switch {
+		case errors.Is(err, egresspolicy.ErrConflict):
+			writeError(w, s.logger, http.StatusConflict, "policy_conflict", "egress policy changed concurrently; reload and retry")
+		case errors.As(err, &valErr):
+			writeError(w, s.logger, http.StatusBadRequest, "validation_error", valErr.Message)
+		default:
+			s.logger.Error("apply egress policy update", "err", err)
+			writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to save egress policy")
+		}
+		return
+	}
+
+	// Prepare all fallible response metadata before committing so a committed
+	// write is never masked by a post-commit query error.
+	effectiveHosts, err := collectEffectiveSecretHostsWithQueries(r.Context(), txq, wsRow.ID, botRow.ID)
 	if err != nil {
 		s.logger.Error("collect secret hosts", "err", err)
 		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to load egress policy")
 		return
 	}
-
-	wsID := fromPGUUID(wsRow.ID)
-	botUUID := fromPGUUID(botRow.ID)
-	_ = recordAudit(r.Context(), s.queries, &wsID, &actorID, "bot.egress_updated", "bot", &botUUID, map[string]any{
-		"policy":        saved.Policy,
-		"allowed_count": len(cleanedHosts),
-	})
-
-	allowedOut := cleanedHosts
-	if saved.AllowedHosts != nil {
-		allowedOut = saved.AllowedHosts
+	liveProxy, err := isBotEnvironmentLive(r.Context(), txq, wsRow.ID, botRow.ID)
+	if err != nil {
+		s.logger.Error("load environment status for egress policy", "err", err)
+		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to save egress policy")
+		return
 	}
-	writeJSON(w, s.logger, http.StatusOK, api.EgressPolicyResponse{
-		BotId:                botUUID,
-		WorkspaceId:          wsID,
-		Policy:               api.EgressPolicyMode(saved.Policy),
-		AllowedHosts:         allowedOut,
-		EffectiveSecretHosts: effectiveHosts,
-		UpdatedAt:            saved.UpdatedAt.Time.UTC(),
+
+	if err := tx.Commit(r.Context()); err != nil {
+		s.logger.Error("commit egress policy update", "err", err)
+		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to save egress policy")
+		return
+	}
+
+	ackedRevision := res.Rule.AcknowledgedRevision
+	if liveProxy && ackedRevision < res.Rule.Revision {
+		if acked, ok := s.awaitEgressPolicyAck(r.Context(), wsID, botUUID, res.Rule.Revision); ok {
+			ackedRevision = acked
+		}
+	}
+
+	updatedAt := res.Rule.UpdatedAt.Time.UTC()
+	if updatedAt.IsZero() {
+		updatedAt = botRow.UpdatedAt.Time.UTC()
+	}
+	resp := buildEgressPolicyResponse(
+		wsID,
+		botUUID,
+		api.EgressPolicyMode(res.Rule.Policy),
+		res.Rule.AllowedHosts,
+		res.Rule.BlockedHosts,
+		effectiveHosts,
+		res.Rule.Revision,
+		ackedRevision,
+		liveProxy,
+		updatedAt,
+	)
+	statusCode := http.StatusOK
+	if resp.EnforcementStatus == api.EgressEnforcementStatusPending {
+		statusCode = http.StatusAccepted
+	}
+	writeJSON(w, s.logger, statusCode, resp)
+}
+
+func (s *server) awaitEgressPolicyAck(ctx context.Context, wsID, botID uuid.UUID, revision int64) (int64, bool) {
+	notifier, ok := s.turnQueue.(egressPolicyRevisionNotifier)
+	if !ok {
+		return 0, false
+	}
+	ackTimeout := s.egressAckTimeout
+	if ackTimeout <= 0 {
+		ackTimeout = 1500 * time.Millisecond
+	}
+	ackCtx, cancel := context.WithTimeout(ctx, ackTimeout)
+	defer cancel()
+
+	ackedRev, err := notifier.PublishEgressPolicyRevision(ackCtx, wsID, botID, revision)
+	if err != nil || ackedRev < revision {
+		return 0, false
+	}
+	// Persist monotonic ack as well in case a lightweight test notifier replied without DB access.
+	_ = s.queries.AcknowledgeEgressPolicyRevision(context.WithoutCancel(ctx), db.AcknowledgeEgressPolicyRevisionParams{
+		WorkspaceID: toPGUUID(wsID),
+		BotID:       toPGUUID(botID),
+		Column3:     ackedRev,
 	})
+	return ackedRev, true
 }
 
 func (s *server) handleListBotEgressLogs(w http.ResponseWriter, r *http.Request) {
@@ -856,15 +1004,15 @@ func (s *server) handleListBotEgressLogs(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, s.logger, http.StatusOK, api.EgressLogListResponse{Logs: out})
 }
 
-func (s *server) collectEffectiveSecretHosts(ctx context.Context, workspacePGID, botPGID pgtype.UUID) ([]string, error) {
-	botRows, err := s.queries.ListBotSecretsByWorkspaceAndBot(ctx, db.ListBotSecretsByWorkspaceAndBotParams{
+func collectEffectiveSecretHostsWithQueries(ctx context.Context, q *db.Queries, workspacePGID, botPGID pgtype.UUID) ([]string, error) {
+	botRows, err := q.ListBotSecretsByWorkspaceAndBot(ctx, db.ListBotSecretsByWorkspaceAndBotParams{
 		WorkspaceID: workspacePGID,
 		BotID:       botPGID,
 	})
 	if err != nil {
 		return nil, err
 	}
-	wsRows, err := s.queries.ListWorkspaceSecretsByWorkspace(ctx, workspacePGID)
+	wsRows, err := q.ListWorkspaceSecretsByWorkspace(ctx, workspacePGID)
 	if err != nil {
 		return nil, err
 	}
@@ -976,14 +1124,17 @@ func toAPIEgressLogEntry(row db.EgressLog) api.EgressLogEntry {
 
 // BotEgressProxyDeps configures a database-backed per-bot selective MITM egress proxy handler.
 type BotEgressProxyDeps struct {
-	Pool            *pgxpool.Pool
-	KeyRing         *secrets.KeyRing
-	WorkspaceID     uuid.UUID
-	BotID           uuid.UUID
-	CA              *mitmproxy.BotCA
-	UpstreamRootCAs *x509.CertPool
-	DialContext     func(ctx context.Context, network, addr string) (net.Conn, error)
-	Logger          *slog.Logger
+	Pool               *pgxpool.Pool
+	KeyRing            *secrets.KeyRing
+	WorkspaceID        uuid.UUID
+	BotID              uuid.UUID
+	CA                 *mitmproxy.BotCA
+	UpstreamRootCAs    *x509.CertPool
+	DialContext        func(ctx context.Context, network, addr string) (net.Conn, error)
+	Logger             *slog.Logger
+	Now                func() time.Time
+	PolicyFreshnessMax time.Duration
+	OnPolicyAdopted    func(context.Context, int64) error
 	// Notify publishes ids after a new host card commits. Nil leaves the row
 	// and the client reloads the list (issue #17).
 	Notify notify.Signal
@@ -1009,15 +1160,22 @@ func NewBotEgressProxyHandler(deps BotEgressProxyDeps) (*mitmproxy.Handler, erro
 	if logger == nil {
 		logger = slog.Default()
 	}
+	nowFn := deps.Now
+	if nowFn == nil {
+		nowFn = time.Now
+	}
 	queries := db.New(deps.Pool)
 	wsPG := toPGUUID(deps.WorkspaceID)
 	botPG := toPGUUID(deps.BotID)
 
 	return mitmproxy.NewHandler(mitmproxy.Config{
-		CA:              deps.CA,
-		UpstreamRootCAs: deps.UpstreamRootCAs,
-		DialContext:     deps.DialContext,
-		Logger:          logger,
+		CA:                 deps.CA,
+		UpstreamRootCAs:    deps.UpstreamRootCAs,
+		DialContext:        deps.DialContext,
+		Logger:             logger,
+		Now:                nowFn,
+		PolicyFreshnessMax: deps.PolicyFreshnessMax,
+		OnPolicyAdopted:    deps.OnPolicyAdopted,
 		DynamicPolicy: func(ctx context.Context) (mitmproxy.PolicySnapshot, error) {
 			snap := mitmproxy.PolicySnapshot{
 				Policy: mitmproxy.PolicyAllowlist,
@@ -1032,11 +1190,15 @@ func NewBotEgressProxyHandler(deps BotEgressProxyDeps) (*mitmproxy.Handler, erro
 			}
 			allowedSet := make(map[string]bool)
 			if err == nil {
+				snap.Revision = egressRow.Revision
 				if egressRow.Policy == string(mitmproxy.PolicyOpen) {
 					snap.Policy = mitmproxy.PolicyOpen
 				}
 				for _, host := range egressRow.AllowedHosts {
 					allowedSet[strings.ToLower(strings.TrimSpace(host))] = true
+				}
+				if len(egressRow.BlockedHosts) > 0 {
+					snap.BlockedHosts = append([]string(nil), egressRow.BlockedHosts...)
 				}
 			}
 
@@ -1051,14 +1213,39 @@ func NewBotEgressProxyHandler(deps BotEgressProxyDeps) (*mitmproxy.Handler, erro
 			if err != nil {
 				return mitmproxy.PolicySnapshot{}, fmt.Errorf("load workspace secrets: %w", err)
 			}
+			leaseRows, err := queries.ListActiveSecretLeasesForBot(ctx, db.ListActiveSecretLeasesForBotParams{
+				WorkspaceID: wsPG,
+				BotID:       botPG,
+				AsOf:        pgtype.Timestamptz{Time: nowFn(), Valid: true},
+			})
+			if err != nil {
+				return mitmproxy.PolicySnapshot{}, fmt.Errorf("load active secret leases: %w", err)
+			}
 
-			rules := make([]mitmproxy.SecretRule, 0, len(botRows)+len(wsRows))
+			rules := make([]mitmproxy.SecretRule, 0, len(botRows)+len(wsRows)+len(leaseRows))
+			for _, row := range leaseRows {
+				rule, decErr := decryptSecretRule(deps.KeyRing, deps.WorkspaceID, fromPGUUID(row.ID), "lease", row.PlaceholderEnv, row.DomainMatch, false, "", row.HeaderName, row.AuthScheme, row.Username, row.KekID, row.WrappedDek, row.EncryptedValue)
+				if decErr != nil {
+					return mitmproxy.PolicySnapshot{}, decErr
+				}
+				rule.AdapterID = row.AdapterID
+				rule.Port = row.Port
+				rule.PlaceholderToken = row.PlaceholderValue
+				if row.ExpiresAt.Valid {
+					rule.ExpiresAt = row.ExpiresAt.Time.UTC()
+				}
+				rules = append(rules, rule)
+			}
+
 			for _, row := range botRows {
 				rule, decErr := decryptSecretRule(deps.KeyRing, deps.WorkspaceID, fromPGUUID(row.ID), string(api.SecretScopeBot), row.Name, row.DomainMatch, row.MatchSubdomains, row.PathPrefix, row.HeaderName, row.AuthScheme, row.Username, row.KekID, row.WrappedDek, row.EncryptedValue)
 				if decErr != nil {
 					return mitmproxy.PolicySnapshot{}, decErr
 				}
-				addHostPattern(allowedSet, row.DomainMatch, row.MatchSubdomains)
+				rule.AdapterID = row.AdapterID
+				if row.AdapterID == "" {
+					addHostPattern(allowedSet, row.DomainMatch, row.MatchSubdomains)
+				}
 				rules = append(rules, rule)
 			}
 
@@ -1067,7 +1254,10 @@ func NewBotEgressProxyHandler(deps BotEgressProxyDeps) (*mitmproxy.Handler, erro
 				if decErr != nil {
 					return mitmproxy.PolicySnapshot{}, decErr
 				}
-				addHostPattern(allowedSet, row.DomainMatch, row.MatchSubdomains)
+				rule.AdapterID = row.AdapterID
+				if row.AdapterID == "" {
+					addHostPattern(allowedSet, row.DomainMatch, row.MatchSubdomains)
+				}
 				rules = append(rules, rule)
 			}
 

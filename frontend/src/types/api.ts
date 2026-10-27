@@ -353,18 +353,26 @@ export interface UpdateSecretRequest {
 
 export type EgressPolicyMode = 'allowlist' | 'open';
 
+export type EgressEnforcementStatus = 'applied' | 'pending' | 'not_running';
+
 export interface EgressPolicyResponse {
   botId: string;
   workspaceId: string;
   policy: EgressPolicyMode;
   allowedHosts: string[];
+  blockedHosts: string[];
   effectiveSecretHosts: string[];
+  revision: number;
+  acknowledgedRevision: number;
+  enforcementStatus: EgressEnforcementStatus;
   updatedAt: string;
 }
 
 export interface UpdateEgressPolicyRequest {
   policy: EgressPolicyMode;
   allowedHosts: string[];
+  blockedHosts?: string[];
+  expectedRevision: number;
 }
 
 export type EgressLogAction =

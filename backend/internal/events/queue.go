@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"time"
 
@@ -131,6 +132,10 @@ func (q *Queue) SubscribeConversation(ws, conversation uuid.UUID, deliver func([
 	if err != nil {
 		return nil, err
 	}
+	if err := q.conn.Flush(); err != nil {
+		_ = sub.Unsubscribe()
+		return nil, err
+	}
 	return func() { _ = sub.Unsubscribe() }, nil
 }
 
@@ -144,6 +149,69 @@ func (q *Queue) Interrupt(ctx context.Context, ws, bot uuid.UUID) error {
 		return err
 	}
 	return q.conn.Publish("control."+ws.String()+"."+bot.String(), data)
+}
+
+// EgressInvalidationEvent notifies a bot's egress proxy to reload policy and
+// drop affected passthrough tunnels for host or revision.
+type EgressInvalidationEvent struct {
+	WorkspaceID uuid.UUID `json:"workspaceId"`
+	BotID       uuid.UUID `json:"botId"`
+	Revision    int64     `json:"revision,omitempty"`
+	Host        string    `json:"host,omitempty"`
+}
+
+// EgressInvalidationAck reports the highest policy revision adopted by a running proxy
+// after closing affected passthrough tunnels.
+type EgressInvalidationAck struct {
+	AcknowledgedRevision int64 `json:"acknowledgedRevision"`
+}
+
+// PublishEgressInvalidate notifies a bot's egress proxy to drop raw passthrough tunnels
+// for host so newly activated credentials take effect immediately on subsequent requests.
+func (q *Queue) PublishEgressInvalidate(ctx context.Context, ws, bot uuid.UUID, host string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if ws == uuid.Nil || bot == uuid.Nil || host == "" {
+		return nil
+	}
+	payload, err := json.Marshal(EgressInvalidationEvent{
+		WorkspaceID: ws,
+		BotID:       bot,
+		Host:        host,
+	})
+	if err != nil {
+		return err
+	}
+	return q.conn.Publish("egress.invalidate."+ws.String()+"."+bot.String(), payload)
+}
+
+// PublishEgressPolicyRevision publishes a revision-aware invalidation request and
+// waits within ctx for the running proxy to adopt the revision and close affected tunnels.
+func (q *Queue) PublishEgressPolicyRevision(ctx context.Context, ws, bot uuid.UUID, revision int64) (int64, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	if ws == uuid.Nil || bot == uuid.Nil {
+		return 0, errors.New("workspace and bot identifiers are required")
+	}
+	payload, err := json.Marshal(EgressInvalidationEvent{
+		WorkspaceID: ws,
+		BotID:       bot,
+		Revision:    revision,
+	})
+	if err != nil {
+		return 0, err
+	}
+	msg, err := q.conn.RequestWithContext(ctx, "egress.invalidate."+ws.String()+"."+bot.String(), payload)
+	if err != nil {
+		return 0, err
+	}
+	var ack EgressInvalidationAck
+	if err := json.Unmarshal(msg.Data, &ack); err != nil {
+		return 0, err
+	}
+	return ack.AcknowledgedRevision, nil
 }
 
 // Publisher emits conversation signals without consuming the turn queue.
@@ -168,6 +236,56 @@ func (p *Publisher) PublishConversation(ctx context.Context, ws, conversation uu
 		return err
 	}
 	return p.conn.Publish("chat."+ws.String()+"."+conversation.String(), data)
+}
+
+// SubscribeEgressInvalidate invokes onHost whenever an active credential rule changes for a bot.
+func (p *Publisher) SubscribeEgressInvalidate(ws, bot uuid.UUID, onHost func(string)) (func(), error) {
+	if p == nil || p.conn == nil || onHost == nil {
+		return func() {}, nil
+	}
+	return p.SubscribeEgressPolicyInvalidate(ws, bot, func(_ context.Context, ev EgressInvalidationEvent) (int64, error) {
+		if ev.Host != "" {
+			onHost(ev.Host)
+		}
+		return ev.Revision, nil
+	})
+}
+
+// SubscribeEgressPolicyInvalidate subscribes to revision-aware egress invalidations and
+// replies with the proxy's acknowledged revision once adoption and tunnel closure finish.
+func (p *Publisher) SubscribeEgressPolicyInvalidate(
+	ws, bot uuid.UUID,
+	onEvent func(context.Context, EgressInvalidationEvent) (int64, error),
+) (func(), error) {
+	if p == nil || p.conn == nil || onEvent == nil {
+		return func() {}, nil
+	}
+	sub, err := p.conn.Subscribe("egress.invalidate."+ws.String()+"."+bot.String(), func(msg *nats.Msg) {
+		var ev EgressInvalidationEvent
+		if err := json.Unmarshal(msg.Data, &ev); err != nil {
+			ev = EgressInvalidationEvent{
+				WorkspaceID: ws,
+				BotID:       bot,
+				Host:        strings.TrimSpace(string(msg.Data)),
+			}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		ackRev, handleErr := onEvent(ctx, ev)
+		if handleErr == nil && msg.Reply != "" {
+			if ackBytes, err := json.Marshal(EgressInvalidationAck{AcknowledgedRevision: ackRev}); err == nil {
+				_ = msg.Respond(ackBytes)
+			}
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := p.conn.Flush(); err != nil {
+		_ = sub.Unsubscribe()
+		return nil, err
+	}
+	return func() { _ = sub.Unsubscribe() }, nil
 }
 
 // Close closes the NATS connection.

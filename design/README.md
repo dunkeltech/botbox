@@ -20,6 +20,10 @@ The interactive canvas (clickable prototype with live avatars) lives in Claude: 
 | Bot workspace: chat + live computer + action timeline | [`bot-workspace.png`](screens/bot-workspace.png) | Phase 2, 4, 5 |
 | New bot | [`new-bot.png`](screens/new-bot.png) | Phase 1, 4, 7 |
 | Secrets, egress proxy & bot budgets | [`secrets-egress.png`](screens/secrets-egress.png) | Phase 3, 4 |
+| Egress activity domain triage & blocklist | [`secrets-egress-triage.png`](screens/secrets-egress-triage.png) | #31 |
+| In-chat secret requests (CLI & isolated broker) | [`chat-secret-requests.png`](screens/chat-secret-requests.png) | #30 |
+| Secret input modal (isolated browser broker) | [`secret-input-modal-browser.png`](screens/secret-input-modal-browser.png) | #30 |
+| Secret input modal (CLI / HTTPS adapter) | [`secret-input-modal-cli.png`](screens/secret-input-modal-cli.png) | #30 |
 | Team chat: group with humans, mentions & approvals | [`team-group-chat.png`](screens/team-group-chat.png) | Phase 6 |
 | Team chat: approvals inbox | [`team-approvals-inbox.png`](screens/team-approvals-inbox.png) | Phase 6 |
 | Team chat: direct message | [`team-direct-message.png`](screens/team-direct-message.png) | Phase 4, 6 |
@@ -61,6 +65,20 @@ Sections: Identity with a seeded avatar and reroll, Brain (agent CLI in the sand
 How a secret leaves the sandbox, write-only secrets, the outbound allowlist, a filterable egress log, and per-bot daily/monthly budget meters (with 80 % amber warning, 100 % `429 BudgetExceeded` kill-switch state, and budget raise requests) alongside `usage_records`.
 
 ![Secrets and egress proxy](screens/secrets-egress.png)
+
+### Egress activity domain triage & blocklist
+Extends the bot **Secrets & network** view (Stitch project `13598702750338265050`, screen `9134a93a74a544c48764366fbaac88ff`) with an explicit **Blocked hosts** list (dashed `amber-line` / `amber-tint` chips overriding both `Allowlist` and `Open internet` modes), one-click **Allow** / **Block** actions directly inside the dark **Recent egress activity** log table, read-only `Via secret` indicators for secret-bound rows, wildcard-block **Edit rule** jumps, applied vs. `202` pending enforcement badges, and pattern-specific **Undo**.
+
+![Egress activity domain triage and blocklist](screens/secrets-egress-triage.png)
+
+### In-chat secret requests & write-only modals
+Inline `secret_request` cards inside bot DMs and group chats paired with write-only secret input dialogs for reviewed CLI HTTPS adapters (`github_api`, `gitlab_api`, `gitlab_git`, `npm_registry`, `pypi_upload`, `pypi_simple`) and the isolated browser authentication broker target design (`browser_login` remains gated behind `unsupported_capability` until the isolated broker lands).
+
+![In-chat secret requests](screens/chat-secret-requests.png)
+
+![Secret input modal, isolated browser broker](screens/secret-input-modal-browser.png)
+
+![Secret input modal, CLI HTTPS adapter](screens/secret-input-modal-cli.png)
 
 ### Team chat
 Bots and humans (`Owner`, `Reviewer`, `Viewer`) appear as colleagues in a Slack-style sidebar next to direct messages, `@` mention autocomplete, group chats with inline approval cards (`new_host`), bot-to-bot turn limits, the Approvals inbox (`Pending`, `Approved`, `Denied`) and the new-group dialog for both bots and humans.

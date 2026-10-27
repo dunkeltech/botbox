@@ -115,6 +115,11 @@ SET used_count = used_count + 1,
     last_used_at = now()
 WHERE workspace_id = $1 AND id = $2;
 
+-- name: LockBotEgressRule :exec
+-- Serializes all egress policy writers per workspace/bot, including when no
+-- egress_rules row exists yet.
+SELECT pg_advisory_xact_lock(hashtext($1::uuid::text), hashtext($2::uuid::text));
+
 -- name: GetEgressRuleByWorkspaceAndBot :one
 SELECT er.*
 FROM egress_rules er
@@ -126,15 +131,48 @@ INSERT INTO egress_rules (
     bot_id,
     workspace_id,
     policy,
-    allowed_hosts
+    allowed_hosts,
+    blocked_hosts,
+    revision
 )
-VALUES ($1, $2, $3, $4)
+VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (bot_id) DO UPDATE SET
     workspace_id = EXCLUDED.workspace_id,
     policy = EXCLUDED.policy,
     allowed_hosts = EXCLUDED.allowed_hosts,
+    blocked_hosts = EXCLUDED.blocked_hosts,
+    revision = EXCLUDED.revision,
     updated_at = now()
 RETURNING *;
+
+-- name: UpsertEgressInvalidationIntent :exec
+INSERT INTO egress_invalidation_intents (bot_id, workspace_id, target_revision)
+VALUES ($1, $2, $3)
+ON CONFLICT (bot_id) DO UPDATE SET
+    workspace_id = EXCLUDED.workspace_id,
+    target_revision = GREATEST(egress_invalidation_intents.target_revision, EXCLUDED.target_revision),
+    updated_at = now();
+
+-- name: AcknowledgeEgressPolicyRevision :exec
+WITH updated AS (
+    UPDATE egress_rules
+    SET acknowledged_revision = GREATEST(egress_rules.acknowledged_revision, $3::bigint),
+        acknowledged_at = CASE
+            WHEN $3::bigint >= egress_rules.acknowledged_revision THEN now()
+            ELSE egress_rules.acknowledged_at
+        END
+    WHERE egress_rules.workspace_id = $1 AND egress_rules.bot_id = $2
+    RETURNING egress_rules.acknowledged_revision
+)
+DELETE FROM egress_invalidation_intents
+WHERE egress_invalidation_intents.workspace_id = $1
+  AND egress_invalidation_intents.bot_id = $2
+  AND egress_invalidation_intents.target_revision <= $3::bigint;
+
+-- name: GetEgressInvalidationIntent :one
+SELECT *
+FROM egress_invalidation_intents
+WHERE workspace_id = $1 AND bot_id = $2;
 
 -- name: CreateEgressLog :one
 INSERT INTO egress_log (

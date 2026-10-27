@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dunkeltech/botbox/backend/internal/authbroker"
 	"github.com/dunkeltech/botbox/backend/internal/budgets"
 	"github.com/dunkeltech/botbox/backend/internal/compute"
 	"github.com/dunkeltech/botbox/backend/internal/compute/docker"
@@ -18,16 +20,17 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
 	"github.com/dunkeltech/botbox/backend/internal/secrets"
 	"github.com/dunkeltech/botbox/backend/internal/secrets/llmproxy"
+	"github.com/dunkeltech/botbox/backend/internal/secrets/mitmproxy"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func modelExecutor(pool *pgxpool.Pool, q *db.Queries, ring *secrets.KeyRing, driver compute.Driver) engine.ExecuteTurn {
+func modelExecutor(pool *pgxpool.Pool, q *db.Queries, ring *secrets.KeyRing, driver compute.Driver, broker authbroker.Client) engine.ExecuteTurn {
 	return func(ctx context.Context, session engine.Session, emit func(engine.Event) error) error {
 		if session.Bot.LlmMode != "api" {
-			return runCLITurn(ctx, pool, q, ring, driver, session, emit)
+			return runCLITurnWithBroker(ctx, pool, q, ring, driver, broker != nil, session, emit)
 		}
 		if session.Bot.LlmProvider != "openai" && session.Bot.LlmProvider != "openrouter" && session.Bot.LlmProvider != "anthropic" {
 			return errors.New("provider is not configured")
@@ -61,7 +64,7 @@ func modelExecutor(pool *pgxpool.Pool, q *db.Queries, ring *secrets.KeyRing, dri
 		// The memory driver executes local commands for deterministic development
 		// tests; model-generated tools must never use it to reach the API host.
 		if _, isolated := driver.(*docker.Driver); isolated {
-			tools = &sandboxTools{q: q, driver: driver, workspaceID: session.WorkspaceID, botID: session.BotID}
+			tools = &sandboxTools{q: q, driver: driver, broker: broker, workspaceID: session.WorkspaceID, botID: session.BotID}
 			switch session.Bot.LlmProvider {
 			case "anthropic":
 				profile = modelapi.ComputerAnthropic
@@ -70,7 +73,7 @@ func modelExecutor(pool *pgxpool.Pool, q *db.Queries, ring *secrets.KeyRing, dri
 			default:
 				profile = modelapi.ComputerGeneric
 			}
-			prompt += "\n" + engine.DesktopGuidance
+			prompt += "\n" + engine.DesktopGuidanceFor(broker != nil)
 		}
 		messages := []modelapi.Message{{Role: "system", Content: prompt}}
 		for i := len(session.Messages) - 1; i >= 0; i-- {
@@ -81,7 +84,10 @@ func modelExecutor(pool *pgxpool.Pool, q *db.Queries, ring *secrets.KeyRing, dri
 			}
 			messages = append(messages, modelapi.Message{Role: role, Content: m.Content})
 		}
-		provider := &modelapi.Provider{Client: llmproxy.ClientForHandler(proxy), URL: "http://proxy/llm/" + session.Bot.LlmProvider + "/v1/chat/completions", Model: session.Bot.LlmModel, BotID: session.BotID.String(), Tools: tools, Computer: profile, BeforeRequest: func(ctx context.Context) error { return check(ctx, "", "") }}
+		if session.ContinuationPrompt != "" {
+			messages = append(messages, modelapi.Message{Role: "user", Content: session.ContinuationPrompt})
+		}
+		provider := &modelapi.Provider{Client: llmproxy.ClientForHandler(proxy), URL: "http://proxy/llm/" + session.Bot.LlmProvider + "/v1/chat/completions", Model: session.Bot.LlmModel, BotID: session.BotID.String(), Tools: tools, Computer: profile, BrokerEnabled: broker != nil, BeforeRequest: func(ctx context.Context) error { return check(ctx, "", "") }}
 		if profile != "" {
 			provider.MaxSteps = 25
 			provider.MaxScreenshots = 12
@@ -100,12 +106,17 @@ func modelExecutor(pool *pgxpool.Pool, q *db.Queries, ring *secrets.KeyRing, dri
 type sandboxTools struct {
 	q                  *db.Queries
 	driver             compute.Driver
+	broker             authbroker.Client
 	workspaceID, botID uuid.UUID
 }
 
 func (t *sandboxTools) Call(ctx context.Context, name string, args json.RawMessage) (string, error) {
 	if _, isolated := t.driver.(*docker.Driver); !isolated {
 		return "", errors.New("model tools require isolated compute")
+	}
+
+	if isBrokerTool(name) {
+		return t.callBroker(ctx, name, args)
 	}
 
 	env, err := t.q.GetEnvironmentByWorkspaceAndBot(ctx, db.GetEnvironmentByWorkspaceAndBotParams{WorkspaceID: pgtype.UUID{Bytes: t.workspaceID, Valid: true}, ID: pgtype.UUID{Bytes: t.botID, Valid: true}})
@@ -119,6 +130,9 @@ func (t *sandboxTools) Call(ctx context.Context, name string, args json.RawMessa
 		return "", compute.ErrEnvironmentNotRunning
 	}
 	id := compute.EnvID(env.EnvID)
+	if name == "request_secret" {
+		return handleRequestSecretTool(args, t.broker != nil)
+	}
 	if desk.IsTool(name) {
 		return t.callDesktop(ctx, id, name, args)
 	}
@@ -211,6 +225,10 @@ func (t *sandboxTools) syncDesktop(ctx context.Context, id compute.EnvID) {
 }
 
 func runCLITurn(ctx context.Context, pool *pgxpool.Pool, q *db.Queries, ring *secrets.KeyRing, driver compute.Driver, s engine.Session, emit func(engine.Event) error) error {
+	return runCLITurnWithBroker(ctx, pool, q, ring, driver, false, s, emit)
+}
+
+func runCLITurnWithBroker(ctx context.Context, pool *pgxpool.Pool, q *db.Queries, ring *secrets.KeyRing, driver compute.Driver, brokerEnabled bool, s engine.Session, emit func(engine.Event) error) error {
 	transport, ok := driver.(interface {
 		RunCLI(context.Context, compute.EnvID, string, string, string, string, func(engine.Event) error) error
 	})
@@ -284,13 +302,16 @@ func runCLITurn(ctx context.Context, pool *pgxpool.Pool, q *db.Queries, ring *se
 		return errors.New("missing turn input")
 	}
 	prompt := s.Messages[0].Content
-	if s.Preface != "" && external == "" {
+	if s.ContinuationPrompt != "" {
+		prompt = s.ContinuationPrompt
+	} else if s.Preface != "" && external == "" {
 		prompt = s.Preface + "\n" + prompt
 	}
-	if external == "" {
-		prompt = fmt.Sprintf("Bot description: %s\nReply language: %s\n%s\nUser message: %s", s.Bot.Description, s.Bot.ReplyLanguage, engine.DesktopGuidance, prompt)
+	guidance := engine.DesktopGuidanceFor(brokerEnabled)
+	if external == "" && s.ContinuationPrompt == "" {
+		prompt = fmt.Sprintf("Bot description: %s\nReply language: %s\n%s\nUser message: %s", s.Bot.Description, s.Bot.ReplyLanguage, guidance, prompt)
 	} else {
-		prompt = engine.DesktopGuidance + "\n" + prompt
+		prompt = guidance + "\n" + prompt
 	}
 	run := transport.RunCLI
 	if subscription {
@@ -323,4 +344,134 @@ func runCLITurn(ctx context.Context, pool *pgxpool.Pool, q *db.Queries, ring *se
 		return engine.WithFailureCode(engine.FailureProvider, runErr)
 	}
 	return nil
+}
+
+func handleRequestSecretTool(args json.RawMessage, brokerEnabled bool) (string, error) {
+	var in struct {
+		Kind               string `json:"kind"`
+		AdapterID          string `json:"adapter_id"`
+		Reason             string `json:"reason"`
+		TargetOrigin       string `json:"target_origin"`
+		EnvPlaceholderName string `json:"env_placeholder_name"`
+		UsernameHint       string `json:"username_hint"`
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(args)))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&in); err != nil {
+		return "", errors.New("invalid request_secret arguments")
+	}
+	if in.Kind == "browser_login" {
+		if !brokerEnabled {
+			return "secret_request.browser_unsupported: browser_login is disabled until the isolated authentication broker is available", errors.New("unsupported_capability")
+		}
+		adapter, ok := authbroker.LookupLoginAdapter(in.AdapterID)
+		if !ok {
+			return "", errors.New("unsupported browser login adapter")
+		}
+		if strings.TrimSpace(in.Reason) == "" || len(in.Reason) > 500 {
+			return "", errors.New("invalid reason")
+		}
+		if in.EnvPlaceholderName != "" {
+			return "", errors.New("env_placeholder_name not valid for browser_login")
+		}
+		if in.TargetOrigin != "" {
+			canon, _, _, err := mitmproxy.CanonicalHTTPSOrigin(in.TargetOrigin)
+			if err != nil || canon != adapter.Origin {
+				return "", errors.New("target_origin mismatch")
+			}
+		}
+		return "Browser login secret request submitted to chat. Waiting for human input.", nil
+	}
+	if in.Kind != "cli_egress" {
+		return "", errors.New("unsupported secret request kind")
+	}
+	adapter, ok := mitmproxy.LookupAdapter(in.AdapterID)
+	if !ok {
+		return "", errors.New("unsupported HTTPS credential adapter")
+	}
+	if strings.TrimSpace(in.Reason) == "" || len(in.Reason) > 500 {
+		return "", errors.New("invalid reason")
+	}
+	if err := mitmproxy.ValidateEnvPlaceholderName(in.EnvPlaceholderName); err != nil {
+		return "", err
+	}
+	if in.TargetOrigin != "" {
+		_, host, port, err := mitmproxy.CanonicalHTTPSOrigin(in.TargetOrigin)
+		if err != nil || host != adapter.Host || port != adapter.Port {
+			return "", errors.New("target_origin mismatch")
+		}
+	}
+	return "Secret request submitted to chat. Waiting for human input.", nil
+}
+
+func isBrokerTool(name string) bool {
+	switch name {
+	case "broker_open", "broker_read", "broker_click", "broker_screenshot":
+		return true
+	default:
+		return false
+	}
+}
+
+func (t *sandboxTools) callBroker(ctx context.Context, name string, args json.RawMessage) (string, error) {
+	if t.broker == nil {
+		return "secret_request.browser_unsupported: isolated authentication broker not configured", errors.New("unsupported_capability")
+	}
+	var in struct {
+		BrokerSessionID string `json:"broker_session_id"`
+		URL             string `json:"url"`
+		Selector        string `json:"selector"`
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(args)))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&in); err != nil {
+		return "", errors.New("invalid broker tool arguments")
+	}
+	sessID, err := uuid.Parse(strings.TrimSpace(in.BrokerSessionID))
+	if err != nil {
+		return "", errors.New("invalid broker_session_id")
+	}
+	switch name {
+	case "broker_open":
+		sess, err := t.broker.BotNavigate(ctx, t.workspaceID, t.botID, sessID, in.URL)
+		if err != nil {
+			return "", err
+		}
+		out, _ := json.Marshal(map[string]any{
+			"session_id": sess.SessionID.String(),
+			"origin":     sess.Origin,
+			"status":     sess.Status,
+			"page_url":   sess.Binding.PageURL,
+		})
+		return string(out), nil
+	case "broker_read":
+		res, err := t.broker.BotRead(ctx, t.workspaceID, t.botID, sessID, in.Selector)
+		if err != nil {
+			return "", err
+		}
+		out, _ := json.Marshal(res)
+		return string(out), nil
+	case "broker_click":
+		res, err := t.broker.BotClick(ctx, t.workspaceID, t.botID, sessID, in.Selector)
+		if err != nil {
+			return "", err
+		}
+		out, _ := json.Marshal(res)
+		return string(out), nil
+	case "broker_screenshot":
+		img, binding, err := t.broker.BotScreenshot(ctx, t.workspaceID, t.botID, sessID)
+		if err != nil {
+			return "", err
+		}
+		out, _ := json.Marshal(map[string]any{
+			"mime":      "image/png",
+			"image":     base64.StdEncoding.EncodeToString(img),
+			"page_url":  binding.PageURL,
+			"origin":    binding.Origin,
+			"sanitized": true,
+		})
+		return string(out), nil
+	default:
+		return "", errors.New("unknown broker tool")
+	}
 }

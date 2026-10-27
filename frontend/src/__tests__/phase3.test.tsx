@@ -186,7 +186,11 @@ function makePolicy(
     workspaceId: 'ws-1',
     policy: 'allowlist',
     allowedHosts: ['pypi.org'],
+    blockedHosts: [],
     effectiveSecretHosts: ['api.github.com'],
+    revision: 1,
+    acknowledgedRevision: 1,
+    enforcementStatus: 'applied',
     updatedAt: '2026-11-15T09:00:00Z',
     ...overrides,
   };
@@ -720,10 +724,15 @@ describe('Phase 3 Secrets & Outbound Egress UI', () => {
         const parsed = JSON.parse(body ?? '{}') as {
           policy: 'allowlist' | 'open';
           allowedHosts: string[];
+          blockedHosts?: string[];
+          expectedRevision: number;
         };
         policy = makePolicy({
           policy: parsed.policy,
           allowedHosts: parsed.allowedHosts,
+          blockedHosts: parsed.blockedHosts ?? policy.blockedHosts,
+          revision: parsed.expectedRevision + 1,
+          acknowledgedRevision: parsed.expectedRevision + 1,
         });
         return jsonResponse(policy, 200);
       }
@@ -771,7 +780,7 @@ describe('Phase 3 Secrets & Outbound Egress UI', () => {
     );
 
     expect(
-      await screen.findByText('Outbound policy saved.'),
+      await screen.findByText('Outbound policy saved and applied.'),
     ).toBeInTheDocument();
 
     const patchCall = calls.find(
@@ -783,6 +792,8 @@ describe('Phase 3 Secrets & Outbound Egress UI', () => {
     expect(JSON.parse(patchCall!.body ?? '{}')).toEqual({
       policy: 'open',
       allowedHosts: ['*.pythonhosted.org'],
+      blockedHosts: [],
+      expectedRevision: 1,
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'Blocked' }));

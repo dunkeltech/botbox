@@ -288,7 +288,7 @@ type ComputeDriver interface {
    - Leaf certificates are issued on the fly.
    - The CA is installed in the sandbox trust stores: system, NSS for Chromium, Node, Python, git.
 5. **Header templates per secret:** `bearer`, `basic` (`user:{secret}`, needed for git over HTTPS) or custom, with an optional path prefix. Placeholder headers sent by the bot are stripped.
-6. **Allowlist policy** (default) or open internet. A blocked host gets `403` and an approval request ("allow new host").
+6. **Allowlist & explicit blocklist policy ([ADR-0017](docs/adr/0017-egress-blocklist-triage-and-enforcement.md)):** `allowlist` (default) or `open` internet, paired with an explicit `blocked_hosts` list (`<= 200` entries per list). Explicit blocks (exact hosts or `*.domain` subdomain-only wildcards) are evaluated **first** and override `open` mode, `allowed_hosts`, and secret-derived rules without exposing or altering secret values. Identical normalized allow/block patterns are rejected (`400`), while narrower deny exceptions under broader allows (e.g. `*.example.com` allowed with `api.example.com` blocked) are valid. `PATCH /api/workspaces/{workspaceID}/bots/{botID}/egress` requires `expectedRevision` (`428` missing, `409` stale); omitting `blockedHosts` preserves stored blocks while `[]` clears them. Policy mutations serialize under a per-bot transaction lock, persist an audit row and durable invalidation intent atomically, and return `200` (`applied`) once the running proxy adopts the revision and closes affected passthrough tunnels (or `202` `pending` when ack times out, and `200` `not_running` when stopped). Running proxies enforce a `1 s` fail-closed policy freshness window for active passthrough tunnels and reject subsequent requests on open MITM connections when blocked. On the bot **Secrets & network** page, bot managers can triage domains in one click from the egress log (`Allow`/`Block`) with pattern-specific `Undo` that preserves unrelated concurrent rules and unsaved form drafts. A blocked host gets `403` and an approval request ("allow new host"); removing an exact block via approval requires bot-management rights (`403` otherwise), and wildcard blocks never narrow or clear through approval (`409`).
 7. **Metering:** the proxy reads `usage` from LLM responses, including streaming ones. A **kill switch** blocks LLM calls when a budget is exhausted (§4.9).
 8. **Egress log:** time, method, host, path without query, result (`token added`, `passed`, `blocked`), bytes and latency. Stored partitioned by day with a retention period.
 
@@ -297,7 +297,8 @@ type ComputeDriver interface {
 **Storage:**
 - Envelope encryption: AES-256-GCM with a data key per secret, wrapped by a key-encryption key from a file or environment variable (Vault or KMS later). KEK rotation is supported.
 - The API is **write-only**: secrets can be created, replaced and deleted, but never read back.
-- Bot secrets and workspace secrets (inherited by bots).
+- Bot secrets and workspace secrets (inherited by bots), plus bounded ephemeral `secret_leases` created by in-chat `request_secret` fulfillment.
+- **In-chat secret requests ([ADR-0016](docs/adr/0016-zero-context-secret-requests.md)):** Bots invoke `request_secret` (`cli_egress` with a reviewed HTTPS credential adapter and optional validated `env_placeholder_name`, or `browser_login` when the external `auth-broker` is configured via `BOTBOX_AUTH_BROKER_URL`). The turn pauses as `waiting_secret`, workspace `owner`/`admin`/conversation `member` users submit via the write-only modal (`POST .../secret-requests/{id}/fulfill`), and `mitmproxy` evaluates lease expiry, revocation, adapter routes, fail-closed dynamic policy reload, and all-status response mediation per request on every `CONNECT`/TLS tunnel. For `browser_login`, the standalone `cmd/auth-broker` service owns credential-bearing Chromium targets/cookies outside sandbox containers with atomic `(target, frame, document, origin, form)` binding, restricted bot browsing (`broker_open`, `broker_read`, `broker_click`, `broker_screenshot`), and dedicated human-only broker takeover (`POST .../broker-takeover/*`); when unconfigured (`AuthBroker == nil`), `browser_login` fails closed with `422 unsupported_capability`.
 - Every change goes to the audit log.
 
 ### 4.6 Robot avatars
@@ -483,9 +484,16 @@ CREATE TABLE bot_secrets (
 
 CREATE TABLE egress_rules (
     bot_id UUID PRIMARY KEY REFERENCES bots(id) ON DELETE CASCADE,
-    policy VARCHAR(10) NOT NULL DEFAULT 'allowlist' CHECK (policy IN ('allowlist','open')),
-    allowed_hosts TEXT[] NOT NULL DEFAULT '{}'
+    workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    policy VARCHAR(20) NOT NULL DEFAULT 'allowlist' CHECK (policy IN ('allowlist','open')),
+    allowed_hosts TEXT[] NOT NULL DEFAULT '{}',
+    blocked_hosts TEXT[] NOT NULL DEFAULT '{}',
+    revision BIGINT NOT NULL DEFAULT 0 CHECK (revision >= 0),
+    acknowledged_revision BIGINT NOT NULL DEFAULT 0 CHECK (acknowledged_revision >= 0),
+    acknowledged_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- egress_invalidation_intents: durable per-bot target_revision cleared on proxy ack.
 -- egress_log: partitioned by day (time, bot_id, method, host, path, result, bytes, latency_ms).
 
 -- Conversations and messages

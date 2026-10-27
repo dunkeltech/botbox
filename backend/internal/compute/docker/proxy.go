@@ -13,9 +13,12 @@ import (
 // ProxyOptions configures trusted per-bot proxy containers. Credentials belong
 // only to these control-plane containers and never to the bot sandbox spec.
 type ProxyOptions struct {
-	Image       string
-	DatabaseURL string
-	KeySpec     string
+	Image           string
+	DatabaseURL     string
+	KeySpec         string
+	NATSURL         string
+	AuthBrokerURL   string
+	AuthBrokerToken string
 }
 
 const proxyMarker = "metered-v1"
@@ -43,10 +46,20 @@ func (d *Driver) ensureProxy(ctx context.Context, workspace, bot, network string
 	if !errors.Is(err, compute.ErrEnvironmentNotFound) {
 		return errors.New("proxy inspection failed")
 	}
+	env := []string{"EGRESS_PROXY_ADDR=0.0.0.0:8081", "DATABASE_URL=" + d.proxy.DatabaseURL, "BOTBOX_SECRETS_KEK=" + d.proxy.KeySpec, "BOTBOX_WORKSPACE_ID=" + workspace, "BOTBOX_BOT_ID=" + bot}
+	if strings.TrimSpace(d.proxy.NATSURL) != "" {
+		env = append(env, "NATS_URL="+strings.TrimSpace(d.proxy.NATSURL))
+	}
+	if strings.TrimSpace(d.proxy.AuthBrokerURL) != "" && strings.TrimSpace(d.proxy.AuthBrokerToken) != "" {
+		env = append(env,
+			"EGRESS_PROXY_AUTH_BROKER_URL="+strings.TrimSpace(d.proxy.AuthBrokerURL),
+			"EGRESS_PROXY_AUTH_BROKER_TOKEN="+strings.TrimSpace(d.proxy.AuthBrokerToken),
+		)
+	}
 	payload := map[string]any{
 		"Image":            d.proxy.Image,
 		"User":             "65532:65532",
-		"Env":              []string{"EGRESS_PROXY_ADDR=0.0.0.0:8081", "DATABASE_URL=" + d.proxy.DatabaseURL, "BOTBOX_SECRETS_KEK=" + d.proxy.KeySpec, "BOTBOX_WORKSPACE_ID=" + workspace, "BOTBOX_BOT_ID=" + bot},
+		"Env":              env,
 		"Labels":           map[string]string{"botbox.proxy": "true", "botbox.workspace_id": workspace, "botbox.bot_id": bot, "botbox.egress_proxy": proxyMarker},
 		"HostConfig":       map[string]any{"Privileged": false, "CapDrop": []string{"ALL"}, "SecurityOpt": []string{"no-new-privileges:true"}, "ReadonlyRootfs": true, "NetworkMode": "bridge", "Memory": int64(256 << 20), "NanoCPUs": int64(1000000000), "PidsLimit": 64, "Sysctls": map[string]string{"net.ipv4.ip_forward": "0"}},
 		"NetworkingConfig": map[string]any{"EndpointsConfig": map[string]any{"bridge": map[string]any{}}},

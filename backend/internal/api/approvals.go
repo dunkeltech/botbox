@@ -3,9 +3,11 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/dunkeltech/botbox/backend/internal/approvals"
+	"github.com/dunkeltech/botbox/backend/internal/egresspolicy"
 	apigen "github.com/dunkeltech/botbox/backend/internal/gen/api"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
 	"github.com/dunkeltech/botbox/backend/internal/workspaces"
@@ -87,13 +89,38 @@ func (s *server) handleDecideApproval(w http.ResponseWriter, r *http.Request) {
 	if !s.canDecideApproval(w, r, q, role, claims.Subject, row) {
 		return
 	}
-	turn, err := approvals.Apply(r.Context(), q, row, string(req.Decision), toPGUUID(claims.Subject), s.now())
+	var applyOpts approvals.ApplyOptions
+	if row.Kind == "new_host" {
+		botRow, botErr := q.GetBotByWorkspaceAndID(r.Context(), db.GetBotByWorkspaceAndIDParams{
+			WorkspaceID: ws.ID,
+			ID:          row.BotID,
+		})
+		if botErr != nil && !errors.Is(botErr, pgx.ErrNoRows) {
+			s.logger.Error("load approval bot", "err", botErr)
+			s.chatFailure(w)
+			return
+		}
+		isBotOwner := botErr == nil && botRow.OwnerUserID.Valid && fromPGUUID(botRow.OwnerUserID) == claims.Subject
+		applyOpts.CanManageBot = workspaces.Can(role, workspaces.ActionManageBotSecrets, isBotOwner)
+	}
+	turn, err := approvals.Apply(r.Context(), q, row, string(req.Decision), toPGUUID(claims.Subject), s.now(), applyOpts)
+	var wildcardBlocked egresspolicy.WildcardBlockedError
+	var valErr egresspolicy.ValidationError
 	switch {
 	case errors.Is(err, approvals.ErrConflict):
 		writeError(w, s.logger, http.StatusConflict, "approval.conflict", "approval was already decided")
 		return
+	case errors.Is(err, egresspolicy.ErrForbiddenBlockRemoval):
+		writeError(w, s.logger, http.StatusForbidden, "auth.forbidden", "bot management permission required to remove explicit block")
+		return
+	case errors.As(err, &wildcardBlocked):
+		writeError(w, s.logger, http.StatusConflict, "approval.wildcard_blocked", fmt.Sprintf("host is blocked by wildcard rule %s; edit that rule in bot egress policy", wildcardBlocked.Pattern))
+		return
 	case errors.Is(err, approvals.ErrHostNotBlocked):
 		writeError(w, s.logger, http.StatusConflict, "approval.host_not_blocked", "host is already allowed")
+		return
+	case errors.As(err, &valErr):
+		writeError(w, s.logger, http.StatusBadRequest, "validation_error", valErr.Message)
 		return
 	case errors.Is(err, approvals.ErrCapNotRaised):
 		writeError(w, s.logger, http.StatusConflict, "approval.cap_not_raised", "budget cap is not above spend")
@@ -120,10 +147,24 @@ func (s *server) handleDecideApproval(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	var approvedRevision int64
+	var notifyEgress bool
+	if row.Kind == "new_host" && req.Decision == apigen.ApprovalDecisionRequestDecisionApproved {
+		if ruleRow, rErr := q.GetEgressRuleByWorkspaceAndBot(r.Context(), db.GetEgressRuleByWorkspaceAndBotParams{
+			WorkspaceID: ws.ID,
+			BotID:       row.BotID,
+		}); rErr == nil {
+			approvedRevision = ruleRow.Revision
+			notifyEgress = true
+		}
+	}
 	if err = tx.Commit(r.Context()); err != nil {
 		s.logger.Error("commit approval decision", "err", err)
 		s.chatFailure(w)
 		return
+	}
+	if notifyEgress {
+		_, _ = s.awaitEgressPolicyAck(r.Context(), fromPGUUID(ws.ID), fromPGUUID(row.BotID), approvedRevision)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

@@ -15,6 +15,7 @@ import (
 
 	"github.com/dunkeltech/botbox/backend/internal/api"
 	"github.com/dunkeltech/botbox/backend/internal/auth"
+	"github.com/dunkeltech/botbox/backend/internal/authbroker"
 	"github.com/dunkeltech/botbox/backend/internal/compute"
 	apigen "github.com/dunkeltech/botbox/backend/internal/gen/api"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
@@ -72,6 +73,7 @@ type harnessOpts struct {
 	loginEmailLimit  int
 	envSetupSecret   string
 	keyRing          *secrets.KeyRing
+	authBroker       authbroker.Client
 	decorateCompute  func(*compute.MemoryDriver) compute.Driver
 }
 
@@ -151,6 +153,7 @@ func newTestHarness(t *testing.T, existingPool *pgxpool.Pool, opts harnessOpts) 
 		ChatRateLimiter: auth.NewRateLimiter(chatLimit, time.Minute, clock.Now),
 		TurnQueue:       opts.turnQueue,
 		ChatEvents:      opts.chatEvents,
+		AuthBroker:      opts.authBroker,
 		Logger:          logger,
 		Pool:            pool,
 		JWT:             jwtSvc,

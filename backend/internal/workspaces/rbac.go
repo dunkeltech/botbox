@@ -34,6 +34,9 @@ const (
 	// ActionManageBotSecrets allows writing or rotating bot credentials and secrets.
 	// #nosec G101 -- RBAC action identifier constant, not a credential.
 	ActionManageBotSecrets Action = "manage_bot_secrets"
+	// ActionFulfillSecretRequest allows fulfilling or denying an in-chat secret request.
+	// #nosec G101 -- RBAC action identifier constant, not a credential.
+	ActionFulfillSecretRequest Action = "fulfill_secret_request"
 )
 
 // ValidRole reports whether role is one of the supported workspace roles.
@@ -68,7 +71,7 @@ func Can(role Role, action Action, isBotOwner bool) bool {
 		return role == RoleOwner
 	case ActionManageMembers, ActionManageInvitations:
 		return role == RoleOwner || role == RoleAdmin
-	case ActionCreateBot:
+	case ActionCreateBot, ActionFulfillSecretRequest:
 		return role == RoleOwner || role == RoleAdmin || role == RoleMember
 	case ActionManageBot, ActionManageBotSecrets:
 		if role == RoleOwner || role == RoleAdmin {

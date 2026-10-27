@@ -105,8 +105,12 @@ admin. Viewer members may read and may not post, change settings, or approve.
 Every decision is an `audit_log` row with the actor, the decision, and the
 approval id. Secret values are not stored.
 
-`new_host` stays enforced by the egress allowlist. Approval inserts that host
-and no other. Denial leaves the list unchanged.
+`new_host` stays enforced by the egress allowlist and explicit blocklist
+(`ADR-0017`). For previously unknown, non-blocked hosts, approval inserts that
+host and no other; denial leaves the list unchanged. Removing an exact explicit
+block via a `new_host` approval requires bot-management rights (`owner`,
+`admin`, or bot-owning `member`; otherwise `403`), and wildcard blocks never
+narrow or clear through approval (`409`, card remains pending).
 
 `push_protected` stores a card and does not push. Protected branches stay on
 the git host. The bot setup copy says so.

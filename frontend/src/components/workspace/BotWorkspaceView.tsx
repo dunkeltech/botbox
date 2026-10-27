@@ -808,6 +808,7 @@ export function BotWorkspaceView() {
             name={bot.name}
             avatarSeed={bot.avatarSeed}
             canChat={activeWorkspace.role !== 'viewer'}
+            role={activeWorkspace.role}
             variant="session"
             hideHeader
           />

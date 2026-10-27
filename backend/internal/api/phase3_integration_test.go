@@ -195,12 +195,12 @@ func TestPhase3SecretsWriteOnlyCRUDRBACAndValidation(t *testing.T) {
 		t.Fatalf("non-owner member create bot secret = %d, want 403", r.status)
 	}
 	if r := h.request(http.MethodPatch, atlasBase+"/egress", map[string]any{
-		"policy": "open", "allowedHosts": []string{},
+		"policy": "open", "allowedHosts": []string{}, "expectedRevision": 0,
 	}, member.AccessToken, nil, true); r.status != http.StatusForbidden {
 		t.Fatalf("non-owner member PATCH egress = %d, want 403", r.status)
 	}
 	if r := h.request(http.MethodPatch, miaBotBase+"/egress", map[string]any{
-		"policy": "open", "allowedHosts": []string{},
+		"policy": "open", "allowedHosts": []string{}, "expectedRevision": 0,
 	}, viewer.AccessToken, nil, true); r.status != http.StatusForbidden {
 		t.Fatalf("viewer PATCH egress = %d, want 403", r.status)
 	}
@@ -230,8 +230,9 @@ func TestPhase3SecretsWriteOnlyCRUDRBACAndValidation(t *testing.T) {
 
 	// Mia updates egress policy on her own bot -> 200, includes effectiveSecretHosts.
 	patchMiaEgress := h.request(http.MethodPatch, miaBotBase+"/egress", map[string]any{
-		"policy":       "allowlist",
-		"allowedHosts": []string{"pypi.org", "*.pythonhosted.org", "PYPI.ORG"},
+		"policy":           "allowlist",
+		"allowedHosts":     []string{"pypi.org", "*.pythonhosted.org", "PYPI.ORG"},
+		"expectedRevision": 0,
 	}, member.AccessToken, nil, true)
 	if patchMiaEgress.status != http.StatusOK {
 		t.Fatalf("bot owner PATCH egress = %d: %s", patchMiaEgress.status, patchMiaEgress.body)
@@ -257,7 +258,7 @@ func TestPhase3SecretsWriteOnlyCRUDRBACAndValidation(t *testing.T) {
 		{http.MethodPut, miaBotBase + "/secrets/" + miaSecret.Id.String(), map[string]any{"name": "X", "domainMatch": "api.github.com", "authScheme": "bearer"}},
 		{http.MethodDelete, miaBotBase + "/secrets/" + miaSecret.Id.String(), nil},
 		{http.MethodGet, miaBotBase + "/egress", nil},
-		{http.MethodPatch, miaBotBase + "/egress", map[string]any{"policy": "open", "allowedHosts": []string{}}},
+		{http.MethodPatch, miaBotBase + "/egress", map[string]any{"policy": "open", "allowedHosts": []string{}, "expectedRevision": 1}},
 		{http.MethodGet, miaBotBase + "/egress/logs", nil},
 	} {
 		r := h.request(ep.method, ep.path, ep.body, eve.AccessToken, nil, ep.method != http.MethodGet)
@@ -333,8 +334,9 @@ func TestPhase3LiveEgressProxyEndToEndAndPrecedence(t *testing.T) {
 
 	// Configure passthrough allowlist for docs.example.com.
 	r = h.request(http.MethodPatch, botBase+"/egress", map[string]any{
-		"policy":       "allowlist",
-		"allowedHosts": []string{"docs.example.com"},
+		"policy":           "allowlist",
+		"allowedHosts":     []string{"docs.example.com"},
+		"expectedRevision": 0,
 	}, owner.AccessToken, nil, true)
 	if r.status != http.StatusOK {
 		t.Fatalf("patch egress: %d %s", r.status, r.body)

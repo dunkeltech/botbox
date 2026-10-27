@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dunkeltech/botbox/backend/internal/auth"
+	"github.com/dunkeltech/botbox/backend/internal/authbroker"
 	"github.com/dunkeltech/botbox/backend/internal/compute"
 	"github.com/dunkeltech/botbox/backend/internal/compute/vncrelay"
 	"github.com/dunkeltech/botbox/backend/internal/secrets"
@@ -33,6 +34,7 @@ type Config struct {
 	ReadinessCheck        ReadinessCheck
 	VNCRelay              http.Handler
 	Compute               compute.Driver
+	AuthBroker            authbroker.Client
 	TicketSigner          *vncrelay.Signer
 	KeyRing               *secrets.KeyRing
 	Pool                  *pgxpool.Pool
@@ -46,6 +48,7 @@ type Config struct {
 	RefreshRateLimiter    *auth.RateLimiter
 	CookieSecure          bool
 	PublicBaseURL         string
+	EgressAckTimeout      time.Duration
 	Now                   func() time.Time
 }
 

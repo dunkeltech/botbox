@@ -16,6 +16,10 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/desk"
 )
 
+// MaxCDPMessageBytes caps one DevTools response frame. The WebSocket library
+// defaults to 32 KiB, which rejects viewport screenshots and large page reads.
+const MaxCDPMessageBytes = 16 << 20
+
 // Browser is the recommended page tool. Pixel clicks stay available for
 // everything that is not a web page.
 type Browser interface {
@@ -155,6 +159,7 @@ func (b *CDPBrowser) call(ctx context.Context, method string, params map[string]
 		return nil, fmt.Errorf("browser debugging unavailable: %w", err)
 	}
 	defer func() { _ = conn.Close(websocket.StatusNormalClosure, "") }()
+	conn.SetReadLimit(MaxCDPMessageBytes)
 	payload, err := json.Marshal(map[string]any{"id": 1, "method": method, "params": params})
 	if err != nil {
 		return nil, err

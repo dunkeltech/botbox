@@ -227,6 +227,122 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/workspaces/{workspaceID}/secret-requests/{requestID}/fulfill': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+        requestID: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations['fulfillSecretRequest'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/workspaces/{workspaceID}/secret-requests/{requestID}/deny': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+        requestID: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations['denySecretRequest'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/workspaces/{workspaceID}/secret-requests/{requestID}/broker-takeover/start': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+        requestID: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations['startBrokerTakeover'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/workspaces/{workspaceID}/secret-requests/{requestID}/broker-takeover/frame': {
+    parameters: {
+      query?: {
+        ticket?: string;
+      };
+      header?: never;
+      path: {
+        workspaceID: string;
+        requestID: string;
+      };
+      cookie?: never;
+    };
+    get: operations['getBrokerTakeoverFrame'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/workspaces/{workspaceID}/secret-requests/{requestID}/broker-takeover/input': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+        requestID: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations['sendBrokerTakeoverInput'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/workspaces/{workspaceID}/secret-requests/{requestID}/broker-takeover/complete': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+        requestID: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations['completeBrokerTakeover'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/workspaces/{workspaceID}/notifications': {
     parameters: {
       query?: never;
@@ -925,10 +1041,74 @@ export interface components {
       /** Format: uuid */
       senderBotId?: string;
       /** @enum {string} */
-      kind: 'text' | 'tool' | 'system' | 'card' | 'approval';
+      kind: 'text' | 'tool' | 'system' | 'card' | 'approval' | 'secret_request';
       content: string;
+      secretRequest?: components['schemas']['SecretRequestSummary'];
       /** Format: date-time */
       createdAt: string;
+    };
+    /** @enum {string} */
+    SecretRequestKind: 'cli_egress' | 'browser_login';
+    /** @enum {string} */
+    SecretRequestStatus:
+      | 'pending'
+      | 'fulfilling'
+      | 'fulfilled'
+      | 'denied'
+      | 'expired'
+      | 'cancelled'
+      | 'failed';
+    /** @enum {string} */
+    SecretRequestScope: 'ephemeral' | 'bot_secret' | 'workspace_secret';
+    SecretRequestSummary: {
+      /** Format: uuid */
+      secretRequestId: string;
+      kind: components['schemas']['SecretRequestKind'];
+      status: components['schemas']['SecretRequestStatus'];
+      adapterId: string;
+      adapterLabel?: string;
+      targetOrigin: string;
+      headerScheme?: string;
+      envPlaceholderName?: string;
+      placeholderValue?: string;
+      reason: string;
+      grantedScope?: string;
+      expiresAt?: string;
+      errorCode?: string;
+      brokerEnabled?: boolean;
+      /** Format: uuid */
+      brokerSessionId?: string;
+      takeoverActive?: boolean;
+    };
+    FulfillSecretRequestBody: {
+      secretValue: string;
+      username?: string;
+      scope: components['schemas']['SecretRequestScope'];
+      replaceExisting?: boolean;
+    };
+    SecretRequestResult: {
+      secretRequest: components['schemas']['SecretRequestSummary'];
+      mfaRequired?: boolean;
+    };
+    BrokerTakeoverState: {
+      secretRequest: components['schemas']['SecretRequestSummary'];
+      /** Format: uuid */
+      brokerSessionId: string;
+      origin: string;
+      pageUrl?: string;
+      takeoverActive: boolean;
+      captureSuppressed?: boolean;
+      takeoverTicket?: string;
+    };
+    BrokerTakeoverInputBody: {
+      /** @enum {string} */
+      kind: 'click' | 'type' | 'key';
+      /** Format: double */
+      x?: number;
+      /** Format: double */
+      y?: number;
+      text?: string;
+      key?: string;
     };
     Approval: {
       /** Format: uuid */
@@ -987,6 +1167,7 @@ export interface components {
       status:
         | 'queued'
         | 'running'
+        | 'waiting_secret'
         | 'completed'
         | 'failed'
         | 'interrupted'
@@ -1433,6 +1614,8 @@ export interface components {
     };
     /** @enum {string} */
     EgressPolicyMode: 'allowlist' | 'open';
+    /** @enum {string} */
+    EgressEnforcementStatus: 'applied' | 'pending' | 'not_running';
     EgressPolicyResponse: {
       /** Format: uuid */
       botId: string;
@@ -1440,13 +1623,22 @@ export interface components {
       workspaceId: string;
       policy: components['schemas']['EgressPolicyMode'];
       allowedHosts: string[];
+      blockedHosts: string[];
       effectiveSecretHosts: string[];
+      /** Format: int64 */
+      revision: number;
+      /** Format: int64 */
+      acknowledgedRevision: number;
+      enforcementStatus: components['schemas']['EgressEnforcementStatus'];
       /** Format: date-time */
       updatedAt: string;
     };
     UpdateEgressPolicyRequest: {
       policy: components['schemas']['EgressPolicyMode'];
       allowedHosts: string[];
+      blockedHosts?: string[];
+      /** Format: int64 */
+      expectedRevision: number;
     };
     /** @enum {string} */
     EgressLogAction: 'blocked_host' | 'tunnel_passthrough' | 'mitm_token_added';
@@ -2376,6 +2568,392 @@ export interface operations {
       };
       /** @description Turn queue is unavailable */
       503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  fulfillSecretRequest: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+        requestID: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['FulfillSecretRequestBody'];
+      };
+    };
+    responses: {
+      /** @description Secret encrypted and stored outside the sandbox; turn queued for non-secret continuation. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SecretRequestResult'];
+        };
+      };
+      /** @description Invalid request input */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Insufficient role for secret fulfillment or scope */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Secret request not visible to caller */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Request already decided */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Unsupported secret request capability (such as browser_login before isolated broker) */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Turn queue or encryption dependency unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  denySecretRequest: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+        requestID: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Secret request denied; turn queued for continuation without credentials. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SecretRequestResult'];
+        };
+      };
+      /** @description Invalid request identifier */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Viewer cannot deny secret requests */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Secret request not visible to caller */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Request already decided or expired */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Turn queue unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  startBrokerTakeover: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+        requestID: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Human-only takeover started on isolated broker; bot access and captures disabled. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['BrokerTakeoverState'];
+        };
+      };
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Insufficient role or takeover owned by another user */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Secret request not visible to caller */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Request not eligible for takeover */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Broker capability disabled */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  getBrokerTakeoverFrame: {
+    parameters: {
+      query?: {
+        ticket?: string;
+      };
+      header?: never;
+      path: {
+        workspaceID: string;
+        requestID: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description PNG frame captured from the isolated broker viewport for the takeover owner only. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'image/png': string;
+        };
+      };
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Takeover belongs to another user or viewer */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Secret request not visible to caller */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Takeover is not active */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Broker capability disabled */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  sendBrokerTakeoverInput: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+        requestID: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['BrokerTakeoverInputBody'];
+      };
+    };
+    responses: {
+      /** @description Takeover UI event forwarded exclusively to isolated broker viewport. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['BrokerTakeoverState'];
+        };
+      };
+      /** @description Invalid takeover input */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Takeover belongs to another user or viewer */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Secret request not visible to caller */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Takeover is not active */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Broker capability disabled */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  completeBrokerTakeover: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+        requestID: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Human takeover verified and completed; bot turn resumed with non-secret broker session reference. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SecretRequestResult'];
+        };
+      };
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Takeover belongs to another user or viewer */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Secret request not visible to caller */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Takeover not active or broker landed outside adapter-permitted origin */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Broker capability disabled */
+      422: {
         headers: {
           [name: string]: unknown;
         };
@@ -4986,8 +5564,17 @@ export interface operations {
       };
     };
     responses: {
-      /** @description Bot egress policy updated */
+      /** @description Bot egress policy updated and acknowledged by running proxy (or bot is not running) */
       200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EgressPolicyResponse'];
+        };
+      };
+      /** @description Bot egress policy saved; running proxy acknowledgement is pending */
+      202: {
         headers: {
           [name: string]: unknown;
         };
@@ -5024,6 +5611,24 @@ export interface operations {
       };
       /** @description Workspace or bot not found */
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Stale policy revision conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Expected policy revision precondition required */
+      428: {
         headers: {
           [name: string]: unknown;
         };

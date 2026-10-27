@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/dunkeltech/botbox/backend/internal/auth"
+	"github.com/dunkeltech/botbox/backend/internal/authbroker"
 	"github.com/dunkeltech/botbox/backend/internal/compute"
 	"github.com/dunkeltech/botbox/backend/internal/compute/vncrelay"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
@@ -17,28 +18,30 @@ import (
 )
 
 type server struct {
-	chatRL        *auth.RateLimiter
-	chatEvents    ChatEvents
-	turnQueue     TurnQueue
-	logger        *slog.Logger
-	pool          *pgxpool.Pool
-	queries       *db.Queries
-	jwt           *auth.JWTService
-	authProvider  auth.Provider
-	argon2        auth.Argon2Params
-	setup         *auth.SetupManager
-	setupRL       *auth.RateLimiter
-	loginIPRL     *auth.RateLimiter
-	loginEmailRL  *auth.RateLimiter
-	refreshRL     *auth.RateLimiter
-	compute       compute.Driver
-	ticketSigner  *vncrelay.Signer
-	keyRing       *secrets.KeyRing
-	watchersMu    sync.RWMutex
-	watchers      map[uuid.UUID]map[uuid.UUID]watcherEntry
-	cookieSecure  bool
-	publicBaseURL string
-	now           func() time.Time
+	chatRL           *auth.RateLimiter
+	chatEvents       ChatEvents
+	turnQueue        TurnQueue
+	logger           *slog.Logger
+	pool             *pgxpool.Pool
+	queries          *db.Queries
+	jwt              *auth.JWTService
+	authProvider     auth.Provider
+	argon2           auth.Argon2Params
+	setup            *auth.SetupManager
+	setupRL          *auth.RateLimiter
+	loginIPRL        *auth.RateLimiter
+	loginEmailRL     *auth.RateLimiter
+	refreshRL        *auth.RateLimiter
+	compute          compute.Driver
+	authBroker       authbroker.Client
+	ticketSigner     *vncrelay.Signer
+	keyRing          *secrets.KeyRing
+	watchersMu       sync.RWMutex
+	watchers         map[uuid.UUID]map[uuid.UUID]watcherEntry
+	cookieSecure     bool
+	publicBaseURL    string
+	egressAckTimeout time.Duration
+	now              func() time.Time
 }
 
 func newServer(cfg Config, logger *slog.Logger) *server {
@@ -118,28 +121,34 @@ func newServer(cfg Config, logger *slog.Logger) *server {
 	if chatRL == nil {
 		chatRL = auth.NewRateLimiter(30, time.Minute, now)
 	}
+	egressAckTimeout := cfg.EgressAckTimeout
+	if egressAckTimeout <= 0 {
+		egressAckTimeout = 1500 * time.Millisecond
+	}
 	return &server{
-		chatRL:        chatRL,
-		chatEvents:    cfg.ChatEvents,
-		turnQueue:     cfg.TurnQueue,
-		logger:        logger,
-		pool:          cfg.Pool,
-		queries:       queries,
-		jwt:           jwtSvc,
-		authProvider:  authProvider,
-		argon2:        params,
-		setup:         cfg.Setup,
-		setupRL:       setupRL,
-		loginIPRL:     loginIPRL,
-		loginEmailRL:  loginEmailRL,
-		refreshRL:     refreshRL,
-		compute:       computeDrv,
-		ticketSigner:  ticketSigner,
-		keyRing:       keyRing,
-		watchers:      make(map[uuid.UUID]map[uuid.UUID]watcherEntry),
-		cookieSecure:  cfg.CookieSecure,
-		publicBaseURL: cfg.PublicBaseURL,
-		now:           now,
+		chatRL:           chatRL,
+		chatEvents:       cfg.ChatEvents,
+		turnQueue:        cfg.TurnQueue,
+		logger:           logger,
+		pool:             cfg.Pool,
+		queries:          queries,
+		jwt:              jwtSvc,
+		authProvider:     authProvider,
+		argon2:           params,
+		setup:            cfg.Setup,
+		setupRL:          setupRL,
+		loginIPRL:        loginIPRL,
+		loginEmailRL:     loginEmailRL,
+		refreshRL:        refreshRL,
+		compute:          computeDrv,
+		authBroker:       cfg.AuthBroker,
+		ticketSigner:     ticketSigner,
+		keyRing:          keyRing,
+		watchers:         make(map[uuid.UUID]map[uuid.UUID]watcherEntry),
+		cookieSecure:     cfg.CookieSecure,
+		publicBaseURL:    cfg.PublicBaseURL,
+		egressAckTimeout: egressAckTimeout,
+		now:              now,
 	}
 }
 
@@ -200,6 +209,12 @@ func (s *server) mountRoutes(r chi.Router) {
 			r.Post("/groups/{groupID}/read", s.handleMarkGroupRead)
 			r.Get("/approvals", s.handleListApprovals)
 			r.Post("/approvals/{approvalID}/decision", s.handleDecideApproval)
+			r.Post("/secret-requests/{requestID}/fulfill", s.handleFulfillSecretRequest)
+			r.Post("/secret-requests/{requestID}/deny", s.handleDenySecretRequest)
+			r.Post("/secret-requests/{requestID}/broker-takeover/start", s.handleStartBrokerTakeover)
+			r.Get("/secret-requests/{requestID}/broker-takeover/frame", s.handleBrokerTakeoverFrame)
+			r.Post("/secret-requests/{requestID}/broker-takeover/input", s.handleBrokerTakeoverInput)
+			r.Post("/secret-requests/{requestID}/broker-takeover/complete", s.handleCompleteBrokerTakeover)
 			r.Get("/notifications", s.handleListNotifications)
 			r.Post("/notifications/read", s.handleMarkNotificationsRead)
 			r.Post("/notifications/{notificationID}/read", s.handleMarkNotificationRead)

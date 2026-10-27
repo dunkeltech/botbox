@@ -482,4 +482,49 @@ describe('chat scroll behavior', () => {
     expect(await screen.findByText('Older message 50')).toBeInTheDocument();
     expect(log.scrollTop).toBe(900);
   });
+
+  it('contains absolutely positioned sr-only labels inside the scrollable chat log and user message articles', async () => {
+    request.mockImplementation((path: string) => {
+      if (path.endsWith('/dm')) {
+        return Promise.resolve({ id: 'conversation-1', botId: 'bot-1' });
+      }
+      if (path.includes('/messages')) {
+        return Promise.resolve({
+          messages: [
+            {
+              id: 'msg-user-1',
+              position: 1,
+              senderType: 'user',
+              kind: 'text',
+              content: 'Hello bot',
+              createdAt: '2026-11-15T10:00:00Z',
+            },
+          ],
+          turns: [],
+        });
+      }
+      return Promise.resolve({ spendTodayMicros: 0, budgets: [] });
+    });
+
+    show(
+      <ChatPanel
+        workspaceId="ws-1"
+        userId="user-1"
+        botId="bot-1"
+        name="Atlas"
+        avatarSeed="atlas-seed"
+        variant="session"
+      />,
+    );
+
+    expect(await screen.findByText('Hello bot')).toBeInTheDocument();
+    const log = screen.getByRole('log', { name: messages.chat.history });
+    expect(log).toHaveClass('relative', 'overflow-y-auto');
+
+    const srLabel = screen.getByText(messages.chat.you);
+    expect(srLabel).toHaveClass('sr-only');
+    const article = srLabel.closest('article');
+    expect(article).not.toBeNull();
+    expect(article).toHaveClass('relative');
+  });
 });

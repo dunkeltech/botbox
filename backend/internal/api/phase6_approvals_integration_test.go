@@ -277,7 +277,7 @@ func TestPhase6BlockedHostApproval(t *testing.T) {
 	base := "/api/workspaces/" + ws.String()
 	atlas := createAPIBot(t, h, base, owner.AccessToken, "Atlas", "atlas-seed")
 	member, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "member@example.com", "member", "Member", "CorrectHorse123!")
-	if r := h.request(http.MethodPatch, base+"/bots/"+atlas.Id.String()+"/egress", map[string]any{"policy": "allowlist", "allowedHosts": []string{"docs.example.com"}}, owner.AccessToken, nil, true); r.status != http.StatusOK {
+	if r := h.request(http.MethodPatch, base+"/bots/"+atlas.Id.String()+"/egress", map[string]any{"policy": "allowlist", "allowedHosts": []string{"docs.example.com"}, "expectedRevision": 0}, owner.AccessToken, nil, true); r.status != http.StatusOK {
 		t.Fatalf("egress=%d %s", r.status, r.body)
 	}
 	group := askGroup(t, h, base, member.AccessToken, "Hosts", atlas.Id, false, 20, []any{map[string]any{"kind": "new_host"}}, []any{groupBot(atlas.Id, "lead")})
@@ -329,7 +329,7 @@ func TestPhase6BlockedHostApproval(t *testing.T) {
 	if bytes.Contains(mustListBody(t, h, base, member.AccessToken), []byte("triggerMessageId")) {
 		t.Fatal("list exposed triggerMessageId")
 	}
-	if r := h.request(http.MethodPatch, base+"/bots/"+atlas.Id.String()+"/egress", map[string]any{"policy": "allowlist", "allowedHosts": []string{"docs.example.com", "sneak.example.com"}}, owner.AccessToken, nil, true); r.status != http.StatusOK {
+	if r := h.request(http.MethodPatch, base+"/bots/"+atlas.Id.String()+"/egress", map[string]any{"policy": "allowlist", "allowedHosts": []string{"docs.example.com", "sneak.example.com"}, "expectedRevision": 1}, owner.AccessToken, nil, true); r.status != http.StatusOK {
 		t.Fatalf("patch sneak=%d %s", r.status, r.body)
 	}
 	if r := h.request(http.MethodPost, base+"/approvals/"+sneak.Id.String()+"/decision", map[string]any{"decision": "approved"}, member.AccessToken, nil, true); r.status != http.StatusConflict || r.errorCode(t) != "approval.host_not_blocked" {

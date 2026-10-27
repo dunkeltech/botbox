@@ -124,3 +124,80 @@ func TestProxyProvisioningKeepsCredentialsOutsideSandbox(t *testing.T) {
 		t.Fatal("incomplete proxy configuration admitted")
 	}
 }
+
+func TestBrokerTokenAndURLStayInProxyNeverInSandbox(t *testing.T) {
+	t.Parallel()
+	var mu sync.Mutex
+	configs := map[string]map[string]any{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		path := strings.TrimPrefix(r.URL.Path, "/v1.45")
+		if r.Method == "GET" && strings.HasSuffix(path, "/json") {
+			http.Error(w, "missing", http.StatusNotFound)
+			return
+		}
+		if r.Method == "GET" && strings.HasPrefix(path, "/networks/") {
+			_ = json.NewEncoder(w).Encode(map[string]bool{"Internal": true})
+			return
+		}
+		if path == "/containers/create" {
+			var spec map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&spec); err != nil {
+				t.Error(err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			name := r.URL.Query().Get("name")
+			configs[name] = spec
+			_ = json.NewEncoder(w).Encode(map[string]string{"Id": name})
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	const secretBrokerToken = "super-secret-broker-token-98765"
+	d, err := docker.NewDriver(docker.Options{
+		BaseURL:           server.URL,
+		AuthBrokerEnabled: true,
+		Proxy: &docker.ProxyOptions{ //nolint:gosec // synthetic test fixture
+			Image:           "botbox/egress-proxy:dev",
+			DatabaseURL:     "postgres://fixture-db/botbox",
+			KeySpec:         "fixture-kek-material",
+			AuthBrokerURL:   "http://host.docker.internal:8085",
+			AuthBrokerToken: secretBrokerToken,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.CreateEnvironment(context.Background(), compute.BotConfig{WorkspaceID: "ws-b", BotID: "bot-b"}); err != nil {
+		t.Fatalf("CreateEnvironment failed: %v", err)
+	}
+
+	sandboxRaw, _ := json.Marshal(configs["botbox-bot-bot-b"]["Env"])
+	if !strings.Contains(string(sandboxRaw), "BOTBOX_AUTH_BROKER_ENABLED=true") {
+		t.Fatalf("sandbox missing non-secret broker capability flag: %s", sandboxRaw)
+	}
+	if strings.Contains(string(sandboxRaw), secretBrokerToken) || strings.Contains(string(sandboxRaw), "host.docker.internal:8085") {
+		t.Fatalf("broker token or internal URL leaked into sandbox env: %s", sandboxRaw)
+	}
+
+	proxyRaw, _ := json.Marshal(configs["botbox-egress-bot-b"]["Env"])
+	if !strings.Contains(string(proxyRaw), "EGRESS_PROXY_AUTH_BROKER_URL=http://host.docker.internal:8085") ||
+		!strings.Contains(string(proxyRaw), "EGRESS_PROXY_AUTH_BROKER_TOKEN="+secretBrokerToken) {
+		t.Fatalf("proxy missing isolated broker bridge env: %s", proxyRaw)
+	}
+
+	// ValidateContainerSpec rejects any manual broker token injection into sandbox containers.
+	if err := docker.ValidateContainerSpec(docker.ContainerCreateSpec{
+		Env: []string{"BOTBOX_AUTH_BROKER_TOKEN=" + secretBrokerToken},
+		HostConfig: docker.ContainerHostConfig{
+			CapDrop:     []string{"ALL"},
+			SecurityOpt: []string{"no-new-privileges:true"},
+		},
+	}); err == nil {
+		t.Fatal("expected ValidateContainerSpec to reject broker token env in sandbox")
+	}
+}

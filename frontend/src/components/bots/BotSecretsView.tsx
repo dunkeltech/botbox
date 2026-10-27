@@ -3,12 +3,16 @@
 import {
   ArrowLeft,
   ArrowRight,
+  Ban,
+  Check,
   CheckCircle2,
   Globe,
   KeyRound,
+  Lock,
   Pencil,
   Plus,
   RefreshCw,
+  RotateCcw,
   ShieldAlert,
   ShieldCheck,
   Trash2,
@@ -22,6 +26,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useRef,
   useState,
 } from 'react';
 
@@ -38,6 +43,7 @@ import {
 } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
 import {
+  ApiClientError,
   createBotSecret,
   createWorkspaceSecret,
   deleteBotSecret,
@@ -49,10 +55,19 @@ import {
   updateBotSecret,
   updateWorkspaceSecret,
 } from '@/lib/api-client';
+import {
+  computeTriageMutation,
+  computeUndoMutation,
+  evaluateHostInPolicy,
+  isPolicyDraftDirty,
+  normalizeHostPattern,
+  type TriageUndoSpec,
+} from '@/lib/egress-policy';
 import { type ErrorTranslationKey, resolveErrorKey } from '@/lib/errors';
 import { canManageBot, canManageMembers } from '@/lib/rbac';
 import type {
   Bot,
+  EgressEnforcementStatus,
   EgressLogAction,
   EgressLogEntry,
   EgressPolicyMode,
@@ -142,7 +157,30 @@ function formatTimestamp(iso: string): string {
 }
 
 function normalizeHostEntry(raw: string): string {
-  return raw.trim().toLowerCase();
+  return normalizeHostPattern(raw);
+}
+
+interface HostTriageFeedback {
+  host: string;
+  op: 'allow' | 'block';
+  status: EgressEnforcementStatus;
+  revision: number;
+  undo: TriageUndoSpec;
+}
+
+type PolicyStatusNotice =
+  | { kind: 'applied' }
+  | { kind: 'pending'; revision: number }
+  | { kind: 'not_running'; revision: number }
+  | { kind: 'reconciled'; revision: number }
+  | { kind: 'undo_complete'; host: string }
+  | { kind: 'undo_conflict'; host: string };
+
+function isUncertainWriteError(err: unknown): boolean {
+  if (!(err instanceof ApiClientError)) {
+    return true;
+  }
+  return err.status === 0 || err.status >= 500;
 }
 
 /**
@@ -191,14 +229,45 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
   const [secretErrorKey, setSecretErrorKey] =
     useState<ErrorTranslationKey | null>(null);
 
-  // Outbound policy form state.
+  // Outbound policy form draft state (kept separate from authoritative `policy`).
   const [policyMode, setPolicyMode] = useState<EgressPolicyMode>('allowlist');
   const [allowedHosts, setAllowedHosts] = useState<string[]>([]);
+  const [blockedHosts, setBlockedHosts] = useState<string[]>([]);
   const [hostDraft, setHostDraft] = useState('');
+  const [blockedHostDraft, setBlockedHostDraft] = useState('');
   const [savingPolicy, setSavingPolicy] = useState(false);
-  const [policySaved, setPolicySaved] = useState(false);
+  const [policyMutationInFlight, setPolicyMutationInFlight] = useState(false);
+  const [triagePendingHost, setTriagePendingHost] = useState<string | null>(
+    null,
+  );
+  const [policyStatusNotice, setPolicyStatusNotice] =
+    useState<PolicyStatusNotice | null>(null);
   const [policyErrorKey, setPolicyErrorKey] =
     useState<ErrorTranslationKey | null>(null);
+  const [draftConflictPrompt, setDraftConflictPrompt] = useState(false);
+  const [policyStateUnknown, setPolicyStateUnknown] = useState(false);
+  const [reloadingPolicy, setReloadingPolicy] = useState(false);
+  const [triageFeedbackByHost, setTriageFeedbackByHost] = useState<
+    Record<string, HostTriageFeedback>
+  >({});
+  const [triageAnnouncement, setTriageAnnouncement] = useState<string | null>(
+    null,
+  );
+
+  const policyRef = useRef<EgressPolicyResponse | null>(policy);
+  policyRef.current = policy;
+  const draftStateRef = useRef({
+    mode: policyMode,
+    allowed: allowedHosts,
+    blocked: blockedHosts,
+  });
+  draftStateRef.current = {
+    mode: policyMode,
+    allowed: allowedHosts,
+    blocked: blockedHosts,
+  };
+  const mutatingPolicyRef = useRef(false);
+  const blockedSectionRef = useRef<HTMLDivElement | null>(null);
 
   // Egress audit log filter state.
   const [logFilter, setLogFilter] = useState<LogFilter>('all');
@@ -221,11 +290,56 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
     setSecretErrorKey(null);
   }, []);
 
-  const syncPolicyState = useCallback((nextPolicy: EgressPolicyResponse) => {
-    setPolicy(nextPolicy);
-    setPolicyMode(nextPolicy.policy);
-    setAllowedHosts(nextPolicy.allowedHosts);
-  }, []);
+  const applyAuthoritativePolicy = useCallback(
+    (
+      nextPolicy: EgressPolicyResponse,
+      options?: { preserveDraftIfDirty?: boolean },
+    ) => {
+      const currentSaved = policyRef.current;
+      const currentDraft = draftStateRef.current;
+      const dirty = isPolicyDraftDirty(
+        currentSaved,
+        currentDraft.mode,
+        currentDraft.allowed,
+        currentDraft.blocked,
+      );
+
+      policyRef.current = nextPolicy;
+      setPolicy(nextPolicy);
+      setPolicyStateUnknown(false);
+
+      if (!dirty || !options?.preserveDraftIfDirty) {
+        setPolicyMode(nextPolicy.policy);
+        setAllowedHosts(nextPolicy.allowedHosts);
+        setBlockedHosts(nextPolicy.blockedHosts ?? []);
+        setDraftConflictPrompt(false);
+      } else if (
+        currentSaved &&
+        currentSaved.revision !== nextPolicy.revision
+      ) {
+        setDraftConflictPrompt(true);
+      }
+
+      setTriageFeedbackByHost((prev) => {
+        let changed = false;
+        const next: Record<string, HostTriageFeedback> = {};
+        for (const [host, fb] of Object.entries(prev)) {
+          if (
+            fb.status === 'pending' &&
+            nextPolicy.enforcementStatus === 'applied' &&
+            nextPolicy.acknowledgedRevision >= fb.revision
+          ) {
+            next[host] = { ...fb, status: 'applied' };
+            changed = true;
+          } else {
+            next[host] = fb;
+          }
+        }
+        return changed ? next : prev;
+      });
+    },
+    [],
+  );
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -237,18 +351,50 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
         listBotEgressLogs(workspace.id, bot.id, { limit: 50 }),
       ]);
       setSecrets(secretsResp.secrets);
-      syncPolicyState(policyResp);
+      applyAuthoritativePolicy(policyResp, { preserveDraftIfDirty: false });
       setLogs(logsResp.logs);
     } catch (err) {
       setLoadErrorKey(resolveErrorKey(err));
     } finally {
       setLoading(false);
     }
-  }, [bot.id, syncPolicyState, workspace.id]);
+  }, [applyAuthoritativePolicy, bot.id, workspace.id]);
 
   useEffect(() => {
     void loadAll();
   }, [loadAll]);
+
+  useEffect(() => {
+    if (policy?.enforcementStatus !== 'pending') {
+      return;
+    }
+    let active = true;
+    const timer = window.setTimeout(() => {
+      void getBotEgressPolicy(workspace.id, bot.id)
+        .then((latest) => {
+          if (!active) {
+            return;
+          }
+          applyAuthoritativePolicy(latest, { preserveDraftIfDirty: true });
+          if (latest.enforcementStatus === 'applied') {
+            setPolicyStatusNotice({ kind: 'applied' });
+          }
+        })
+        .catch(() => {
+          // Leave pending until next refresh or user reload.
+        });
+    }, 1000);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [
+    applyAuthoritativePolicy,
+    bot.id,
+    policy?.enforcementStatus,
+    policy?.revision,
+    workspace.id,
+  ]);
 
   const fetchFilteredLogs = useCallback(
     async (filter: LogFilter) => {
@@ -322,7 +468,7 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
       getBotEgressPolicy(workspace.id, bot.id),
     ]);
     setSecrets(secretsResp.secrets);
-    syncPolicyState(policyResp);
+    applyAuthoritativePolicy(policyResp, { preserveDraftIfDirty: true });
   }
 
   async function handleSecretSubmit(event: FormEvent<HTMLFormElement>) {
@@ -436,8 +582,11 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
     if (!allowedHosts.includes(normalized)) {
       setAllowedHosts((prev) => [...prev, normalized]);
     }
+    setBlockedHosts((prev) =>
+      prev.filter((item) => normalizeHostPattern(item) !== normalized),
+    );
     setHostDraft('');
-    setPolicySaved(false);
+    setPolicyStatusNotice(null);
     setPolicyErrorKey(null);
   }
 
@@ -453,38 +602,331 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
       return;
     }
     setAllowedHosts((prev) => prev.filter((item) => item !== host));
-    setPolicySaved(false);
+    setPolicyStatusNotice(null);
+  }
+
+  function handleAddBlockedHost() {
+    if (!canEditBotSecrets) {
+      return;
+    }
+    const normalized = normalizeHostEntry(blockedHostDraft);
+    if (!normalized) {
+      return;
+    }
+    if (!blockedHosts.includes(normalized)) {
+      setBlockedHosts((prev) => [...prev, normalized]);
+    }
+    setAllowedHosts((prev) =>
+      prev.filter((item) => normalizeHostPattern(item) !== normalized),
+    );
+    setBlockedHostDraft('');
+    setPolicyStatusNotice(null);
+    setPolicyErrorKey(null);
+  }
+
+  function handleBlockedHostInputKeyDown(
+    event: KeyboardEvent<HTMLInputElement>,
+  ) {
+    if (!event.nativeEvent.isComposing && event.key === 'Enter') {
+      event.preventDefault();
+      handleAddBlockedHost();
+    }
+  }
+
+  function handleRemoveBlockedHost(host: string) {
+    if (!canEditBotSecrets) {
+      return;
+    }
+    setBlockedHosts((prev) => prev.filter((item) => item !== host));
+    setPolicyStatusNotice(null);
+  }
+
+  function handleLoadSavedDraft() {
+    if (!policy) {
+      return;
+    }
+    setPolicyMode(policy.policy);
+    setAllowedHosts(policy.allowedHosts);
+    setBlockedHosts(policy.blockedHosts ?? []);
+    setDraftConflictPrompt(false);
+    setPolicyErrorKey(null);
+  }
+
+  async function handleReloadPolicy(): Promise<EgressPolicyResponse | null> {
+    if (reloadingPolicy) {
+      return null;
+    }
+    setReloadingPolicy(true);
+    setPolicyErrorKey(null);
+    try {
+      const latest = await getBotEgressPolicy(workspace.id, bot.id);
+      applyAuthoritativePolicy(latest, { preserveDraftIfDirty: true });
+      setPolicyStatusNotice({
+        kind: 'reconciled',
+        revision: latest.revision,
+      });
+      return latest;
+    } catch (err) {
+      setPolicyStateUnknown(true);
+      setPolicyErrorKey(resolveErrorKey(err));
+      return null;
+    } finally {
+      setReloadingPolicy(false);
+    }
+  }
+
+  async function reconcilePolicyFailure(err: unknown) {
+    if (
+      err instanceof ApiClientError &&
+      err.status === 409 &&
+      err.code === 'policy_conflict'
+    ) {
+      setPolicyErrorKey('policyConflict');
+      try {
+        const latest = await getBotEgressPolicy(workspace.id, bot.id);
+        applyAuthoritativePolicy(latest, { preserveDraftIfDirty: true });
+      } catch {
+        setPolicyStateUnknown(true);
+      }
+      return;
+    }
+
+    if (isUncertainWriteError(err)) {
+      try {
+        const authoritative = await getBotEgressPolicy(workspace.id, bot.id);
+        applyAuthoritativePolicy(authoritative, { preserveDraftIfDirty: true });
+        setPolicyStatusNotice({
+          kind: 'reconciled',
+          revision: authoritative.revision,
+        });
+      } catch {
+        setPolicyStateUnknown(true);
+        setPolicyErrorKey(resolveErrorKey(err));
+      }
+      return;
+    }
+
+    setPolicyErrorKey(resolveErrorKey(err));
+  }
+
+  function noticeForResponse(
+    updated: EgressPolicyResponse,
+  ): PolicyStatusNotice {
+    if (updated.enforcementStatus === 'pending') {
+      return { kind: 'pending', revision: updated.revision };
+    }
+    if (updated.enforcementStatus === 'not_running') {
+      return { kind: 'not_running', revision: updated.revision };
+    }
+    return { kind: 'applied' };
   }
 
   async function handleSavePolicy(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!canEditBotSecrets || savingPolicy) {
+    const currentSaved = policyRef.current;
+    if (
+      !currentSaved ||
+      !canEditBotSecrets ||
+      mutatingPolicyRef.current ||
+      policyStateUnknown
+    ) {
       return;
     }
 
+    mutatingPolicyRef.current = true;
+    setPolicyMutationInFlight(true);
     setSavingPolicy(true);
-    setPolicySaved(false);
+    setPolicyStatusNotice(null);
     setPolicyErrorKey(null);
 
     try {
-      const pendingHost = normalizeHostEntry(hostDraft);
-      const hostsToSave =
-        pendingHost && !allowedHosts.includes(pendingHost)
-          ? [...allowedHosts, pendingHost]
-          : allowedHosts;
+      const pendingAllowed = normalizeHostEntry(hostDraft);
+      const pendingBlocked = normalizeHostEntry(blockedHostDraft);
+
+      let nextAllowed = [...allowedHosts];
+      let nextBlocked = [...blockedHosts];
+
+      if (pendingAllowed && !nextAllowed.includes(pendingAllowed)) {
+        nextAllowed = [...nextAllowed, pendingAllowed];
+        nextBlocked = nextBlocked.filter(
+          (item) => normalizeHostPattern(item) !== pendingAllowed,
+        );
+      }
+      if (pendingBlocked && !nextBlocked.includes(pendingBlocked)) {
+        nextBlocked = [...nextBlocked, pendingBlocked];
+        nextAllowed = nextAllowed.filter(
+          (item) => normalizeHostPattern(item) !== pendingBlocked,
+        );
+      }
 
       const updated = await updateBotEgressPolicy(workspace.id, bot.id, {
         policy: policyMode,
-        allowedHosts: hostsToSave,
+        allowedHosts: nextAllowed,
+        blockedHosts: nextBlocked,
+        expectedRevision: currentSaved.revision,
       });
-      syncPolicyState(updated);
+      applyAuthoritativePolicy(updated, { preserveDraftIfDirty: false });
       setHostDraft('');
-      setPolicySaved(true);
+      setBlockedHostDraft('');
+      setPolicyStatusNotice(noticeForResponse(updated));
     } catch (err) {
-      setPolicyErrorKey(resolveErrorKey(err));
+      await reconcilePolicyFailure(err);
     } finally {
+      mutatingPolicyRef.current = false;
+      setPolicyMutationInFlight(false);
       setSavingPolicy(false);
     }
+  }
+
+  async function handleTriageHost(rawHost: string, op: 'allow' | 'block') {
+    const currentSaved = policyRef.current;
+    const normHost = normalizeHostPattern(rawHost);
+    if (
+      !currentSaved ||
+      !normHost ||
+      !canEditBotSecrets ||
+      mutatingPolicyRef.current ||
+      policyStateUnknown
+    ) {
+      return;
+    }
+
+    mutatingPolicyRef.current = true;
+    setPolicyMutationInFlight(true);
+    setTriagePendingHost(normHost);
+    setPolicyErrorKey(null);
+    setTriageAnnouncement(null);
+
+    const mutation = computeTriageMutation(currentSaved, normHost, op);
+    try {
+      const updated = await updateBotEgressPolicy(workspace.id, bot.id, {
+        policy: currentSaved.policy,
+        allowedHosts: mutation.allowedHosts,
+        blockedHosts: mutation.blockedHosts,
+        expectedRevision: currentSaved.revision,
+      });
+      applyAuthoritativePolicy(updated, { preserveDraftIfDirty: true });
+      const feedback: HostTriageFeedback = {
+        host: normHost,
+        op,
+        status: updated.enforcementStatus,
+        revision: updated.revision,
+        undo: { ...mutation.undo, appliedRevision: updated.revision },
+      };
+      setTriageFeedbackByHost((prev) => ({ ...prev, [normHost]: feedback }));
+      const notice = noticeForResponse(updated);
+      setPolicyStatusNotice(notice);
+      setTriageAnnouncement(
+        updated.enforcementStatus === 'pending'
+          ? `${normHost}: ${t('triagePendingEnforcement')}`
+          : op === 'allow'
+            ? `${normHost}: ${t('triageAllowedFeedback')}`
+            : `${normHost}: ${t('triageBlockedFeedback')}`,
+      );
+    } catch (err) {
+      await reconcilePolicyFailure(err);
+    } finally {
+      mutatingPolicyRef.current = false;
+      setPolicyMutationInFlight(false);
+      setTriagePendingHost(null);
+    }
+  }
+
+  async function handleUndoTriage(rawHost: string) {
+    const currentSaved = policyRef.current;
+    const normHost = normalizeHostPattern(rawHost);
+    const fb = triageFeedbackByHost[normHost];
+    if (
+      !currentSaved ||
+      !fb ||
+      !canEditBotSecrets ||
+      mutatingPolicyRef.current ||
+      policyStateUnknown
+    ) {
+      return;
+    }
+
+    const firstAttempt = computeUndoMutation(currentSaved, fb.undo);
+    if (!firstAttempt) {
+      setTriageFeedbackByHost((prev) => {
+        const copy = { ...prev };
+        delete copy[normHost];
+        return copy;
+      });
+      setPolicyStatusNotice({ kind: 'undo_conflict', host: normHost });
+      return;
+    }
+
+    mutatingPolicyRef.current = true;
+    setPolicyMutationInFlight(true);
+    setTriagePendingHost(normHost);
+    setPolicyErrorKey(null);
+
+    try {
+      let updated: EgressPolicyResponse;
+      try {
+        updated = await updateBotEgressPolicy(workspace.id, bot.id, {
+          policy: currentSaved.policy,
+          allowedHosts: firstAttempt.allowedHosts,
+          blockedHosts: firstAttempt.blockedHosts,
+          expectedRevision: currentSaved.revision,
+        });
+      } catch (err) {
+        if (
+          err instanceof ApiClientError &&
+          err.status === 409 &&
+          err.code === 'policy_conflict'
+        ) {
+          const latest = await getBotEgressPolicy(workspace.id, bot.id);
+          applyAuthoritativePolicy(latest, { preserveDraftIfDirty: true });
+          const retryMutation = computeUndoMutation(latest, fb.undo);
+          if (!retryMutation) {
+            setTriageFeedbackByHost((prev) => {
+              const copy = { ...prev };
+              delete copy[normHost];
+              return copy;
+            });
+            setPolicyStatusNotice({ kind: 'undo_conflict', host: normHost });
+            return;
+          }
+          updated = await updateBotEgressPolicy(workspace.id, bot.id, {
+            policy: latest.policy,
+            allowedHosts: retryMutation.allowedHosts,
+            blockedHosts: retryMutation.blockedHosts,
+            expectedRevision: latest.revision,
+          });
+        } else {
+          throw err;
+        }
+      }
+
+      applyAuthoritativePolicy(updated, { preserveDraftIfDirty: true });
+      setTriageFeedbackByHost((prev) => {
+        const copy = { ...prev };
+        delete copy[normHost];
+        return copy;
+      });
+      if (updated.enforcementStatus === 'pending') {
+        setPolicyStatusNotice({ kind: 'pending', revision: updated.revision });
+      } else {
+        setPolicyStatusNotice({ kind: 'undo_complete', host: normHost });
+      }
+      setTriageAnnouncement(null);
+    } catch (err) {
+      await reconcilePolicyFailure(err);
+    } finally {
+      mutatingPolicyRef.current = false;
+      setPolicyMutationInFlight(false);
+      setTriagePendingHost(null);
+    }
+  }
+
+  function handleJumpToBlockedRule() {
+    blockedSectionRef.current?.scrollIntoView?.({
+      behavior: 'smooth',
+      block: 'center',
+    });
+    blockedSectionRef.current?.querySelector('input')?.focus();
   }
 
   function handleSelectLogFilter(nextFilter: LogFilter) {
@@ -1078,14 +1520,95 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
                 </p>
               </div>
 
-              {policySaved ? (
+              {policyStateUnknown ? (
+                <div role="alert" className="flex flex-col gap-3">
+                  <Alert tone="warning">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <span>{t('policyStateUnknownBanner')}</span>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        disabled={reloadingPolicy}
+                        onClick={() => void handleReloadPolicy()}
+                      >
+                        <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                        <span>{t('policyReloadAction')}</span>
+                      </Button>
+                    </div>
+                  </Alert>
+                </div>
+              ) : null}
+
+              {policyStatusNotice ? (
                 <div role="status">
-                  <Alert tone="success">{t('policySavedBanner')}</Alert>
+                  <Alert
+                    tone={
+                      policyStatusNotice.kind === 'pending' ||
+                      policyStatusNotice.kind === 'reconciled' ||
+                      policyStatusNotice.kind === 'undo_conflict'
+                        ? 'warning'
+                        : 'success'
+                    }
+                  >
+                    {policyStatusNotice.kind === 'applied'
+                      ? t('policySavedBanner')
+                      : policyStatusNotice.kind === 'pending'
+                        ? t('policyPendingBanner', {
+                            revision: policyStatusNotice.revision,
+                          })
+                        : policyStatusNotice.kind === 'not_running'
+                          ? t('policyNotRunningBanner', {
+                              revision: policyStatusNotice.revision,
+                            })
+                          : policyStatusNotice.kind === 'reconciled'
+                            ? t('policyReconciledNotice', {
+                                revision: policyStatusNotice.revision,
+                              })
+                            : policyStatusNotice.kind === 'undo_complete'
+                              ? t('triageUndoComplete', {
+                                  host: policyStatusNotice.host,
+                                })
+                              : t('triageUndoConflict', {
+                                  host: policyStatusNotice.host,
+                                })}
+                  </Alert>
                 </div>
               ) : null}
 
               {policyErrorKey ? (
-                <Alert tone="warning">{tErrors(policyErrorKey)}</Alert>
+                <div role="alert">
+                  <Alert tone="warning">{tErrors(policyErrorKey)}</Alert>
+                </div>
+              ) : null}
+
+              {draftConflictPrompt && policy ? (
+                <div role="status">
+                  <Alert tone="warning">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <span>
+                        {t('policyDraftConflictBanner', {
+                          revision: policy.revision,
+                        })}
+                      </span>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={() => setDraftConflictPrompt(false)}
+                        >
+                          {t('policyDraftKeep')}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={handleLoadSavedDraft}
+                        >
+                          {t('policyDraftRebase')}
+                        </Button>
+                      </div>
+                    </div>
+                  </Alert>
+                </div>
               ) : null}
 
               <Card className="p-6">
@@ -1100,9 +1623,13 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
                     value={policyMode}
                     onChange={(nextMode) => {
                       setPolicyMode(nextMode);
-                      setPolicySaved(false);
+                      setPolicyStatusNotice(null);
                     }}
-                    disabled={!canEditBotSecrets || savingPolicy}
+                    disabled={
+                      !canEditBotSecrets ||
+                      policyMutationInFlight ||
+                      policyStateUnknown
+                    }
                     options={[
                       {
                         value: 'allowlist',
@@ -1133,7 +1660,11 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
                           autoCapitalize="none"
                           spellCheck={false}
                           value={hostDraft}
-                          disabled={!canEditBotSecrets || savingPolicy}
+                          disabled={
+                            !canEditBotSecrets ||
+                            policyMutationInFlight ||
+                            policyStateUnknown
+                          }
                           onKeyDown={handleHostInputKeyDown}
                           onChange={(event) => setHostDraft(event.target.value)}
                         />
@@ -1143,7 +1674,8 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
                         variant="secondary"
                         disabled={
                           !canEditBotSecrets ||
-                          savingPolicy ||
+                          policyMutationInFlight ||
+                          policyStateUnknown ||
                           !hostDraft.trim()
                         }
                         onClick={handleAddAllowedHost}
@@ -1162,16 +1694,103 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
                         {allowedHosts.map((host) => (
                           <li
                             key={host}
-                            className="inline-flex min-h-[44px] items-center gap-2 rounded-sm border border-line bg-paper-2 pl-3 pr-1.5 font-mono text-[13px] text-ink"
+                            className="inline-flex min-h-[44px] items-center gap-1 rounded-sm border border-line bg-paper-2 pl-3 pr-0.5 font-mono text-[13px] text-ink"
                           >
                             <span>{host}</span>
                             {canEditBotSecrets ? (
                               <button
                                 type="button"
                                 aria-label={t('removeHostAria', { host })}
-                                disabled={savingPolicy}
+                                disabled={
+                                  policyMutationInFlight || policyStateUnknown
+                                }
                                 onClick={() => handleRemoveAllowedHost(host)}
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-xs text-ink-2 transition hover:bg-mint-soft hover:text-green-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+                                className="inline-flex h-11 w-11 items-center justify-center rounded-xs text-ink-2 transition hover:bg-mint-soft hover:text-green-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+                              >
+                                <X className="h-3.5 w-3.5" aria-hidden="true" />
+                              </button>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+
+                  <div
+                    ref={blockedSectionRef}
+                    id="blocked-hosts-section"
+                    className="flex flex-col gap-3 border-t border-line pt-4"
+                  >
+                    <div className="flex flex-col gap-1">
+                      <h3 className="text-[15px] font-bold text-ink">
+                        {t('blockedHostsTitle')}
+                      </h3>
+                      <p className="text-[13px] leading-[1.45] text-muted">
+                        {t('blockedHostsDesc')}
+                      </p>
+                    </div>
+
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                      <div className="flex-1">
+                        <Input
+                          name="blockedHostDraft"
+                          label={t('blockedHostInputLabel')}
+                          placeholder={t('blockedHostInputPlaceholder')}
+                          mono
+                          autoCorrect="off"
+                          autoCapitalize="none"
+                          spellCheck={false}
+                          value={blockedHostDraft}
+                          disabled={
+                            !canEditBotSecrets ||
+                            policyMutationInFlight ||
+                            policyStateUnknown
+                          }
+                          onKeyDown={handleBlockedHostInputKeyDown}
+                          onChange={(event) =>
+                            setBlockedHostDraft(event.target.value)
+                          }
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        disabled={
+                          !canEditBotSecrets ||
+                          policyMutationInFlight ||
+                          policyStateUnknown ||
+                          !blockedHostDraft.trim()
+                        }
+                        onClick={handleAddBlockedHost}
+                      >
+                        <Ban className="h-4 w-4" aria-hidden="true" />
+                        <span>{t('blockHostAction')}</span>
+                      </Button>
+                    </div>
+
+                    {blockedHosts.length === 0 ? (
+                      <p className="text-[14px] text-muted">
+                        {t('emptyBlockedHosts')}
+                      </p>
+                    ) : (
+                      <ul className="flex flex-wrap gap-2">
+                        {blockedHosts.map((host) => (
+                          <li
+                            key={host}
+                            className="inline-flex min-h-[44px] items-center gap-1 rounded-sm border border-dashed border-amber-line bg-amber-tint pl-3 pr-0.5 font-mono text-[13px] font-bold text-amber"
+                          >
+                            <span>{host}</span>
+                            {canEditBotSecrets ? (
+                              <button
+                                type="button"
+                                aria-label={t('removeBlockedHostAria', {
+                                  host,
+                                })}
+                                disabled={
+                                  policyMutationInFlight || policyStateUnknown
+                                }
+                                onClick={() => handleRemoveBlockedHost(host)}
+                                className="inline-flex h-11 w-11 items-center justify-center rounded-xs text-amber transition hover:bg-paper/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
                               >
                                 <X className="h-3.5 w-3.5" aria-hidden="true" />
                               </button>
@@ -1206,7 +1825,15 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
 
                   {canEditBotSecrets ? (
                     <div className="flex justify-end border-t border-line pt-4">
-                      <Button type="submit" arrow disabled={savingPolicy}>
+                      <Button
+                        type="submit"
+                        arrow
+                        disabled={
+                          savingPolicy ||
+                          policyMutationInFlight ||
+                          policyStateUnknown
+                        }
+                      >
                         {savingPolicy
                           ? t('savingPolicy')
                           : t('savePolicyAction')}
@@ -1232,6 +1859,9 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
                 </h2>
                 <p className="text-[15px] leading-[1.55] text-ink-2">
                   {t('egressLead')}
+                </p>
+                <p className="text-[13px] font-bold text-green-600">
+                  {t('triageSyncNote')}
                 </p>
               </div>
 
@@ -1273,6 +1903,12 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
               </div>
             </div>
 
+            {triageAnnouncement ? (
+              <div role="status" aria-live="polite" className="sr-only">
+                {triageAnnouncement}
+              </div>
+            ) : null}
+
             {logsErrorKey ? (
               <Alert tone="warning">{tErrors(logsErrorKey)}</Alert>
             ) : null}
@@ -1289,7 +1925,7 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
                   aria-labelledby="egress-activity-heading"
                   className="overflow-x-auto"
                 >
-                  <table className="w-full min-w-[720px] border-collapse text-left text-[13px]">
+                  <table className="w-full min-w-[840px] border-collapse text-left text-[13px]">
                     <thead className="border-b border-on-dark-faint/20 text-[12px] font-bold uppercase tracking-[0.04em] text-on-dark-muted">
                       <tr>
                         <th scope="col" className="px-3 py-2.5">
@@ -1307,6 +1943,9 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
                         <th scope="col" className="px-3 py-2.5 text-right">
                           {t('logColTime')}
                         </th>
+                        <th scope="col" className="px-3 py-2.5 text-right">
+                          {t('logColAction')}
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-on-dark-faint/15 font-mono">
@@ -1318,6 +1957,18 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
                             : entry.action === 'mitm_token_added'
                               ? CheckCircle2
                               : Globe;
+                        const normHost = normalizeHostPattern(entry.host);
+                        const evalHost = policy
+                          ? evaluateHostInPolicy(policy, normHost)
+                          : null;
+                        const feedback = triageFeedbackByHost[normHost];
+                        const rowPending = triagePendingHost === normHost;
+                        const controlsDisabled =
+                          !canEditBotSecrets ||
+                          policyMutationInFlight ||
+                          policyStateUnknown ||
+                          !policy;
+
                         return (
                           <tr key={entry.id}>
                             <th
@@ -1360,6 +2011,160 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
                             </td>
                             <td className="whitespace-nowrap px-3 py-2.5 text-right text-on-dark-muted">
                               {formatTimestamp(entry.createdAt)}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2.5 text-right font-sans">
+                              <div className="inline-flex flex-wrap items-center justify-end gap-2">
+                                {entry.action === 'mitm_token_added' ? (
+                                  <span
+                                    className={`inline-flex min-h-[44px] items-center gap-1.5 rounded-sm border px-3 text-[12px] font-bold ${
+                                      evalHost?.matchedBlock
+                                        ? 'border-dashed border-amber-line bg-dark-2 text-amber-on-dark'
+                                        : 'border-on-dark-faint/30 bg-dark-2 text-on-dark-muted'
+                                    }`}
+                                  >
+                                    <Lock
+                                      className="h-3.5 w-3.5 shrink-0"
+                                      aria-hidden="true"
+                                    />
+                                    <span>
+                                      {evalHost?.matchedBlock
+                                        ? t('triageViaSecretBlocked')
+                                        : t('triageViaSecret')}
+                                    </span>
+                                  </span>
+                                ) : rowPending ? (
+                                  <span className="inline-flex min-h-[44px] items-center rounded-sm border border-on-dark-faint/30 bg-dark-2 px-3 text-[12px] font-bold text-on-dark-muted">
+                                    {t('triageSaving')}
+                                  </span>
+                                ) : feedback ? (
+                                  <div className="inline-flex flex-wrap items-center justify-end gap-2">
+                                    <span
+                                      className={`inline-flex min-h-[44px] items-center gap-1.5 rounded-sm border px-3 text-[12px] font-bold ${
+                                        feedback.status === 'pending' ||
+                                        feedback.op === 'block'
+                                          ? 'border-dashed border-amber-line bg-dark-2 text-amber-on-dark'
+                                          : 'border-mint-line/40 bg-mint-soft text-green-600'
+                                      }`}
+                                    >
+                                      {feedback.status === 'pending'
+                                        ? t('triagePendingEnforcement')
+                                        : feedback.op === 'allow'
+                                          ? t('triageAllowedFeedback')
+                                          : t('triageBlockedFeedback')}
+                                    </span>
+                                    {canEditBotSecrets ? (
+                                      <button
+                                        type="button"
+                                        aria-label={t('triageUndoAria', {
+                                          host: normHost,
+                                        })}
+                                        disabled={controlsDisabled}
+                                        onClick={() =>
+                                          void handleUndoTriage(normHost)
+                                        }
+                                        className="inline-flex min-h-[44px] items-center gap-1.5 rounded-sm border border-on-dark-faint/40 bg-dark px-3 text-[12px] font-bold text-paper transition hover:border-green-light hover:text-mint focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green disabled:cursor-not-allowed disabled:opacity-50"
+                                      >
+                                        <RotateCcw
+                                          className="h-3.5 w-3.5 shrink-0"
+                                          aria-hidden="true"
+                                        />
+                                        <span>{t('triageUndoAction')}</span>
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                ) : evalHost?.isBlockedWildcard &&
+                                  evalHost.matchedBlock ? (
+                                  <div className="inline-flex flex-wrap items-center justify-end gap-2">
+                                    <span className="inline-flex min-h-[44px] items-center gap-1.5 rounded-sm border border-dashed border-amber-line bg-dark-2 px-3 font-mono text-[12px] font-bold text-amber-on-dark">
+                                      <Ban
+                                        className="h-3.5 w-3.5 shrink-0"
+                                        aria-hidden="true"
+                                      />
+                                      <span>
+                                        {t('triageWildcardBlocked', {
+                                          pattern: evalHost.matchedBlock,
+                                        })}
+                                      </span>
+                                    </span>
+                                    {canEditBotSecrets ? (
+                                      <button
+                                        type="button"
+                                        onClick={handleJumpToBlockedRule}
+                                        className="inline-flex min-h-[44px] items-center gap-1.5 rounded-sm border border-amber-line bg-dark px-3 text-[12px] font-bold text-amber-on-dark transition hover:bg-dark-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+                                      >
+                                        <Pencil
+                                          className="h-3.5 w-3.5 shrink-0"
+                                          aria-hidden="true"
+                                        />
+                                        <span>{t('triageEditRuleAction')}</span>
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                ) : evalHost ? (
+                                  <>
+                                    {evalHost.isBlockedExact ? (
+                                      <span className="inline-flex min-h-[44px] items-center rounded-sm border border-dashed border-amber-line bg-dark-2 px-3 text-[12px] font-bold text-amber-on-dark">
+                                        {t('triageBlockedStatus')}
+                                      </span>
+                                    ) : null}
+                                    {!evalHost.isAllowed &&
+                                    canEditBotSecrets ? (
+                                      <button
+                                        type="button"
+                                        aria-label={t('triageAllowAria', {
+                                          host: normHost,
+                                        })}
+                                        disabled={controlsDisabled}
+                                        onClick={() =>
+                                          void handleTriageHost(
+                                            normHost,
+                                            'allow',
+                                          )
+                                        }
+                                        className="inline-flex min-h-[44px] items-center gap-1.5 rounded-sm border border-mint-line/40 bg-mint-soft px-3 text-[12px] font-bold text-green-600 transition hover:bg-mint focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green disabled:cursor-not-allowed disabled:opacity-50"
+                                      >
+                                        <Check
+                                          className="h-3.5 w-3.5 shrink-0"
+                                          aria-hidden="true"
+                                        />
+                                        <span>{t('triageAllowAction')}</span>
+                                      </button>
+                                    ) : null}
+                                    {(evalHost.isAllowed ||
+                                      !evalHost.isBlockedExact) &&
+                                    canEditBotSecrets ? (
+                                      <button
+                                        type="button"
+                                        aria-label={t('triageBlockAria', {
+                                          host: normHost,
+                                        })}
+                                        disabled={controlsDisabled}
+                                        onClick={() =>
+                                          void handleTriageHost(
+                                            normHost,
+                                            'block',
+                                          )
+                                        }
+                                        className="inline-flex min-h-[44px] items-center gap-1.5 rounded-sm border border-amber-line bg-dark-2 px-3 text-[12px] font-bold text-amber-on-dark transition hover:bg-dark focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green disabled:cursor-not-allowed disabled:opacity-50"
+                                      >
+                                        <Ban
+                                          className="h-3.5 w-3.5 shrink-0"
+                                          aria-hidden="true"
+                                        />
+                                        <span>{t('triageBlockAction')}</span>
+                                      </button>
+                                    ) : null}
+                                    {!canEditBotSecrets &&
+                                    !evalHost.isBlockedExact ? (
+                                      <span className="inline-flex min-h-[44px] items-center rounded-sm border border-on-dark-faint/30 bg-dark-2 px-3 text-[12px] font-bold text-on-dark-muted">
+                                        {evalHost.isAllowed
+                                          ? t('triageAllowedStatus')
+                                          : t('triageBlockedStatus')}
+                                      </span>
+                                    ) : null}
+                                  </>
+                                ) : null}
+                              </div>
                             </td>
                           </tr>
                         );

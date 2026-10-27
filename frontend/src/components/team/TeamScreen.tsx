@@ -51,11 +51,18 @@ function moodFor(
 
 function pauseKey(
   reason: string,
-): 'pauseTurnLimit' | 'pauseLoop' | 'pauseApproval' | 'pauseBudget' | 'paused' {
+):
+  | 'pauseTurnLimit'
+  | 'pauseLoop'
+  | 'pauseApproval'
+  | 'pauseBudget'
+  | 'pauseSecretRequired'
+  | 'paused' {
   if (reason === 'turn_limit') return 'pauseTurnLimit';
   if (reason === 'loop') return 'pauseLoop';
   if (reason === 'approval') return 'pauseApproval';
   if (reason === 'budget') return 'pauseBudget';
+  if (reason === 'secret_required') return 'pauseSecretRequired';
   return 'paused';
 }
 
@@ -468,6 +475,7 @@ export function TeamScreen({
             name={selectedBot.name}
             avatarSeed={selectedBot.avatarSeed}
             canChat={canChange}
+            role={role}
             transcriptQuery={query}
             variant="slack"
             hideHeader

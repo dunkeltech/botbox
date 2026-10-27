@@ -11,39 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const addEgressHost = `-- name: AddEgressHost :one
-INSERT INTO egress_rules (bot_id, workspace_id, policy, allowed_hosts)
-VALUES ($1, $2, 'allowlist', ARRAY[$3::text])
-ON CONFLICT (bot_id) DO UPDATE
-SET allowed_hosts = CASE
-        WHEN $3::text = ANY (egress_rules.allowed_hosts) THEN egress_rules.allowed_hosts
-        ELSE egress_rules.allowed_hosts || ARRAY[$3::text]
-    END,
-    updated_at = now()
-RETURNING bot_id, workspace_id, policy, allowed_hosts, updated_at
-`
-
-type AddEgressHostParams struct {
-	BotID       pgtype.UUID `json:"bot_id"`
-	WorkspaceID pgtype.UUID `json:"workspace_id"`
-	Host        string      `json:"host"`
-}
-
-// Insert only the approved host. An open policy is refused by the caller
-// before this write, so denial never reaches here (ADR-0015).
-func (q *Queries) AddEgressHost(ctx context.Context, arg AddEgressHostParams) (EgressRule, error) {
-	row := q.db.QueryRow(ctx, addEgressHost, arg.BotID, arg.WorkspaceID, arg.Host)
-	var i EgressRule
-	err := row.Scan(
-		&i.BotID,
-		&i.WorkspaceID,
-		&i.Policy,
-		&i.AllowedHosts,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const attachApprovalMessage = `-- name: AttachApprovalMessage :exec
 UPDATE approvals SET message_id = $3 WHERE workspace_id = $1 AND id = $2
 `

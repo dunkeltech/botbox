@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"strings"
 	"time"
 
+	"github.com/dunkeltech/botbox/backend/internal/egresspolicy"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
+	"github.com/dunkeltech/botbox/backend/internal/secrets/mitmproxy"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -35,19 +36,28 @@ type Turn struct {
 	TurnID      uuid.UUID
 }
 
+// ApplyOptions carries caller authorization context for policy-changing approvals.
+type ApplyOptions struct {
+	CanManageBot bool
+}
+
 // Apply records a decision. Approving an approval pause queues the waiting
 // bot and does not reset the turn counter. A turn-limit, loop, or budget
 // pause stays. Denying posts a system line and leaves the group paused.
 // The caller publishes Turn before commit.
-func Apply(ctx context.Context, q *db.Queries, approval db.Approval, decision string, actor pgtype.UUID, now time.Time) (*Turn, error) {
+func Apply(ctx context.Context, q *db.Queries, approval db.Approval, decision string, actor pgtype.UUID, now time.Time, opts ...ApplyOptions) (*Turn, error) {
 	if decision != "approved" && decision != "denied" {
 		return nil, ErrInvalid
 	}
 	if approval.Status != "pending" {
 		return nil, ErrConflict
 	}
+	var applyOpts ApplyOptions
+	if len(opts) > 0 {
+		applyOpts = opts[0]
+	}
 	if decision == "approved" {
-		if err := allow(ctx, q, approval, now); err != nil {
+		if err := allow(ctx, q, approval, actor, now, applyOpts); err != nil {
 			return nil, err
 		}
 	}
@@ -106,10 +116,10 @@ func Apply(ctx context.Context, q *db.Queries, approval db.Approval, decision st
 	return queueResume(ctx, q, approval)
 }
 
-func allow(ctx context.Context, q *db.Queries, approval db.Approval, now time.Time) error {
+func allow(ctx context.Context, q *db.Queries, approval db.Approval, actor pgtype.UUID, now time.Time, opts ApplyOptions) error {
 	switch approval.Kind {
 	case kindNewHost:
-		return allowHost(ctx, q, approval)
+		return allowHost(ctx, q, approval, actor, opts.CanManageBot)
 	case kindRaiseBudget:
 		if approval.ConversationID.Valid {
 			return allowGroupCap(ctx, q, approval)
@@ -120,30 +130,27 @@ func allow(ctx context.Context, q *db.Queries, approval db.Approval, now time.Ti
 	}
 }
 
-func allowHost(ctx context.Context, q *db.Queries, approval db.Approval) error {
+func allowHost(ctx context.Context, q *db.Queries, approval db.Approval, actor pgtype.UUID, canManageBot bool) error {
 	var payload cardPayload
 	if err := json.Unmarshal(approval.Payload, &payload); err != nil || payload.Host == "" {
 		return ErrInvalid
 	}
-	rule, err := q.GetEgressRuleByWorkspaceAndBot(ctx, db.GetEgressRuleByWorkspaceAndBotParams{
-		WorkspaceID: approval.WorkspaceID,
-		BotID:       approval.BotID,
-	})
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return err
+	var actorUUID uuid.UUID
+	if actor.Valid {
+		actorUUID = uuid.UUID(actor.Bytes)
 	}
-	policy, hosts := "allowlist", []string(nil)
-	if err == nil {
-		policy, hosts = rule.Policy, rule.AllowedHosts
-	}
-	if hostAllowed(policy, hosts, payload.Host) {
+	_, err := egresspolicy.ApproveNewHostTx(
+		ctx,
+		q,
+		uuid.UUID(approval.WorkspaceID.Bytes),
+		uuid.UUID(approval.BotID.Bytes),
+		actorUUID,
+		payload.Host,
+		canManageBot,
+	)
+	if errors.Is(err, egresspolicy.ErrAlreadyAllowed) {
 		return ErrHostNotBlocked
 	}
-	_, err = q.AddEgressHost(ctx, db.AddEgressHostParams{
-		BotID:       approval.BotID,
-		WorkspaceID: approval.WorkspaceID,
-		Host:        payload.Host,
-	})
 	return err
 }
 
@@ -273,28 +280,7 @@ func resumeMessage(ctx context.Context, q *db.Queries, approval db.Approval) (pg
 	return id, err
 }
 
-// hostAllowed mirrors the egress proxy: an open policy or a matching pattern
-// means this card must not add the host again.
 func hostAllowed(policy string, patterns []string, host string) bool {
-	if policy == "open" {
-		return true
-	}
-	host = strings.ToLower(host)
-	for _, pattern := range patterns {
-		pattern = strings.ToLower(strings.TrimSpace(pattern))
-		if pattern == "" {
-			continue
-		}
-		if strings.HasPrefix(pattern, "*.") {
-			base := strings.TrimPrefix(pattern, "*.")
-			if base != "" && strings.HasSuffix(host, "."+base) {
-				return true
-			}
-			continue
-		}
-		if host == pattern {
-			return true
-		}
-	}
-	return false
+	allowed, _ := mitmproxy.EvaluateHostAccess(mitmproxy.EgressPolicy(policy), patterns, nil, host)
+	return allowed
 }

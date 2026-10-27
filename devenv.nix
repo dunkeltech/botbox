@@ -44,6 +44,11 @@
     API_LISTEN_ADDR = "127.0.0.1:8080";
     FRONTEND_URL = "http://127.0.0.1:3000";
     PUBLIC_BASE_URL = "http://127.0.0.1:8000";
+    AUTH_BROKER_ADDR = "0.0.0.0:8085";
+    AUTH_BROKER_TOKEN = "botbox-local-dev-auth-broker-token-01";
+    BOTBOX_AUTH_BROKER_URL = "http://127.0.0.1:8085";
+    BOTBOX_AUTH_BROKER_PROXY_URL = "http://host.docker.internal:8085";
+    BOTBOX_AUTH_BROKER_TOKEN = "botbox-local-dev-auth-broker-token-01";
   };
 
   services.nats = {
@@ -68,6 +73,7 @@
 
   processes = {
     api.exec = "cd backend && exec air -c .air.toml";
+    auth-broker.exec = "cd backend && exec go run ./cmd/auth-broker";
     frontend.exec = "exec npm --prefix frontend run dev";
     caddy.exec = "exec caddy run --config Caddyfile --adapter caddyfile";
   };

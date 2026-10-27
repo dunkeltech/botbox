@@ -52,16 +52,19 @@ type Options struct {
 	SeccompProfile string
 	// AgentDialer optionally overrides how gRPC connections to a container agent are dialed.
 	AgentDialer func(ctx context.Context, addr string) (*grpc.ClientConn, error)
+	// AuthBrokerEnabled advertises non-secret browser_login capability into the sandbox.
+	AuthBrokerEnabled bool
 }
 
 // Driver implements compute.Driver using Docker Engine HTTP API calls
 // and per-sandbox gRPC AgentService calls.
 type Driver struct {
-	proxy          *ProxyOptions
-	client         *http.Client
-	baseURL        string
-	seccompProfile string
-	agentDialer    func(ctx context.Context, addr string) (*grpc.ClientConn, error)
+	proxy             *ProxyOptions
+	client            *http.Client
+	baseURL           string
+	seccompProfile    string
+	agentDialer       func(ctx context.Context, addr string) (*grpc.ClientConn, error)
+	authBrokerEnabled bool
 	// daemonDial opens one raw Engine connection. The shared HTTP client
 	// timeout would cut a hijacked chat stream off.
 	daemonDial func(ctx context.Context) (net.Conn, error)
@@ -162,13 +165,14 @@ func NewDriver(opts Options) (*Driver, error) {
 		proxy = &copy
 	}
 	return &Driver{
-		proxy:          proxy,
-		client:         client,
-		baseURL:        baseURL,
-		seccompProfile: strings.TrimSpace(opts.SeccompProfile),
-		agentDialer:    opts.AgentDialer,
-		daemonDial:     daemonDial,
-		tokens:         make(map[compute.EnvID]string),
+		proxy:             proxy,
+		client:            client,
+		baseURL:           baseURL,
+		seccompProfile:    strings.TrimSpace(opts.SeccompProfile),
+		agentDialer:       opts.AgentDialer,
+		authBrokerEnabled: opts.AuthBrokerEnabled,
+		daemonDial:        daemonDial,
+		tokens:            make(map[compute.EnvID]string),
 	}, nil
 }
 
@@ -302,6 +306,8 @@ func ValidateContainerSpec(spec ContainerCreateSpec) error {
 			if trimmed != "" && !strings.EqualFold(trimmed, "botbox-placeholder") && !strings.EqualFold(trimmed, "placeholder") {
 				return fmt.Errorf("%w: raw secret env var %s is forbidden in sandbox", compute.ErrSecurityViolation, upperKey)
 			}
+		case "BOTBOX_AUTH_BROKER_URL", "BOTBOX_AUTH_BROKER_TOKEN", "AUTH_BROKER_TOKEN", "EGRESS_PROXY_AUTH_BROKER_URL", "EGRESS_PROXY_AUTH_BROKER_TOKEN":
+			return fmt.Errorf("%w: broker credential or control env var %s is forbidden in sandbox", compute.ErrSecurityViolation, upperKey)
 		}
 	}
 	return nil
@@ -338,6 +344,9 @@ func (d *Driver) CreateEnvironment(ctx context.Context, cfg compute.BotConfig) (
 		}
 		spec.Labels["botbox.egress_proxy"] = proxyMarker
 		spec.Env = append(spec.Env, "BOTBOX_CA_URL=http://egress:8081/ca.crt")
+	}
+	if d.authBrokerEnabled {
+		spec.Env = append(spec.Env, "BOTBOX_AUTH_BROKER_ENABLED=true")
 	}
 	containerName := "botbox-bot-" + sanitizeIdentifier(cfg.BotID)
 	var createResp struct {

@@ -90,3 +90,76 @@ func TestJetStreamQueueAndInterrupt(t *testing.T) {
 	}
 
 }
+
+func TestEgressPolicyRevisionInvalidationAndAck(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	_ = listener.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	//nolint:gosec // local test NATS uses an internally reserved port and temporary storage
+	cmd := exec.CommandContext(ctx, "nats-server", "-js", "-a", "127.0.0.1", "-p", fmt.Sprint(port), "-sd", t.TempDir())
+	logs, err := cmd.StderrPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cancel(); _ = cmd.Wait() })
+	ready := make(chan struct{})
+	go func() {
+		scanner := bufio.NewScanner(logs)
+		for scanner.Scan() {
+			if strings.Contains(scanner.Text(), "Server is ready") {
+				close(ready)
+				return
+			}
+		}
+	}()
+	select {
+	case <-ready:
+	case <-ctx.Done():
+		t.Fatal("NATS did not become ready")
+	}
+
+	natsURL := fmt.Sprintf("nats://127.0.0.1:%d", port)
+	queue, err := events.OpenQueue(natsURL, func(context.Context, events.TurnNotification) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer queue.Close()
+
+	pub, err := events.OpenPublisher(natsURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pub.Close()
+
+	ws, bot := uuid.New(), uuid.New()
+	var currentAck int64
+	unsub, err := pub.SubscribeEgressPolicyInvalidate(ws, bot, func(_ context.Context, ev events.EgressInvalidationEvent) (int64, error) {
+		if ev.Revision > currentAck {
+			currentAck = ev.Revision
+		}
+		return currentAck, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unsub()
+
+	ack1, err := queue.PublishEgressPolicyRevision(ctx, ws, bot, 2)
+	if err != nil || ack1 != 2 {
+		t.Fatalf("ack1=%d err=%v, want 2", ack1, err)
+	}
+	// Stale/duplicate revision keeps highest acknowledged revision.
+	ack2, err := queue.PublishEgressPolicyRevision(ctx, ws, bot, 1)
+	if err != nil || ack2 != 2 {
+		t.Fatalf("ack2=%d err=%v, want 2", ack2, err)
+	}
+}

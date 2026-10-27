@@ -9,8 +9,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
+	"time"
 
+	"github.com/dunkeltech/botbox/backend/internal/authbroker"
 	"github.com/dunkeltech/botbox/backend/internal/desk"
+	"github.com/dunkeltech/botbox/backend/internal/secrets/mitmproxy"
+	"github.com/google/uuid"
 )
 
 const maxMCPBodyBytes = 1 << 20
@@ -18,7 +23,10 @@ const maxMCPBodyBytes = 1 << 20
 // MCPHandler exposes DesktopService over JSON-RPC 2.0 (Stdio and Streamable HTTP /mcp)
 // so both claude and agy CLIs can call desktop tools directly inside the sandbox.
 type MCPHandler struct {
-	desktop *DesktopService
+	desktop        *DesktopService
+	BrokerEnabled  bool
+	BrokerProxyURL string
+	BrokerClient   *http.Client
 }
 
 // NewMCPHandler constructs an MCP server backed by desktop.
@@ -26,7 +34,14 @@ func NewMCPHandler(desktop *DesktopService) *MCPHandler {
 	if desktop == nil {
 		desktop = NewDesktopService(nil)
 	}
-	return &MCPHandler{desktop: desktop}
+	return &MCPHandler{
+		desktop:        desktop,
+		BrokerProxyURL: "http://egress:8081",
+		BrokerClient: &http.Client{
+			Timeout:   30 * time.Second,
+			Transport: &http.Transport{Proxy: nil},
+		},
+	}
 }
 
 type rpcRequest struct {
@@ -146,7 +161,7 @@ func (m *MCPHandler) HandleMessage(ctx context.Context, raw []byte) (rpcResponse
 		return rpcResponse{
 			JSONRPC: "2.0",
 			ID:      id,
-			Result:  map[string]any{"tools": mcpToolsList()},
+			Result:  map[string]any{"tools": m.mcpToolsList()},
 		}, true
 	case "tools/call":
 		res, rpcErr := m.callTool(ctx, req.Params)
@@ -172,6 +187,13 @@ func (m *MCPHandler) callTool(ctx context.Context, rawParams json.RawMessage) (a
 	}
 	if err := json.Unmarshal(rawParams, &params); err != nil || params.Name == "" {
 		return nil, &rpcError{Code: -32602, Message: "invalid tools/call params"}
+	}
+
+	if params.Name == "request_secret" {
+		return m.handleRequestSecretMCP(params.Arguments)
+	}
+	if isBrokerMCPTool(params.Name) {
+		return m.handleBrokerBridgeMCP(ctx, params.Name, params.Arguments)
 	}
 
 	act, err := desk.Parse(params.Name, params.Arguments)
@@ -222,14 +244,23 @@ func writeRPCErrorHTTP(w http.ResponseWriter, status int, id json.RawMessage, co
 	})
 }
 
-func mcpToolsList() []map[string]any {
+func (m *MCPHandler) mcpToolsList() []map[string]any {
 	point := map[string]any{
 		"x":            map[string]any{"type": "integer"},
 		"y":            map[string]any{"type": "integer"},
 		"image_width":  map[string]any{"type": "integer"},
 		"image_height": map[string]any{"type": "integer"},
 	}
-	return []map[string]any{
+	adapterIDs := []string{"github_api", "gitlab_api", "gitlab_git", "npm_registry", "pypi_upload", "pypi_simple"}
+	requestSecretDesc := "Request a missing credential securely in chat without placing secrets into AI context. Only cli_egress with a reviewed adapter is currently supported; browser_login returns unsupported_capability."
+	if m.BrokerEnabled {
+		requestSecretDesc = "Request a missing credential securely in chat without placing secrets into AI context. Supports cli_egress (reviewed HTTPS adapters with env_placeholder_name) and browser_login (isolated external browser login adapters, without env_placeholder_name)."
+		for _, la := range authbroker.ListLoginAdapters() {
+			adapterIDs = append(adapterIDs, la.ID)
+		}
+	}
+
+	tools := []map[string]any{
 		{"name": "screenshot", "description": "Capture the 1280x800 desktop. Optional format png or jpeg and max_width. Coordinates on a downscaled shot are scaled back to the desktop.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"format": map[string]any{"type": "string", "enum": []string{"png", "jpeg"}}, "max_width": map[string]any{"type": "integer"}, "quality": map[string]any{"type": "integer"}}}},
 		{"name": "cursor_position", "description": "Read the pointer position on the 1280x800 desktop.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{}}},
 		{"name": "mouse_move", "description": "Move the pointer. Prefer shell or browser tools when a page has selectors.", "inputSchema": map[string]any{"type": "object", "required": []string{"x", "y"}, "properties": point}},
@@ -244,7 +275,260 @@ func mcpToolsList() []map[string]any {
 		{"name": "browser_fill", "description": "Fill a form control selected by CSS selector.", "inputSchema": map[string]any{"type": "object", "required": []string{"selector", "text"}, "properties": map[string]any{"selector": map[string]any{"type": "string"}, "text": map[string]any{"type": "string"}}}},
 		{"name": "browser_read", "description": "Read visible text from a CSS selector, or the page when selector is omitted.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"selector": map[string]any{"type": "string"}}}},
 		{"name": "browser_screenshot", "description": "Capture a browser element, or the viewport when selector is omitted.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"selector": map[string]any{"type": "string"}}}},
+		{"name": "request_secret", "description": requestSecretDesc, "inputSchema": map[string]any{
+			"type":     "object",
+			"required": []string{"kind", "adapter_id", "reason"},
+			"properties": map[string]any{
+				"kind":                 map[string]any{"type": "string", "enum": []string{"cli_egress", "browser_login"}},
+				"adapter_id":           map[string]any{"type": "string", "enum": adapterIDs},
+				"reason":               map[string]any{"type": "string"},
+				"target_origin":        map[string]any{"type": "string"},
+				"env_placeholder_name": map[string]any{"type": "string"},
+				"username_hint":        map[string]any{"type": "string"},
+			},
+		}},
 	}
+	if m.BrokerEnabled {
+		tools = append(tools,
+			map[string]any{
+				"name":        "broker_open",
+				"description": "Navigate an authenticated isolated broker browser session to an adapter-permitted HTTPS URL.",
+				"inputSchema": map[string]any{
+					"type":     "object",
+					"required": []string{"broker_session_id", "url"},
+					"properties": map[string]any{
+						"broker_session_id": map[string]any{"type": "string"},
+						"url":               map[string]any{"type": "string"},
+					},
+				},
+			},
+			map[string]any{
+				"name":        "broker_read",
+				"description": "Read sanitized visible text for a non-credential CSS selector in an authenticated broker session.",
+				"inputSchema": map[string]any{
+					"type":     "object",
+					"required": []string{"broker_session_id", "selector"},
+					"properties": map[string]any{
+						"broker_session_id": map[string]any{"type": "string"},
+						"selector":          map[string]any{"type": "string"},
+					},
+				},
+			},
+			map[string]any{
+				"name":        "broker_click",
+				"description": "Click a non-credential CSS selector inside an authenticated broker session.",
+				"inputSchema": map[string]any{
+					"type":     "object",
+					"required": []string{"broker_session_id", "selector"},
+					"properties": map[string]any{
+						"broker_session_id": map[string]any{"type": "string"},
+						"selector":          map[string]any{"type": "string"},
+					},
+				},
+			},
+			map[string]any{
+				"name":        "broker_screenshot",
+				"description": "Capture a sanitized PNG screenshot from an authenticated broker session when not in takeover or credential entry.",
+				"inputSchema": map[string]any{
+					"type":     "object",
+					"required": []string{"broker_session_id"},
+					"properties": map[string]any{
+						"broker_session_id": map[string]any{"type": "string"},
+					},
+				},
+			},
+		)
+	}
+	return tools
+}
+
+func (m *MCPHandler) handleRequestSecretMCP(raw json.RawMessage) (any, *rpcError) {
+	var args struct {
+		Kind               string `json:"kind"`
+		AdapterID          string `json:"adapter_id"`
+		Reason             string `json:"reason"`
+		TargetOrigin       string `json:"target_origin"`
+		EnvPlaceholderName string `json:"env_placeholder_name"`
+		UsernameHint       string `json:"username_hint"`
+	}
+	if err := json.Unmarshal(raw, &args); err != nil {
+		return nil, &rpcError{Code: -32602, Message: "invalid request_secret arguments"}
+	}
+	if args.Kind == "browser_login" {
+		if !m.BrokerEnabled {
+			return map[string]any{
+				"isError": true,
+				"content": []map[string]any{{
+					"type": "text",
+					"text": "secret_request.browser_unsupported: browser_login is disabled until the isolated authentication broker is available",
+				}},
+			}, nil
+		}
+		adapter, ok := authbroker.LookupLoginAdapter(args.AdapterID)
+		if !ok {
+			return nil, &rpcError{Code: -32602, Message: "unsupported browser login adapter"}
+		}
+		if args.Reason == "" || len(args.Reason) > 500 {
+			return nil, &rpcError{Code: -32602, Message: "reason must be 1..500 bytes"}
+		}
+		if args.EnvPlaceholderName != "" {
+			return nil, &rpcError{Code: -32602, Message: "env_placeholder_name is not valid for browser_login"}
+		}
+		if args.TargetOrigin != "" {
+			canon, _, _, err := mitmproxy.CanonicalHTTPSOrigin(args.TargetOrigin)
+			if err != nil || canon != adapter.Origin {
+				return nil, &rpcError{Code: -32602, Message: "target_origin must match the adapter's canonical HTTPS origin"}
+			}
+		}
+		return map[string]any{
+			"content": []map[string]any{{
+				"type": "text",
+				"text": "Browser login secret request submitted to chat. Waiting for human input.",
+			}},
+		}, nil
+	}
+	if args.Kind != "cli_egress" {
+		return nil, &rpcError{Code: -32602, Message: "unsupported request_secret kind"}
+	}
+	adapter, ok := mitmproxy.LookupAdapter(args.AdapterID)
+	if !ok {
+		return nil, &rpcError{Code: -32602, Message: "unsupported HTTPS credential adapter"}
+	}
+	if args.Reason == "" || len(args.Reason) > 500 {
+		return nil, &rpcError{Code: -32602, Message: "reason must be 1..500 bytes"}
+	}
+	if err := mitmproxy.ValidateEnvPlaceholderName(args.EnvPlaceholderName); err != nil {
+		return nil, &rpcError{Code: -32602, Message: err.Error()}
+	}
+	if args.TargetOrigin != "" {
+		_, host, port, err := mitmproxy.CanonicalHTTPSOrigin(args.TargetOrigin)
+		if err != nil || host != adapter.Host || port != adapter.Port {
+			return nil, &rpcError{Code: -32602, Message: "target_origin must match the adapter's canonical HTTPS origin"}
+		}
+	}
+	return map[string]any{
+		"content": []map[string]any{{
+			"type": "text",
+			"text": "Secret request submitted to chat. Waiting for human input.",
+		}},
+	}, nil
+}
+
+func isBrokerMCPTool(name string) bool {
+	switch name {
+	case "broker_open", "broker_read", "broker_click", "broker_screenshot":
+		return true
+	default:
+		return false
+	}
+}
+
+func (m *MCPHandler) handleBrokerBridgeMCP(ctx context.Context, name string, raw json.RawMessage) (any, *rpcError) {
+	if !m.BrokerEnabled {
+		return map[string]any{
+			"isError": true,
+			"content": []map[string]any{{
+				"type": "text",
+				"text": "secret_request.browser_unsupported: isolated authentication broker is disabled",
+			}},
+		}, nil
+	}
+	var in struct {
+		BrokerSessionID string `json:"broker_session_id"`
+		URL             string `json:"url"`
+		Selector        string `json:"selector"`
+	}
+	if err := json.Unmarshal(raw, &in); err != nil {
+		return nil, &rpcError{Code: -32602, Message: "invalid broker tool arguments"}
+	}
+	if _, err := uuid.Parse(strings.TrimSpace(in.BrokerSessionID)); err != nil {
+		return nil, &rpcError{Code: -32602, Message: "invalid broker_session_id"}
+	}
+
+	var route string
+	switch name {
+	case "broker_open":
+		if strings.TrimSpace(in.URL) == "" {
+			return nil, &rpcError{Code: -32602, Message: "url is required"}
+		}
+		route = "/broker/navigate"
+	case "broker_read":
+		if strings.TrimSpace(in.Selector) == "" {
+			return nil, &rpcError{Code: -32602, Message: "selector is required"}
+		}
+		route = "/broker/read"
+	case "broker_click":
+		if strings.TrimSpace(in.Selector) == "" {
+			return nil, &rpcError{Code: -32602, Message: "selector is required"}
+		}
+		route = "/broker/click"
+	case "broker_screenshot":
+		route = "/broker/screenshot"
+	default:
+		return nil, &rpcError{Code: -32601, Message: "unknown broker tool"}
+	}
+
+	baseURL := strings.TrimRight(strings.TrimSpace(m.BrokerProxyURL), "/")
+	if baseURL == "" {
+		baseURL = "http://egress:8081"
+	}
+	payload, err := json.Marshal(in)
+	if err != nil {
+		return nil, &rpcError{Code: -32603, Message: err.Error()}
+	}
+	client := m.BrokerClient
+	if client == nil {
+		client = &http.Client{
+			Timeout:   30 * time.Second,
+			Transport: &http.Transport{Proxy: nil},
+		}
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+route, strings.NewReader(string(payload))) //nolint:gosec // controlled per-bot egress proxy bridge
+	if err != nil {
+		return nil, &rpcError{Code: -32603, Message: err.Error()}
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req) //nolint:gosec // controlled per-bot egress proxy bridge
+	if err != nil {
+		return map[string]any{
+			"isError": true,
+			"content": []map[string]any{{"type": "text", "text": "broker bridge unavailable: " + err.Error()}},
+		}, nil
+	}
+	defer resp.Body.Close() //nolint:errcheck // best-effort close
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	if err != nil {
+		return nil, &rpcError{Code: -32603, Message: err.Error()}
+	}
+	if resp.StatusCode >= 400 {
+		return map[string]any{
+			"isError": true,
+			"content": []map[string]any{{"type": "text", "text": strings.TrimSpace(string(body))}},
+		}, nil
+	}
+	if name == "broker_screenshot" {
+		var shot struct {
+			Mime    string `json:"mime"`
+			Image   string `json:"image"`
+			PageURL string `json:"page_url"`
+			Origin  string `json:"origin"`
+		}
+		if json.Unmarshal(body, &shot) == nil && shot.Image != "" {
+			mime := shot.Mime
+			if mime == "" {
+				mime = "image/png"
+			}
+			return map[string]any{
+				"content": []map[string]any{
+					{"type": "image", "data": shot.Image, "mimeType": mime},
+					{"type": "text", "text": fmt.Sprintf("Captured sanitized broker screenshot on %s", shot.PageURL)},
+				},
+			}, nil
+		}
+	}
+	return map[string]any{
+		"content": []map[string]any{{"type": "text", "text": strings.TrimSpace(string(body))}},
+	}, nil
 }
 
 func merge(base, extra map[string]any) map[string]any {

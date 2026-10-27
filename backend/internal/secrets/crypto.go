@@ -15,7 +15,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/google/uuid"
 )
+
+// SecretAAD returns the canonical additional authenticated data binding a stored
+// ciphertext to its workspace, scope ("bot", "workspace", or "lease"), and row ID.
+func SecretAAD(workspaceID uuid.UUID, scope string, secretID uuid.UUID) []byte {
+	return fmt.Appendf(nil, "workspace:%s/scope:%s/id:%s", workspaceID, scope, secretID)
+}
 
 // AES256KeySize is the required byte length for KEKs and envelope DEKs.
 const AES256KeySize = 32

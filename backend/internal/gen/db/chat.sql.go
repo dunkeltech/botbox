@@ -34,7 +34,7 @@ func (q *Queries) AddDirectMessageMember(ctx context.Context, arg AddDirectMessa
 }
 
 const countPendingBotTurns = `-- name: CountPendingBotTurns :one
-SELECT count(*) FROM bot_turns WHERE workspace_id=$1 AND bot_id=$2 AND status IN ('queued','running')
+SELECT count(*) FROM bot_turns WHERE workspace_id=$1 AND bot_id=$2 AND status IN ('queued','running','waiting_secret')
 `
 
 type CountPendingBotTurnsParams struct {
@@ -50,7 +50,7 @@ func (q *Queries) CountPendingBotTurns(ctx context.Context, arg CountPendingBotT
 }
 
 const createBotTurn = `-- name: CreateBotTurn :one
-INSERT INTO bot_turns(workspace_id,bot_id,conversation_id,message_id) VALUES($1,$2,$3,$4) RETURNING id, position, workspace_id, bot_id, conversation_id, message_id, status, error_code, created_at, updated_at
+INSERT INTO bot_turns(workspace_id,bot_id,conversation_id,message_id) VALUES($1,$2,$3,$4) RETURNING id, position, workspace_id, bot_id, conversation_id, message_id, status, error_code, created_at, updated_at, continuation_prompt
 `
 
 type CreateBotTurnParams struct {
@@ -79,6 +79,7 @@ func (q *Queries) CreateBotTurn(ctx context.Context, arg CreateBotTurnParams) (B
 		&i.ErrorCode,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ContinuationPrompt,
 	)
 	return i, err
 }
@@ -169,7 +170,7 @@ func (q *Queries) GetBotSession(ctx context.Context, arg GetBotSessionParams) (B
 }
 
 const getBotTurn = `-- name: GetBotTurn :one
-SELECT id, position, workspace_id, bot_id, conversation_id, message_id, status, error_code, created_at, updated_at FROM bot_turns WHERE workspace_id=$1 AND id=$2
+SELECT id, position, workspace_id, bot_id, conversation_id, message_id, status, error_code, created_at, updated_at, continuation_prompt FROM bot_turns WHERE workspace_id=$1 AND id=$2
 `
 
 type GetBotTurnParams struct {
@@ -191,6 +192,7 @@ func (q *Queries) GetBotTurn(ctx context.Context, arg GetBotTurnParams) (BotTurn
 		&i.ErrorCode,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ContinuationPrompt,
 	)
 	return i, err
 }
@@ -260,6 +262,25 @@ func (q *Queries) GetTurnMessage(ctx context.Context, arg GetTurnMessageParams) 
 	return i, err
 }
 
+const interruptWaitingSecretTurnsForBot = `-- name: InterruptWaitingSecretTurnsForBot :execrows
+UPDATE bot_turns
+SET status='interrupted', error_code='engine.interrupted', updated_at=now()
+WHERE workspace_id=$1 AND bot_id=$2 AND status='waiting_secret'
+`
+
+type InterruptWaitingSecretTurnsForBotParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	BotID       pgtype.UUID `json:"bot_id"`
+}
+
+func (q *Queries) InterruptWaitingSecretTurnsForBot(ctx context.Context, arg InterruptWaitingSecretTurnsForBotParams) (int64, error) {
+	result, err := q.db.Exec(ctx, interruptWaitingSecretTurnsForBot, arg.WorkspaceID, arg.BotID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const listChatMessages = `-- name: ListChatMessages :many
 SELECT id, position, workspace_id, conversation_id, sender_type, sender_user_id, sender_bot_id, kind, content, metadata, created_at FROM messages WHERE workspace_id=$1 AND conversation_id=$2
 AND position < $3::bigint ORDER BY position DESC LIMIT $4::int
@@ -310,7 +331,7 @@ func (q *Queries) ListChatMessages(ctx context.Context, arg ListChatMessagesPara
 }
 
 const listConversationTurns = `-- name: ListConversationTurns :many
-SELECT t.id, t.position, t.workspace_id, t.bot_id, t.conversation_id, t.message_id, t.status, t.error_code, t.created_at, t.updated_at, (SELECT count(*) FROM bot_turns q WHERE q.workspace_id=t.workspace_id AND q.bot_id=t.bot_id AND q.status IN ('queued','running') AND q.position<t.position)::bigint AS queue_ahead
+SELECT t.id, t.position, t.workspace_id, t.bot_id, t.conversation_id, t.message_id, t.status, t.error_code, t.created_at, t.updated_at, t.continuation_prompt, (SELECT count(*) FROM bot_turns q WHERE q.workspace_id=t.workspace_id AND q.bot_id=t.bot_id AND q.status IN ('queued','running') AND q.position<t.position)::bigint AS queue_ahead
 FROM bot_turns t WHERE t.workspace_id=$1 AND t.conversation_id=$2 ORDER BY t.position DESC LIMIT 100
 `
 
@@ -320,17 +341,18 @@ type ListConversationTurnsParams struct {
 }
 
 type ListConversationTurnsRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	Position       int64              `json:"position"`
-	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
-	BotID          pgtype.UUID        `json:"bot_id"`
-	ConversationID pgtype.UUID        `json:"conversation_id"`
-	MessageID      pgtype.UUID        `json:"message_id"`
-	Status         string             `json:"status"`
-	ErrorCode      string             `json:"error_code"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	QueueAhead     int64              `json:"queue_ahead"`
+	ID                 pgtype.UUID        `json:"id"`
+	Position           int64              `json:"position"`
+	WorkspaceID        pgtype.UUID        `json:"workspace_id"`
+	BotID              pgtype.UUID        `json:"bot_id"`
+	ConversationID     pgtype.UUID        `json:"conversation_id"`
+	MessageID          pgtype.UUID        `json:"message_id"`
+	Status             string             `json:"status"`
+	ErrorCode          string             `json:"error_code"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	ContinuationPrompt string             `json:"continuation_prompt"`
+	QueueAhead         int64              `json:"queue_ahead"`
 }
 
 func (q *Queries) ListConversationTurns(ctx context.Context, arg ListConversationTurnsParams) ([]ListConversationTurnsRow, error) {
@@ -353,6 +375,7 @@ func (q *Queries) ListConversationTurns(ctx context.Context, arg ListConversatio
 			&i.ErrorCode,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ContinuationPrompt,
 			&i.QueueAhead,
 		); err != nil {
 			return nil, err
@@ -552,7 +575,11 @@ func (q *Queries) LockBotQueue(ctx context.Context, lockKey string) error {
 }
 
 const nextQueuedBotTurn = `-- name: NextQueuedBotTurn :one
-SELECT t.id, t.position, t.workspace_id, t.bot_id, t.conversation_id, t.message_id, t.status, t.error_code, t.created_at, t.updated_at FROM bot_turns t WHERE t.workspace_id=$1 AND t.bot_id=$2 AND t.status='queued' AND NOT EXISTS (SELECT 1 FROM bot_turns running WHERE running.workspace_id=$1 AND running.bot_id=$2 AND running.status='running') ORDER BY t.position LIMIT 1 FOR UPDATE OF t SKIP LOCKED
+SELECT t.id, t.position, t.workspace_id, t.bot_id, t.conversation_id, t.message_id, t.status, t.error_code, t.created_at, t.updated_at, t.continuation_prompt FROM bot_turns t
+WHERE t.workspace_id=$1 AND t.bot_id=$2 AND t.status='queued'
+  AND NOT EXISTS (SELECT 1 FROM bot_turns running WHERE running.workspace_id=$1 AND running.bot_id=$2 AND running.status='running')
+  AND NOT EXISTS (SELECT 1 FROM secret_leases sl WHERE sl.workspace_id=$1 AND sl.bot_id=$2 AND sl.revoked_at IS NULL AND sl.expires_at > now() AND sl.turn_id <> t.id)
+ORDER BY t.position LIMIT 1 FOR UPDATE OF t SKIP LOCKED
 `
 
 type NextQueuedBotTurnParams struct {
@@ -574,6 +601,7 @@ func (q *Queries) NextQueuedBotTurn(ctx context.Context, arg NextQueuedBotTurnPa
 		&i.ErrorCode,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ContinuationPrompt,
 	)
 	return i, err
 }
@@ -615,6 +643,45 @@ func (q *Queries) OpenDirectMessage(ctx context.Context, arg OpenDirectMessagePa
 		&i.RrIndex,
 	)
 	return i, err
+}
+
+const resumeBotTurnFromSecret = `-- name: ResumeBotTurnFromSecret :execrows
+UPDATE bot_turns
+SET status='queued', continuation_prompt=$3, error_code='', updated_at=now()
+WHERE workspace_id=$1 AND id=$2 AND status='waiting_secret'
+`
+
+type ResumeBotTurnFromSecretParams struct {
+	WorkspaceID        pgtype.UUID `json:"workspace_id"`
+	ID                 pgtype.UUID `json:"id"`
+	ContinuationPrompt string      `json:"continuation_prompt"`
+}
+
+func (q *Queries) ResumeBotTurnFromSecret(ctx context.Context, arg ResumeBotTurnFromSecretParams) (int64, error) {
+	result, err := q.db.Exec(ctx, resumeBotTurnFromSecret, arg.WorkspaceID, arg.ID, arg.ContinuationPrompt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const setBotTurnWaitingSecret = `-- name: SetBotTurnWaitingSecret :execrows
+UPDATE bot_turns
+SET status='waiting_secret', error_code='', updated_at=now()
+WHERE workspace_id=$1 AND id=$2 AND status='running'
+`
+
+type SetBotTurnWaitingSecretParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ID          pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) SetBotTurnWaitingSecret(ctx context.Context, arg SetBotTurnWaitingSecretParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setBotTurnWaitingSecret, arg.WorkspaceID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateBotTurn = `-- name: UpdateBotTurn :exec

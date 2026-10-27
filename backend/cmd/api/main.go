@@ -19,6 +19,7 @@ import (
 	migrations "github.com/dunkeltech/botbox/backend/db"
 	"github.com/dunkeltech/botbox/backend/internal/api"
 	"github.com/dunkeltech/botbox/backend/internal/auth"
+	"github.com/dunkeltech/botbox/backend/internal/authbroker"
 	"github.com/dunkeltech/botbox/backend/internal/compute"
 	"github.com/dunkeltech/botbox/backend/internal/compute/docker"
 	"github.com/dunkeltech/botbox/backend/internal/compute/vncrelay"
@@ -113,16 +114,26 @@ func run(logger *slog.Logger) error {
 		}
 		cfg.KeyRing = keyRing
 
-		computeDrv, closeCompute, drvErr := initComputeDriver(logger)
+		var authBroker authbroker.Client
+		if brokerURL := strings.TrimSpace(os.Getenv("BOTBOX_AUTH_BROKER_URL")); brokerURL != "" {
+			brokerToken := strings.TrimSpace(os.Getenv("BOTBOX_AUTH_BROKER_TOKEN"))
+			client, bErr := authbroker.NewHTTPClient(brokerURL, brokerToken)
+			if bErr != nil {
+				return fmt.Errorf("initialize auth broker client: %w", bErr)
+			}
+			authBroker = client
+		}
+		computeDrv, closeCompute, drvErr := initComputeDriverWithBroker(logger, authBroker != nil)
 		if drvErr != nil {
 			return drvErr
 		}
 		if closeCompute != nil {
 			defer closeCompute()
 		}
+		cfg.AuthBroker = authBroker
 		cfg.Compute = computeDrv
 		if natsURL := strings.TrimSpace(os.Getenv("NATS_URL")); natsURL != "" {
-			worker := &engine.Worker{Pool: pool, Execute: modelExecutor(pool, queries, keyRing, computeDrv)}
+			worker := &engine.Worker{Pool: pool, AuthBroker: authBroker, Execute: modelExecutor(pool, queries, keyRing, computeDrv, authBroker)}
 			ready := make(chan struct{})
 			queue, queueErr := events.OpenQueue(natsURL, func(ctx context.Context, job events.TurnNotification) error {
 				select {
@@ -253,6 +264,10 @@ func envOrDefault(key, fallback string) string {
 }
 
 func initComputeDriver(logger *slog.Logger) (compute.Driver, func(), error) {
+	return initComputeDriverWithBroker(logger, false)
+}
+
+func initComputeDriverWithBroker(logger *slog.Logger, authBrokerEnabled bool) (compute.Driver, func(), error) {
 	driverName := strings.ToLower(strings.TrimSpace(envOrDefault("BOTBOX_COMPUTE_DRIVER", compute.DefaultDriverDocker)))
 	if driverName != compute.DefaultDriverDocker && driverName != "memory" {
 		return nil, nil, errors.New("unsupported compute driver")
@@ -272,9 +287,22 @@ func initComputeDriver(logger *slog.Logger) (compute.Driver, func(), error) {
 				}
 				keySpec = strings.TrimSpace(string(data))
 			}
-			proxy = &docker.ProxyOptions{Image: envOrDefault("BOTBOX_EGRESS_IMAGE", "botbox/egress-proxy:dev"), DatabaseURL: proxyDB, KeySpec: keySpec}
+			proxy = &docker.ProxyOptions{
+				Image:       envOrDefault("BOTBOX_EGRESS_IMAGE", "botbox/egress-proxy:dev"),
+				DatabaseURL: proxyDB,
+				KeySpec:     keySpec,
+				NATSURL:     proxyNATSURL(os.Getenv("NATS_URL"), os.Getenv("BOTBOX_EGRESS_NATS_URL")),
+			}
+			if authBrokerEnabled {
+				proxy.AuthBrokerURL = proxyNATSURL(os.Getenv("BOTBOX_AUTH_BROKER_URL"), os.Getenv("BOTBOX_AUTH_BROKER_PROXY_URL"))
+				proxy.AuthBrokerToken = strings.TrimSpace(os.Getenv("BOTBOX_AUTH_BROKER_TOKEN"))
+			}
 		}
-		drv, err := docker.NewDriver(docker.Options{SocketPath: os.Getenv("DOCKER_SOCKET"), Proxy: proxy})
+		drv, err := docker.NewDriver(docker.Options{
+			SocketPath:        os.Getenv("DOCKER_SOCKET"),
+			Proxy:             proxy,
+			AuthBrokerEnabled: authBrokerEnabled,
+		})
 		if err != nil {
 			return nil, nil, err
 		}

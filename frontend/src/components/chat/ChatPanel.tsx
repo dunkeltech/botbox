@@ -17,7 +17,12 @@ import {
   describeToolMessage,
   type ToolCopy,
 } from '@/components/chat/toolMessage';
+import { BrokerTakeoverModal } from '@/components/chat/BrokerTakeoverModal';
+import { SecretRequestCard } from '@/components/chat/SecretRequestCard';
+import { SecretRequestModal } from '@/components/chat/SecretRequestModal';
+import { useSecretRequestControl } from '@/components/chat/useSecretRequestControl';
 import { useChatScroll } from '@/components/chat/useChatScroll';
+import type { WorkspaceRole } from '@/types/api';
 import type { components } from '@/types/openapi.gen';
 
 type Conversation = components['schemas']['ChatConversation'];
@@ -135,6 +140,7 @@ export function ChatPanel({
   name,
   avatarSeed,
   canChat = true,
+  role,
   transcriptQuery = '',
   variant = 'session',
   hideHeader = false,
@@ -145,6 +151,7 @@ export function ChatPanel({
   name: string;
   avatarSeed: string;
   canChat?: boolean;
+  role?: WorkspaceRole;
   /** Client-side filter for the team search field. Empty shows the whole history. */
   transcriptQuery?: string;
   /** Visual layout: 'session' uses right-aligned dark user bubbles; 'slack' uses Slack-style rows. */
@@ -163,6 +170,7 @@ export function ChatPanel({
   const [older, setOlder] = useState<History['messages']>([]);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const base = `/api/workspaces/${workspaceId}`;
+  const effectiveRole: WorkspaceRole = role ?? (canChat ? 'member' : 'viewer');
 
   const conversation = useQuery({
     queryKey: ['dm', workspaceId, userId, botId],
@@ -283,6 +291,12 @@ export function ChatPanel({
 
   const turn = history.data?.turns[0];
   const active = turn?.status === 'queued' || turn?.status === 'running';
+  const waitingSecret = turn?.status === 'waiting_secret';
+  const secretControl = useSecretRequestControl(workspaceId, async () => {
+    await client.invalidateQueries({
+      queryKey: ['chat', workspaceId, userId, conversationId],
+    });
+  });
   const messages = [...older, ...(history.data?.messages ?? [])]
     .filter(
       (message, index, all) =>
@@ -348,7 +362,7 @@ export function ChatPanel({
         ref={logRef}
         onScroll={onScroll}
         onLoadCapture={onMediaLoad}
-        className={`flex min-h-[220px] flex-1 flex-col gap-3 overflow-y-auto pr-1 ${
+        className={`relative flex min-h-[220px] flex-1 flex-col gap-3 overflow-y-auto pr-1 ${
           isSlack ? '' : 'max-h-[480px]'
         }`}
         role="log"
@@ -365,13 +379,37 @@ export function ChatPanel({
         ) : null}
 
         {messages.map((message) => {
+          if (message.kind === 'secret_request' && message.secretRequest) {
+            const sr = message.secretRequest;
+            return (
+              <SecretRequestCard
+                key={message.id}
+                summary={sr}
+                role={effectiveRole}
+                busy={secretControl.busyRequestId === sr.secretRequestId}
+                errorKey={
+                  secretControl.requestError?.id === sr.secretRequestId
+                    ? secretControl.requestError.key
+                    : null
+                }
+                onProvide={secretControl.openModal}
+                onTakeover={secretControl.openTakeover}
+                onDeny={(s) => void secretControl.deny(s)}
+              />
+            );
+          }
           const tool = describeToolMessage(message.kind, message.content);
           const isUser = message.senderType === 'user';
           const timeLabel = formatTime(message.createdAt);
 
           if (!isSlack && isUser && !tool) {
             return (
-              <article key={message.id} className="flex flex-col items-end">
+              // Keep sr-only's position: absolute contained within the scrollable log
+              // so off-viewport messages cannot inflate documentElement.scrollHeight.
+              <article
+                key={message.id}
+                className="relative flex flex-col items-end"
+              >
                 <span className="sr-only">{t('you')}</span>
                 <div className="max-w-[88%] rounded-[14px_14px_4px_14px] bg-dark px-3.5 py-2.5 text-[14px] leading-[1.5] text-paper">
                   <p className="whitespace-pre-wrap break-words">
@@ -458,6 +496,14 @@ export function ChatPanel({
               : t('working', { name })}
           </span>
         </div>
+      ) : waitingSecret ? (
+        <div
+          role="status"
+          className="flex items-center gap-2 rounded-sm border border-amber-line bg-amber-tint px-3 py-2 text-[13px] font-bold text-amber"
+        >
+          <BotAvatar seed={avatarSeed} mood="idle" size={22} decorative />
+          <span>{t('waitingSecret')}</span>
+        </div>
       ) : null}
 
       {turn?.errorCode ? (
@@ -525,6 +571,33 @@ export function ChatPanel({
           </Button>
         </div>
       </form>
+
+      <SecretRequestModal
+        workspaceId={workspaceId}
+        botName={name}
+        role={effectiveRole}
+        summary={secretControl.activeRequest}
+        onClose={secretControl.closeModal}
+        onOpenTakeover={secretControl.openTakeover}
+        onCompleted={async () => {
+          await client.invalidateQueries({
+            queryKey: ['chat', workspaceId, userId, conversationId],
+          });
+        }}
+      />
+
+      <BrokerTakeoverModal
+        workspaceId={workspaceId}
+        botName={name}
+        role={effectiveRole}
+        summary={secretControl.takeoverRequest}
+        onClose={secretControl.closeTakeover}
+        onCompleted={async () => {
+          await client.invalidateQueries({
+            queryKey: ['chat', workspaceId, userId, conversationId],
+          });
+        }}
+      />
     </section>
   );
 }

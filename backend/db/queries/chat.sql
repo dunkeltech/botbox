@@ -33,10 +33,29 @@ SELECT t.*, (SELECT count(*) FROM bot_turns q WHERE q.workspace_id=t.workspace_i
 FROM bot_turns t WHERE t.workspace_id=$1 AND t.conversation_id=$2 ORDER BY t.position DESC LIMIT 100;
 
 -- name: NextQueuedBotTurn :one
-SELECT t.* FROM bot_turns t WHERE t.workspace_id=$1 AND t.bot_id=$2 AND t.status='queued' AND NOT EXISTS (SELECT 1 FROM bot_turns running WHERE running.workspace_id=$1 AND running.bot_id=$2 AND running.status='running') ORDER BY t.position LIMIT 1 FOR UPDATE OF t SKIP LOCKED;
+SELECT t.* FROM bot_turns t
+WHERE t.workspace_id=$1 AND t.bot_id=$2 AND t.status='queued'
+  AND NOT EXISTS (SELECT 1 FROM bot_turns running WHERE running.workspace_id=$1 AND running.bot_id=$2 AND running.status='running')
+  AND NOT EXISTS (SELECT 1 FROM secret_leases sl WHERE sl.workspace_id=$1 AND sl.bot_id=$2 AND sl.revoked_at IS NULL AND sl.expires_at > now() AND sl.turn_id <> t.id)
+ORDER BY t.position LIMIT 1 FOR UPDATE OF t SKIP LOCKED;
 
 -- name: UpdateBotTurn :exec
 UPDATE bot_turns SET status=$3,error_code=$4,updated_at=now() WHERE workspace_id=$1 AND id=$2;
+
+-- name: SetBotTurnWaitingSecret :execrows
+UPDATE bot_turns
+SET status='waiting_secret', error_code='', updated_at=now()
+WHERE workspace_id=$1 AND id=$2 AND status='running';
+
+-- name: ResumeBotTurnFromSecret :execrows
+UPDATE bot_turns
+SET status='queued', continuation_prompt=$3, error_code='', updated_at=now()
+WHERE workspace_id=$1 AND id=$2 AND status='waiting_secret';
+
+-- name: InterruptWaitingSecretTurnsForBot :execrows
+UPDATE bot_turns
+SET status='interrupted', error_code='engine.interrupted', updated_at=now()
+WHERE workspace_id=$1 AND bot_id=$2 AND status='waiting_secret';
 
 -- name: GetTurnMessage :one
 SELECT * FROM messages WHERE workspace_id=$1 AND id=$2;
@@ -68,4 +87,4 @@ UPDATE bot_turns SET status='interrupted',error_code='engine.worker_lost',update
 WHERE workspace_id=$1 AND bot_id=$2 AND status='running' AND updated_at < sqlc.arg(as_of)::timestamptz - interval '20 minutes';
 
 -- name: CountPendingBotTurns :one
-SELECT count(*) FROM bot_turns WHERE workspace_id=$1 AND bot_id=$2 AND status IN ('queued','running');
+SELECT count(*) FROM bot_turns WHERE workspace_id=$1 AND bot_id=$2 AND status IN ('queued','running','waiting_secret');

@@ -29,7 +29,9 @@ namespace. No Docker socket or private CA key is mounted into either sandbox.
 
 The proxy binds its workspace/bot identity at startup, resolves encrypted
 `llm-openai` / `llm-anthropic` credentials using that identity, and applies the
-existing database-backed CONNECT policy for other hosts. Native provider hosts
+existing database-backed CONNECT policy (with deny-first blocklist precedence,
+revision-aware NATS invalidation, and a 1-second fail-closed freshness window for
+active passthrough tunnels per `ADR-0017`) for other hosts. Native provider hosts
 are denied CONNECT, including with open egress policy. Claude and Codex must use
 the explicit metered routes. Google routes/tunnels stay unavailable until the
 agy OAuth exchange and native metering are implemented.

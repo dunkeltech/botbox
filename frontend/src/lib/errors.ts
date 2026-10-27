@@ -32,7 +32,15 @@ export type ErrorTranslationKey =
   | 'approvalNotFound'
   | 'approvalConflict'
   | 'approvalHostNotBlocked'
+  | 'approvalWildcardBlocked'
   | 'approvalCapNotRaised'
+  | 'policyConflict'
+  | 'preconditionRequired'
+  | 'secretRequestUnsupportedCapability'
+  | 'secretRequestNotFound'
+  | 'secretRequestConflict'
+  | 'secretRequestRuleConflict'
+  | 'secretRequestHostNotAllowed'
   | 'chatQueueFull'
   | 'chatUnavailable'
   | 'unknownError';
@@ -69,7 +77,15 @@ const ERROR_CODE_TO_KEY: Record<string, ErrorTranslationKey> = {
   'approval.not_found': 'approvalNotFound',
   'approval.conflict': 'approvalConflict',
   'approval.host_not_blocked': 'approvalHostNotBlocked',
+  'approval.wildcard_blocked': 'approvalWildcardBlocked',
   'approval.cap_not_raised': 'approvalCapNotRaised',
+  policy_conflict: 'policyConflict',
+  precondition_required: 'preconditionRequired',
+  'secret_request.unsupported_capability': 'secretRequestUnsupportedCapability',
+  'secret_request.not_found': 'secretRequestNotFound',
+  'secret_request.conflict': 'secretRequestConflict',
+  'secret_request.rule_conflict': 'secretRequestRuleConflict',
+  'secret_request.host_not_allowed': 'secretRequestHostNotAllowed',
   'chat.queue_full': 'chatQueueFull',
   'chat.unavailable': 'chatUnavailable',
 };

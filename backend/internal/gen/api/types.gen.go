@@ -144,6 +144,27 @@ func (e BotStatus) Valid() bool {
 	}
 }
 
+// Defines values for BrokerTakeoverInputBodyKind.
+const (
+	Click BrokerTakeoverInputBodyKind = "click"
+	Key   BrokerTakeoverInputBodyKind = "key"
+	Type  BrokerTakeoverInputBodyKind = "type"
+)
+
+// Valid indicates whether the value is a known member of the BrokerTakeoverInputBodyKind enum.
+func (e BrokerTakeoverInputBodyKind) Valid() bool {
+	switch e {
+	case Click:
+		return true
+	case Key:
+		return true
+	case Type:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for BudgetStatePeriod.
 const (
 	BudgetStatePeriodDay   BudgetStatePeriod = "day"
@@ -164,11 +185,12 @@ func (e BudgetStatePeriod) Valid() bool {
 
 // Defines values for ChatMessageKind.
 const (
-	ChatMessageKindApproval ChatMessageKind = "approval"
-	ChatMessageKindCard     ChatMessageKind = "card"
-	ChatMessageKindSystem   ChatMessageKind = "system"
-	ChatMessageKindText     ChatMessageKind = "text"
-	ChatMessageKindTool     ChatMessageKind = "tool"
+	ChatMessageKindApproval      ChatMessageKind = "approval"
+	ChatMessageKindCard          ChatMessageKind = "card"
+	ChatMessageKindSecretRequest ChatMessageKind = "secret_request"
+	ChatMessageKindSystem        ChatMessageKind = "system"
+	ChatMessageKindText          ChatMessageKind = "text"
+	ChatMessageKindTool          ChatMessageKind = "tool"
 )
 
 // Valid indicates whether the value is a known member of the ChatMessageKind enum.
@@ -177,6 +199,8 @@ func (e ChatMessageKind) Valid() bool {
 	case ChatMessageKindApproval:
 		return true
 	case ChatMessageKindCard:
+		return true
+	case ChatMessageKindSecretRequest:
 		return true
 	case ChatMessageKindSystem:
 		return true
@@ -218,6 +242,7 @@ const (
 	ChatTurnStatusInterrupted    ChatTurnStatus = "interrupted"
 	ChatTurnStatusQueued         ChatTurnStatus = "queued"
 	ChatTurnStatusRunning        ChatTurnStatus = "running"
+	ChatTurnStatusWaitingSecret  ChatTurnStatus = "waiting_secret"
 )
 
 // Valid indicates whether the value is a known member of the ChatTurnStatus enum.
@@ -234,6 +259,8 @@ func (e ChatTurnStatus) Valid() bool {
 	case ChatTurnStatusQueued:
 		return true
 	case ChatTurnStatusRunning:
+		return true
+	case ChatTurnStatusWaitingSecret:
 		return true
 	default:
 		return false
@@ -273,6 +300,27 @@ func (e DriverType) Valid() bool {
 	case Docker:
 		return true
 	case Kubernetes:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for EgressEnforcementStatus.
+const (
+	EgressEnforcementStatusApplied    EgressEnforcementStatus = "applied"
+	EgressEnforcementStatusNotRunning EgressEnforcementStatus = "not_running"
+	EgressEnforcementStatusPending    EgressEnforcementStatus = "pending"
+)
+
+// Valid indicates whether the value is a known member of the EgressEnforcementStatus enum.
+func (e EgressEnforcementStatus) Valid() bool {
+	switch e {
+	case EgressEnforcementStatusApplied:
+		return true
+	case EgressEnforcementStatusNotRunning:
+		return true
+	case EgressEnforcementStatusPending:
 		return true
 	default:
 		return false
@@ -435,6 +483,78 @@ func (e SecretAuthScheme) Valid() bool {
 	case Bearer:
 		return true
 	case Header:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SecretRequestKind.
+const (
+	BrowserLogin SecretRequestKind = "browser_login"
+	CliEgress    SecretRequestKind = "cli_egress"
+)
+
+// Valid indicates whether the value is a known member of the SecretRequestKind enum.
+func (e SecretRequestKind) Valid() bool {
+	switch e {
+	case BrowserLogin:
+		return true
+	case CliEgress:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SecretRequestScope.
+const (
+	BotSecret       SecretRequestScope = "bot_secret"
+	Ephemeral       SecretRequestScope = "ephemeral"
+	WorkspaceSecret SecretRequestScope = "workspace_secret"
+)
+
+// Valid indicates whether the value is a known member of the SecretRequestScope enum.
+func (e SecretRequestScope) Valid() bool {
+	switch e {
+	case BotSecret:
+		return true
+	case Ephemeral:
+		return true
+	case WorkspaceSecret:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SecretRequestStatus.
+const (
+	SecretRequestStatusCancelled  SecretRequestStatus = "cancelled"
+	SecretRequestStatusDenied     SecretRequestStatus = "denied"
+	SecretRequestStatusExpired    SecretRequestStatus = "expired"
+	SecretRequestStatusFailed     SecretRequestStatus = "failed"
+	SecretRequestStatusFulfilled  SecretRequestStatus = "fulfilled"
+	SecretRequestStatusFulfilling SecretRequestStatus = "fulfilling"
+	SecretRequestStatusPending    SecretRequestStatus = "pending"
+)
+
+// Valid indicates whether the value is a known member of the SecretRequestStatus enum.
+func (e SecretRequestStatus) Valid() bool {
+	switch e {
+	case SecretRequestStatusCancelled:
+		return true
+	case SecretRequestStatusDenied:
+		return true
+	case SecretRequestStatusExpired:
+		return true
+	case SecretRequestStatusFailed:
+		return true
+	case SecretRequestStatusFulfilled:
+		return true
+	case SecretRequestStatusFulfilling:
+		return true
+	case SecretRequestStatusPending:
 		return true
 	default:
 		return false
@@ -637,6 +757,29 @@ type BotRuntime struct {
 // BotStatus defines model for BotStatus.
 type BotStatus string
 
+// BrokerTakeoverInputBody defines model for BrokerTakeoverInputBody.
+type BrokerTakeoverInputBody struct {
+	Key  *string                     `json:"key,omitempty"`
+	Kind BrokerTakeoverInputBodyKind `json:"kind"`
+	Text *string                     `json:"text,omitempty"`
+	X    *float64                    `json:"x,omitempty"`
+	Y    *float64                    `json:"y,omitempty"`
+}
+
+// BrokerTakeoverInputBodyKind defines model for BrokerTakeoverInputBody.Kind.
+type BrokerTakeoverInputBodyKind string
+
+// BrokerTakeoverState defines model for BrokerTakeoverState.
+type BrokerTakeoverState struct {
+	BrokerSessionId   openapi_types.UUID   `json:"brokerSessionId"`
+	CaptureSuppressed *bool                `json:"captureSuppressed,omitempty"`
+	Origin            string               `json:"origin"`
+	PageUrl           *string              `json:"pageUrl,omitempty"`
+	SecretRequest     SecretRequestSummary `json:"secretRequest"`
+	TakeoverActive    bool                 `json:"takeoverActive"`
+	TakeoverTicket    *string              `json:"takeoverTicket,omitempty"`
+}
+
 // BudgetState defines model for BudgetState.
 type BudgetState struct {
 	BotId       *openapi_types.UUID `json:"botId,omitempty"`
@@ -671,14 +814,15 @@ type ChatHistory struct {
 
 // ChatMessage defines model for ChatMessage.
 type ChatMessage struct {
-	Content      string                `json:"content"`
-	CreatedAt    time.Time             `json:"createdAt"`
-	Id           openapi_types.UUID    `json:"id"`
-	Kind         ChatMessageKind       `json:"kind"`
-	Position     int64                 `json:"position"`
-	SenderBotId  *openapi_types.UUID   `json:"senderBotId,omitempty"`
-	SenderType   ChatMessageSenderType `json:"senderType"`
-	SenderUserId *openapi_types.UUID   `json:"senderUserId,omitempty"`
+	Content       string                `json:"content"`
+	CreatedAt     time.Time             `json:"createdAt"`
+	Id            openapi_types.UUID    `json:"id"`
+	Kind          ChatMessageKind       `json:"kind"`
+	Position      int64                 `json:"position"`
+	SecretRequest *SecretRequestSummary `json:"secretRequest,omitempty"`
+	SenderBotId   *openapi_types.UUID   `json:"senderBotId,omitempty"`
+	SenderType    ChatMessageSenderType `json:"senderType"`
+	SenderUserId  *openapi_types.UUID   `json:"senderUserId,omitempty"`
 }
 
 // ChatMessageKind defines model for ChatMessage.Kind.
@@ -795,6 +939,9 @@ type DesktopActionListResponse struct {
 // DriverType defines model for DriverType.
 type DriverType string
 
+// EgressEnforcementStatus defines model for EgressEnforcementStatus.
+type EgressEnforcementStatus string
+
 // EgressLogAction defines model for EgressLogAction.
 type EgressLogAction string
 
@@ -827,12 +974,16 @@ type EgressPolicyMode string
 
 // EgressPolicyResponse defines model for EgressPolicyResponse.
 type EgressPolicyResponse struct {
-	AllowedHosts         []string           `json:"allowedHosts"`
-	BotId                openapi_types.UUID `json:"botId"`
-	EffectiveSecretHosts []string           `json:"effectiveSecretHosts"`
-	Policy               EgressPolicyMode   `json:"policy"`
-	UpdatedAt            time.Time          `json:"updatedAt"`
-	WorkspaceId          openapi_types.UUID `json:"workspaceId"`
+	AcknowledgedRevision int64                   `json:"acknowledgedRevision"`
+	AllowedHosts         []string                `json:"allowedHosts"`
+	BlockedHosts         []string                `json:"blockedHosts"`
+	BotId                openapi_types.UUID      `json:"botId"`
+	EffectiveSecretHosts []string                `json:"effectiveSecretHosts"`
+	EnforcementStatus    EgressEnforcementStatus `json:"enforcementStatus"`
+	Policy               EgressPolicyMode        `json:"policy"`
+	Revision             int64                   `json:"revision"`
+	UpdatedAt            time.Time               `json:"updatedAt"`
+	WorkspaceId          openapi_types.UUID      `json:"workspaceId"`
 }
 
 // EnvironmentStateResponse defines model for EnvironmentStateResponse.
@@ -897,6 +1048,14 @@ type FileEntry struct {
 type FileListResponse struct {
 	Entries []FileEntry `json:"entries"`
 	Path    string      `json:"path"`
+}
+
+// FulfillSecretRequestBody defines model for FulfillSecretRequestBody.
+type FulfillSecretRequestBody struct {
+	ReplaceExisting *bool              `json:"replaceExisting,omitempty"`
+	Scope           SecretRequestScope `json:"scope"`
+	SecretValue     string             `json:"secretValue"`
+	Username        *string            `json:"username,omitempty"`
 }
 
 // Group defines model for Group.
@@ -1045,6 +1204,41 @@ type SecretMetadata struct {
 	WorkspaceId     openapi_types.UUID  `json:"workspaceId"`
 }
 
+// SecretRequestKind defines model for SecretRequestKind.
+type SecretRequestKind string
+
+// SecretRequestResult defines model for SecretRequestResult.
+type SecretRequestResult struct {
+	MfaRequired   *bool                `json:"mfaRequired,omitempty"`
+	SecretRequest SecretRequestSummary `json:"secretRequest"`
+}
+
+// SecretRequestScope defines model for SecretRequestScope.
+type SecretRequestScope string
+
+// SecretRequestStatus defines model for SecretRequestStatus.
+type SecretRequestStatus string
+
+// SecretRequestSummary defines model for SecretRequestSummary.
+type SecretRequestSummary struct {
+	AdapterId          string              `json:"adapterId"`
+	AdapterLabel       *string             `json:"adapterLabel,omitempty"`
+	BrokerEnabled      *bool               `json:"brokerEnabled,omitempty"`
+	BrokerSessionId    *openapi_types.UUID `json:"brokerSessionId,omitempty"`
+	EnvPlaceholderName *string             `json:"envPlaceholderName,omitempty"`
+	ErrorCode          *string             `json:"errorCode,omitempty"`
+	ExpiresAt          *string             `json:"expiresAt,omitempty"`
+	GrantedScope       *string             `json:"grantedScope,omitempty"`
+	HeaderScheme       *string             `json:"headerScheme,omitempty"`
+	Kind               SecretRequestKind   `json:"kind"`
+	PlaceholderValue   *string             `json:"placeholderValue,omitempty"`
+	Reason             string              `json:"reason"`
+	SecretRequestId    openapi_types.UUID  `json:"secretRequestId"`
+	Status             SecretRequestStatus `json:"status"`
+	TakeoverActive     *bool               `json:"takeoverActive,omitempty"`
+	TargetOrigin       string              `json:"targetOrigin"`
+}
+
 // SecretScope defines model for SecretScope.
 type SecretScope string
 
@@ -1117,8 +1311,10 @@ type UpdateBotRequest struct {
 
 // UpdateEgressPolicyRequest defines model for UpdateEgressPolicyRequest.
 type UpdateEgressPolicyRequest struct {
-	AllowedHosts []string         `json:"allowedHosts"`
-	Policy       EgressPolicyMode `json:"policy"`
+	AllowedHosts     []string         `json:"allowedHosts"`
+	BlockedHosts     *[]string        `json:"blockedHosts,omitempty"`
+	ExpectedRevision int64            `json:"expectedRevision"`
+	Policy           EgressPolicyMode `json:"policy"`
 }
 
 // UpdateGroupRequest defines model for UpdateGroupRequest.
@@ -1285,6 +1481,11 @@ type ListNotificationsParams struct {
 	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// GetBrokerTakeoverFrameParams defines parameters for GetBrokerTakeoverFrame.
+type GetBrokerTakeoverFrameParams struct {
+	Ticket *string `form:"ticket,omitempty" json:"ticket,omitempty"`
+}
+
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody = LoginRequest
 
@@ -1356,6 +1557,12 @@ type UpdateWorkspaceMemberRoleJSONRequestBody = UpdateMemberRoleRequest
 
 // SetModelPriceJSONRequestBody defines body for SetModelPrice for application/json ContentType.
 type SetModelPriceJSONRequestBody = ModelPriceRequest
+
+// SendBrokerTakeoverInputJSONRequestBody defines body for SendBrokerTakeoverInput for application/json ContentType.
+type SendBrokerTakeoverInputJSONRequestBody = BrokerTakeoverInputBody
+
+// FulfillSecretRequestJSONRequestBody defines body for FulfillSecretRequest for application/json ContentType.
+type FulfillSecretRequestJSONRequestBody = FulfillSecretRequestBody
 
 // CreateWorkspaceSecretJSONRequestBody defines body for CreateWorkspaceSecret for application/json ContentType.
 type CreateWorkspaceSecretJSONRequestBody = CreateSecretRequest

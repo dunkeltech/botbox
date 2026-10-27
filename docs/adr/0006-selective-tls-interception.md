@@ -30,7 +30,7 @@ Adopt **Option A** in `backend/internal/secrets/mitmproxy`:
 
 1. **Per-bot ECDSA P-256 Root CA (`ca.go`):** Short-lived (24h CA, 12h cached leaf SAN certs) isolated per `botID`; verified via unit test that Bot B's CA rejects leaf certificates issued by Bot A's proxy.
 2. **Allowlist & selective MITM (`proxy.go`):**
-   - Non-`CONNECT` requests (`405`), disallowed ports (`403`), and non-allowlisted hosts (`403`, `ActionBlockedHost`) are denied immediately.
+   - Non-`CONNECT` requests (`405`), disallowed ports (`403`), explicitly blocked hosts (`403`, overriding `open` mode, allowlists, and secret rules per `ADR-0017`), and non-allowlisted hosts (`403`, `ActionBlockedHost`) are denied immediately.
    - Allowlisted hosts without `SecretRule` entries receive blind TCP `CONNECT` passthrough (`ActionTunnelPassthrough`).
    - Allowlisted hosts with `SecretRule` entries strip placeholder `Authorization`, `Proxy-Authorization`, `X-Api-Key`, `X-Goog-Api-Key`, and `Private-Token` headers, inject `Bearer`, `Basic` (e.g. Git HTTP `oauth2:<token>`), or `Raw` credentials, emit `ActionMITMTokenAdded` audit events without secret values, and scrub secret tokens/Base64 forms from upstream `>= 400` error responses and structured logs.
 3. **Sandbox trust-store setup (`images/sandbox/install-bot-ca.sh`):** Verified inside `botbox/sandbox:dev` across:

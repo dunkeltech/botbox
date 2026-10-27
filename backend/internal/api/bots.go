@@ -476,6 +476,11 @@ func (s *server) handleDeleteBot(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to delete bot")
 		return
 	}
+	if s.authBroker != nil {
+		if bErr := s.authBroker.RevokeBotSessions(r.Context(), wsUUID, botID); bErr != nil {
+			s.logger.Warn("failed to revoke isolated broker sessions during bot deletion", "err", bErr, "bot_id", botID.String())
+		}
+	}
 
 	w.WriteHeader(http.StatusNoContent)
 }

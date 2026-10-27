@@ -11,6 +11,10 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { ToolMessageView } from '@/components/chat/ChatPanel';
+import { BrokerTakeoverModal } from '@/components/chat/BrokerTakeoverModal';
+import { SecretRequestCard } from '@/components/chat/SecretRequestCard';
+import { SecretRequestModal } from '@/components/chat/SecretRequestModal';
+import { useSecretRequestControl } from '@/components/chat/useSecretRequestControl';
 import { useChatScroll } from '@/components/chat/useChatScroll';
 import { ApprovalCard } from '@/components/team/ApprovalCard';
 import {
@@ -112,6 +116,11 @@ export function GroupConversation({
     busyId,
     error: decisionError,
   } = useApprovalDecision(workspaceId);
+  const secretControl = useSecretRequestControl(workspaceId, async () => {
+    await client.invalidateQueries({
+      queryKey: ['group-messages', workspaceId, group.id],
+    });
+  });
   useEffect(() => {
     const token = getAccessToken();
     if (!token) return;
@@ -285,6 +294,26 @@ export function GroupConversation({
                     ? (decision) => void decide(matched.id, decision)
                     : undefined
                 }
+              />
+            );
+          }
+          if (message.kind === 'secret_request' && message.secretRequest) {
+            const sr = message.secretRequest;
+            return (
+              <SecretRequestCard
+                key={message.id}
+                className="mx-5"
+                summary={sr}
+                role={role}
+                busy={secretControl.busyRequestId === sr.secretRequestId}
+                errorKey={
+                  secretControl.requestError?.id === sr.secretRequestId
+                    ? secretControl.requestError.key
+                    : null
+                }
+                onProvide={secretControl.openModal}
+                onTakeover={secretControl.openTakeover}
+                onDeny={(s) => void secretControl.deny(s)}
               />
             );
           }
@@ -473,6 +502,33 @@ export function GroupConversation({
           {t('viewerRead')}
         </p>
       )}
+
+      <SecretRequestModal
+        workspaceId={workspaceId}
+        botName={group.members.find((m) => m.type === 'bot')?.name ?? t('bot')}
+        role={role}
+        summary={secretControl.activeRequest}
+        onClose={secretControl.closeModal}
+        onOpenTakeover={secretControl.openTakeover}
+        onCompleted={async () => {
+          await client.invalidateQueries({
+            queryKey: ['group-messages', workspaceId, group.id],
+          });
+        }}
+      />
+
+      <BrokerTakeoverModal
+        workspaceId={workspaceId}
+        botName={group.members.find((m) => m.type === 'bot')?.name ?? t('bot')}
+        role={role}
+        summary={secretControl.takeoverRequest}
+        onClose={secretControl.closeTakeover}
+        onCompleted={async () => {
+          await client.invalidateQueries({
+            queryKey: ['group-messages', workspaceId, group.id],
+          });
+        }}
+      />
     </div>
   );
 }

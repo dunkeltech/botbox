@@ -30,6 +30,15 @@ const (
 // ErrLineTooLong indicates a single NDJSON line exceeded maxStreamLineBytes.
 var ErrLineTooLong = errors.New("stream line exceeds maximum allowed size")
 
+// IsRequestSecretTool reports whether a normalized tool name targets the
+// zero-context secret request tool across CLI MCP servers or API mode.
+func IsRequestSecretTool(name string) bool {
+	trimmed := strings.TrimSpace(name)
+	return trimmed == "request_secret" ||
+		strings.HasSuffix(trimmed, "__request_secret") ||
+		strings.HasSuffix(trimmed, ".request_secret")
+}
+
 // EventKind identifies normalized bot engine stream events.
 type EventKind string
 

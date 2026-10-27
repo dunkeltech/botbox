@@ -11,6 +11,34 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const acknowledgeEgressPolicyRevision = `-- name: AcknowledgeEgressPolicyRevision :exec
+WITH updated AS (
+    UPDATE egress_rules
+    SET acknowledged_revision = GREATEST(egress_rules.acknowledged_revision, $3::bigint),
+        acknowledged_at = CASE
+            WHEN $3::bigint >= egress_rules.acknowledged_revision THEN now()
+            ELSE egress_rules.acknowledged_at
+        END
+    WHERE egress_rules.workspace_id = $1 AND egress_rules.bot_id = $2
+    RETURNING egress_rules.acknowledged_revision
+)
+DELETE FROM egress_invalidation_intents
+WHERE egress_invalidation_intents.workspace_id = $1
+  AND egress_invalidation_intents.bot_id = $2
+  AND egress_invalidation_intents.target_revision <= $3::bigint
+`
+
+type AcknowledgeEgressPolicyRevisionParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	BotID       pgtype.UUID `json:"bot_id"`
+	Column3     int64       `json:"column_3"`
+}
+
+func (q *Queries) AcknowledgeEgressPolicyRevision(ctx context.Context, arg AcknowledgeEgressPolicyRevisionParams) error {
+	_, err := q.db.Exec(ctx, acknowledgeEgressPolicyRevision, arg.WorkspaceID, arg.BotID, arg.Column3)
+	return err
+}
+
 const createBotSecret = `-- name: CreateBotSecret :one
 INSERT INTO bot_secrets (
     id,
@@ -30,7 +58,7 @@ INSERT INTO bot_secrets (
     created_by
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-RETURNING id, workspace_id, bot_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at
+RETURNING id, workspace_id, bot_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at, adapter_id
 `
 
 type CreateBotSecretParams struct {
@@ -90,6 +118,7 @@ func (q *Queries) CreateBotSecret(ctx context.Context, arg CreateBotSecretParams
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AdapterID,
 	)
 	return i, err
 }
@@ -185,7 +214,7 @@ INSERT INTO workspace_secrets (
     created_by
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-RETURNING id, workspace_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at
+RETURNING id, workspace_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at, adapter_id
 `
 
 type CreateWorkspaceSecretParams struct {
@@ -242,6 +271,7 @@ func (q *Queries) CreateWorkspaceSecret(ctx context.Context, arg CreateWorkspace
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AdapterID,
 	)
 	return i, err
 }
@@ -284,7 +314,7 @@ func (q *Queries) DeleteWorkspaceSecretByWorkspaceAndID(ctx context.Context, arg
 }
 
 const getBotSecretByWorkspaceBotAndID = `-- name: GetBotSecretByWorkspaceBotAndID :one
-SELECT id, workspace_id, bot_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at
+SELECT id, workspace_id, bot_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at, adapter_id
 FROM bot_secrets
 WHERE workspace_id = $1 AND bot_id = $2 AND id = $3
 `
@@ -318,12 +348,37 @@ func (q *Queries) GetBotSecretByWorkspaceBotAndID(ctx context.Context, arg GetBo
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AdapterID,
+	)
+	return i, err
+}
+
+const getEgressInvalidationIntent = `-- name: GetEgressInvalidationIntent :one
+SELECT bot_id, workspace_id, target_revision, created_at, updated_at
+FROM egress_invalidation_intents
+WHERE workspace_id = $1 AND bot_id = $2
+`
+
+type GetEgressInvalidationIntentParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	BotID       pgtype.UUID `json:"bot_id"`
+}
+
+func (q *Queries) GetEgressInvalidationIntent(ctx context.Context, arg GetEgressInvalidationIntentParams) (EgressInvalidationIntent, error) {
+	row := q.db.QueryRow(ctx, getEgressInvalidationIntent, arg.WorkspaceID, arg.BotID)
+	var i EgressInvalidationIntent
+	err := row.Scan(
+		&i.BotID,
+		&i.WorkspaceID,
+		&i.TargetRevision,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const getEgressRuleByWorkspaceAndBot = `-- name: GetEgressRuleByWorkspaceAndBot :one
-SELECT er.bot_id, er.workspace_id, er.policy, er.allowed_hosts, er.updated_at
+SELECT er.bot_id, er.workspace_id, er.policy, er.allowed_hosts, er.updated_at, er.blocked_hosts, er.revision, er.acknowledged_revision, er.acknowledged_at
 FROM egress_rules er
 JOIN bots b ON b.id = er.bot_id
 WHERE b.workspace_id = $1 AND er.bot_id = $2
@@ -343,12 +398,16 @@ func (q *Queries) GetEgressRuleByWorkspaceAndBot(ctx context.Context, arg GetEgr
 		&i.Policy,
 		&i.AllowedHosts,
 		&i.UpdatedAt,
+		&i.BlockedHosts,
+		&i.Revision,
+		&i.AcknowledgedRevision,
+		&i.AcknowledgedAt,
 	)
 	return i, err
 }
 
 const getWorkspaceSecretByWorkspaceAndID = `-- name: GetWorkspaceSecretByWorkspaceAndID :one
-SELECT id, workspace_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at
+SELECT id, workspace_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at, adapter_id
 FROM workspace_secrets
 WHERE workspace_id = $1 AND id = $2
 `
@@ -380,12 +439,13 @@ func (q *Queries) GetWorkspaceSecretByWorkspaceAndID(ctx context.Context, arg Ge
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AdapterID,
 	)
 	return i, err
 }
 
 const listBotSecretsByWorkspaceAndBot = `-- name: ListBotSecretsByWorkspaceAndBot :many
-SELECT id, workspace_id, bot_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at
+SELECT id, workspace_id, bot_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at, adapter_id
 FROM bot_secrets
 WHERE workspace_id = $1 AND bot_id = $2
 ORDER BY created_at ASC, name ASC
@@ -425,6 +485,7 @@ func (q *Queries) ListBotSecretsByWorkspaceAndBot(ctx context.Context, arg ListB
 			&i.CreatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.AdapterID,
 		); err != nil {
 			return nil, err
 		}
@@ -497,7 +558,7 @@ func (q *Queries) ListEgressLogsByWorkspaceAndBot(ctx context.Context, arg ListE
 }
 
 const listWorkspaceSecretsByWorkspace = `-- name: ListWorkspaceSecretsByWorkspace :many
-SELECT id, workspace_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at
+SELECT id, workspace_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at, adapter_id
 FROM workspace_secrets
 WHERE workspace_id = $1
 ORDER BY created_at ASC, name ASC
@@ -531,6 +592,7 @@ func (q *Queries) ListWorkspaceSecretsByWorkspace(ctx context.Context, workspace
 			&i.CreatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.AdapterID,
 		); err != nil {
 			return nil, err
 		}
@@ -540,6 +602,22 @@ func (q *Queries) ListWorkspaceSecretsByWorkspace(ctx context.Context, workspace
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockBotEgressRule = `-- name: LockBotEgressRule :exec
+SELECT pg_advisory_xact_lock(hashtext($1::uuid::text), hashtext($2::uuid::text))
+`
+
+type LockBotEgressRuleParams struct {
+	Column1 pgtype.UUID `json:"column_1"`
+	Column2 pgtype.UUID `json:"column_2"`
+}
+
+// Serializes all egress policy writers per workspace/bot, including when no
+// egress_rules row exists yet.
+func (q *Queries) LockBotEgressRule(ctx context.Context, arg LockBotEgressRuleParams) error {
+	_, err := q.db.Exec(ctx, lockBotEgressRule, arg.Column1, arg.Column2)
+	return err
 }
 
 const recordBotSecretUsage = `-- name: RecordBotSecretUsage :exec
@@ -591,7 +669,7 @@ SET name = $4,
     masked_preview = $14,
     updated_at = now()
 WHERE workspace_id = $1 AND bot_id = $2 AND id = $3
-RETURNING id, workspace_id, bot_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at
+RETURNING id, workspace_id, bot_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at, adapter_id
 `
 
 type UpdateBotSecretByWorkspaceBotAndIDParams struct {
@@ -649,6 +727,7 @@ func (q *Queries) UpdateBotSecretByWorkspaceBotAndID(ctx context.Context, arg Up
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AdapterID,
 	)
 	return i, err
 }
@@ -668,7 +747,7 @@ SET name = $3,
     masked_preview = $13,
     updated_at = now()
 WHERE workspace_id = $1 AND id = $2
-RETURNING id, workspace_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at
+RETURNING id, workspace_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at, adapter_id
 `
 
 type UpdateWorkspaceSecretByWorkspaceAndIDParams struct {
@@ -723,8 +802,29 @@ func (q *Queries) UpdateWorkspaceSecretByWorkspaceAndID(ctx context.Context, arg
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AdapterID,
 	)
 	return i, err
+}
+
+const upsertEgressInvalidationIntent = `-- name: UpsertEgressInvalidationIntent :exec
+INSERT INTO egress_invalidation_intents (bot_id, workspace_id, target_revision)
+VALUES ($1, $2, $3)
+ON CONFLICT (bot_id) DO UPDATE SET
+    workspace_id = EXCLUDED.workspace_id,
+    target_revision = GREATEST(egress_invalidation_intents.target_revision, EXCLUDED.target_revision),
+    updated_at = now()
+`
+
+type UpsertEgressInvalidationIntentParams struct {
+	BotID          pgtype.UUID `json:"bot_id"`
+	WorkspaceID    pgtype.UUID `json:"workspace_id"`
+	TargetRevision int64       `json:"target_revision"`
+}
+
+func (q *Queries) UpsertEgressInvalidationIntent(ctx context.Context, arg UpsertEgressInvalidationIntentParams) error {
+	_, err := q.db.Exec(ctx, upsertEgressInvalidationIntent, arg.BotID, arg.WorkspaceID, arg.TargetRevision)
+	return err
 }
 
 const upsertEgressRule = `-- name: UpsertEgressRule :one
@@ -732,15 +832,19 @@ INSERT INTO egress_rules (
     bot_id,
     workspace_id,
     policy,
-    allowed_hosts
+    allowed_hosts,
+    blocked_hosts,
+    revision
 )
-VALUES ($1, $2, $3, $4)
+VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (bot_id) DO UPDATE SET
     workspace_id = EXCLUDED.workspace_id,
     policy = EXCLUDED.policy,
     allowed_hosts = EXCLUDED.allowed_hosts,
+    blocked_hosts = EXCLUDED.blocked_hosts,
+    revision = EXCLUDED.revision,
     updated_at = now()
-RETURNING bot_id, workspace_id, policy, allowed_hosts, updated_at
+RETURNING bot_id, workspace_id, policy, allowed_hosts, updated_at, blocked_hosts, revision, acknowledged_revision, acknowledged_at
 `
 
 type UpsertEgressRuleParams struct {
@@ -748,6 +852,8 @@ type UpsertEgressRuleParams struct {
 	WorkspaceID  pgtype.UUID `json:"workspace_id"`
 	Policy       string      `json:"policy"`
 	AllowedHosts []string    `json:"allowed_hosts"`
+	BlockedHosts []string    `json:"blocked_hosts"`
+	Revision     int64       `json:"revision"`
 }
 
 func (q *Queries) UpsertEgressRule(ctx context.Context, arg UpsertEgressRuleParams) (EgressRule, error) {
@@ -756,6 +862,8 @@ func (q *Queries) UpsertEgressRule(ctx context.Context, arg UpsertEgressRulePara
 		arg.WorkspaceID,
 		arg.Policy,
 		arg.AllowedHosts,
+		arg.BlockedHosts,
+		arg.Revision,
 	)
 	var i EgressRule
 	err := row.Scan(
@@ -764,6 +872,10 @@ func (q *Queries) UpsertEgressRule(ctx context.Context, arg UpsertEgressRulePara
 		&i.Policy,
 		&i.AllowedHosts,
 		&i.UpdatedAt,
+		&i.BlockedHosts,
+		&i.Revision,
+		&i.AcknowledgedRevision,
+		&i.AcknowledgedAt,
 	)
 	return i, err
 }
