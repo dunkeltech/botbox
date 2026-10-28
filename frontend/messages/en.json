@@ -978,7 +978,12 @@
     "secretInvalidInput": "The credential request has an invalid adapter, HTTPS origin or placeholder name.",
     "secretRateLimited": "The bot or workspace credential request limit has been reached.",
     "secretPolicyUnavailable": "Credential policy is unavailable. Retry after the service is restored.",
-    "secretCapabilityUnavailable": "This login capability is unavailable. Browser login requires the isolated authentication broker."
+    "secretCapabilityUnavailable": "This login capability is unavailable. Browser login requires the isolated authentication broker.",
+    "copyCode": "Copy code",
+    "copiedCode": "Copied",
+    "copyCodeFailed": "Copy failed",
+    "codeBlock": "Code block",
+    "markdownTable": "Formatted table"
   },
   "budgets": {
     "title": "Spend & budgets",
