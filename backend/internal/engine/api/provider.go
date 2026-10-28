@@ -111,7 +111,7 @@ func (p *Provider) Run(ctx context.Context, messages []Message, emit func(engine
 							"kind":                 map[string]any{"type": "string", "enum": []string{"cli_egress", "browser_login"}},
 							"adapter_id":           map[string]any{"type": "string"},
 							"reason":               map[string]any{"type": "string"},
-							"target_origin":        map[string]any{"type": "string"},
+							"target_origin":        map[string]any{"type": "string", "description": "For self-hosted GitLab browser_login or cli_egress, use the exact workspace-approved HTTPS origin assigned to this bot. Other providers retain fixed origins."},
 							"env_placeholder_name": map[string]any{"type": "string"},
 							"username_hint":        map[string]any{"type": "string"},
 						},

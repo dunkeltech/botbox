@@ -30,17 +30,21 @@ const (
 // PolicySnapshot represents the effective per-bot egress policy and secret injection rules
 // evaluated at connection or request time.
 type PolicySnapshot struct {
-	Policy       EgressPolicy
-	Revision     int64
-	AllowedHosts []string
-	BlockedHosts []string
-	Rules        []SecretRule
+	Policy             EgressPolicy
+	Revision           int64
+	AllowedHosts       []string
+	BlockedHosts       []string
+	Rules              []SecretRule
+	PublicHosts        []string
+	GitLabAllowedHosts []string
 }
 
 func clonePolicySnapshot(snap PolicySnapshot) PolicySnapshot {
 	out := PolicySnapshot{
-		Policy:   snap.Policy,
-		Revision: snap.Revision,
+		Policy:             snap.Policy,
+		Revision:           snap.Revision,
+		PublicHosts:        append([]string(nil), snap.PublicHosts...),
+		GitLabAllowedHosts: append([]string(nil), snap.GitLabAllowedHosts...),
 	}
 	if len(snap.AllowedHosts) > 0 {
 		out.AllowedHosts = append([]string(nil), snap.AllowedHosts...)
@@ -213,7 +217,11 @@ func EvaluateHostAccess(policy EgressPolicy, allowedPatterns, blockedPatterns []
 }
 
 func (h *Handler) isHostAllowed(snap PolicySnapshot, host string) bool {
-	allowed, _ := EvaluateHostAccess(snap.Policy, snap.AllowedHosts, snap.BlockedHosts, host)
+	allowedHosts := snap.AllowedHosts
+	if requiresPublic(snap, host) {
+		allowedHosts = snap.GitLabAllowedHosts
+	}
+	allowed, _ := EvaluateHostAccess(snap.Policy, allowedHosts, snap.BlockedHosts, host)
 	return allowed
 }
 
@@ -231,6 +239,9 @@ func (h *Handler) firstHostRule(snap PolicySnapshot, host string) (SecretRule, b
 	var best SecretRule
 	bestScore := -1
 	for _, r := range snap.Rules {
+		if requiresPublic(snap, host) && !IsGitLabAdapter(r.AdapterID) {
+			continue
+		}
 		if !h.ruleActive(r) {
 			continue
 		}
@@ -246,6 +257,9 @@ func (h *Handler) firstHostRule(snap PolicySnapshot, host string) (SecretRule, b
 			best = r
 			bestScore = score
 		}
+	}
+	if bestScore < 0 && requiresPublic(snap, host) {
+		return SecretRule{AdapterID: "gitlab_api", DomainMatch: host, Port: "443"}, true
 	}
 	return best, bestScore >= 0
 }
@@ -268,12 +282,12 @@ func (h *Handler) resolveRuleForRequest(
 		if len(snap.Rules) == 0 {
 			return SecretRule{}, false, nil
 		}
-		matched, ok := h.matchRuleForRequest(snap.Rules, host, port, method, cleanPath)
+		matched, ok := h.matchRuleForRequest(snap, host, port, method, cleanPath)
 		return matched, ok, nil
 	}
 
 	if len(snap.Rules) > 0 {
-		matched, ok := h.matchRuleForRequest(snap.Rules, host, port, method, cleanPath)
+		matched, ok := h.matchRuleForRequest(snap, host, port, method, cleanPath)
 		return matched, ok, nil
 	}
 
@@ -291,18 +305,21 @@ func (h *Handler) resolveRuleForRequest(
 		return SecretRule{}, false, nil
 	}
 	if staticFallback.AdapterID != "" {
-		adapter, ok := LookupAdapter(staticFallback.AdapterID)
-		if !ok || !adapter.MatchesRequest(host, port, method, cleanPath) {
+		adapter, resolveErr := ResolveAdapter(staticFallback.AdapterID, "https://"+staticFallback.DomainMatch+":443")
+		if resolveErr != nil || !adapter.MatchesRequest(host, port, method, cleanPath) {
 			return SecretRule{}, false, nil
 		}
 	}
 	return staticFallback, true, nil
 }
 
-func (h *Handler) matchRuleForRequest(rules []SecretRule, host, port, method, cleanPath string) (SecretRule, bool) {
+func (h *Handler) matchRuleForRequest(snap PolicySnapshot, host, port, method, cleanPath string) (SecretRule, bool) {
 	var best SecretRule
 	bestScore := -1
-	for _, r := range rules {
+	for _, r := range snap.Rules {
+		if requiresPublic(snap, host) && !IsGitLabAdapter(r.AdapterID) {
+			continue
+		}
 		if r.DomainMatch == "" || !h.ruleActive(r) {
 			continue
 		}
@@ -316,8 +333,8 @@ func (h *Handler) matchRuleForRequest(rules []SecretRule, host, port, method, cl
 			continue
 		}
 		if r.AdapterID != "" {
-			adapter, ok := LookupAdapter(r.AdapterID)
-			if !ok || !adapter.MatchesRequest(host, port, method, cleanPath) {
+			adapter, resolveErr := ResolveAdapter(r.AdapterID, "https://"+r.DomainMatch+":443")
+			if resolveErr != nil || !adapter.MatchesRequest(host, port, method, cleanPath) {
 				continue
 			}
 		}
@@ -433,4 +450,13 @@ func (c *countingReadCloser) finish() {
 			c.onDone(total)
 		}
 	})
+}
+
+func requiresPublic(snap PolicySnapshot, host string) bool {
+	for _, publicHost := range snap.PublicHosts {
+		if normalizeHostPattern(host) == normalizeHostPattern(publicHost) {
+			return true
+		}
+	}
+	return false
 }

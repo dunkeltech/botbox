@@ -4,6 +4,7 @@
   packages = [
     pkgs.git
     pkgs.gh
+    pkgs.glab
     pkgs.golangci-lint
     pkgs.sqlc
     pkgs.goose

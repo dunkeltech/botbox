@@ -68,7 +68,10 @@
     "secretRequestHostNotAllowed": "Approve the destination host on the bot egress allowlist before submitting a secret.",
     "chatQueueFull": "The bot queue is full. Try again when a turn finishes.",
     "chatUnavailable": "Chat is unavailable right now. Please try again.",
-    "unknownError": "Something went wrong talking to the server. Please try again."
+    "unknownError": "Something went wrong talking to the server. Please try again.",
+    "secretGitLabNotRegistered": "Register the GitLab instance in Workspace settings, then retry.",
+    "secretGitLabNotAssigned": "Assign the GitLab instance to this bot in Bot settings, then retry.",
+    "secretPolicyUnavailable": "Credential policy is unavailable. Retry after the service is restored."
   },
   "setup": {
     "eyebrow": "First-run setup wizard",
@@ -968,7 +971,14 @@
     "brokerTakeoverCompleting": "Handing back…",
     "brokerTakeoverViewportAlt": "Isolated authentication broker viewport",
     "brokerTakeoverClose": "Close broker takeover",
-    "brokerTakeoverLoading": "Starting isolated broker session…"
+    "brokerTakeoverLoading": "Starting isolated broker session…",
+    "secretGitLabNotRegistered": "Register the GitLab instance in Workspace settings, then retry.",
+    "secretGitLabNotAssigned": "Assign the GitLab instance to this bot in Bot settings, then retry.",
+    "secretHostNotAllowed": "Allow the GitLab destination in the bot network settings. Explicit blocks take precedence.",
+    "secretInvalidInput": "The credential request has an invalid adapter, HTTPS origin or placeholder name.",
+    "secretRateLimited": "The bot or workspace credential request limit has been reached.",
+    "secretPolicyUnavailable": "Credential policy is unavailable. Retry after the service is restored.",
+    "secretCapabilityUnavailable": "This login capability is unavailable. Browser login requires the isolated authentication broker."
   },
   "budgets": {
     "title": "Spend & budgets",
@@ -1143,5 +1153,24 @@
     "whoMemberDetail": "Group cards for a new host, a protected push, and a custom action. A workspace budget raise is decided by an owner or admin.",
     "whoViewer": "Viewer",
     "whoViewerDetail": "Read only. A decision is refused."
+  },
+  "gitlabInstances": {
+    "title": "Self-hosted GitLab",
+    "description": "Register public GitLab HTTPS domains, then assign them to individual bots in Bot settings. No IP configuration or restart is required.",
+    "name": "Instance name",
+    "origin": "HTTPS origin",
+    "originHint": "Use an exact domain on port 443, for example https://gitlab.example.org. Subpaths and SSO redirects to other domains are not supported.",
+    "add": "Add instance",
+    "remove": "Remove",
+    "removeNamed": "Remove {name}",
+    "empty": "No self-hosted instances configured.",
+    "loading": "Loading GitLab instances…",
+    "error": "Could not update or load GitLab instances. Check the address, your permissions and the 20-instance limit.",
+    "revocation": "Removing an instance revokes its active browser sessions. Adding it again requires a new sign-in.",
+    "botTitle": "GitLab access",
+    "botDescription": "Choose which registered GitLab instances this bot may sign in to through the browser, glab API or Git over HTTPS. Network permissions still apply. Removing access revokes affected sessions, token grants and pending requests.",
+    "botEmpty": "Register an instance in Workspace settings first.",
+    "saveAssignments": "Save GitLab access",
+    "saved": "GitLab access saved."
   }
 }

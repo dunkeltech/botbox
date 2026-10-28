@@ -12,6 +12,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"github.com/dunkeltech/botbox/backend/internal/netguard"
 	"io"
 	"log/slog"
 	"mime"
@@ -96,6 +97,7 @@ type Config struct {
 	PolicyFreshnessMax time.Duration
 	UpstreamRootCAs    *x509.CertPool
 	DialContext        func(ctx context.Context, network, addr string) (net.Conn, error)
+	PublicResolver     netguard.Resolver
 	DialTimeout        time.Duration
 	Logger             *slog.Logger
 	OnAudit            func(AuditEvent)
@@ -121,6 +123,7 @@ type Handler struct {
 
 	passthroughMu    sync.Mutex
 	passthroughConns map[string]map[net.Conn]struct{}
+	credentialConns  map[string]map[net.Conn]struct{}
 	pendingDials     map[*pendingDial]struct{}
 	hasAdopted       bool
 	adoptedSnap      PolicySnapshot
@@ -144,6 +147,9 @@ func NewHandler(cfg Config) (*Handler, error) {
 	if cfg.DialContext == nil {
 		dialer := &net.Dialer{Timeout: cfg.DialTimeout}
 		cfg.DialContext = dialer.DialContext
+	}
+	if cfg.PublicResolver == nil {
+		cfg.PublicResolver = net.DefaultResolver
 	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -182,6 +188,7 @@ func NewHandler(cfg Config) (*Handler, error) {
 		secrets:          secrets,
 		logger:           cfg.Logger,
 		passthroughConns: make(map[string]map[net.Conn]struct{}),
+		credentialConns:  make(map[string]map[net.Conn]struct{}),
 		pendingDials:     make(map[*pendingDial]struct{}),
 	}, nil
 }
@@ -219,6 +226,15 @@ func (h *Handler) InvalidateHost(host string) {
 			delete(h.passthroughConns, connHost)
 		}
 	}
+	for connHost, set := range h.credentialConns {
+		if HostMatchesPattern(connHost, norm, false) {
+			for c := range set {
+				conns = append(conns, c)
+			}
+			delete(h.credentialConns, connHost)
+		}
+	}
+
 	for pd := range h.pendingDials {
 		if HostMatchesPattern(pd.host, norm, false) {
 			pd.aborted.Store(true)
@@ -247,6 +263,13 @@ func (h *Handler) failClosedOnRefreshError() {
 		}
 		delete(h.passthroughConns, host)
 	}
+	for host, set := range h.credentialConns {
+		for c := range set {
+			conns = append(conns, c)
+		}
+		delete(h.credentialConns, host)
+	}
+
 	for pd := range h.pendingDials {
 		pd.aborted.Store(true)
 		cancels = append(cancels, pd.cancel)
@@ -321,6 +344,14 @@ func (h *Handler) adoptSnapshot(ctx context.Context, snap PolicySnapshot, notify
 	if h.hasAdopted && snap.Revision < h.adoptedRevision {
 		h.passthroughMu.Unlock()
 		return false, nil
+	}
+	for host, set := range h.credentialConns {
+		if !h.isHostAllowed(snap, host) || !sameHostRules(h.adoptedSnap.Rules, snap.Rules, host) {
+			for c := range set {
+				conns = append(conns, c)
+			}
+			delete(h.credentialConns, host)
+		}
 	}
 	h.adoptedSnap = clonePolicySnapshot(snap)
 	h.adoptedRevision = snap.Revision
@@ -509,7 +540,14 @@ func (h *Handler) handlePassthrough(w http.ResponseWriter, r *http.Request, host
 	h.pendingDials[pd] = struct{}{}
 	h.passthroughMu.Unlock()
 
-	upstreamConn, err := h.cfg.DialContext(dialCtx, "tcp", net.JoinHostPort(host, port))
+	snap, policyErr := h.resolveSnapshot(dialCtx)
+	var upstreamConn net.Conn
+	var err error
+	if policyErr != nil {
+		err = policyErr
+	} else {
+		upstreamConn, err = h.dialUpstream(dialCtx, "tcp", host, port, requiresPublic(snap, host))
+	}
 
 	h.passthroughMu.Lock()
 	delete(h.pendingDials, pd)
@@ -609,6 +647,16 @@ func (h *Handler) handleMITM(w http.ResponseWriter, r *http.Request, host, port 
 	if err != nil {
 		return
 	}
+	if IsGitLabAdapter(rule.AdapterID) && host != "gitlab.com" {
+		h.passthroughMu.Lock()
+		if h.credentialConns[host] == nil {
+			h.credentialConns[host] = map[net.Conn]struct{}{}
+		}
+		h.credentialConns[host][clientConn] = struct{}{}
+		h.passthroughMu.Unlock()
+		defer func() { h.passthroughMu.Lock(); delete(h.credentialConns[host], clientConn); h.passthroughMu.Unlock() }()
+	}
+
 	defer func() { _ = clientConn.Close() }()
 	if _, err := clientConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n")); err != nil {
 		return
@@ -627,7 +675,7 @@ func (h *Handler) handleMITM(w http.ResponseWriter, r *http.Request, host, port 
 
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
-			return h.cfg.DialContext(ctx, network, net.JoinHostPort(host, port))
+			return h.dialUpstream(ctx, network, host, port, IsGitLabAdapter(rule.AdapterID) && host != "gitlab.com")
 		},
 		TLSClientConfig: &tls.Config{
 			MinVersion: tls.VersionTLS12,
@@ -681,6 +729,26 @@ func (h *Handler) forwardMITMRequest(
 		return
 	}
 
+	if IsGitLabAdapter(rule.AdapterID) && host != "gitlab.com" && !shouldInject && (rule.ID != "" || hasCredentialHeaders(r.Header)) {
+		w.Header().Set("X-Botbox-Error", "secret_request.grant_unavailable")
+		http.Error(w, "GitLab credential grant is unavailable, expired or revoked", http.StatusForbidden)
+		return
+	}
+	if shouldInject && IsGitLabAdapter(activeRule.AdapterID) {
+		adapter, err := ResolveAdapter(activeRule.AdapterID, "https://"+activeRule.DomainMatch+":443")
+		if err != nil || !adapter.MatchesEscapedRequest(host, port, r.Method, r.URL.EscapedPath()) {
+			http.Error(w, "request path is outside the credential adapter", http.StatusForbidden)
+			return
+		}
+	}
+
+	if (shouldInject && activeRule.AdapterID != "") || (IsGitLabAdapter(rule.AdapterID) && host != "gitlab.com") {
+		origin, _, _, err := CanonicalHTTPSOrigin("https://" + r.Host)
+		if err != nil || origin != "https://"+host+":"+port {
+			http.Error(w, "request host does not match credential destination", http.StatusForbidden)
+			return
+		}
+	}
 	auditAction := ActionTunnelPassthrough
 	var scrubRule SecretRule
 	var secretID, secretScope, secretName string
@@ -695,7 +763,7 @@ func (h *Handler) forwardMITMRequest(
 		secretScope = activeRule.Scope
 		secretName = activeRule.Name
 		if activeRule.AdapterID != "" {
-			if ad, ok := LookupAdapter(activeRule.AdapterID); ok {
+			if ad, err := ResolveAdapter(activeRule.AdapterID, "https://"+activeRule.DomainMatch+":443"); err == nil {
 				activeAdapter = &ad
 			}
 		}
@@ -728,6 +796,10 @@ func (h *Handler) forwardMITMRequest(
 		})
 		http.Error(w, msg, http.StatusBadGateway)
 		return
+	}
+
+	if shouldInject && IsGitLabAdapter(activeRule.AdapterID) && (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) {
+		w.Header().Set("X-Botbox-Error", "secret_request.gitlab_auth_rejected")
 	}
 
 	countedBody := newCountingReadCloser(resp.Body, resp.ContentLength, func(totalBytes int64) {
@@ -1159,3 +1231,38 @@ type dummyAddr string
 
 func (d dummyAddr) Network() string { return "tcp" }
 func (d dummyAddr) String() string  { return string(d) }
+
+func (h *Handler) dialUpstream(ctx context.Context, network, host, port string, public bool) (net.Conn, error) {
+	if public {
+		return netguard.DialPublic(ctx, h.cfg.PublicResolver, h.cfg.DialContext, network, net.JoinHostPort(host, port))
+	}
+	return h.cfg.DialContext(ctx, network, net.JoinHostPort(host, port))
+}
+
+func sameHostRules(before, after []SecretRule, host string) bool {
+	old := map[string]SecretRule{}
+	for _, rule := range before {
+		if hostMatchesPattern(host, rule.DomainMatch, rule.MatchSubdomains) {
+			old[rule.ID+rule.Scope] = rule
+		}
+	}
+	count := 0
+	for _, rule := range after {
+		if hostMatchesPattern(host, rule.DomainMatch, rule.MatchSubdomains) {
+			count++
+			if previous, ok := old[rule.ID+rule.Scope]; !ok || previous != rule {
+				return false
+			}
+		}
+	}
+	return count == len(old)
+}
+
+func hasCredentialHeaders(header http.Header) bool {
+	for _, name := range []string{"Authorization", "Proxy-Authorization", "PRIVATE-TOKEN", "X-Api-Key", "X-Goog-Api-Key"} {
+		if len(header.Values(name)) > 0 {
+			return true
+		}
+	}
+	return false
+}

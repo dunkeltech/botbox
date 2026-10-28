@@ -30,3 +30,24 @@ func TestCLIOnSimulatedComputerHasActionableFailure(t *testing.T) {
 		t.Fatalf("failure code=%s", engine.TurnFailureCode(err))
 	}
 }
+
+func TestRequestSecretAcceptsSelfHostedGitLabBrowserOnly(t *testing.T) {
+	for _, tt := range []struct {
+		name, args    string
+		broker, valid bool
+	}{
+		{"custom browser", `{"kind":"browser_login","adapter_id":"gitlab_web","target_origin":"https://gitlab.example.org","reason":"Review project"}`, true, true},
+		{"disabled broker", `{"kind":"browser_login","adapter_id":"gitlab_web","target_origin":"https://gitlab.example.org","reason":"Review project"}`, false, false},
+		{"other adapter", `{"kind":"browser_login","adapter_id":"github_web","target_origin":"https://gitlab.example.org","reason":"Review project"}`, true, false},
+		{"custom CLI", `{"kind":"cli_egress","adapter_id":"gitlab_api","target_origin":"https://gitlab.example.org","reason":"Review project"}`, true, true},
+		{"invalid target type", `{"kind":"browser_login","adapter_id":"gitlab_web","target_origin":3,"reason":"Review project"}`, true, false},
+		{"missing reason", `{"kind":"browser_login","adapter_id":"gitlab_web","target_origin":"https://gitlab.example.org"}`, true, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := handleRequestSecretTool([]byte(tt.args), tt.broker)
+			if (err == nil) != tt.valid {
+				t.Fatalf("valid=%v err=%v", tt.valid, err)
+			}
+		})
+	}
+}

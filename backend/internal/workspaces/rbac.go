@@ -23,6 +23,8 @@ const (
 	ActionViewWorkspace Action = "view_workspace"
 	// ActionManageWorkspace allows owner-level workspace lifecycle changes.
 	ActionManageWorkspace Action = "manage_workspace"
+	// ActionManageGitLabInstances allows registering and removing trusted GitLab origins.
+	ActionManageGitLabInstances Action = "manage_gitlab_instances"
 	// ActionManageMembers allows changing or removing workspace memberships.
 	ActionManageMembers Action = "manage_members"
 	// ActionManageInvitations allows viewing, creating, and revoking invitations.
@@ -69,7 +71,7 @@ func Can(role Role, action Action, isBotOwner bool) bool {
 		return true
 	case ActionManageWorkspace:
 		return role == RoleOwner
-	case ActionManageMembers, ActionManageInvitations:
+	case ActionManageMembers, ActionManageInvitations, ActionManageGitLabInstances:
 		return role == RoleOwner || role == RoleAdmin
 	case ActionCreateBot, ActionFulfillSecretRequest:
 		return role == RoleOwner || role == RoleAdmin || role == RoleMember

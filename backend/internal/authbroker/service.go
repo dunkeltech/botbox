@@ -21,10 +21,11 @@ const (
 
 // OpenSessionInput binds an isolated broker browser target to a reviewed adapter.
 type OpenSessionInput struct {
-	WorkspaceID uuid.UUID `json:"workspace_id"`
-	BotID       uuid.UUID `json:"bot_id"`
-	SessionID   uuid.UUID `json:"session_id,omitempty"`
-	AdapterID   string    `json:"adapter_id"`
+	WorkspaceID  uuid.UUID `json:"workspace_id"`
+	BotID        uuid.UUID `json:"bot_id"`
+	SessionID    uuid.UUID `json:"session_id,omitempty"`
+	AdapterID    string    `json:"adapter_id"`
+	TargetOrigin string    `json:"target_origin,omitempty"`
 }
 
 // SubmitCredentialsInput delivers an encrypted-in-transit user secret solely to the broker fill boundary.
@@ -93,8 +94,9 @@ type managedSession struct {
 
 // Service coordinates isolated broker sessions, atomic fill locks, and human takeovers.
 type Service struct {
-	engine BrowserEngine
-	now    func() time.Time
+	engine       BrowserEngine
+	gitlabPolicy GitLabPolicy
+	now          func() time.Time
 
 	mu       sync.RWMutex
 	sessions map[uuid.UUID]*managedSession
@@ -153,6 +155,13 @@ func (s *Service) checkActiveLocked(ctx context.Context, ms *managedSession) err
 	if ms.status == StatusRevoked {
 		return ErrSessionNotFound
 	}
+	if isCustomGitLab(ms.adapter) {
+		if s.gitlabPolicy == nil || s.gitlabPolicy(ctx, ms.workspaceID, ms.botID, ms.id, ms.adapter.Origin) != nil {
+			ms.status = StatusRevoked
+			_ = s.engine.CloseSession(ctx, ms.id)
+			return ErrNavigationForbidden
+		}
+	}
 	if !s.now().Before(ms.expiresAt) {
 		ms.status = StatusExpired
 		ms.takeoverActive = false
@@ -167,9 +176,12 @@ func (s *Service) OpenSession(ctx context.Context, in OpenSessionInput) (Session
 	if in.WorkspaceID == uuid.Nil || in.BotID == uuid.Nil {
 		return SessionInfo{}, ErrSessionNotFound
 	}
-	adapter, ok := LookupLoginAdapter(in.AdapterID)
-	if !ok {
-		return SessionInfo{}, ErrAdapterNotFound
+	adapter, err := ResolveLoginAdapter(in.AdapterID, in.TargetOrigin)
+	if err != nil {
+		return SessionInfo{}, err
+	}
+	if isCustomGitLab(adapter) && (s.gitlabPolicy == nil || s.gitlabPolicy(ctx, in.WorkspaceID, in.BotID, uuid.Nil, adapter.Origin) != nil) {
+		return SessionInfo{}, ErrNavigationForbidden
 	}
 	sessionID := in.SessionID
 	if sessionID == uuid.Nil {
@@ -179,7 +191,7 @@ func (s *Service) OpenSession(ctx context.Context, in OpenSessionInput) (Session
 	s.mu.Lock()
 	if existing, exists := s.sessions[sessionID]; exists {
 		s.mu.Unlock()
-		if existing.workspaceID != in.WorkspaceID || existing.botID != in.BotID {
+		if existing.workspaceID != in.WorkspaceID || existing.botID != in.BotID || existing.adapter.ID != adapter.ID || existing.adapter.Origin != adapter.Origin {
 			return SessionInfo{}, ErrSessionNotFound
 		}
 		existing.mu.Lock()
@@ -218,7 +230,7 @@ func (s *Service) OpenSession(ctx context.Context, in OpenSessionInput) (Session
 	if existing, exists := s.sessions[sessionID]; exists {
 		s.mu.Unlock()
 		_ = s.engine.CloseSession(ctx, sessionID)
-		if existing.workspaceID != in.WorkspaceID || existing.botID != in.BotID {
+		if existing.workspaceID != in.WorkspaceID || existing.botID != in.BotID || existing.adapter.ID != adapter.ID || existing.adapter.Origin != adapter.Origin {
 			return SessionInfo{}, ErrSessionNotFound
 		}
 		existing.mu.Lock()

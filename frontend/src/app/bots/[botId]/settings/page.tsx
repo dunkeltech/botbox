@@ -5,6 +5,8 @@ import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 
+import { BotGitLabInstancesPanel } from '@/components/settings/BotGitLabInstancesPanel';
+import { canManageBot } from '@/lib/rbac';
 import { BudgetPanel } from '@/components/chat/BudgetPanel';
 import { BotBuilderForm } from '@/components/bots/BotBuilderForm';
 import { AppShell } from '@/components/shell/AppShell';
@@ -20,7 +22,7 @@ function BotSettingsContent() {
   const tErrors = useTranslations('errors');
   const params = useParams<{ botId: string }>();
   const botId = typeof params?.botId === 'string' ? params.botId : '';
-  const { activeWorkspace } = useAuth();
+  const { activeWorkspace, user } = useAuth();
 
   const [bot, setBot] = useState<Bot | null>(null);
   const [loading, setLoading] = useState(true);
@@ -91,6 +93,12 @@ function BotSettingsContent() {
   return (
     <div className="flex flex-col gap-6">
       <BotBuilderForm mode="edit" workspace={activeWorkspace} bot={bot} />
+      <BotGitLabInstancesPanel
+        key={`${activeWorkspace.id}:${bot.id}`}
+        workspaceId={activeWorkspace.id}
+        botId={bot.id}
+        canManage={canManageBot(activeWorkspace.role, user?.id, bot)}
+      />
       <BudgetPanel
         workspaceId={activeWorkspace.id}
         botId={bot.id}

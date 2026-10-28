@@ -4,6 +4,43 @@
  */
 
 export interface paths {
+  '/api/workspaces/{workspaceID}/bots/{botID}/gitlab-instances': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+        botID: string;
+      };
+      cookie?: never;
+    };
+    get: operations['listBotGitLabInstances'];
+    put: operations['setBotGitLabInstances'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/workspaces/{workspaceID}/gitlab-instances': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+      };
+      cookie?: never;
+    };
+    get: operations['listGitLabInstances'];
+    put?: never;
+    post: operations['createGitLabInstance'];
+    delete: operations['deleteGitLabInstance'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/workspaces/{workspaceID}/bots/{botID}/runtime': {
     parameters: {
       query?: never;
@@ -983,6 +1020,19 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    BotGitLabInstances: {
+      origins: string[];
+    };
+    GitLabInstanceOrigin: {
+      origin: string;
+    };
+    GitLabInstance: {
+      name: string;
+      origin: string;
+    };
+    GitLabInstanceList: {
+      instances: components['schemas']['GitLabInstance'][];
+    };
     BotRuntime: {
       paused: boolean;
     };
@@ -1684,6 +1734,247 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  listBotGitLabInstances: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+        botID: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description GitLab instances assigned to this bot */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['GitLabInstanceList'];
+        };
+      };
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Workspace or bot not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  setBotGitLabInstances: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+        botID: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['BotGitLabInstances'];
+      };
+    };
+    responses: {
+      /** @description Assignments saved and removed access revoked */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['GitLabInstanceList'];
+        };
+      };
+      /** @description Invalid or unregistered origins */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Bot manager required */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Workspace or bot not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  listGitLabInstances: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Approved GitLab browser, REST API and Git HTTPS instances */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['GitLabInstanceList'];
+        };
+      };
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Workspace not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  createGitLabInstance: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['GitLabInstance'];
+      };
+    };
+    responses: {
+      /** @description GitLab instance registered */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['GitLabInstance'];
+        };
+      };
+      /** @description Invalid input */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Owner or admin required */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Workspace not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Duplicate instance or instance limit reached */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  deleteGitLabInstance: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['GitLabInstanceOrigin'];
+      };
+    };
+    responses: {
+      /** @description Instance removed and sessions revoked */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Invalid input */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Owner or admin required */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Workspace or instance not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
   getBotRuntime: {
     parameters: {
       query?: never;

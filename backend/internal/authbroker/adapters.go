@@ -84,6 +84,41 @@ func LookupLoginAdapter(id string) (LoginAdapter, bool) {
 	return a, true
 }
 
+// ResolveLoginAdapter binds reviewed GitLab behavior to an exact HTTPS origin.
+// Authorization of a custom instance is a separate workspace and operator policy check.
+func ResolveLoginAdapter(id, rawOrigin string) (LoginAdapter, error) {
+	a, ok := LookupLoginAdapter(id)
+	if !ok {
+		return LoginAdapter{}, ErrAdapterNotFound
+	}
+	if strings.TrimSpace(rawOrigin) == "" {
+		return a, nil
+	}
+	origin, err := StrictLoginOrigin(rawOrigin)
+	if err != nil {
+		return LoginAdapter{}, err
+	}
+	if origin == a.Origin {
+		return a, nil
+	}
+	if a.ID != "gitlab_web" {
+		return LoginAdapter{}, ErrNavigationForbidden
+	}
+	a.Origin = origin
+	a.FormActionOrigin = origin
+	a.AllowedRedirects = []string{origin}
+	return a, nil
+}
+
+// StrictLoginOrigin rejects URLs that contain anything beyond an HTTPS origin.
+func StrictLoginOrigin(raw string) (string, error) {
+	origin, err := mitmproxy.StrictHTTPSOrigin(raw)
+	if err != nil {
+		return "", ErrNavigationForbidden
+	}
+	return origin, nil
+}
+
 // ListLoginAdapters returns all reviewed browser login adapters sorted by ID.
 func ListLoginAdapters() []LoginAdapter {
 	ids := make([]string, 0, len(reviewedLoginAdapters))

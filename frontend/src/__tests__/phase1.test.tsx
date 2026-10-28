@@ -500,6 +500,9 @@ describe('Phase 1 frontend workflows', () => {
       if (url === '/api/auth/refresh') {
         return jsonResponse(session, 200);
       }
+      if (url === '/api/workspaces/ws-1/gitlab-instances' && method === 'GET') {
+        return jsonResponse({ instances: [] }, 200);
+      }
       if (url === '/api/workspaces/ws-1/members' && method === 'GET') {
         return jsonResponse({ members }, 200);
       }

@@ -23,6 +23,7 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/egresspolicy"
 	"github.com/dunkeltech/botbox/backend/internal/gen/api"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
+	"github.com/dunkeltech/botbox/backend/internal/netguard"
 	"github.com/dunkeltech/botbox/backend/internal/notify"
 	"github.com/dunkeltech/botbox/backend/internal/secrets"
 	"github.com/dunkeltech/botbox/backend/internal/secrets/mitmproxy"
@@ -1131,6 +1132,7 @@ type BotEgressProxyDeps struct {
 	CA                 *mitmproxy.BotCA
 	UpstreamRootCAs    *x509.CertPool
 	DialContext        func(ctx context.Context, network, addr string) (net.Conn, error)
+	PublicResolver     netguard.Resolver
 	Logger             *slog.Logger
 	Now                func() time.Time
 	PolicyFreshnessMax time.Duration
@@ -1172,6 +1174,7 @@ func NewBotEgressProxyHandler(deps BotEgressProxyDeps) (*mitmproxy.Handler, erro
 		CA:                 deps.CA,
 		UpstreamRootCAs:    deps.UpstreamRootCAs,
 		DialContext:        deps.DialContext,
+		PublicResolver:     deps.PublicResolver,
 		Logger:             logger,
 		Now:                nowFn,
 		PolicyFreshnessMax: deps.PolicyFreshnessMax,
@@ -1191,6 +1194,7 @@ func NewBotEgressProxyHandler(deps BotEgressProxyDeps) (*mitmproxy.Handler, erro
 			allowedSet := make(map[string]bool)
 			if err == nil {
 				snap.Revision = egressRow.Revision
+				snap.GitLabAllowedHosts = append([]string(nil), egressRow.AllowedHosts...)
 				if egressRow.Policy == string(mitmproxy.PolicyOpen) {
 					snap.Policy = mitmproxy.PolicyOpen
 				}
@@ -1222,6 +1226,11 @@ func NewBotEgressProxyHandler(deps BotEgressProxyDeps) (*mitmproxy.Handler, erro
 				return mitmproxy.PolicySnapshot{}, fmt.Errorf("load active secret leases: %w", err)
 			}
 
+			access, err := loadGitLabEgressAccess(ctx, queries, wsPG, botPG)
+			if err != nil {
+				return mitmproxy.PolicySnapshot{}, fmt.Errorf("load GitLab access: %w", err)
+			}
+
 			rules := make([]mitmproxy.SecretRule, 0, len(botRows)+len(wsRows)+len(leaseRows))
 			for _, row := range leaseRows {
 				rule, decErr := decryptSecretRule(deps.KeyRing, deps.WorkspaceID, fromPGUUID(row.ID), "lease", row.PlaceholderEnv, row.DomainMatch, false, "", row.HeaderName, row.AuthScheme, row.Username, row.KekID, row.WrappedDek, row.EncryptedValue)
@@ -1234,7 +1243,9 @@ func NewBotEgressProxyHandler(deps BotEgressProxyDeps) (*mitmproxy.Handler, erro
 				if row.ExpiresAt.Valid {
 					rule.ExpiresAt = row.ExpiresAt.Time.UTC()
 				}
-				rules = append(rules, rule)
+				if access.bind(&rule) {
+					rules = append(rules, rule)
+				}
 			}
 
 			for _, row := range botRows {
@@ -1246,10 +1257,15 @@ func NewBotEgressProxyHandler(deps BotEgressProxyDeps) (*mitmproxy.Handler, erro
 				if row.AdapterID == "" {
 					addHostPattern(allowedSet, row.DomainMatch, row.MatchSubdomains)
 				}
-				rules = append(rules, rule)
+				if access.bind(&rule) {
+					rules = append(rules, rule)
+				}
 			}
 
 			for _, row := range wsRows {
+				if access.blockedSecrets[row.ID] {
+					continue
+				}
 				rule, decErr := decryptSecretRule(deps.KeyRing, deps.WorkspaceID, fromPGUUID(row.ID), string(api.SecretScopeWorkspace), row.Name, row.DomainMatch, row.MatchSubdomains, row.PathPrefix, row.HeaderName, row.AuthScheme, row.Username, row.KekID, row.WrappedDek, row.EncryptedValue)
 				if decErr != nil {
 					return mitmproxy.PolicySnapshot{}, decErr
@@ -1258,7 +1274,9 @@ func NewBotEgressProxyHandler(deps BotEgressProxyDeps) (*mitmproxy.Handler, erro
 				if row.AdapterID == "" {
 					addHostPattern(allowedSet, row.DomainMatch, row.MatchSubdomains)
 				}
-				rules = append(rules, rule)
+				if access.bind(&rule) {
+					rules = append(rules, rule)
+				}
 			}
 
 			allowedList := make([]string, 0, len(allowedSet))
@@ -1267,6 +1285,9 @@ func NewBotEgressProxyHandler(deps BotEgressProxyDeps) (*mitmproxy.Handler, erro
 			}
 			snap.AllowedHosts = allowedList
 			snap.Rules = rules
+			for host := range access.publicHosts {
+				snap.PublicHosts = append(snap.PublicHosts, host)
+			}
 			return snap, nil
 		},
 		OnAudit: func(ev mitmproxy.AuditEvent) {

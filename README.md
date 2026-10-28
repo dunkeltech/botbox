@@ -130,3 +130,93 @@ and assert `Remaining()` and `Errors()` after the test. CLI doubles replay the
 recorded streams through the production live parsers and support gates, stderr
 soft denials and nonzero exits. Gates synchronize streaming/cancellation tests
 without sleeps; neither double calls an LLM or launches an agent process.
+
+## Self-hosted GitLab access
+
+Public GitLab installations are configured through the UI. No per-domain
+environment variable, IP address entry or broker restart is needed.
+
+1. As a workspace owner or admin, open Workspace settings and register the
+   instance under **Self-hosted GitLab**, using its exact HTTPS origin, such as
+   `https://gitlab.example.org`. Register only installations trusted to receive
+   credentials.
+2. Open each bot's settings, select its allowed instances under **GitLab access**,
+   and save. Different bots can use different instances; multiple selections are
+   supported. No selection means no self-hosted GitLab access.
+3. Allow the domain in that bot's egress settings. Explicit network blocks still
+   take precedence, and assigning an instance does not expand network permission.
+4. For browser access, the bot calls `request_secret` with `kind="browser_login"`,
+   `adapter_id="gitlab_web"` and `target_origin="https://gitlab.example.org"`.
+   Enter credentials only in the write-only secret dialog. The bot continues with
+   `broker_open`, `broker_read`, `broker_click` and `broker_screenshot`.
+
+The auth broker needs the same `DATABASE_URL` as the API and broker-managed
+Chromium (`AUTH_BROKER_CDP_URL` unset). These are service settings, configured once;
+individual GitLab domains are read live from the database. The previous
+`AUTH_BROKER_GITLAB_TARGETS` setting is no longer used. Keep the broker database and
+control plane isolated from bot sandboxes.
+
+For every new connection, a broker-local proxy checks the domain's DNS answers and
+dials only a validated public IP, while Chromium verifies the HTTPS certificate.
+A public IP change needs no configuration update. Private/mixed DNS answers,
+internal infrastructure addresses, other origins and non-443 ports are blocked.
+
+Removing bot access revokes its browser sessions, API/Git leases and saved bot
+credentials, cancels pending requests, and excludes its use of existing inherited
+workspace credentials. Other bots retain their grants. Removing a workspace
+instance revokes access and removes its saved credentials for all assigned bots.
+Re-adding access requires a fresh login or explicit credential fulfillment. After upgrading from IP pins, assign instances to bots and sign in
+again; previous custom sessions are revoked by migration.
+
+Same-origin MFA uses human takeover. Cross-domain SSO, third-party asset domains,
+private target IPs, custom CA setup, alternate ports, subpath installations and
+GraphQL and SSH remain unsupported. See
+[ADR-0019](docs/adr/0019-live-public-gitlab-and-bot-assignment.md) and
+[ADR-0020](docs/adr/0020-self-hosted-gitlab-cli-grants.md).
+
+### glab and Git HTTPS credentials
+
+For CLI access, use the same workspace registration, bot assignment and egress
+permission as for browser login. The browser broker is not required for CLI access.
+The bot requests the reviewed adapter with an explicit origin:
+
+```json
+{
+  "kind": "cli_egress",
+  "adapter_id": "gitlab_api",
+  "target_origin": "https://gitlab.example.org",
+  "env_placeholder_name": "GITLAB_TOKEN",
+  "reason": "Read GitLab projects with glab"
+}
+```
+
+Submit the real token only through the write-only secret modal. The bot receives
+a generated `botbox-placeholder-...` value, which it can use with `GITLAB_HOST`,
+`GITLAB_API_HOST` and HTTPS protocols to run `glab api user`. The proxy removes the
+placeholder header and injects the real token as PRIVATE-TOKEN only on approved
+REST API requests. Do not run `glab auth login` with a real token, save one in a
+file/keyring, or put one in the sandbox environment or command arguments.
+
+For Git HTTPS, request `gitlab_git`; the proxy injects Basic authentication only
+on smart-HTTP Git endpoints. API and Git grants are separate and can coexist for
+the same instance. Existing response mediation and limits remain in force.
+
+Temporary grants end on turn completion/cancellation, revocation or expiry. Saved
+bot/workspace grants remain outside the sandbox. A workspace token is inherited
+only while the bot has instance and network permission, and has not had that
+credential revoked for it. Re-adding an assignment does not restore old grants;
+provide credentials again through a new secret request. Legacy generic or parent-
+domain secrets cannot bypass these checks. Previously registered domains retain
+an internal credential boundary after removal; they must be registered, assigned
+and explicitly granted reviewed GitLab credentials before authenticated use.
+
+The chat now distinguishes missing registration, missing bot assignment, network
+blocks, invalid requests, limits and unavailable policy services. Fix the indicated
+setting and retry. Upstream token rejection is returned as an HTTP authentication
+failure; no token values are included in diagnostics.
+
+After updating this feature, rebuild with `make sandbox-image proxy-image` and
+restart the bot computer so both its agent and egress proxy use the new code.
+Restarting the API applies the database migration. The existing glab installation
+in the bot's persistent home can be reused. Host integration tests use the glab
+package declared in `devenv.nix`; run `devenv shell -- make lint test`.

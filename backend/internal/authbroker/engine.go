@@ -577,6 +577,7 @@ type cdpSessionState struct {
 	TargetID         string
 	CDPSessionID     string
 	DocumentNonce    string
+	PublicProxy      *publicOriginProxy
 	FillCount        int
 }
 
@@ -591,8 +592,9 @@ func NewCDPBrowsingEngine(debugHTTPURL string) *CDPBrowsingEngine {
 }
 
 type cdpConn struct {
-	ws  *websocket.Conn
-	seq atomic.Int64
+	ws              *websocket.Conn
+	seq             atomic.Int64
+	targetSessionID string
 }
 
 func (e *CDPBrowsingEngine) dialBrowser(ctx context.Context) (*cdpConn, error) {
@@ -626,6 +628,28 @@ func (e *CDPBrowsingEngine) dialBrowser(ctx context.Context) (*cdpConn, error) {
 	return &cdpConn{ws: ws}, nil
 }
 
+// Flattened target sessions belong to one websocket. Reattach on each broker operation.
+func (e *CDPBrowsingEngine) dialTarget(ctx context.Context, sess *cdpSessionState) (*cdpConn, error) {
+	c, err := e.dialBrowser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := c.call(ctx, "", "Target.attachToTarget", map[string]any{"targetId": sess.TargetID, "flatten": true})
+	if err != nil {
+		_ = c.ws.Close(websocket.StatusNormalClosure, "")
+		return nil, err
+	}
+	var attached struct {
+		SessionID string `json:"sessionId"`
+	}
+	if err = json.Unmarshal(raw, &attached); err != nil || attached.SessionID == "" {
+		_ = c.ws.Close(websocket.StatusNormalClosure, "")
+		return nil, ErrBindingMismatch
+	}
+	c.targetSessionID = attached.SessionID
+	return c, nil
+}
+
 func (c *cdpConn) call(ctx context.Context, cdpSessionID, method string, params any) (json.RawMessage, error) {
 	id := c.seq.Add(1)
 	payload := map[string]any{
@@ -637,6 +661,9 @@ func (c *cdpConn) call(ctx context.Context, cdpSessionID, method string, params 
 	}
 	if cdpSessionID != "" {
 		payload["sessionId"] = cdpSessionID
+		if c.targetSessionID != "" {
+			payload["sessionId"] = c.targetSessionID
+		}
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
@@ -770,7 +797,25 @@ func (e *CDPBrowsingEngine) OpenTarget(ctx context.Context, workspaceID, botID, 
 		return e.inspectLive(ctx, c, existing)
 	}
 
-	ctxRaw, err := c.call(ctx, "", "Target.createBrowserContext", map[string]any{"disposeOnDetach": true})
+	// Contexts outlive individual CDP calls; CloseSession owns their disposal.
+	contextParams := map[string]any{"disposeOnDetach": false}
+	var publicProxy *publicOriginProxy
+	committed := false
+	if isCustomGitLab(adapter) {
+		publicProxy, err = newPublicOriginProxy(adapter.Origin)
+		if err != nil {
+			return TargetBinding{}, err
+		}
+		defer func() {
+			if !committed {
+				publicProxy.close()
+			}
+		}()
+		contextParams["proxyServer"] = publicProxy.url
+		// Chromium otherwise implicitly bypasses proxies for loopback URLs.
+		contextParams["proxyBypassList"] = "<-loopback>"
+	}
+	ctxRaw, err := c.call(ctx, "", "Target.createBrowserContext", contextParams)
 	if err != nil {
 		return TargetBinding{}, err
 	}
@@ -780,6 +825,14 @@ func (e *CDPBrowsingEngine) OpenTarget(ctx context.Context, workspaceID, botID, 
 	if err := json.Unmarshal(ctxRaw, &ctxRes); err != nil {
 		return TargetBinding{}, err
 	}
+
+	defer func() {
+		if !committed {
+			cleanCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cancel()
+			_, _ = c.call(cleanCtx, "", "Target.disposeBrowserContext", map[string]any{"browserContextId": ctxRes.BrowserContextID})
+		}
+	}()
 
 	tRaw, err := c.call(ctx, "", "Target.createTarget", map[string]any{
 		"url":              adapter.LoginURL(),
@@ -823,12 +876,21 @@ func (e *CDPBrowsingEngine) OpenTarget(ctx context.Context, workspaceID, botID, 
 		TargetID:         tRes.TargetID,
 		CDPSessionID:     aRes.SessionID,
 		DocumentNonce:    nonce,
+		PublicProxy:      publicProxy,
 	}
 	e.mu.Lock()
 	e.sessions[sessionID] = sess
 	e.mu.Unlock()
 
-	return e.inspectLive(ctx, c, sess)
+	binding, err := e.inspectLive(ctx, c, sess)
+	if err != nil {
+		e.mu.Lock()
+		delete(e.sessions, sessionID)
+		e.mu.Unlock()
+		return TargetBinding{}, err
+	}
+	committed = true
+	return binding, nil
 }
 
 // AtomicBindAndFill validates binding, injects credentials via DOM.focus + Input.insertText
@@ -838,7 +900,7 @@ func (e *CDPBrowsingEngine) AtomicBindAndFill(ctx context.Context, sessionID uui
 	if err != nil {
 		return FillOutcome{}, err
 	}
-	c, err := e.dialBrowser(ctx)
+	c, err := e.dialTarget(ctx, sess)
 	if err != nil {
 		return FillOutcome{}, err
 	}
@@ -959,7 +1021,7 @@ func (e *CDPBrowsingEngine) Navigate(ctx context.Context, sessionID uuid.UUID, a
 	if err != nil {
 		return TargetBinding{}, err
 	}
-	c, err := e.dialBrowser(ctx)
+	c, err := e.dialTarget(ctx, sess)
 	if err != nil {
 		return TargetBinding{}, err
 	}
@@ -980,7 +1042,7 @@ func (e *CDPBrowsingEngine) ReadSanitized(ctx context.Context, sessionID uuid.UU
 	if err != nil {
 		return ReadResult{}, err
 	}
-	c, err := e.dialBrowser(ctx)
+	c, err := e.dialTarget(ctx, sess)
 	if err != nil {
 		return ReadResult{}, err
 	}
@@ -1039,7 +1101,7 @@ func (e *CDPBrowsingEngine) ClickElement(ctx context.Context, sessionID uuid.UUI
 	if err != nil {
 		return ClickResult{}, err
 	}
-	c, err := e.dialBrowser(ctx)
+	c, err := e.dialTarget(ctx, sess)
 	if err != nil {
 		return ClickResult{}, err
 	}
@@ -1067,7 +1129,7 @@ func (e *CDPBrowsingEngine) capturePNG(ctx context.Context, sessionID uuid.UUID)
 	if err != nil {
 		return nil, TargetBinding{}, err
 	}
-	c, err := e.dialBrowser(ctx)
+	c, err := e.dialTarget(ctx, sess)
 	if err != nil {
 		return nil, TargetBinding{}, err
 	}
@@ -1109,7 +1171,7 @@ func (e *CDPBrowsingEngine) SendTakeoverInput(ctx context.Context, sessionID uui
 	if err != nil {
 		return TargetBinding{}, err
 	}
-	c, err := e.dialBrowser(ctx)
+	c, err := e.dialTarget(ctx, sess)
 	if err != nil {
 		return TargetBinding{}, err
 	}
@@ -1140,7 +1202,7 @@ func (e *CDPBrowsingEngine) InspectBinding(ctx context.Context, sessionID uuid.U
 	if err != nil {
 		return TargetBinding{}, err
 	}
-	c, err := e.dialBrowser(ctx)
+	c, err := e.dialTarget(ctx, sess)
 	if err != nil {
 		return TargetBinding{}, err
 	}
@@ -1158,6 +1220,9 @@ func (e *CDPBrowsingEngine) CloseSession(ctx context.Context, sessionID uuid.UUI
 	e.mu.Unlock()
 	if !ok {
 		return nil
+	}
+	if sess.PublicProxy != nil {
+		sess.PublicProxy.close()
 	}
 	c, err := e.dialBrowser(ctx)
 	if err != nil {

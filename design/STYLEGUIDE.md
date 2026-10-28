@@ -342,3 +342,26 @@ The bot **Secrets & network** view (`#31`, Stitch screen `9134a93a74a544c4876436
 - Action buttons (**Allow**, **Block**, **Undo**, **Edit rule**) keep ≥ 44 px touch targets and explicit text labels.
 - **Pending enforcement** (`202 Accepted` while waiting on the running proxy) uses dashed `amber-line` / `amber-on-dark` (`Saved · proxy pending`) and never displays an `applied` badge (`mint-soft` / `green-600`) until proxy acknowledgement is confirmed.
 - **Conflicts & unknown state** (`409 policy_conflict`, Undo divergence, or failed reconciliation after an interrupted save) surface translated `amber-tint` alerts; failed reconciliation locks further policy writes behind an explicit **Reload policy** action until authoritative state reloads.
+
+### Self-hosted GitLab login destinations
+
+Workspace settings show named GitLab instances with their complete canonical
+HTTPS origin in monospace. Owners and admins can add and remove instances; members
+and viewers see the destinations without mutation controls. Bot settings offer labeled, 44 px checkbox targets to assign zero or more registered
+instances. Explain that explicit assignment and bot egress permission are both required;
+no manual IP configuration or restart is needed. Removing a bot assignment revokes only
+that bot's affected sessions and pending sign-ins. Use the existing
+Card, Input, Button and Alert components, including 44 px targets and visible
+focus. Removal copy states that active sessions are revoked and re-adding requires
+a new login. Secret dialogs continue to display the complete destination origin;
+credentials never appear in instance settings or chat cards.
+
+### GitLab CLI credential recovery
+
+The existing GitLab instance and bot-assignment panels cover browser, REST API and
+Git HTTPS access. Removing access explains that sessions, token grants and pending
+requests are revoked. Secret cards show the exact canonical origin and adapter;
+only non-secret placeholders may appear in CLI continuation guidance. Failed
+credential requests use specific next-intl messages for registration, assignment,
+network permission, invalid input, limits and policy availability instead of the
+generic model/computer failure. Never render dependency errors or secret previews.

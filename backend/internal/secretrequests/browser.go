@@ -10,7 +10,7 @@ import (
 
 	"github.com/dunkeltech/botbox/backend/internal/authbroker"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
-	"github.com/dunkeltech/botbox/backend/internal/secrets/mitmproxy"
+	"github.com/dunkeltech/botbox/backend/internal/gitlabaccess"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -21,8 +21,8 @@ func createBrowserLoginRequest(ctx context.Context, pool *pgxpool.Pool, in Creat
 	if in.Broker == nil {
 		return CreateResult{}, ErrUnsupportedCapability
 	}
-	loginAdapter, ok := authbroker.LookupLoginAdapter(in.AdapterID)
-	if !ok {
+	loginAdapter, resolveErr := authbroker.ResolveLoginAdapter(in.AdapterID, in.TargetOrigin)
+	if resolveErr != nil {
 		return CreateResult{}, fmt.Errorf("%w: unsupported adapter", ErrInvalidInput)
 	}
 	reason := strings.TrimSpace(in.Reason)
@@ -33,16 +33,12 @@ func createBrowserLoginRequest(ctx context.Context, pool *pgxpool.Pool, in Creat
 		return CreateResult{}, fmt.Errorf("%w: env_placeholder_name is not supported for browser_login", ErrInvalidInput)
 	}
 	targetOrigin := loginAdapter.Origin
-	if strings.TrimSpace(in.TargetOrigin) != "" {
-		canon, _, _, err := mitmproxy.CanonicalHTTPSOrigin(in.TargetOrigin)
-		if err != nil {
-			return CreateResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	if loginAdapter.ID == "gitlab_web" && loginAdapter.Origin != "https://gitlab.com:443" {
+		if err := gitlabaccess.Check(ctx, db.New(pool), in.WorkspaceID, in.BotID, targetOrigin); err != nil {
+			return CreateResult{}, err
 		}
-		if canon != loginAdapter.Origin {
-			return CreateResult{}, fmt.Errorf("%w: target origin does not match adapter origin", ErrInvalidInput)
-		}
-		targetOrigin = canon
 	}
+
 	usernameHint := strings.TrimSpace(in.UsernameHint)
 	if len(usernameHint) > 255 {
 		return CreateResult{}, fmt.Errorf("%w: username hint too long", ErrInvalidInput)
@@ -58,11 +54,15 @@ func createBrowserLoginRequest(ctx context.Context, pool *pgxpool.Pool, in Creat
 	}
 
 	brokerSess, err := in.Broker.OpenSession(ctx, authbroker.OpenSessionInput{
-		WorkspaceID: in.WorkspaceID,
-		BotID:       in.BotID,
-		AdapterID:   loginAdapter.ID,
+		WorkspaceID:  in.WorkspaceID,
+		BotID:        in.BotID,
+		AdapterID:    loginAdapter.ID,
+		TargetOrigin: targetOrigin,
 	})
 	if err != nil {
+		if errors.Is(err, authbroker.ErrNavigationForbidden) {
+			return CreateResult{}, ErrHostNotAllowed
+		}
 		return CreateResult{}, err
 	}
 	committed := false
@@ -102,6 +102,12 @@ func createBrowserLoginRequest(ctx context.Context, pool *pgxpool.Pool, in Creat
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	q := db.New(tx)
+	if loginAdapter.ID == "gitlab_web" && targetOrigin != "https://gitlab.com:443" {
+		// Hold a shared registration lock until the session is durable; deletion revokes it.
+		if err := gitlabaccess.Check(ctx, q, in.WorkspaceID, in.BotID, targetOrigin); err != nil {
+			return CreateResult{}, err
+		}
+	}
 
 	if err := checkRateLimits(ctx, q, wsPG, botPG, now); err != nil {
 		return CreateResult{}, err
@@ -253,8 +259,8 @@ func fulfillBrowserLoginRequest(
 	if in.Scope != ScopeEphemeral {
 		return FulfillResult{}, fmt.Errorf("%w: browser_login requires ephemeral broker session scope", ErrInvalidInput)
 	}
-	loginAdapter, ok := authbroker.LookupLoginAdapter(preRow.AdapterID)
-	if !ok {
+	loginAdapter, resolveErr := authbroker.ResolveLoginAdapter(preRow.AdapterID, preRow.TargetOrigin)
+	if resolveErr != nil {
 		return FulfillResult{}, ErrUnsupportedCapability
 	}
 	wsPG := toPGUUID(in.WorkspaceID)

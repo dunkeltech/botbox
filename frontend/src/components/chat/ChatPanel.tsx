@@ -30,6 +30,13 @@ type History = components['schemas']['ChatHistory'];
 type BudgetSummary = components['schemas']['BudgetSummary'];
 
 const turnFailureKeys: Record<string, string> = {
+  'secret_request.gitlab_not_registered': 'secretGitLabNotRegistered',
+  'secret_request.gitlab_not_assigned': 'secretGitLabNotAssigned',
+  'secret_request.host_not_allowed': 'secretHostNotAllowed',
+  'secret_request.invalid_input': 'secretInvalidInput',
+  'secret_request.rate_limited': 'secretRateLimited',
+  'secret_request.policy_unavailable': 'secretPolicyUnavailable',
+  'secret_request.unsupported_capability': 'secretCapabilityUnavailable',
   'engine.cli_unavailable': 'cliUnavailable',
   'engine.computer_not_running': 'computerNotRunning',
   'engine.computer_restart_required': 'computerRestartRequired',

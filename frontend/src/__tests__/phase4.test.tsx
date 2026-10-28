@@ -331,6 +331,13 @@ describe('live runner messages', () => {
 
 describe('turn failure recovery', () => {
   it.each([
+    ['secret_request.gitlab_not_registered', 'Workspace settings'],
+    ['secret_request.gitlab_not_assigned', 'Bot settings'],
+    ['secret_request.host_not_allowed', 'network settings'],
+    ['secret_request.invalid_input', 'invalid adapter'],
+    ['secret_request.rate_limited', 'request limit'],
+    ['secret_request.policy_unavailable', 'policy is unavailable'],
+    ['secret_request.unsupported_capability', 'authentication broker'],
     ['engine.cli_unavailable', 'isolated Docker computer'],
     ['engine.computer_not_running', 'Start the bot computer'],
     ['engine.computer_restart_required', 'replace its simulated computer'],

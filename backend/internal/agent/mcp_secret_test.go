@@ -141,3 +141,25 @@ func TestMCPBrokerEnabledAdvertisesAdaptersAndBridgesCalls(t *testing.T) {
 		t.Fatalf("expected image content in broker_screenshot result, got %s", rawShot)
 	}
 }
+
+func TestMCPRequestSecretCustomGitLabOrigin(t *testing.T) {
+	h := agent.NewMCPHandler(nil)
+	h.BrokerEnabled = true
+	for _, tt := range []struct {
+		adapter, origin string
+		valid           bool
+	}{
+		{"gitlab_web", "https://gitlab.example.org", true},
+		{"gitlab_web", "https://gitlab.example.org:8443", false},
+		{"gitlab_web", "https://gitlab.example.org/path", false},
+		{"github_web", "https://gitlab.example.org", false},
+	} {
+		t.Run(tt.adapter+tt.origin, func(t *testing.T) {
+			raw, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": "request_secret", "arguments": map[string]any{"kind": "browser_login", "adapter_id": tt.adapter, "target_origin": tt.origin, "reason": "Review project"}}})
+			resp, ok := h.HandleMessage(context.Background(), raw)
+			if !ok || (resp.Error == nil) != tt.valid {
+				t.Fatalf("valid=%v rpc=%+v", tt.valid, resp.Error)
+			}
+		})
+	}
+}

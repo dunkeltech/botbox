@@ -282,7 +282,7 @@ func (m *MCPHandler) mcpToolsList() []map[string]any {
 				"kind":                 map[string]any{"type": "string", "enum": []string{"cli_egress", "browser_login"}},
 				"adapter_id":           map[string]any{"type": "string", "enum": adapterIDs},
 				"reason":               map[string]any{"type": "string"},
-				"target_origin":        map[string]any{"type": "string"},
+				"target_origin":        map[string]any{"type": "string", "description": "For self-hosted GitLab browser_login or cli_egress, use the exact workspace-approved HTTPS origin assigned to this bot. Other providers retain fixed origins."},
 				"env_placeholder_name": map[string]any{"type": "string"},
 				"username_hint":        map[string]any{"type": "string"},
 			},
@@ -364,8 +364,8 @@ func (m *MCPHandler) handleRequestSecretMCP(raw json.RawMessage) (any, *rpcError
 				}},
 			}, nil
 		}
-		adapter, ok := authbroker.LookupLoginAdapter(args.AdapterID)
-		if !ok {
+		_, resolveErr := authbroker.ResolveLoginAdapter(args.AdapterID, args.TargetOrigin)
+		if resolveErr != nil {
 			return nil, &rpcError{Code: -32602, Message: "unsupported browser login adapter"}
 		}
 		if args.Reason == "" || len(args.Reason) > 500 {
@@ -373,12 +373,6 @@ func (m *MCPHandler) handleRequestSecretMCP(raw json.RawMessage) (any, *rpcError
 		}
 		if args.EnvPlaceholderName != "" {
 			return nil, &rpcError{Code: -32602, Message: "env_placeholder_name is not valid for browser_login"}
-		}
-		if args.TargetOrigin != "" {
-			canon, _, _, err := mitmproxy.CanonicalHTTPSOrigin(args.TargetOrigin)
-			if err != nil || canon != adapter.Origin {
-				return nil, &rpcError{Code: -32602, Message: "target_origin must match the adapter's canonical HTTPS origin"}
-			}
 		}
 		return map[string]any{
 			"content": []map[string]any{{
@@ -390,8 +384,8 @@ func (m *MCPHandler) handleRequestSecretMCP(raw json.RawMessage) (any, *rpcError
 	if args.Kind != "cli_egress" {
 		return nil, &rpcError{Code: -32602, Message: "unsupported request_secret kind"}
 	}
-	adapter, ok := mitmproxy.LookupAdapter(args.AdapterID)
-	if !ok {
+	_, resolveErr := mitmproxy.ResolveAdapter(args.AdapterID, args.TargetOrigin)
+	if resolveErr != nil {
 		return nil, &rpcError{Code: -32602, Message: "unsupported HTTPS credential adapter"}
 	}
 	if args.Reason == "" || len(args.Reason) > 500 {
@@ -399,12 +393,6 @@ func (m *MCPHandler) handleRequestSecretMCP(raw json.RawMessage) (any, *rpcError
 	}
 	if err := mitmproxy.ValidateEnvPlaceholderName(args.EnvPlaceholderName); err != nil {
 		return nil, &rpcError{Code: -32602, Message: err.Error()}
-	}
-	if args.TargetOrigin != "" {
-		_, host, port, err := mitmproxy.CanonicalHTTPSOrigin(args.TargetOrigin)
-		if err != nil || host != adapter.Host || port != adapter.Port {
-			return nil, &rpcError{Code: -32602, Message: "target_origin must match the adapter's canonical HTTPS origin"}
-		}
 	}
 	return map[string]any{
 		"content": []map[string]any{{

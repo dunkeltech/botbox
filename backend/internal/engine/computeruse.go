@@ -19,17 +19,19 @@ var (
 	ErrTakeoverConflict = errors.New("desktop control lock held by human")
 )
 
-// DesktopGuidance is appended to API and CLI prompts so models prefer cheap
-// tools and refresh the screen after a human has used the desktop.
+// GitLabCLIGuidance keeps glab token handling outside the sandbox, including resumed CLI sessions.
+const GitLabCLIGuidance = " For GitLab API or Git over HTTPS, use request_secret(kind=\"cli_egress\", adapter_id=\"gitlab_api\" or \"gitlab_git\", target_origin=the exact approved HTTPS origin, env_placeholder_name=\"GITLAB_TOKEN\", reason=...). Custom instances must be registered and assigned to this bot; egress permission is separate. After fulfillment use only the returned GITLAB_TOKEN placeholder with GITLAB_HOST and GITLAB_API_HOST set to that instance and HTTPS protocols. Verify glab with glab api user. Never request real tokens in chat, run glab auth login with a real token, or put real tokens in files, arguments or environment variables. API/Git token requests do not require the browser broker."
+
+// DesktopGuidance is appended to API and CLI prompts to prefer direct tools and refresh after human use.
 const DesktopGuidance = "Desktop tools are available: screenshot, pointer, keyboard, and browser tools (navigate, click_selector, fill, read_text). Prefer shell commands and browser tools over pixel clicks. The desktop is 1280 by 800; coordinates on a downscaled screenshot are scaled back to that desktop. After a human uses the desktop, take a fresh screenshot before acting."
 
 // DesktopGuidanceFor appends isolated broker login guidance when the external
 // authentication broker is active on the control plane.
 func DesktopGuidanceFor(brokerEnabled bool) string {
 	if !brokerEnabled {
-		return DesktopGuidance
+		return DesktopGuidance + GitLabCLIGuidance
 	}
-	return DesktopGuidance + " For website logins on reviewed adapters (odoo_staging, gitlab_web, github_web), never enter credentials into the sandbox browser; call request_secret(kind=\"browser_login\", adapter_id=..., reason=...) and then use broker_open, broker_read, broker_click, and broker_screenshot with the returned broker_session_id."
+	return DesktopGuidance + GitLabCLIGuidance + " For website logins on reviewed adapters (odoo_staging, gitlab_web, github_web), never enter credentials into the sandbox browser; call request_secret(kind=\"browser_login\", adapter_id=..., reason=...) and then use broker_open, broker_read, broker_click, and broker_screenshot with the returned broker_session_id."
 }
 
 // HandbackNote is the system note sent when a person returns the desktop to the bot.

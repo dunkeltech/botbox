@@ -4,6 +4,86 @@ info:
   version: 0.1.0
   description: REST API for first-run setup, authentication, workspaces, RBAC, invitations, and bot configuration.
 paths:
+  /api/workspaces/{workspaceID}/bots/{botID}/gitlab-instances:
+    parameters:
+      - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: botID, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      operationId: listBotGitLabInstances
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: GitLab instances assigned to this bot
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GitLabInstanceList'}
+        '401': {description: Authentication required}
+        '404': {description: Workspace or bot not found}
+    put:
+      operationId: setBotGitLabInstances
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/BotGitLabInstances'}
+      responses:
+        '200':
+          description: Assignments saved and removed access revoked
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GitLabInstanceList'}
+        '400': {description: Invalid or unregistered origins}
+        '401': {description: Authentication required}
+        '403': {description: Bot manager required}
+        '404': {description: Workspace or bot not found}
+  /api/workspaces/{workspaceID}/gitlab-instances:
+    parameters:
+      - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      operationId: listGitLabInstances
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Approved GitLab browser, REST API and Git HTTPS instances
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GitLabInstanceList'}
+        '401': {description: Authentication required}
+        '404': {description: Workspace not found}
+    post:
+      operationId: createGitLabInstance
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/GitLabInstance'}
+      responses:
+        '201':
+          description: GitLab instance registered
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GitLabInstance'}
+        '400': {description: Invalid input}
+        '401': {description: Authentication required}
+        '403': {description: Owner or admin required}
+        '404': {description: Workspace not found}
+        '409': {description: Duplicate instance or instance limit reached}
+    delete:
+      operationId: deleteGitLabInstance
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/GitLabInstanceOrigin'}
+      responses:
+        '204': {description: Instance removed and sessions revoked}
+        '400': {description: Invalid input}
+        '401': {description: Authentication required}
+        '403': {description: Owner or admin required}
+        '404': {description: Workspace or instance not found}
   /api/workspaces/{workspaceID}/bots/{botID}/runtime:
     parameters:
       - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
@@ -2217,6 +2297,36 @@ components:
         format: uuid
 
   schemas:
+    BotGitLabInstances:
+      type: object
+      additionalProperties: false
+      required: [origins]
+      properties:
+        origins:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items: {type: string, maxLength: 512}
+    GitLabInstanceOrigin:
+      type: object
+      additionalProperties: false
+      required: [origin]
+      properties:
+        origin: {type: string, maxLength: 512}
+    GitLabInstance:
+      type: object
+      additionalProperties: false
+      required: [name, origin]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 100}
+        origin: {type: string, maxLength: 512}
+    GitLabInstanceList:
+      type: object
+      required: [instances]
+      properties:
+        instances:
+          type: array
+          items: {$ref: '#/components/schemas/GitLabInstance'}
     BotRuntime:
       type: object
       required: [paused]

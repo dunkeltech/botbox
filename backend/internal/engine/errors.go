@@ -27,7 +27,7 @@ func (e *turnFailure) Unwrap() error { return e.cause }
 // Error returns only that category, so dependency credentials cannot leak.
 func WithFailureCode(code string, cause error) error {
 	switch code {
-	case FailureCLIUnavailable, FailureComputerNotRunning, FailureComputerRestart, FailureControlHeld, FailureProxyUnavailable, FailureCredentialsMissing, FailureCredentialsUnavailable, FailureProvider:
+	case "secret_request.gitlab_not_registered", "secret_request.gitlab_not_assigned", "secret_request.host_not_allowed", "secret_request.invalid_input", "secret_request.rate_limited", "secret_request.unsupported_capability", "secret_request.policy_unavailable", FailureCLIUnavailable, FailureComputerNotRunning, FailureComputerRestart, FailureControlHeld, FailureProxyUnavailable, FailureCredentialsMissing, FailureCredentialsUnavailable, FailureProvider:
 	default:
 		code = FailureTurn
 	}

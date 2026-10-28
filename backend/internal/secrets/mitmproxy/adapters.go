@@ -165,7 +165,7 @@ func (a HTTPSAdapter) MatchesRequest(host, port, method, rawPath string) bool {
 		if prefix == "/" {
 			return strings.HasPrefix(clean, "/")
 		}
-		if pathMatchesPrefix(clean, prefix) || strings.HasPrefix(clean, prefix) {
+		if pathMatchesPrefix(clean, prefix) {
 			return true
 		}
 	}
@@ -279,4 +279,84 @@ func CanonicalHTTPSOrigin(raw string) (origin, host, port string, err error) {
 		return "", "", "", errors.New("non-443 ports are not supported")
 	}
 	return "https://" + h + ":" + p, h, p, nil
+}
+
+// StrictHTTPSOrigin validates a canonical HTTPS DNS origin on port 443, without URL payloads.
+func StrictHTTPSOrigin(raw string) (string, error) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return "", errors.New("invalid HTTPS origin")
+	}
+	if (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.Contains(raw, "#") {
+		return "", errors.New("invalid HTTPS origin")
+	}
+	origin, host, _, err := CanonicalHTTPSOrigin(raw)
+	if err != nil {
+		return "", errors.New("invalid HTTPS origin")
+	}
+	// Use ASCII DNS names (IDNs must be supplied as punycode) to avoid ambiguous display.
+	if len(host) > 253 || !strings.Contains(host, ".") {
+		return "", errors.New("invalid HTTPS origin")
+	}
+	for _, label := range strings.Split(host, ".") {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return "", errors.New("invalid HTTPS origin")
+		}
+		for _, c := range label {
+			if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '-' {
+				return "", errors.New("invalid HTTPS origin")
+			}
+		}
+	}
+	return origin, nil
+}
+
+// IsGitLabAdapter reports whether an adapter uses reviewed GitLab API or Git rules.
+func IsGitLabAdapter(id string) bool { return id == "gitlab_api" || id == "gitlab_git" }
+
+// ResolveAdapter binds reviewed GitLab behavior to an explicit HTTPS destination.
+// Callers must authorize custom origins independently; this function only validates shape.
+func ResolveAdapter(id, rawOrigin string) (HTTPSAdapter, error) {
+	a, ok := LookupAdapter(id)
+	if !ok {
+		return HTTPSAdapter{}, errors.New("unsupported HTTPS adapter")
+	}
+	if strings.TrimSpace(rawOrigin) == "" {
+		return a, nil
+	}
+	origin, err := StrictHTTPSOrigin(rawOrigin)
+	if err != nil {
+		return HTTPSAdapter{}, err
+	}
+	if origin == a.CanonicalOrigin() {
+		return a, nil
+	}
+	if !IsGitLabAdapter(a.ID) {
+		return HTTPSAdapter{}, errors.New("target origin does not match adapter")
+	}
+	_, a.Host, a.Port, err = CanonicalHTTPSOrigin(origin)
+	if a.ID == "gitlab_api" {
+		a.HeaderName = "PRIVATE-TOKEN"
+		a.Scheme = SchemeRaw
+	}
+	return a, err
+}
+
+// MatchesEscapedRequest refuses encoded traversal while allowing encoded GitLab project paths.
+func (a HTTPSAdapter) MatchesEscapedRequest(host, port, method, escapedPath string) bool {
+	candidate := escapedPath
+	for range 8 {
+		if !a.MatchesRequest(host, port, method, candidate) {
+			return false
+		}
+		decoded, err := url.PathUnescape(candidate)
+		if err != nil {
+			return false
+		}
+		if decoded == candidate {
+			return true
+		}
+		candidate = decoded
+	}
+	return false
 }

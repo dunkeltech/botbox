@@ -364,8 +364,8 @@ func handleRequestSecretTool(args json.RawMessage, brokerEnabled bool) (string, 
 		if !brokerEnabled {
 			return "secret_request.browser_unsupported: browser_login is disabled until the isolated authentication broker is available", errors.New("unsupported_capability")
 		}
-		adapter, ok := authbroker.LookupLoginAdapter(in.AdapterID)
-		if !ok {
+		_, resolveErr := authbroker.ResolveLoginAdapter(in.AdapterID, in.TargetOrigin)
+		if resolveErr != nil {
 			return "", errors.New("unsupported browser login adapter")
 		}
 		if strings.TrimSpace(in.Reason) == "" || len(in.Reason) > 500 {
@@ -374,19 +374,13 @@ func handleRequestSecretTool(args json.RawMessage, brokerEnabled bool) (string, 
 		if in.EnvPlaceholderName != "" {
 			return "", errors.New("env_placeholder_name not valid for browser_login")
 		}
-		if in.TargetOrigin != "" {
-			canon, _, _, err := mitmproxy.CanonicalHTTPSOrigin(in.TargetOrigin)
-			if err != nil || canon != adapter.Origin {
-				return "", errors.New("target_origin mismatch")
-			}
-		}
 		return "Browser login secret request submitted to chat. Waiting for human input.", nil
 	}
 	if in.Kind != "cli_egress" {
 		return "", errors.New("unsupported secret request kind")
 	}
-	adapter, ok := mitmproxy.LookupAdapter(in.AdapterID)
-	if !ok {
+	_, resolveErr := mitmproxy.ResolveAdapter(in.AdapterID, in.TargetOrigin)
+	if resolveErr != nil {
 		return "", errors.New("unsupported HTTPS credential adapter")
 	}
 	if strings.TrimSpace(in.Reason) == "" || len(in.Reason) > 500 {
@@ -394,12 +388,6 @@ func handleRequestSecretTool(args json.RawMessage, brokerEnabled bool) (string, 
 	}
 	if err := mitmproxy.ValidateEnvPlaceholderName(in.EnvPlaceholderName); err != nil {
 		return "", err
-	}
-	if in.TargetOrigin != "" {
-		_, host, port, err := mitmproxy.CanonicalHTTPSOrigin(in.TargetOrigin)
-		if err != nil || host != adapter.Host || port != adapter.Port {
-			return "", errors.New("target_origin mismatch")
-		}
 	}
 	return "Secret request submitted to chat. Waiting for human input.", nil
 }

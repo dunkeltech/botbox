@@ -41,6 +41,9 @@ export type ErrorTranslationKey =
   | 'secretRequestConflict'
   | 'secretRequestRuleConflict'
   | 'secretRequestHostNotAllowed'
+  | 'secretGitLabNotRegistered'
+  | 'secretGitLabNotAssigned'
+  | 'secretPolicyUnavailable'
   | 'chatQueueFull'
   | 'chatUnavailable'
   | 'unknownError';
@@ -86,6 +89,9 @@ const ERROR_CODE_TO_KEY: Record<string, ErrorTranslationKey> = {
   'secret_request.conflict': 'secretRequestConflict',
   'secret_request.rule_conflict': 'secretRequestRuleConflict',
   'secret_request.host_not_allowed': 'secretRequestHostNotAllowed',
+  'secret_request.gitlab_not_registered': 'secretGitLabNotRegistered',
+  'secret_request.gitlab_not_assigned': 'secretGitLabNotAssigned',
+  'secret_request.policy_unavailable': 'secretPolicyUnavailable',
   'chat.queue_full': 'chatQueueFull',
   'chat.unavailable': 'chatUnavailable',
 };

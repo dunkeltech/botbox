@@ -12,6 +12,7 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/compute/vncrelay"
 	apigen "github.com/dunkeltech/botbox/backend/internal/gen/api"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
+	"github.com/dunkeltech/botbox/backend/internal/gitlabaccess"
 	"github.com/dunkeltech/botbox/backend/internal/secretrequests"
 	"github.com/dunkeltech/botbox/backend/internal/workspaces"
 	"github.com/go-chi/chi/v5"
@@ -226,6 +227,14 @@ func (s *server) loadVisibleSecretRequest(
 
 func (s *server) writeSecretRequestError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, gitlabaccess.ErrNotRegistered):
+		writeError(w, s.logger, http.StatusConflict, "secret_request.gitlab_not_registered", "register the GitLab instance in Workspace settings")
+	case errors.Is(err, gitlabaccess.ErrNotAssigned):
+		writeError(w, s.logger, http.StatusForbidden, "secret_request.gitlab_not_assigned", "assign the GitLab instance in Bot settings")
+	case errors.Is(err, gitlabaccess.ErrUnavailable):
+		writeError(w, s.logger, http.StatusServiceUnavailable, "secret_request.policy_unavailable", "credential policy unavailable")
+	case errors.Is(err, gitlabaccess.ErrHostBlocked):
+		writeError(w, s.logger, http.StatusConflict, "secret_request.host_not_allowed", "destination is not permitted by bot network policy")
 	case errors.Is(err, secretrequests.ErrUnsupportedCapability):
 		writeError(w, s.logger, http.StatusUnprocessableEntity, "secret_request.unsupported_capability", "browser login requires an isolated authentication broker which is not yet enabled")
 	case errors.Is(err, secretrequests.ErrInvalidInput):

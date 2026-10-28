@@ -30,12 +30,8 @@ build:
 
 GIT_SHA := $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
 # Claude Code 2.1.323 replaces the 1.0.51 JavaScript bundle with a native ELF.
-# Phase 5 grows botbox-agent (desktop tools, PNG/JPEG encode, CDP). docker
-# image inspect sums layer sizes, and the following chmod layer snapshots that
-# binary again, so growth is counted twice. This is the measured size after that.
-# Issue #30 grows botbox-agent with broker MCP tool schemas/bridge; the chmod layer
-# snapshots the binary twice in docker image inspect.
-SANDBOX_IMAGE_MAX_BYTES ?= 2320784346
+# Set executable modes with COPY --chmod so later layers do not duplicate binaries.
+SANDBOX_IMAGE_MAX_BYTES ?= 2320795000
 
 sandbox-image:
 	docker build --build-arg CLAUDE_CLI_VERSION=$${CLAUDE_CLI_VERSION:-2.1.323} --build-arg CODEX_CLI_VERSION=$${CODEX_CLI_VERSION:-0.39.0} -f images/sandbox/Dockerfile -t botbox/sandbox:dev -t botbox/sandbox:$(GIT_SHA) .

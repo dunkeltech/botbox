@@ -236,7 +236,16 @@ func (w *Worker) executeClaimed(ctx context.Context, tx pgx.Tx, turn db.BotTurn,
 							Now:                w.now(),
 						})
 						if srErr != nil {
-							return srErr
+							code := secretrequests.FailureCode(srErr)
+							failure := Event{Kind: EventKindToolResult, TurnID: ev.TurnID, ToolID: ev.ToolID, ToolName: ev.ToolName, IsError: true, ErrorCode: code, Text: secretrequests.FailureMessage(code)}
+							metadata, _ := json.Marshal(failure)
+							if _, err := q.CreateChatMessage(ctx, db.CreateChatMessageParams{ID: pgID(uuid.New()), WorkspaceID: turn.WorkspaceID, ConversationID: turn.ConversationID, SenderType: "bot", SenderBotID: turn.BotID, Kind: "tool", Content: failure.Text, Metadata: metadata}); err != nil {
+								return err
+							}
+							if w.Publish != nil {
+								_ = w.Publish(ctx, session, failure)
+							}
+							return WithFailureCode(code, srErr)
 						}
 						waitingSecret = true
 						if w.Publish != nil {

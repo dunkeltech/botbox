@@ -19,6 +19,9 @@ import (
 	"time"
 
 	"github.com/dunkeltech/botbox/backend/internal/authbroker"
+	"github.com/dunkeltech/botbox/backend/internal/gen/db"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
@@ -27,6 +30,23 @@ func main() {
 	addr := envOrDefault("AUTH_BROKER_ADDR", "127.0.0.1:8085")
 	token := strings.TrimSpace(os.Getenv("AUTH_BROKER_TOKEN"))
 	cdpURL := strings.TrimSpace(os.Getenv("AUTH_BROKER_CDP_URL"))
+
+	var policyPool *pgxpool.Pool
+	var err error
+	// Database connectivity is service configuration; individual domains are managed live in the UI.
+	if strings.TrimSpace(os.Getenv("DATABASE_URL")) != "" && cdpURL == "" {
+		connectCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		policyPool, err = pgxpool.New(connectCtx, os.Getenv("DATABASE_URL"))
+		if err == nil {
+			err = policyPool.Ping(connectCtx)
+		}
+		cancel()
+		if err != nil {
+			logger.Error("GitLab policy database unavailable")
+			os.Exit(1)
+		}
+		defer policyPool.Close()
+	}
 
 	var browserCmd *exec.Cmd
 	if cdpURL == "" {
@@ -49,6 +69,7 @@ func main() {
 			"--remote-debugging-port=9223",
 			"--user-data-dir=" + profileRoot,
 		}
+		args = append(args, "--disable-quic", "--force-webrtc-ip-handling-policy=disable_non_proxied_udp")
 		if filepath.Base(chromeBin) != "chrome-headless-shell" {
 			args = append([]string{"--headless=new"}, args...)
 		}
@@ -77,6 +98,11 @@ func main() {
 
 	engine := authbroker.NewCDPBrowsingEngine(cdpURL)
 	svc := authbroker.NewService(engine)
+	if policyPool != nil {
+		svc.SetGitLabPolicy(func(ctx context.Context, ws, bot, session uuid.UUID, origin string) error {
+			return authbroker.ValidateGitLabAccess(ctx, db.New(policyPool), ws, bot, session, origin)
+		})
+	}
 	handler, err := authbroker.NewHTTPHandler(svc, token)
 	if err != nil {
 		logger.Error("init auth broker handler failed", slog.Any("error", err))

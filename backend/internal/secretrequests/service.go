@@ -14,6 +14,7 @@ import (
 
 	"github.com/dunkeltech/botbox/backend/internal/authbroker"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
+	"github.com/dunkeltech/botbox/backend/internal/gitlabaccess"
 	"github.com/dunkeltech/botbox/backend/internal/secrets"
 	"github.com/dunkeltech/botbox/backend/internal/secrets/mitmproxy"
 	"github.com/google/uuid"
@@ -178,8 +179,8 @@ func CreateRequest(ctx context.Context, pool *pgxpool.Pool, in CreateInput) (Cre
 		return CreateResult{}, fmt.Errorf("%w: unsupported kind", ErrInvalidInput)
 	}
 
-	adapter, ok := mitmproxy.LookupAdapter(in.AdapterID)
-	if !ok {
+	adapter, resolveErr := mitmproxy.ResolveAdapter(in.AdapterID, in.TargetOrigin)
+	if resolveErr != nil {
 		return CreateResult{}, fmt.Errorf("%w: unsupported adapter", ErrInvalidInput)
 	}
 
@@ -189,6 +190,9 @@ func CreateRequest(ctx context.Context, pool *pgxpool.Pool, in CreateInput) (Cre
 	}
 
 	envName := strings.TrimSpace(in.EnvPlaceholderName)
+	if envName == "" && mitmproxy.IsGitLabAdapter(adapter.ID) {
+		envName = adapter.DefaultEnvName
+	}
 	if envName != "" {
 		if err := mitmproxy.ValidateEnvPlaceholderName(envName); err != nil {
 			return CreateResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
@@ -196,17 +200,6 @@ func CreateRequest(ctx context.Context, pool *pgxpool.Pool, in CreateInput) (Cre
 	}
 
 	targetOrigin := adapter.CanonicalOrigin()
-	if strings.TrimSpace(in.TargetOrigin) != "" {
-		canon, host, port, err := mitmproxy.CanonicalHTTPSOrigin(in.TargetOrigin)
-		if err != nil {
-			return CreateResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
-		}
-		if host != adapter.Host || port != adapter.Port {
-			return CreateResult{}, fmt.Errorf("%w: target origin does not match adapter host", ErrInvalidInput)
-		}
-		targetOrigin = canon
-	}
-
 	usernameHint := strings.TrimSpace(in.UsernameHint)
 	if len(usernameHint) > 255 {
 		return CreateResult{}, fmt.Errorf("%w: username hint too long", ErrInvalidInput)
@@ -252,6 +245,12 @@ func CreateRequest(ctx context.Context, pool *pgxpool.Pool, in CreateInput) (Cre
 	botPG := toPGUUID(in.BotID)
 	convPG := toPGUUID(in.ConversationID)
 	turnPG := toPGUUID(in.TurnID)
+
+	if mitmproxy.IsGitLabAdapter(adapter.ID) && adapter.Host != "gitlab.com" {
+		if err := gitlabaccess.Check(ctx, q, in.WorkspaceID, in.BotID, targetOrigin); err != nil {
+			return CreateResult{}, err
+		}
+	}
 
 	pendingCount, err := q.CountPendingSecretRequestsForBot(ctx, db.CountPendingSecretRequestsForBotParams{
 		WorkspaceID: wsPG,
@@ -397,8 +396,8 @@ func FulfillRequest(ctx context.Context, pool *pgxpool.Pool, ring *secrets.KeyRi
 	if preRow.Kind != KindCLIEgress {
 		return FulfillResult{}, fmt.Errorf("%w: unsupported kind", ErrInvalidInput)
 	}
-	adapter, ok := mitmproxy.LookupAdapter(preRow.AdapterID)
-	if !ok {
+	adapter, resolveErr := mitmproxy.ResolveAdapter(preRow.AdapterID, preRow.TargetOrigin)
+	if resolveErr != nil {
 		return FulfillResult{}, ErrUnsupportedCapability
 	}
 	if preRow.Status == StatusPending && preRow.ExpiresAt.Valid && !now.Before(preRow.ExpiresAt.Time) {
@@ -411,6 +410,12 @@ func FulfillRequest(ctx context.Context, pool *pgxpool.Pool, ring *secrets.KeyRi
 	}
 	if preRow.Status != StatusPending {
 		return FulfillResult{}, ErrConflict
+	}
+
+	if mitmproxy.IsGitLabAdapter(adapter.ID) && adapter.Host != "gitlab.com" {
+		if err := gitlabaccess.Check(ctx, db.New(pool), in.WorkspaceID, uuid.UUID(preRow.BotID.Bytes), adapter.CanonicalOrigin()); err != nil {
+			return FulfillResult{}, err
+		}
 	}
 
 	// Verify bot egress allowlist does NOT implicitly expand on secret fulfillment.
@@ -514,6 +519,13 @@ func FulfillRequest(ctx context.Context, pool *pgxpool.Pool, ring *secrets.KeyRi
 	defer func() { _ = tx.Rollback(ctx) }()
 	q := db.New(tx)
 
+	if mitmproxy.IsGitLabAdapter(adapter.ID) && adapter.Host != "gitlab.com" {
+		if err := gitlabaccess.Check(ctx, q, in.WorkspaceID, uuid.UUID(claimed.BotID.Bytes), adapter.CanonicalOrigin()); err != nil {
+			markFailed("secret_request.access_removed")
+			return FulfillResult{}, err
+		}
+	}
+
 	switch in.Scope {
 	case ScopeEphemeral:
 		leaseExp := now.Add(DefaultEphemeralLeaseTTL)
@@ -559,6 +571,7 @@ func FulfillRequest(ctx context.Context, pool *pgxpool.Pool, ring *secrets.KeyRi
 				return FulfillResult{}, ErrSecretRuleConflict
 			}
 			// Re-encrypt using existing secret ID so AAD stays bound to the primary key.
+			grantID = uuid.UUID(existingID.Bytes)
 			existingUID := uuid.UUID(existingID.Bytes)
 			repAAD := secrets.SecretAAD(in.WorkspaceID, "bot", existingUID)
 			repCT, repErr := ring.Encrypt(secretBytes, repAAD)
@@ -624,6 +637,7 @@ func FulfillRequest(ctx context.Context, pool *pgxpool.Pool, ring *secrets.KeyRi
 				markFailed("secret_request.conflict")
 				return FulfillResult{}, ErrSecretRuleConflict
 			}
+			grantID = uuid.UUID(existingID.Bytes)
 			existingUID := uuid.UUID(existingID.Bytes)
 			repAAD := secrets.SecretAAD(in.WorkspaceID, "workspace", existingUID)
 			repCT, repErr := ring.Encrypt(secretBytes, repAAD)
@@ -673,6 +687,20 @@ func FulfillRequest(ctx context.Context, pool *pgxpool.Pool, ring *secrets.KeyRi
 		} else {
 			markFailed("secret_request.db_error")
 			return FulfillResult{}, cErr
+		}
+	}
+
+	switch in.Scope {
+	case ScopeBotSecret:
+		if err = q.BindBotSecretAdapter(ctx, db.BindBotSecretAdapterParams{WorkspaceID: wsPG, BotID: claimed.BotID, ID: toPGUUID(grantID), AdapterID: adapter.ID}); err != nil {
+			return FulfillResult{}, err
+		}
+	case ScopeWorkspaceSecret:
+		if err = q.BindWorkspaceSecretAdapter(ctx, db.BindWorkspaceSecretAdapterParams{WorkspaceID: wsPG, ID: toPGUUID(grantID), AdapterID: adapter.ID}); err != nil {
+			return FulfillResult{}, err
+		}
+		if err = q.UnblockGitLabWorkspaceSecretForBot(ctx, db.UnblockGitLabWorkspaceSecretForBotParams{WorkspaceID: wsPG, BotID: claimed.BotID, SecretID: toPGUUID(grantID)}); err != nil {
+			return FulfillResult{}, err
 		}
 	}
 
@@ -728,6 +756,9 @@ func FulfillRequest(ctx context.Context, pool *pgxpool.Pool, ring *secrets.KeyRi
 	}
 
 	continuation := fmt.Sprintf("Secret provided for adapter %s (%s); hidden from AI. Scope: %s.", adapter.ID, adapter.Host, in.Scope)
+	if mitmproxy.IsGitLabAdapter(adapter.ID) {
+		continuation += fmt.Sprintf(" Use GITLAB_HOST=%s and GITLAB_API_HOST=%s with HTTPS; never run glab auth login with a real token. Verify using glab api user.", adapter.Host, adapter.Host)
+	}
 	if completed.EnvPlaceholderName != "" && completed.PlaceholderValue != "" {
 		continuation += fmt.Sprintf(" Use environment placeholder %s=%s; the egress proxy injects the real credential outbound.", completed.EnvPlaceholderName, completed.PlaceholderValue)
 	}

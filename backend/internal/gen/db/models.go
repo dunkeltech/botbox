@@ -50,6 +50,12 @@ type Bot struct {
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
+type BotGitlabInstance struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	BotID       pgtype.UUID `json:"bot_id"`
+	Origin      string      `json:"origin"`
+}
+
 type BotRuntime struct {
 	WorkspaceID pgtype.UUID `json:"workspace_id"`
 	BotID       pgtype.UUID `json:"bot_id"`
@@ -232,6 +238,23 @@ type Environment struct {
 	ControlNote         string             `json:"control_note"`
 	StartedAt           pgtype.Timestamptz `json:"started_at"`
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+}
+
+type GitlabInstance struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	Origin      string      `json:"origin"`
+	Name        string      `json:"name"`
+}
+
+type GitlabKnownOrigin struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	Origin      string      `json:"origin"`
+}
+
+type GitlabWorkspaceSecretBlock struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	BotID       pgtype.UUID `json:"bot_id"`
+	SecretID    pgtype.UUID `json:"secret_id"`
 }
 
 type Invitation struct {

@@ -744,6 +744,11 @@ type Bot struct {
 	WorkspaceId   openapi_types.UUID  `json:"workspaceId"`
 }
 
+// BotGitLabInstances defines model for BotGitLabInstances.
+type BotGitLabInstances struct {
+	Origins []string `json:"origins"`
+}
+
 // BotListResponse defines model for BotListResponse.
 type BotListResponse struct {
 	Bots []Bot `json:"bots"`
@@ -1056,6 +1061,22 @@ type FulfillSecretRequestBody struct {
 	Scope           SecretRequestScope `json:"scope"`
 	SecretValue     string             `json:"secretValue"`
 	Username        *string            `json:"username,omitempty"`
+}
+
+// GitLabInstance defines model for GitLabInstance.
+type GitLabInstance struct {
+	Name   string `json:"name"`
+	Origin string `json:"origin"`
+}
+
+// GitLabInstanceList defines model for GitLabInstanceList.
+type GitLabInstanceList struct {
+	Instances []GitLabInstance `json:"instances"`
+}
+
+// GitLabInstanceOrigin defines model for GitLabInstanceOrigin.
+type GitLabInstanceOrigin struct {
+	Origin string `json:"origin"`
 }
 
 // Group defines model for Group.
@@ -1522,6 +1543,9 @@ type UpdateBotEgressPolicyJSONRequestBody = UpdateEgressPolicyRequest
 // WriteBotFileJSONRequestBody defines body for WriteBotFile for application/json ContentType.
 type WriteBotFileJSONRequestBody = WriteFileContentRequest
 
+// SetBotGitLabInstancesJSONRequestBody defines body for SetBotGitLabInstances for application/json ContentType.
+type SetBotGitLabInstancesJSONRequestBody = BotGitLabInstances
+
 // SetBotRuntimeJSONRequestBody defines body for SetBotRuntime for application/json ContentType.
 type SetBotRuntimeJSONRequestBody SetBotRuntimeJSONBody
 
@@ -1539,6 +1563,12 @@ type SetBudgetJSONRequestBody = SetBudgetRequest
 
 // SendChatMessageJSONRequestBody defines body for SendChatMessage for application/json ContentType.
 type SendChatMessageJSONRequestBody = SendChatMessageRequest
+
+// DeleteGitLabInstanceJSONRequestBody defines body for DeleteGitLabInstance for application/json ContentType.
+type DeleteGitLabInstanceJSONRequestBody = GitLabInstanceOrigin
+
+// CreateGitLabInstanceJSONRequestBody defines body for CreateGitLabInstance for application/json ContentType.
+type CreateGitLabInstanceJSONRequestBody = GitLabInstance
 
 // CreateGroupJSONRequestBody defines body for CreateGroup for application/json ContentType.
 type CreateGroupJSONRequestBody = CreateGroupRequest
