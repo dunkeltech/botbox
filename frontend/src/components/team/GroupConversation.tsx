@@ -3,6 +3,7 @@
 import { ArrowLeftRight, Paperclip, Send } from 'lucide-react';
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type FormEvent,
@@ -10,8 +11,15 @@ import {
 } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
-import { ToolMessageView } from '@/components/chat/ChatPanel';
+import { ChatTurnToolChip } from '@/components/chat/ChatTurnToolChip';
+import { LiveToolStatusBar } from '@/components/chat/LiveToolStatusBar';
+import {
+  buildToolTrace,
+  type ToolTraceSummary,
+  type ToolTraceTurn,
+} from '@/components/chat/toolTrace';
 import { BrokerTakeoverModal } from '@/components/chat/BrokerTakeoverModal';
+import { MarkdownMessage } from '@/components/chat/MarkdownMessage';
 import { SecretRequestCard } from '@/components/chat/SecretRequestCard';
 import { SecretRequestModal } from '@/components/chat/SecretRequestModal';
 import { useSecretRequestControl } from '@/components/chat/useSecretRequestControl';
@@ -34,7 +42,6 @@ import {
   filterByQuery,
   initials,
   insertMention,
-  mentionParts,
   type MentionTarget,
 } from '@/components/team/text';
 
@@ -88,6 +95,10 @@ export function GroupConversation({
   role,
   canPost,
   query,
+  selectedToolTurnKey = null,
+  onInspectToolTurn,
+  onToolTraceChange,
+  scrollRequest = null,
 }: {
   workspaceId: string;
   userId: string;
@@ -95,8 +106,13 @@ export function GroupConversation({
   role: WorkspaceRole;
   canPost: boolean;
   query: string;
+  selectedToolTurnKey?: string | null;
+  onInspectToolTurn?: (turnKey: string) => void;
+  onToolTraceChange?: (trace: ToolTraceSummary) => void;
+  scrollRequest?: { messageId: string; nonce: number } | null;
 }) {
   const t = useTranslations('team');
+  const tChat = useTranslations('chat');
   const client = useQueryClient();
   const field = useRef<HTMLTextAreaElement>(null);
   const [draft, setDraft] = useState('');
@@ -144,16 +160,85 @@ export function GroupConversation({
   const choices = mention ? filterByQuery(targets(group), mention.query) : [];
   const selected = choices[Math.min(picked, Math.max(choices.length - 1, 0))];
   const needle = query.trim().toLowerCase();
-  const messages = (history.data?.messages ?? []).filter(
-    (message) =>
-      needle === '' || message.content.toLowerCase().includes(needle),
+  const trace = useMemo(
+    () =>
+      buildToolTrace({
+        messages: history.data?.messages ?? [],
+        turns: history.data?.turns,
+        imagePathForMessage: (messageId) =>
+          `${base}/groups/${group.id}/messages/${messageId}/tool-image`,
+      }),
+    [history.data?.messages, history.data?.turns, base, group.id],
   );
-  const names = targets(group).map((target) => target.name);
+  useEffect(() => {
+    onToolTraceChange?.(trace);
+  }, [trace, onToolTraceChange]);
+
+  const messages = useMemo(
+    () =>
+      trace.chatMessages.filter(
+        (message) =>
+          needle === '' || message.content.toLowerCase().includes(needle),
+      ),
+    [trace.chatMessages, needle],
+  );
+  const names = useMemo(
+    () => targets(group).map((target) => target.name),
+    [group],
+  );
   const { logRef, onScroll, onMediaLoad, scrollToBottom } = useChatScroll({
     conversationKey: group.id,
     messageCount: messages.length,
     lastMessageId: messages[messages.length - 1]?.id ?? '',
   });
+
+  useEffect(() => {
+    if (!scrollRequest?.messageId || !logRef.current) return;
+    const target = logRef.current.querySelector<HTMLElement>(
+      `[data-message-id="${CSS.escape(scrollRequest.messageId)}"]`,
+    );
+    if (target && typeof target.scrollIntoView === 'function') {
+      target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+  }, [scrollRequest, logRef]);
+
+  const liveToolTurn = trace.turns.find((item) => item.status === 'running');
+  const liveBotMember = liveToolTurn
+    ? group.members.find((member) => member.id === liveToolTurn.botId)
+    : undefined;
+
+  function renderUnattachedToolTurns(turnsToShow: ToolTraceTurn[]) {
+    if (turnsToShow.length === 0) return null;
+    return turnsToShow.map((toolTurn) => {
+      const member = group.members.find((row) => row.id === toolTurn.botId);
+      const botName = member?.name || t('bot');
+      return (
+        <div
+          key={`unattached-${toolTurn.turnKey}`}
+          className="flex gap-3 px-5 py-1"
+        >
+          <BotAvatar
+            seed={member?.id ?? toolTurn.botId ?? group.leadBotId}
+            size={36}
+            decorative
+          />
+          <div className="min-w-0 flex-1">
+            <p className="flex flex-wrap items-baseline gap-2">
+              <span className="text-[15px] font-black text-ink">{botName}</span>
+              <span className="rounded-xs bg-mint-soft px-1.5 py-0.5 text-[11px] font-black uppercase tracking-[0.06em] text-green-600">
+                {t('botBadge')}
+              </span>
+            </p>
+            <ChatTurnToolChip
+              turn={toolTurn}
+              selected={selectedToolTurnKey === toolTurn.turnKey}
+              onInspect={(turnKey) => onInspectToolTurn?.(turnKey)}
+            />
+          </div>
+        </div>
+      );
+    });
+  }
 
   function rememberCaret(value: string, nextCaret: number) {
     setDraft(value);
@@ -252,7 +337,10 @@ export function GroupConversation({
             <span className="h-px flex-1 bg-line" />
           </div>
         ) : null}
+        {renderUnattachedToolTurns(trace.leadingUnattachedTurns)}
         {messages.map((message) => {
+          const unattachedAfter =
+            trace.unattachedTurnsByAnchor.get(message.id) ?? [];
           const who = speaker(
             message,
             group,
@@ -274,47 +362,51 @@ export function GroupConversation({
               (member) => member.id === matched?.botId,
             );
             return (
-              <ApprovalCard
-                key={message.id}
-                className="mx-5"
-                approval={matched}
-                content={message.content}
-                botName={bot?.name}
-                where={matched ? group.name : undefined}
-                avatarSeed={bot?.id ?? matched?.botId}
-                canDecide={matched ? canDecideApproval(role, matched) : false}
-                busy={busyId === matched?.id}
-                errorKey={
-                  matched && decisionError?.id === matched.id
-                    ? decisionError.key
-                    : null
-                }
-                onDecide={
-                  matched
-                    ? (decision) => void decide(matched.id, decision)
-                    : undefined
-                }
-              />
+              <div key={message.id} className="flex flex-col gap-3">
+                <ApprovalCard
+                  className="mx-5"
+                  approval={matched}
+                  content={message.content}
+                  botName={bot?.name}
+                  where={matched ? group.name : undefined}
+                  avatarSeed={bot?.id ?? matched?.botId}
+                  canDecide={matched ? canDecideApproval(role, matched) : false}
+                  busy={busyId === matched?.id}
+                  errorKey={
+                    matched && decisionError?.id === matched.id
+                      ? decisionError.key
+                      : null
+                  }
+                  onDecide={
+                    matched
+                      ? (decision) => void decide(matched.id, decision)
+                      : undefined
+                  }
+                />
+                {renderUnattachedToolTurns(unattachedAfter)}
+              </div>
             );
           }
           if (message.kind === 'secret_request' && message.secretRequest) {
             const sr = message.secretRequest;
             return (
-              <SecretRequestCard
-                key={message.id}
-                className="mx-5"
-                summary={sr}
-                role={role}
-                busy={secretControl.busyRequestId === sr.secretRequestId}
-                errorKey={
-                  secretControl.requestError?.id === sr.secretRequestId
-                    ? secretControl.requestError.key
-                    : null
-                }
-                onProvide={secretControl.openModal}
-                onTakeover={secretControl.openTakeover}
-                onDeny={(s) => void secretControl.deny(s)}
-              />
+              <div key={message.id} className="flex flex-col gap-3">
+                <SecretRequestCard
+                  className="mx-5"
+                  summary={sr}
+                  role={role}
+                  busy={secretControl.busyRequestId === sr.secretRequestId}
+                  errorKey={
+                    secretControl.requestError?.id === sr.secretRequestId
+                      ? secretControl.requestError.key
+                      : null
+                  }
+                  onProvide={secretControl.openModal}
+                  onTakeover={secretControl.openTakeover}
+                  onDeny={(s) => void secretControl.deny(s)}
+                />
+                {renderUnattachedToolTurns(unattachedAfter)}
+              </div>
             );
           }
           if (
@@ -323,15 +415,15 @@ export function GroupConversation({
             message.senderType === 'system'
           ) {
             return (
-              <div
-                key={message.id}
-                className="mx-5 flex items-center gap-2 rounded-sm border border-mint-line bg-mint-soft px-3.5 py-2 text-[13px] text-dark"
-              >
-                <ArrowLeftRight
-                  className="h-4 w-4 shrink-0 text-green-600"
-                  aria-hidden="true"
-                />
-                <span>{message.content}</span>
+              <div key={message.id} className="flex flex-col gap-3">
+                <div className="mx-5 flex items-center gap-2 rounded-sm border border-mint-line bg-mint-soft px-3.5 py-2 text-[13px] text-dark">
+                  <ArrowLeftRight
+                    className="h-4 w-4 shrink-0 text-green-600"
+                    aria-hidden="true"
+                  />
+                  <span>{message.content}</span>
+                </div>
+                {renderUnattachedToolTurns(unattachedAfter)}
               </div>
             );
           }
@@ -339,66 +431,84 @@ export function GroupConversation({
             (member) => member.id === message.senderBotId,
           );
           const timeLabel = formatTime(message.createdAt);
+          const attachedTurn = trace.turnsByReplyId.get(message.id);
           return (
-            <article key={message.id} className="flex gap-3 px-5 py-1">
-              {who.kind === 'bot' ? (
-                <BotAvatar
-                  seed={botMember?.id ?? message.senderBotId ?? group.leadBotId}
-                  size={36}
-                  decorative
-                />
-              ) : (
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-sm bg-dark text-[13px] font-black text-paper">
-                  {initials(who.name)}
-                </span>
-              )}
-              <div className="min-w-0 flex-1">
-                <p className="flex flex-wrap items-baseline gap-2">
-                  <span className="text-[15px] font-black text-ink">
-                    {who.name}
-                  </span>
-                  <span
-                    className={`rounded-xs px-1.5 py-0.5 text-[11px] font-black uppercase tracking-[0.06em] ${
-                      who.kind === 'bot'
-                        ? 'bg-mint-soft text-green-600'
-                        : 'bg-blue-tint text-blue'
-                    }`}
-                  >
-                    {who.kind === 'bot' ? t('botBadge') : t('humanBadge')}
-                  </span>
-                  {timeLabel ? (
-                    <span className="text-[12px] text-muted">{timeLabel}</span>
-                  ) : null}
-                </p>
-                {message.kind === 'tool' ? (
-                  <ToolMessageView
-                    workspaceId={workspaceId}
-                    conversationId={group.id}
-                    messageId={message.id}
-                    kind={message.kind}
-                    content={message.content}
+            <div key={message.id} className="flex flex-col gap-3">
+              <article
+                data-message-id={message.id}
+                className="flex gap-3 px-5 py-1"
+              >
+                {who.kind === 'bot' ? (
+                  <BotAvatar
+                    seed={
+                      botMember?.id ?? message.senderBotId ?? group.leadBotId
+                    }
+                    size={36}
+                    decorative
                   />
                 ) : (
-                  <p className="mt-0.5 whitespace-pre-wrap break-words text-[15px] leading-[1.55] text-ink">
-                    {mentionParts(message.content, names).map((part, index) =>
-                      part.mention ? (
-                        <span
-                          key={`${message.id}-${index}`}
-                          className="rounded-xs bg-blue-tint px-1 font-bold text-blue"
-                        >
-                          {part.text}
-                        </span>
-                      ) : (
-                        <span key={`${message.id}-${index}`}>{part.text}</span>
-                      ),
-                    )}
-                  </p>
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-sm bg-dark text-[13px] font-black text-paper">
+                    {initials(who.name)}
+                  </span>
                 )}
-              </div>
-            </article>
+                <div className="min-w-0 flex-1">
+                  <p className="flex flex-wrap items-baseline gap-2">
+                    <span className="text-[15px] font-black text-ink">
+                      {who.name}
+                    </span>
+                    <span
+                      className={`rounded-xs px-1.5 py-0.5 text-[11px] font-black uppercase tracking-[0.06em] ${
+                        who.kind === 'bot'
+                          ? 'bg-mint-soft text-green-600'
+                          : 'bg-blue-tint text-blue'
+                      }`}
+                    >
+                      {who.kind === 'bot' ? t('botBadge') : t('humanBadge')}
+                    </span>
+                    {timeLabel ? (
+                      <span className="text-[12px] text-muted">
+                        {timeLabel}
+                      </span>
+                    ) : null}
+                  </p>
+                  <MarkdownMessage
+                    content={message.content}
+                    mentionNames={names}
+                    className="mt-0.5 text-[15px] leading-[1.55] text-ink"
+                  />
+                  {attachedTurn ? (
+                    <ChatTurnToolChip
+                      turn={attachedTurn}
+                      selected={selectedToolTurnKey === attachedTurn.turnKey}
+                      onInspect={(turnKey) => onInspectToolTurn?.(turnKey)}
+                    />
+                  ) : null}
+                </div>
+              </article>
+              {renderUnattachedToolTurns(unattachedAfter)}
+            </div>
           );
         })}
       </div>
+      {liveToolTurn ? (
+        <div className="px-5 pb-2">
+          <LiveToolStatusBar
+            name={liveBotMember?.name || t('bot')}
+            avatarSeed={
+              liveBotMember?.id ?? liveToolTurn.botId ?? group.leadBotId
+            }
+            statusText={tChat('working', {
+              name: liveBotMember?.name || t('bot'),
+            })}
+            liveTurn={liveToolTurn}
+            onInspect={
+              onInspectToolTurn
+                ? (turnKey) => onInspectToolTurn(turnKey)
+                : undefined
+            }
+          />
+        </div>
+      ) : null}
       {canPost ? (
         <form onSubmit={(event) => void send(event)} className="px-5 pb-4 pt-1">
           {mention && choices.length > 0 ? (

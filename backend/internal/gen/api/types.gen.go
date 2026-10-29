@@ -597,6 +597,24 @@ func (e SetBudgetRequestPeriod) Valid() bool {
 	}
 }
 
+// Defines values for ToolCallPhase.
+const (
+	Call   ToolCallPhase = "call"
+	Result ToolCallPhase = "result"
+)
+
+// Valid indicates whether the value is a known member of the ToolCallPhase enum.
+func (e ToolCallPhase) Valid() bool {
+	switch e {
+	case Call:
+		return true
+	case Result:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for UpdateGroupRequestAnswerPolicy.
 const (
 	UpdateGroupRequestAnswerPolicyLeadFirst         UpdateGroupRequestAnswerPolicy = "lead_first"
@@ -828,6 +846,7 @@ type ChatMessage struct {
 	SenderBotId   *openapi_types.UUID   `json:"senderBotId,omitempty"`
 	SenderType    ChatMessageSenderType `json:"senderType"`
 	SenderUserId  *openapi_types.UUID   `json:"senderUserId,omitempty"`
+	Tool          *ToolCallMeta         `json:"tool,omitempty"`
 }
 
 // ChatMessageKind defines model for ChatMessage.Kind.
@@ -1317,6 +1336,18 @@ type TerminalExecResponse struct {
 	Stderr   string `json:"stderr"`
 	Stdout   string `json:"stdout"`
 }
+
+// ToolCallMeta defines model for ToolCallMeta.
+type ToolCallMeta struct {
+	ErrorCode  *string       `json:"errorCode,omitempty"`
+	IsError    bool          `json:"isError"`
+	Phase      ToolCallPhase `json:"phase"`
+	ToolCallId *string       `json:"toolCallId,omitempty"`
+	TurnId     *string       `json:"turnId,omitempty"`
+}
+
+// ToolCallPhase defines model for ToolCallPhase.
+type ToolCallPhase string
 
 // UpdateBotRequest defines model for UpdateBotRequest.
 type UpdateBotRequest struct {

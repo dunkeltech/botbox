@@ -137,6 +137,47 @@ func chatMessage(m db.Message) apigen.ChatMessage {
 			out.SecretRequest = &summary
 		}
 	}
+	if m.Kind == "tool" && len(m.Metadata) > 0 {
+		out.Tool = parseToolCallMeta(m.Metadata)
+	}
+	return out
+}
+
+// parseToolCallMeta extracts only pairing and status fields from persisted
+// engine metadata so raw tool arguments and sandbox paths never reach API clients.
+func parseToolCallMeta(raw []byte) *apigen.ToolCallMeta {
+	var meta struct {
+		Kind      string `json:"Kind"`
+		TurnID    string `json:"TurnID"`
+		ToolID    string `json:"ToolID"`
+		IsError   bool   `json:"IsError"`
+		ErrorCode string `json:"ErrorCode"`
+	}
+	if json.Unmarshal(raw, &meta) != nil {
+		return nil
+	}
+	var phase apigen.ToolCallPhase
+	switch meta.Kind {
+	case "tool_call":
+		phase = apigen.Call
+	case "tool_result":
+		phase = apigen.Result
+	default:
+		return nil
+	}
+	out := &apigen.ToolCallMeta{
+		Phase:   phase,
+		IsError: meta.IsError,
+	}
+	if meta.TurnID != "" {
+		out.TurnId = &meta.TurnID
+	}
+	if meta.ToolID != "" {
+		out.ToolCallId = &meta.ToolID
+	}
+	if meta.ErrorCode != "" {
+		out.ErrorCode = &meta.ErrorCode
+	}
 	return out
 }
 

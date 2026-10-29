@@ -1,11 +1,19 @@
 'use client';
 
-import { ArrowLeftRight, Info, Monitor } from 'lucide-react';
+import { ArrowLeftRight, Info, Monitor, Terminal, X } from 'lucide-react';
 import Link from 'next/link';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { ChatPanel } from '@/components/chat/ChatPanel';
+import { ToolCallsSidebar } from '@/components/chat/ToolCallsSidebar';
+import type { ToolTraceSummary } from '@/components/chat/toolTrace';
 import { useTeamShell } from '@/components/shell/AppShell';
 import { GroupConversation } from '@/components/team/GroupConversation';
 import { useApprovalList } from '@/components/team/useApprovals';
@@ -96,6 +104,7 @@ export function TeamScreen({
   workspaceName: string;
 }) {
   const t = useTranslations('team');
+  const tChat = useTranslations('chat');
   const actions = useTranslations('actions');
   const errors = useTranslations('errors');
   const client = useQueryClient();
@@ -106,6 +115,16 @@ export function TeamScreen({
   const [localQuery, setLocalQuery] = useState('');
   const [localDrawerOpen, setLocalDrawerOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(true);
+  const [asideTab, setAsideTab] = useState<'details' | 'tools'>('details');
+  const [mobileToolOpen, setMobileToolOpen] = useState(false);
+  const [toolTrace, setToolTrace] = useState<ToolTraceSummary | null>(null);
+  const [selectedToolTurnKey, setSelectedToolTurnKey] = useState<string | null>(
+    null,
+  );
+  const [scrollRequest, setScrollRequest] = useState<{
+    messageId: string;
+    nonce: number;
+  } | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [presetBotId, setPresetBotId] = useState<string | undefined>(undefined);
   const [creating, setCreating] = useState(false);
@@ -173,15 +192,60 @@ export function TeamScreen({
   }, [groups.data, groupList, botList, selection.type]);
 
   useEffect(() => {
-    if (!drawerOpen) return;
+    if (!drawerOpen && !mobileToolOpen) return;
     function onKey(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         setDrawerOpen(false);
+        setMobileToolOpen(false);
       }
     }
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [drawerOpen, setDrawerOpen]);
+  }, [drawerOpen, mobileToolOpen, setDrawerOpen]);
+
+  const handleSelectGroup = useCallback((id: string) => {
+    setSelection({ type: 'group', id });
+    setToolTrace(null);
+    setSelectedToolTurnKey(null);
+    setMobileToolOpen(false);
+  }, []);
+
+  const handleSelectDm = useCallback((botId: string) => {
+    setSelection({ type: 'dm', botId });
+    setToolTrace(null);
+    setSelectedToolTurnKey(null);
+    setMobileToolOpen(false);
+  }, []);
+
+  const handleInspectToolTurn = useCallback((turnKey: string) => {
+    setSelectedToolTurnKey(turnKey);
+    setAsideTab('tools');
+    setDetailsOpen(true);
+    if (
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      !window.matchMedia('(min-width: 1280px)').matches
+    ) {
+      setMobileToolOpen(true);
+    }
+  }, []);
+
+  function toggleToolCallsPanel() {
+    if (
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      !window.matchMedia('(min-width: 1280px)').matches
+    ) {
+      setMobileToolOpen((prev) => !prev);
+      return;
+    }
+    if (detailsOpen && asideTab === 'tools') {
+      setDetailsOpen(false);
+      return;
+    }
+    setAsideTab('tools');
+    setDetailsOpen(true);
+  }
 
   const openGroupId = selection.type === 'group' ? selection.id : '';
   useEffect(() => {
@@ -390,11 +454,37 @@ export function TeamScreen({
             </span>
             <button
               type="button"
+              aria-pressed={
+                (detailsOpen && asideTab === 'tools') || mobileToolOpen
+              }
+              onClick={toggleToolCallsPanel}
+              className={`inline-flex min-h-[40px] items-center gap-1.5 rounded-sm border px-3 text-[13px] font-bold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${
+                (detailsOpen && asideTab === 'tools') || mobileToolOpen
+                  ? 'border-dark bg-dark text-paper'
+                  : 'border-line bg-paper text-ink-2 hover:bg-mint-soft'
+              }`}
+            >
+              <Terminal className="h-4 w-4" aria-hidden="true" />
+              <span>
+                {toolTrace && toolTrace.totalSteps > 0
+                  ? tChat('toolCallsTabCount', { count: toolTrace.totalSteps })
+                  : tChat('toolCallsTab')}
+              </span>
+            </button>
+            <button
+              type="button"
               aria-label={t('toggleDetails')}
               aria-pressed={detailsOpen}
-              onClick={() => setDetailsOpen((prev) => !prev)}
+              onClick={() => {
+                if (detailsOpen && asideTab === 'tools') {
+                  setAsideTab('details');
+                  return;
+                }
+                setAsideTab('details');
+                setDetailsOpen((prev) => !prev);
+              }}
               className={`grid h-10 w-10 place-items-center rounded-sm border transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${
-                detailsOpen
+                detailsOpen && asideTab === 'details'
                   ? 'border-dark bg-dark text-paper'
                   : 'border-line bg-paper text-ink-2 hover:bg-mint-soft'
               }`}
@@ -419,6 +509,10 @@ export function TeamScreen({
           role={role}
           canPost={canChange}
           query={query}
+          selectedToolTurnKey={selectedToolTurnKey}
+          onInspectToolTurn={handleInspectToolTurn}
+          onToolTraceChange={setToolTrace}
+          scrollRequest={scrollRequest}
         />
       </div>
     );
@@ -443,7 +537,7 @@ export function TeamScreen({
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Link
               href={`/bots/${selectedBot.id}`}
               className="inline-flex min-h-[40px] items-center gap-2 rounded-sm border-[1.5px] border-line bg-paper px-3.5 text-[13px] font-bold text-ink transition duration-150 hover:border-green-light hover:bg-mint-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
@@ -453,11 +547,37 @@ export function TeamScreen({
             </Link>
             <button
               type="button"
+              aria-pressed={
+                (detailsOpen && asideTab === 'tools') || mobileToolOpen
+              }
+              onClick={toggleToolCallsPanel}
+              className={`inline-flex min-h-[40px] items-center gap-1.5 rounded-sm border px-3 text-[13px] font-bold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${
+                (detailsOpen && asideTab === 'tools') || mobileToolOpen
+                  ? 'border-dark bg-dark text-paper'
+                  : 'border-line bg-paper text-ink-2 hover:bg-mint-soft'
+              }`}
+            >
+              <Terminal className="h-4 w-4" aria-hidden="true" />
+              <span>
+                {toolTrace && toolTrace.totalSteps > 0
+                  ? tChat('toolCallsTabCount', { count: toolTrace.totalSteps })
+                  : tChat('toolCallsTab')}
+              </span>
+            </button>
+            <button
+              type="button"
               aria-label={t('toggleDetails')}
               aria-pressed={detailsOpen}
-              onClick={() => setDetailsOpen((prev) => !prev)}
+              onClick={() => {
+                if (detailsOpen && asideTab === 'tools') {
+                  setAsideTab('details');
+                  return;
+                }
+                setAsideTab('details');
+                setDetailsOpen((prev) => !prev);
+              }}
               className={`grid h-10 w-10 place-items-center rounded-sm border transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${
-                detailsOpen
+                detailsOpen && asideTab === 'details'
                   ? 'border-dark bg-dark text-paper'
                   : 'border-line bg-paper text-ink-2 hover:bg-mint-soft'
               }`}
@@ -479,6 +599,10 @@ export function TeamScreen({
             transcriptQuery={query}
             variant="slack"
             hideHeader
+            selectedToolTurnKey={selectedToolTurnKey}
+            onInspectToolTurn={handleInspectToolTurn}
+            onToolTraceChange={setToolTrace}
+            scrollRequest={scrollRequest}
           />
         </div>
       </div>
@@ -532,9 +656,14 @@ export function TeamScreen({
           sidebarEmpty={sidebarEmpty}
           mobileOpen={drawerOpen}
           onCloseMobile={() => setDrawerOpen(false)}
-          onSelectGroup={(id) => setSelection({ type: 'group', id })}
-          onSelectDm={(botId) => setSelection({ type: 'dm', botId })}
-          onSelectActivity={() => setSelection({ type: 'activity' })}
+          onSelectGroup={handleSelectGroup}
+          onSelectDm={handleSelectDm}
+          onSelectActivity={() => {
+            setSelection({ type: 'activity' });
+            setToolTrace(null);
+            setSelectedToolTurnKey(null);
+            setMobileToolOpen(false);
+          }}
           onNewGroup={() => openDialog()}
         />
 
@@ -544,30 +673,164 @@ export function TeamScreen({
 
         {detailsOpen && (selectedGroup || selectedBot) ? (
           <aside
-            aria-label={t('details')}
-            className="hidden w-[280px] shrink-0 overflow-y-auto border-l border-line bg-paper-2 p-4 xl:block"
+            aria-label={
+              asideTab === 'tools' ? tChat('toolSidebarLabel') : t('details')
+            }
+            className="hidden w-[320px] shrink-0 overflow-y-auto border-l border-line bg-paper-2 p-4 xl:flex xl:flex-col xl:gap-4"
           >
-            {selectedGroup ? (
-              <GroupDetails
-                group={selectedGroup}
-                bots={botList}
-                canEdit={canChange}
-                error={saveError ? errors(saveError) : null}
-                onPatch={(patch) => void patchGroup(selectedGroup, patch)}
+            <div
+              role="group"
+              aria-label={t('details')}
+              className="grid grid-cols-2 gap-1 rounded-md border border-line bg-paper p-1"
+            >
+              <button
+                type="button"
+                aria-pressed={asideTab === 'details'}
+                onClick={() => setAsideTab('details')}
+                className={`min-h-[36px] rounded-sm px-2.5 text-[13px] font-bold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${
+                  asideTab === 'details'
+                    ? 'bg-dark text-paper'
+                    : 'text-ink-2 hover:bg-paper-2 hover:text-ink'
+                }`}
+              >
+                {tChat('detailsTab')}
+              </button>
+              <button
+                type="button"
+                aria-pressed={asideTab === 'tools'}
+                onClick={() => setAsideTab('tools')}
+                className={`min-h-[36px] rounded-sm px-2.5 text-[13px] font-bold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${
+                  asideTab === 'tools'
+                    ? 'bg-dark text-paper'
+                    : 'text-ink-2 hover:bg-paper-2 hover:text-ink'
+                }`}
+              >
+                {toolTrace && toolTrace.totalSteps > 0
+                  ? tChat('toolCallsTabCount', { count: toolTrace.totalSteps })
+                  : tChat('toolCallsTab')}
+              </button>
+            </div>
+
+            {asideTab === 'tools' ? (
+              <ToolCallsSidebar
+                trace={
+                  toolTrace ?? {
+                    chatMessages: [],
+                    turns: [],
+                    totalSteps: 0,
+                    runningSteps: 0,
+                    errorSteps: 0,
+                    turnsByReplyId: new Map(),
+                    unattachedTurnsByAnchor: new Map(),
+                    leadingUnattachedTurns: [],
+                  }
+                }
+                selectedTurnKey={selectedToolTurnKey}
+                resolveBot={(botId) => {
+                  if (!botId) return null;
+                  const bot = botList.find((b) => b.id === botId);
+                  if (bot)
+                    return { name: bot.name, avatarSeed: bot.avatarSeed };
+                  const member = selectedGroup?.members.find(
+                    (m) => m.id === botId,
+                  );
+                  if (member?.name) {
+                    return { name: member.name, avatarSeed: member.id };
+                  }
+                  return null;
+                }}
+                onJumpToMessage={(messageId) =>
+                  setScrollRequest((prev) => ({
+                    messageId,
+                    nonce: (prev?.nonce ?? 0) + 1,
+                  }))
+                }
               />
-            ) : null}
-            {selectedBot ? (
-              <DirectDetails
-                bot={selectedBot}
-                groups={groupList}
-                canCreate={canChange}
-                onOpenGroup={(id) => setSelection({ type: 'group', id })}
-                onNewGroup={() => openDialog(selectedBot.id)}
-              />
-            ) : null}
+            ) : (
+              <>
+                {selectedGroup ? (
+                  <GroupDetails
+                    group={selectedGroup}
+                    bots={botList}
+                    canEdit={canChange}
+                    error={saveError ? errors(saveError) : null}
+                    onPatch={(patch) => void patchGroup(selectedGroup, patch)}
+                  />
+                ) : null}
+                {selectedBot ? (
+                  <DirectDetails
+                    bot={selectedBot}
+                    groups={groupList}
+                    canCreate={canChange}
+                    onOpenGroup={handleSelectGroup}
+                    onNewGroup={() => openDialog(selectedBot.id)}
+                  />
+                ) : null}
+              </>
+            )}
           </aside>
         ) : null}
       </div>
+
+      {mobileToolOpen && (selectedGroup || selectedBot) ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={tChat('toolSidebarLabel')}
+          className="fixed inset-0 z-50 flex justify-end bg-overlay xl:hidden"
+          onClick={() => setMobileToolOpen(false)}
+        >
+          <div
+            className="flex h-full w-full max-w-[360px] flex-col border-l border-line bg-paper-2 p-4 shadow-card-hover"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between gap-2 border-b border-line pb-2">
+              <h2 className="text-[16px] font-black text-ink">
+                {tChat('toolCallsTab')}
+              </h2>
+              <button
+                type="button"
+                aria-label={tChat('toolCloseDrawer')}
+                onClick={() => setMobileToolOpen(false)}
+                className="grid h-10 w-10 place-items-center rounded-sm border border-line bg-paper text-ink-2 hover:bg-mint-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <ToolCallsSidebar
+                trace={
+                  toolTrace ?? {
+                    chatMessages: [],
+                    turns: [],
+                    totalSteps: 0,
+                    runningSteps: 0,
+                    errorSteps: 0,
+                    turnsByReplyId: new Map(),
+                    unattachedTurnsByAnchor: new Map(),
+                    leadingUnattachedTurns: [],
+                  }
+                }
+                selectedTurnKey={selectedToolTurnKey}
+                resolveBot={(botId) => {
+                  if (!botId) return null;
+                  const bot = botList.find((b) => b.id === botId);
+                  if (bot)
+                    return { name: bot.name, avatarSeed: bot.avatarSeed };
+                  return null;
+                }}
+                onJumpToMessage={(messageId) => {
+                  setMobileToolOpen(false);
+                  setScrollRequest((prev) => ({
+                    messageId,
+                    nonce: (prev?.nonce ?? 0) + 1,
+                  }));
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {dialogOpen ? (
         <NewGroupDialog

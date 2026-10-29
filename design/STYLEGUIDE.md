@@ -134,7 +134,7 @@ The fleet shows known spend today. Budget meters follow the Stitch project `1359
 | Shell | Measurements |
 |---|---|
 | App header | Full-width `terminal` (`#14201a`) top bar (~54 px tall) across all authenticated views; current nav item white with a 2 px `green-light` (`#5eab60`) underline; workspace switcher pill `<workspace> · <role>`, approvals bell and account menu on the right |
-| Team chat | Same full-width `terminal` top bar with integrated search input, sidebar 264 px (`dark-2`), main pane flexible, details pane 280 px (`paper-2`) |
+| Team chat | Same full-width `terminal` top bar with integrated search input, sidebar 264 px (`dark-2`), main pane flexible, right `paper-2` inspector aside 320–340 px (`Details` \| `Tool calls` segmented switch; slide-over sheet on narrow viewports) |
 | Bot workspace | Chat column 380–460 px, computer column flexible, 16:10 desktop viewport |
 | Phone shell (390 px) | 16 px side gutters, ≥ 44 × 44 px header and noVNC touch controls (`Tap / Pan`), sticky bottom composer, and a slide-over `dark-2` team sidebar drawer with `overlay` scrim |
 
@@ -174,7 +174,7 @@ The fleet shows known spend today. Budget meters follow the Stitch project `1359
 - **Status chip:** a pill with an 8 px dot and the label at 13 px weight 700 (see section 3).
 - **BOT badge:** 11 px, weight 900, tracking `.06em`, `mint-soft` background, `green-600` text, radius 5.
 - **Terminal block:** `terminal` background, `on-dark` text, mono 13 px, radius 9. Prompt user `green-light`, path `hex-1`, failures `amber-on-dark`, cursor block `mint`.
-- **Tool-call block** (in chat): a `paper-2` box with a 1 px `line` border and radius 9. The line is a short action sentence ("Opening https://dunkel.tech", "Opened the page", "Browser screenshot"). Raw tool names, JSON arguments and sandbox paths stay out of the bubble. When the result names a screenshot, the image is shown under the sentence.
+- **Tool-calls sidebar & turn chip:** Tool invocations and outcomes stay out of the chat timeline so conversations remain readable. Each bot reply that used tools shows one compact turn chip (`4 tool steps · 1.9 s →`) that opens and focuses the `Tool calls` sidebar tab (Team Chat) or `Tool calls` computer tab (Bot Workspace). Inside the trace, each invocation + result pairs into one card (`Running` in `blue-tint`/`blue`, `Done` in `mint-soft`/`green-600`, `Failed` in dashed `amber-line`/`amber-tint`, never red) using short sanitized sentences ("Opening https://dunkel.tech", "Opened the page", "Browser screenshot") and optional screenshot thumbnails; raw tool JSON arguments and sandbox paths never appear.
 - **System message** (team chat): a `mint-soft` banner with a `mint-line` border, radius 9, 13 px `dark` text and a bot-to-bot (two arrows) icon.
 - **Attachment card** (merge request, file, approval): a white card with `shadow`, an icon tile in `mint-soft`, the title in 900, mono meta and a status chip.
 - **Budget meter:** 6–8 px bar on a `line` track with tick markers at 80 % (warn) and 100 % (stop). Switches from `green` to `amber` at 80 % and pairs with a dashed `amber-line` / `amber-tint` kill-switch notice at 100 %.

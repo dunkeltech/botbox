@@ -50,13 +50,37 @@ func (s *server) handleChatToolImage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	s.serveToolImage(w, r, conversation.WorkspaceID, conversation.ID, func(m db.Message) (pgtype.UUID, bool) {
+		return conversation.BotID, true
+	})
+}
+
+func (s *server) handleGroupToolImage(w http.ResponseWriter, r *http.Request) {
+	group, ok := s.groupForMember(w, r, false)
+	if !ok {
+		return
+	}
+	s.serveToolImage(w, r, group.WorkspaceID, group.ID, func(m db.Message) (pgtype.UUID, bool) {
+		if !m.SenderBotID.Valid {
+			return pgtype.UUID{}, false
+		}
+		return m.SenderBotID, true
+	})
+}
+
+func (s *server) serveToolImage(
+	w http.ResponseWriter,
+	r *http.Request,
+	workspaceID, conversationID pgtype.UUID,
+	botForMessage func(db.Message) (pgtype.UUID, bool),
+) {
 	messageID, err := uuid.Parse(chi.URLParam(r, "messageID"))
 	if err != nil {
 		writeError(w, s.logger, http.StatusBadRequest, "validation_error", "invalid message identifier")
 		return
 	}
 	message, err := s.queries.GetTurnMessage(r.Context(), db.GetTurnMessageParams{
-		WorkspaceID: conversation.WorkspaceID,
+		WorkspaceID: workspaceID,
 		ID:          pgtype.UUID{Bytes: messageID, Valid: true},
 	})
 	if err != nil {
@@ -68,8 +92,9 @@ func (s *server) handleChatToolImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// The message id is not scoped by the query. Another conversation in the
-	// same workspace, or a text message, must not yield a file.
-	if message.ConversationID != conversation.ID || message.Kind != "tool" {
+	// same workspace, or a non-tool message, must not yield a file.
+	botID, hasBot := botForMessage(message)
+	if message.ConversationID != conversationID || message.Kind != "tool" || !hasBot {
 		writeError(w, s.logger, http.StatusNotFound, "chat.not_found", "conversation not found")
 		return
 	}
@@ -79,11 +104,11 @@ func (s *server) handleChatToolImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	env, err := s.queries.GetEnvironmentByWorkspaceAndBot(r.Context(), db.GetEnvironmentByWorkspaceAndBotParams{
-		WorkspaceID: conversation.WorkspaceID,
-		ID:          conversation.BotID,
+		WorkspaceID: workspaceID,
+		ID:          botID,
 	})
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		s.logger.Error("load bot environment", "bot_id", uuid.UUID(conversation.BotID.Bytes).String())
+		s.logger.Error("load bot environment", "bot_id", uuid.UUID(botID.Bytes).String())
 		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to load sandbox environment")
 		return
 	}

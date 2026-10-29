@@ -455,6 +455,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/workspaces/{workspaceID}/groups/{groupID}/messages/{messageID}/tool-image': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+        groupID: string;
+        messageID: string;
+      };
+      cookie?: never;
+    };
+    get: operations['getGroupToolImage'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/healthz': {
     parameters: {
       query?: never;
@@ -1079,6 +1099,15 @@ export interface components {
       /** Format: uuid */
       botId: string;
     };
+    /** @enum {string} */
+    ToolCallPhase: 'call' | 'result';
+    ToolCallMeta: {
+      turnId?: string;
+      toolCallId?: string;
+      phase: components['schemas']['ToolCallPhase'];
+      isError: boolean;
+      errorCode?: string;
+    };
     ChatMessage: {
       /** Format: uuid */
       id: string;
@@ -1094,6 +1123,7 @@ export interface components {
       kind: 'text' | 'tool' | 'system' | 'card' | 'approval' | 'secret_request';
       content: string;
       secretRequest?: components['schemas']['SecretRequestSummary'];
+      tool?: components['schemas']['ToolCallMeta'];
       /** Format: date-time */
       createdAt: string;
     };
@@ -3428,6 +3458,68 @@ export interface operations {
         content?: never;
       };
       /** @description Conversation */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Sandbox is not running */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Sandbox could not be read */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  getGroupToolImage: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+        groupID: string;
+        messageID: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Screenshot referenced by a tool message in this group conversation */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'image/png': string;
+          'image/jpeg': string;
+          'image/webp': string;
+          'image/gif': string;
+        };
+      };
+      /** @description Invalid message identifier */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Group */
       404: {
         headers: {
           [name: string]: unknown;

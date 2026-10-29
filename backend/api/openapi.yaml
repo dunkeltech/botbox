@@ -583,6 +583,31 @@ paths:
         '404': {description: Conversation, message, or screenshot not found}
         '409': {description: Sandbox is not running}
         '502': {description: Sandbox could not be read}
+  /api/workspaces/{workspaceID}/groups/{groupID}/messages/{messageID}/tool-image:
+    parameters:
+      - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: groupID, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: messageID, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      operationId: getGroupToolImage
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Screenshot referenced by a tool message in this group conversation
+          content:
+            image/png:
+              schema: {type: string, format: binary}
+            image/jpeg:
+              schema: {type: string, format: binary}
+            image/webp:
+              schema: {type: string, format: binary}
+            image/gif:
+              schema: {type: string, format: binary}
+        '400': {description: Invalid message identifier}
+        '401': {description: Authentication required}
+        '404': {description: Group, message, or screenshot not found}
+        '409': {description: Sandbox is not running}
+        '502': {description: Sandbox could not be read}
   /api/healthz:
     get:
       operationId: getHealthz
@@ -2371,6 +2396,18 @@ components:
       properties:
         id: {type: string, format: uuid}
         botId: {type: string, format: uuid}
+    ToolCallPhase:
+      type: string
+      enum: [call, result]
+    ToolCallMeta:
+      type: object
+      required: [phase, isError]
+      properties:
+        turnId: {type: string}
+        toolCallId: {type: string}
+        phase: {$ref: '#/components/schemas/ToolCallPhase'}
+        isError: {type: boolean}
+        errorCode: {type: string}
     ChatMessage:
       type: object
       required: [id, position, senderType, kind, content, createdAt]
@@ -2384,6 +2421,7 @@ components:
         kind: {type: string, enum: [text, tool, system, card, approval, secret_request]}
         content: {type: string}
         secretRequest: {$ref: '#/components/schemas/SecretRequestSummary'}
+        tool: {$ref: '#/components/schemas/ToolCallMeta'}
         createdAt: {type: string, format: date-time}
     SecretRequestKind:
       type: string

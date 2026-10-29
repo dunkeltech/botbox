@@ -262,9 +262,17 @@ describe('tool lines in chat', () => {
         avatarSeed="atlas-seed"
       />,
     );
+    const chip = await screen.findByRole('button', { name: /3 tool steps/i });
+    expect(screen.queryByText('Opening https://dunkel.tech/')).toBeNull();
+    expect(screen.queryByText(/mcp__botbox/)).toBeNull();
+    expect(screen.queryByText(/tool-results/)).toBeNull();
+
+    fireEvent.click(chip);
     expect(
       await screen.findByText('Opening https://dunkel.tech/'),
     ).toBeInTheDocument();
+    // Completed steps without screenshots start collapsed; expand to inspect outcome.
+    fireEvent.click(screen.getByRole('button', { name: 'Show step details' }));
     expect(screen.getByText('Opened the page')).toBeInTheDocument();
     expect(screen.getByText('Browser screenshot')).toBeInTheDocument();
     expect(screen.getByText('Finished')).toBeInTheDocument();

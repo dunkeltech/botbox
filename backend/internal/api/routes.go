@@ -211,6 +211,7 @@ func (s *server) mountRoutes(r chi.Router) {
 			r.Patch("/groups/{groupID}", s.handleUpdateGroup)
 			r.Get("/groups/{groupID}/messages", s.handleListGroupMessages)
 			r.Post("/groups/{groupID}/messages", s.handleSendGroupMessage)
+			r.Get("/groups/{groupID}/messages/{messageID}/tool-image", s.handleGroupToolImage)
 			r.Post("/groups/{groupID}/read", s.handleMarkGroupRead)
 			r.Get("/approvals", s.handleListApprovals)
 			r.Post("/approvals/{approvalID}/decision", s.handleDecideApproval)

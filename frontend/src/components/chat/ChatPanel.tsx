@@ -1,10 +1,11 @@
 'use client';
 
-import { Send } from 'lucide-react';
+import { Send, X } from 'lucide-react';
 import Link from 'next/link';
 import {
   useEffect,
   useId,
+  useMemo,
   useState,
   type FormEvent,
   type KeyboardEvent,
@@ -12,12 +13,22 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { Alert, BotAvatar, Button } from '@/components/ui';
-import { getAccessToken, requestBlob, requestJson } from '@/lib/api-client';
+import { getAccessToken, requestJson } from '@/lib/api-client';
 import {
   describeToolMessage,
   type ToolCopy,
 } from '@/components/chat/toolMessage';
+import {
+  buildToolTrace,
+  type ToolTraceSummary,
+  type ToolTraceTurn,
+} from '@/components/chat/toolTrace';
+import { ChatTurnToolChip } from '@/components/chat/ChatTurnToolChip';
+import { LiveToolStatusBar } from '@/components/chat/LiveToolStatusBar';
+import { ToolCallsSidebar } from '@/components/chat/ToolCallsSidebar';
+import { ToolImage } from '@/components/chat/ToolImage';
 import { BrokerTakeoverModal } from '@/components/chat/BrokerTakeoverModal';
+import { MarkdownMessage } from '@/components/chat/MarkdownMessage';
 import { SecretRequestCard } from '@/components/chat/SecretRequestCard';
 import { SecretRequestModal } from '@/components/chat/SecretRequestModal';
 import { useSecretRequestControl } from '@/components/chat/useSecretRequestControl';
@@ -51,39 +62,6 @@ function formatTime(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return '';
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
-function ToolImage({
-  path,
-  alt,
-  className = 'mt-2 max-h-64 rounded-sm border border-line',
-}: {
-  path: string;
-  alt: string;
-  className?: string;
-}) {
-  const [src, setSrc] = useState<string | null>(null);
-  useEffect(() => {
-    let url: string | null = null;
-    let active = true;
-    void requestBlob(path)
-      .then((blob) => {
-        if (!active) return;
-        url = URL.createObjectURL(blob);
-        setSrc(url);
-      })
-      .catch(() => {
-        if (active) setSrc(null);
-      });
-    return () => {
-      active = false;
-      if (url) URL.revokeObjectURL(url);
-    };
-  }, [path]);
-  if (!src) return null;
-  // Tool screenshots come from an authenticated fetch into an object URL.
-  // eslint-disable-next-line @next/next/no-img-element
-  return <img src={src} alt={alt} className={className} />;
 }
 
 export function ToolMessageView({
@@ -151,6 +129,10 @@ export function ChatPanel({
   transcriptQuery = '',
   variant = 'session',
   hideHeader = false,
+  selectedToolTurnKey = null,
+  onInspectToolTurn,
+  onToolTraceChange,
+  scrollRequest = null,
 }: {
   workspaceId: string;
   userId: string;
@@ -165,6 +147,14 @@ export function ChatPanel({
   variant?: 'session' | 'slack';
   /** Hide the panel heading when wrapped inside a parent header (e.g. Session card or DM header). */
   hideHeader?: boolean;
+  /** Highlighted turn key currently focused in the Tool Calls sidebar. */
+  selectedToolTurnKey?: string | null;
+  /** Open and focus the given tool turn in the parent sidebar or workspace tab. */
+  onInspectToolTurn?: (turnKey: string) => void;
+  /** Notify parent container whenever parsed tool-call trace state updates. */
+  onToolTraceChange?: (trace: ToolTraceSummary) => void;
+  /** Imperative request to scroll a reply message back into view from the sidebar. */
+  scrollRequest?: { messageId: string; nonce: number } | null;
 }) {
   const t = useTranslations('chat');
   const tTeam = useTranslations('team');
@@ -224,6 +214,14 @@ export function ChatPanel({
             setLive((previous) => (previous + text).slice(-1048576));
           }
           deltasSinceMessage = data.Kind === 'text_delta';
+        }
+        if (
+          'Kind' in data &&
+          (data.Kind === 'tool_call' || data.Kind === 'tool_result')
+        ) {
+          void client.invalidateQueries({
+            queryKey: ['chat', workspaceId, userId, conversationId],
+          });
         }
         if ('Kind' in data && data.Kind === 'status') {
           if (
@@ -296,6 +294,9 @@ export function ChatPanel({
     }
   }
 
+  const [localToolTurnKey, setLocalToolTurnKey] = useState<string | null>(null);
+  const [localDrawerOpen, setLocalDrawerOpen] = useState(false);
+
   const turn = history.data?.turns[0];
   const active = turn?.status === 'queued' || turn?.status === 'running';
   const waitingSecret = turn?.status === 'waiting_secret';
@@ -304,15 +305,40 @@ export function ChatPanel({
       queryKey: ['chat', workspaceId, userId, conversationId],
     });
   });
-  const messages = [...older, ...(history.data?.messages ?? [])]
-    .filter(
-      (message, index, all) =>
-        all.findIndex((m) => m.id === message.id) === index,
-    )
-    .filter((message) => {
-      const needle = transcriptQuery.trim().toLowerCase();
-      return needle === '' || message.content.toLowerCase().includes(needle);
-    });
+
+  const rawMessages = useMemo(
+    () =>
+      [...older, ...(history.data?.messages ?? [])].filter(
+        (message, index, all) =>
+          all.findIndex((m) => m.id === message.id) === index,
+      ),
+    [older, history.data?.messages],
+  );
+
+  const trace = useMemo(
+    () =>
+      buildToolTrace({
+        messages: rawMessages,
+        turns: history.data?.turns,
+        imagePathForMessage: (messageId) =>
+          conversationId
+            ? `${base}/conversations/${conversationId}/messages/${messageId}/tool-image`
+            : '',
+      }),
+    [rawMessages, history.data?.turns, base, conversationId],
+  );
+
+  useEffect(() => {
+    onToolTraceChange?.(trace);
+  }, [trace, onToolTraceChange]);
+
+  const messages = useMemo(() => {
+    const needle = transcriptQuery.trim().toLowerCase();
+    return trace.chatMessages.filter(
+      (message) =>
+        needle === '' || message.content.toLowerCase().includes(needle),
+    );
+  }, [trace.chatMessages, transcriptQuery]);
 
   const isSlack = variant === 'slack';
   const { logRef, onScroll, onMediaLoad, scrollToBottom, preparePrepend } =
@@ -322,6 +348,62 @@ export function ChatPanel({
       lastMessageId: messages[messages.length - 1]?.id ?? '',
       liveText: live,
     });
+
+  useEffect(() => {
+    if (!scrollRequest?.messageId || !logRef.current) return;
+    const target = logRef.current.querySelector<HTMLElement>(
+      `[data-message-id="${CSS.escape(scrollRequest.messageId)}"]`,
+    );
+    if (target && typeof target.scrollIntoView === 'function') {
+      target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+  }, [scrollRequest, logRef]);
+
+  function handleInspectTurn(turnKey: string) {
+    if (onInspectToolTurn) {
+      onInspectToolTurn(turnKey);
+      return;
+    }
+    setLocalToolTurnKey(turnKey);
+    setLocalDrawerOpen(true);
+  }
+
+  const effectiveSelectedTurnKey = onInspectToolTurn
+    ? selectedToolTurnKey
+    : localToolTurnKey;
+  const liveToolTurn = trace.turns.find((item) => item.status === 'running');
+
+  function renderUnattachedToolTurns(turnsToShow: ToolTraceTurn[]) {
+    if (turnsToShow.length === 0) return null;
+    return turnsToShow.map((toolTurn) => (
+      <div
+        key={`unattached-${toolTurn.turnKey}`}
+        className="flex items-start gap-2.5"
+      >
+        <BotAvatar
+          seed={avatarSeed}
+          mood={toolTurn.status === 'running' ? 'thinking' : 'idle'}
+          size={isSlack ? 36 : 28}
+          decorative
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline gap-2">
+            <span className="text-[14px] font-black text-ink">{name}</span>
+            {isSlack ? (
+              <span className="rounded-xs bg-mint-soft px-1.5 py-0.5 text-[11px] font-black uppercase tracking-[0.06em] text-green-600">
+                {tTeam('botBadge')}
+              </span>
+            ) : null}
+          </div>
+          <ChatTurnToolChip
+            turn={toolTurn}
+            selected={effectiveSelectedTurnKey === toolTurn.turnKey}
+            onInspect={handleInspectTurn}
+          />
+        </div>
+      </div>
+    ));
+  }
 
   return (
     <section
@@ -385,96 +467,112 @@ export function ChatPanel({
           </div>
         ) : null}
 
+        {renderUnattachedToolTurns(trace.leadingUnattachedTurns)}
+
         {messages.map((message) => {
+          const unattachedAfter =
+            trace.unattachedTurnsByAnchor.get(message.id) ?? [];
+
           if (message.kind === 'secret_request' && message.secretRequest) {
             const sr = message.secretRequest;
             return (
-              <SecretRequestCard
-                key={message.id}
-                summary={sr}
-                role={effectiveRole}
-                busy={secretControl.busyRequestId === sr.secretRequestId}
-                errorKey={
-                  secretControl.requestError?.id === sr.secretRequestId
-                    ? secretControl.requestError.key
-                    : null
-                }
-                onProvide={secretControl.openModal}
-                onTakeover={secretControl.openTakeover}
-                onDeny={(s) => void secretControl.deny(s)}
-              />
+              <div key={message.id} className="flex flex-col gap-3">
+                <SecretRequestCard
+                  summary={sr}
+                  role={effectiveRole}
+                  busy={secretControl.busyRequestId === sr.secretRequestId}
+                  errorKey={
+                    secretControl.requestError?.id === sr.secretRequestId
+                      ? secretControl.requestError.key
+                      : null
+                  }
+                  onProvide={secretControl.openModal}
+                  onTakeover={secretControl.openTakeover}
+                  onDeny={(s) => void secretControl.deny(s)}
+                />
+                {renderUnattachedToolTurns(unattachedAfter)}
+              </div>
             );
           }
-          const tool = describeToolMessage(message.kind, message.content);
           const isUser = message.senderType === 'user';
           const timeLabel = formatTime(message.createdAt);
+          const attachedTurn = trace.turnsByReplyId.get(message.id);
 
-          if (!isSlack && isUser && !tool) {
+          if (!isSlack && isUser) {
             return (
               // Keep sr-only's position: absolute contained within the scrollable log
               // so off-viewport messages cannot inflate documentElement.scrollHeight.
-              <article
-                key={message.id}
-                className="relative flex flex-col items-end"
-              >
-                <span className="sr-only">{t('you')}</span>
-                <div className="max-w-[88%] rounded-[14px_14px_4px_14px] bg-dark px-3.5 py-2.5 text-[14px] leading-[1.5] text-paper">
-                  <p className="whitespace-pre-wrap break-words">
-                    {message.content}
-                  </p>
-                </div>
-                {timeLabel ? (
-                  <span className="mt-1 text-[11px] text-muted">
-                    {timeLabel}
-                  </span>
-                ) : null}
-              </article>
+              <div key={message.id} className="flex flex-col gap-3">
+                <article
+                  data-message-id={message.id}
+                  className="relative flex flex-col items-end"
+                >
+                  <span className="sr-only">{t('you')}</span>
+                  <div className="max-w-[88%] rounded-[14px_14px_4px_14px] bg-dark px-3.5 py-2.5 text-[14px] leading-[1.5] text-paper">
+                    <MarkdownMessage content={message.content} tone="dark" />
+                  </div>
+                  {timeLabel ? (
+                    <span className="mt-1 text-[11px] text-muted">
+                      {timeLabel}
+                    </span>
+                  ) : null}
+                </article>
+                {renderUnattachedToolTurns(unattachedAfter)}
+              </div>
             );
           }
 
           return (
-            <article key={message.id} className="flex items-start gap-2.5">
-              {isUser ? (
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-sm bg-dark text-[12px] font-black text-paper">
-                  {t('you').slice(0, 2).toUpperCase()}
-                </span>
-              ) : (
-                <BotAvatar
-                  seed={avatarSeed}
-                  mood={active ? 'thinking' : 'idle'}
-                  size={isSlack ? 36 : 28}
-                  decorative
-                />
-              )}
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-baseline gap-2">
-                  <span className="text-[14px] font-black text-ink">
-                    {isUser ? t('you') : name}
+            <div key={message.id} className="flex flex-col gap-3">
+              <article
+                data-message-id={message.id}
+                className="flex items-start gap-2.5"
+              >
+                {isUser ? (
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-sm bg-dark text-[12px] font-black text-paper">
+                    {t('you').slice(0, 2).toUpperCase()}
                   </span>
-                  {isSlack && !isUser ? (
-                    <span className="rounded-xs bg-mint-soft px-1.5 py-0.5 text-[11px] font-black uppercase tracking-[0.06em] text-green-600">
-                      {tTeam('botBadge')}
+                ) : (
+                  <BotAvatar
+                    seed={avatarSeed}
+                    mood={active ? 'thinking' : 'idle'}
+                    size={isSlack ? 36 : 28}
+                    decorative
+                  />
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-baseline gap-2">
+                    <span className="text-[14px] font-black text-ink">
+                      {isUser ? t('you') : name}
                     </span>
-                  ) : null}
-                  {timeLabel ? (
-                    <span className="text-[12px] text-muted">{timeLabel}</span>
+                    {isSlack && !isUser ? (
+                      <span className="rounded-xs bg-mint-soft px-1.5 py-0.5 text-[11px] font-black uppercase tracking-[0.06em] text-green-600">
+                        {tTeam('botBadge')}
+                      </span>
+                    ) : null}
+                    {timeLabel ? (
+                      <span className="text-[12px] text-muted">
+                        {timeLabel}
+                      </span>
+                    ) : null}
+                  </div>
+                  <MarkdownMessage
+                    content={message.content || t('toolCall')}
+                    className="mt-0.5 text-[15px] leading-[1.55] text-ink"
+                  />
+                  {attachedTurn ? (
+                    <ChatTurnToolChip
+                      turn={attachedTurn}
+                      selected={
+                        effectiveSelectedTurnKey === attachedTurn.turnKey
+                      }
+                      onInspect={handleInspectTurn}
+                    />
                   ) : null}
                 </div>
-                {tool && conversationId ? (
-                  <div className="mt-1 rounded-sm border border-line bg-paper-2 px-3 py-2">
-                    <ToolLine
-                      copy={tool}
-                      imagePath={`${base}/conversations/${conversationId}/messages/${message.id}/tool-image`}
-                      alt={t('toolImageAlt')}
-                    />
-                  </div>
-                ) : (
-                  <p className="mt-0.5 whitespace-pre-wrap break-words text-[15px] leading-[1.55] text-ink">
-                    {message.content || t('toolCall')}
-                  </p>
-                )}
-              </div>
-            </article>
+              </article>
+              {renderUnattachedToolTurns(unattachedAfter)}
+            </div>
           );
         })}
 
@@ -484,25 +582,26 @@ export function ChatPanel({
             aria-live="polite"
           >
             <BotAvatar seed={avatarSeed} mood="thinking" size={26} decorative />
-            <p className="whitespace-pre-wrap break-words text-[14px] text-ink">
-              {live}
-            </p>
+            <MarkdownMessage
+              content={live}
+              className="flex-1 text-[14px] leading-[1.55] text-ink"
+            />
           </div>
         ) : null}
       </div>
 
-      {active ? (
-        <div
-          role="status"
-          className="flex items-center gap-2 rounded-sm border border-blue-line bg-blue-tint px-3 py-2 text-[13px] font-bold text-blue"
-        >
-          <BotAvatar seed={avatarSeed} mood="thinking" size={22} decorative />
-          <span>
-            {turn.status === 'queued'
+      {active && turn ? (
+        <LiveToolStatusBar
+          name={name}
+          avatarSeed={avatarSeed}
+          statusText={
+            turn.status === 'queued'
               ? t('queued', { count: turn.queueAhead })
-              : t('working', { name })}
-          </span>
-        </div>
+              : t('working', { name })
+          }
+          liveTurn={liveToolTurn}
+          onInspect={liveToolTurn ? handleInspectTurn : undefined}
+        />
       ) : waitingSecret ? (
         <div
           role="status"
@@ -605,6 +704,53 @@ export function ChatPanel({
           });
         }}
       />
+
+      {!onInspectToolTurn && localDrawerOpen ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={t('toolSidebarLabel')}
+          className="fixed inset-0 z-50 flex justify-end bg-overlay"
+          onClick={() => setLocalDrawerOpen(false)}
+        >
+          <div
+            className="flex h-full w-full max-w-[360px] flex-col border-l border-line bg-paper-2 p-4 shadow-card-hover"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between gap-2 border-b border-line pb-2">
+              <h2 className="text-[16px] font-black text-ink">
+                {t('toolCallsTab')}
+              </h2>
+              <button
+                type="button"
+                aria-label={t('toolCloseDrawer')}
+                onClick={() => setLocalDrawerOpen(false)}
+                className="grid h-10 w-10 place-items-center rounded-sm border border-line bg-paper text-ink-2 hover:bg-mint-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <ToolCallsSidebar
+                trace={trace}
+                selectedTurnKey={localToolTurnKey}
+                onJumpToMessage={(messageId) => {
+                  setLocalDrawerOpen(false);
+                  const target = logRef.current?.querySelector<HTMLElement>(
+                    `[data-message-id="${CSS.escape(messageId)}"]`,
+                  );
+                  if (target && typeof target.scrollIntoView === 'function') {
+                    target.scrollIntoView({
+                      block: 'center',
+                      behavior: 'smooth',
+                    });
+                  }
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

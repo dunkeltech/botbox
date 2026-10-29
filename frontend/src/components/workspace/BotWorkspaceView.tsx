@@ -13,6 +13,7 @@ import {
   Terminal as TerminalIcon,
   Monitor,
   ListChecks,
+  Wrench,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
@@ -40,6 +41,8 @@ import { ActionTimeline } from '@/components/workspace/ActionTimeline';
 import { VncViewport } from '@/components/workspace/VncViewport';
 import { RunnerControl } from '@/components/chat/RunnerControl';
 import { ChatPanel } from '@/components/chat/ChatPanel';
+import { ToolCallsSidebar } from '@/components/chat/ToolCallsSidebar';
+import type { ToolTraceSummary } from '@/components/chat/toolTrace';
 import { useAuth } from '@/context/AuthContext';
 import {
   ApiClientError,
@@ -70,7 +73,7 @@ import type {
   StreamTicketResponse,
 } from '@/types/api';
 
-type WorkspaceTab = 'desktop' | 'terminal' | 'files' | 'actions';
+type WorkspaceTab = 'desktop' | 'terminal' | 'files' | 'actions' | 'toolCalls';
 
 interface TerminalEntry {
   id: string;
@@ -170,6 +173,14 @@ export function BotWorkspaceView() {
 
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('desktop');
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
+  const [toolTrace, setToolTrace] = useState<ToolTraceSummary | null>(null);
+  const [selectedToolTurnKey, setSelectedToolTurnKey] = useState<string | null>(
+    null,
+  );
+  const [scrollRequest, setScrollRequest] = useState<{
+    messageId: string;
+    nonce: number;
+  } | null>(null);
   const [envBusy, setEnvBusy] = useState<'start' | 'stop' | 'restart' | null>(
     null,
   );
@@ -811,6 +822,14 @@ export function BotWorkspaceView() {
             role={activeWorkspace.role}
             variant="session"
             hideHeader
+            selectedToolTurnKey={selectedToolTurnKey}
+            onToolTraceChange={setToolTrace}
+            scrollRequest={scrollRequest}
+            onInspectToolTurn={(turnKey) => {
+              setSelectedToolTurnKey(turnKey);
+              setActiveTab('toolCalls');
+              setMobileChatOpen(false);
+            }}
           />
 
           <p className="border-t border-line pt-2.5 text-[12px] text-muted">
@@ -893,6 +912,31 @@ export function BotWorkspaceView() {
                 >
                   <Folder className="h-4 w-4" aria-hidden="true" />
                   <span>{t('computer.tabs.files')}</span>
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={activeTab === 'toolCalls'}
+                  onClick={() => setActiveTab('toolCalls')}
+                  className={`inline-flex min-h-[40px] items-center gap-2 rounded-sm px-3.5 text-[14px] font-bold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${
+                    activeTab === 'toolCalls'
+                      ? 'bg-dark text-paper'
+                      : 'text-ink-2 hover:bg-paper hover:text-ink'
+                  }`}
+                >
+                  <Wrench className="h-4 w-4" aria-hidden="true" />
+                  <span>{t('computer.tabs.toolCalls')}</span>
+                  {toolTrace && toolTrace.totalSteps > 0 ? (
+                    <span
+                      aria-hidden="true"
+                      className={`text-[12px] ${
+                        activeTab === 'toolCalls'
+                          ? 'text-on-dark'
+                          : 'text-muted'
+                      }`}
+                    >
+                      {toolTrace.totalSteps}
+                    </span>
+                  ) : null}
                 </button>
               </div>
 
@@ -984,7 +1028,32 @@ export function BotWorkspaceView() {
               </div>
             ) : null}
 
-            {envStatus !== 'running' ? (
+            {activeTab === 'toolCalls' ? (
+              <div className="max-h-[560px] overflow-y-auto p-4">
+                <ToolCallsSidebar
+                  trace={
+                    toolTrace ?? {
+                      chatMessages: [],
+                      turns: [],
+                      totalSteps: 0,
+                      runningSteps: 0,
+                      errorSteps: 0,
+                      turnsByReplyId: new Map(),
+                      unattachedTurnsByAnchor: new Map(),
+                      leadingUnattachedTurns: [],
+                    }
+                  }
+                  selectedTurnKey={selectedToolTurnKey}
+                  onJumpToMessage={(messageId) => {
+                    setMobileChatOpen(true);
+                    setScrollRequest((prev) => ({
+                      messageId,
+                      nonce: (prev?.nonce ?? 0) + 1,
+                    }));
+                  }}
+                />
+              </div>
+            ) : envStatus !== 'running' ? (
               <div className="flex min-h-[320px] flex-col items-start justify-center gap-3 bg-paper-2 p-8">
                 <h2 className="text-[22px] font-black text-ink">
                   {t('computer.stoppedTitle')}
