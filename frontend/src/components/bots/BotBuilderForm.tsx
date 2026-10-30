@@ -234,9 +234,11 @@ export function BotBuilderForm({ mode, workspace, bot }: BotBuilderFormProps) {
               <Textarea
                 label={t('descriptionLabel')}
                 placeholder={t('descriptionPlaceholder')}
+                helperText={t('descriptionHelp')}
                 value={description}
                 disabled={!canEdit}
-                className="min-h-[44px]"
+                rows={5}
+                maxLength={4000}
                 onChange={(event) => setDescription(event.target.value)}
               />
             </div>

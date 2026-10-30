@@ -83,6 +83,7 @@ RUN python3 /tmp/install-agy.py && rm /tmp/install-agy.py /tmp/agy-linux-*.json
 COPY --chmod=0755 --from=agent-builder /out/botbox-agent /usr/local/bin/botbox-agent
 COPY --chmod=0755 images/sandbox/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY --chmod=0755 images/sandbox/install-bot-ca.sh /usr/local/bin/install-bot-ca.sh
+COPY --chmod=0755 images/sandbox/chromium-launch.sh /usr/local/bin/chromium-launch.sh
 # Install the launcher as its own file. COPY onto the npm symlink would
 # overwrite cli.js, and the launcher would then ask Node to parse itself.
 COPY images/sandbox/claude-launch.sh /tmp/claude-launch.sh
@@ -94,6 +95,7 @@ COPY images/sandbox/supervisord.conf /etc/supervisor/conf.d/botbox.conf
 RUN test -x /usr/local/bin/botbox-agent \
     && test -x /usr/local/bin/entrypoint.sh \
     && test -x /usr/local/bin/install-bot-ca.sh \
+    && test -x /usr/local/bin/chromium-launch.sh \
     && test -x /usr/local/bin/claude
 
 USER bot

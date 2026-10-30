@@ -44,7 +44,10 @@ type EventKind string
 
 // Event is the unified internal representation produced from claude, codex, and agy streams.
 type Event struct {
+	BotID        string
+	RunID        string
 	TurnID       string
+	Sequence     uint64
 	CostMicros   *int64
 	SessionID    string
 	Kind         EventKind
@@ -150,44 +153,77 @@ func claudeBlockText(raw json.RawMessage) (string, error) {
 func ParseClaudeStream(ctx context.Context, r io.Reader) ([]Event, error) {
 	return scanNDJSON(ctx, "claude", r, func(line []byte) ([]Event, error) {
 		var env struct {
-			Type        string `json:"type"`
-			SessionID   string `json:"session_id"`
-			IsError     bool   `json:"is_error"`
-			StreamEvent struct {
-				Type  string `json:"type"`
-				Delta struct {
-					Type string `json:"type"`
-					Text string `json:"text"`
-				} `json:"delta"`
-			} `json:"event"`
-			Message struct {
-				Content json.RawMessage `json:"content"`
-			} `json:"message"`
-			Usage *struct {
-				InputTokens  int64 `json:"input_tokens"`
-				OutputTokens int64 `json:"output_tokens"`
-				CacheTokens  int64 `json:"cache_read_input_tokens"`
-			} `json:"usage"`
+			Type string `json:"type"`
 		}
 		if err := json.Unmarshal(line, &env); err != nil {
 			return nil, err
 		}
+		if env.Type == "" {
+			return nil, errors.New("claude event type is missing")
+		}
 
+		// Auxiliary events may use message as text. Decode only the fields
+		// required by each event type so new notices cannot interrupt a turn.
 		var out []Event
 		switch env.Type {
 		case "system":
-			out = append(out, Event{Kind: EventKindStatus, Status: "thinking", SessionID: env.SessionID})
-		case "stream_event":
-			if env.StreamEvent.Delta.Type == "text_delta" && env.StreamEvent.Delta.Text != "" {
-				out = append(out, Event{Kind: EventKindTextDelta, Text: env.StreamEvent.Delta.Text})
+			var system struct {
+				SessionID string `json:"session_id"`
 			}
-		case "assistant":
-			blocks, err := claudeContentBlocks(env.Message.Content)
+			if err := json.Unmarshal(line, &system); err != nil {
+				return nil, err
+			}
+			out = append(out, Event{Kind: EventKindStatus, Status: "thinking", SessionID: system.SessionID})
+		case "stream_event":
+			var stream struct {
+				Event struct {
+					Delta struct {
+						Type string `json:"type"`
+						Text string `json:"text"`
+					} `json:"delta"`
+				} `json:"event"`
+			}
+			if err := json.Unmarshal(line, &stream); err != nil {
+				return nil, err
+			}
+			if stream.Event.Delta.Type == "text_delta" && stream.Event.Delta.Text != "" {
+				out = append(out, Event{Kind: EventKindTextDelta, Text: stream.Event.Delta.Text})
+			}
+		case "assistant", "user":
+			var message struct {
+				Message *struct {
+					Content json.RawMessage `json:"content"`
+				} `json:"message"`
+			}
+			if err := json.Unmarshal(line, &message); err != nil {
+				return nil, err
+			}
+			if message.Message == nil {
+				return nil, errors.New("claude message is missing")
+			}
+			content := bytes.TrimSpace(message.Message.Content)
+			if len(content) == 0 || bytes.Equal(content, []byte("null")) {
+				return nil, errors.New("claude message content is missing")
+			}
+			if env.Type == "assistant" && content[0] != '[' {
+				return nil, errors.New("claude assistant content is not a block list")
+			}
+			blocks, err := claudeContentBlocks(content)
 			if err != nil {
 				return nil, err
 			}
 			var text strings.Builder
 			for _, item := range blocks {
+				if env.Type == "user" {
+					if item.Type == "tool_result" {
+						result, err := claudeBlockText(item.Content)
+						if err != nil {
+							return nil, err
+						}
+						out = append(out, Event{Kind: EventKindToolResult, ToolID: item.ToolUseID, Text: result, IsError: item.IsError})
+					}
+					continue
+				}
 				if item.Type == "text" {
 					piece := item.Text
 					if piece == "" {
@@ -211,36 +247,27 @@ func ParseClaudeStream(ctx context.Context, r io.Reader) ([]Event, error) {
 			if text.Len() > 0 {
 				out = append(out, Event{Kind: EventKindMessage, Text: text.String()})
 			}
-		case "user":
-			blocks, err := claudeContentBlocks(env.Message.Content)
-			if err != nil {
+		case "result":
+			var result struct {
+				IsError bool `json:"is_error"`
+				Usage   *struct {
+					InputTokens  int64 `json:"input_tokens"`
+					OutputTokens int64 `json:"output_tokens"`
+					CacheTokens  int64 `json:"cache_read_input_tokens"`
+				} `json:"usage"`
+			}
+			if err := json.Unmarshal(line, &result); err != nil {
 				return nil, err
 			}
-			for _, item := range blocks {
-				if item.Type != "tool_result" {
-					continue
-				}
-				text, err := claudeBlockText(item.Content)
-				if err != nil {
-					return nil, err
-				}
-				out = append(out, Event{
-					Kind:    EventKindToolResult,
-					ToolID:  item.ToolUseID,
-					Text:    text,
-					IsError: item.IsError,
-				})
-			}
-		case "result":
-			if env.Usage != nil {
+			if result.Usage != nil {
 				out = append(out, Event{
 					Kind:         EventKindUsage,
-					InputTokens:  env.Usage.InputTokens,
-					OutputTokens: env.Usage.OutputTokens,
-					CacheTokens:  env.Usage.CacheTokens,
+					InputTokens:  result.Usage.InputTokens,
+					OutputTokens: result.Usage.OutputTokens,
+					CacheTokens:  result.Usage.CacheTokens,
 				})
 			}
-			if env.IsError {
+			if result.IsError {
 				out = append(out, Event{Kind: EventKindError, ErrorCode: "cli_error", ErrorMessage: "claude reported error result"})
 			}
 			out = append(out, Event{Kind: EventKindStatus, Status: "idle"})
@@ -455,6 +482,9 @@ func scanNDJSON(
 		}
 		line, err := readBoundedLine(reader)
 		if err != nil && !errors.Is(err, io.EOF) {
+			if errors.Is(err, ErrLineTooLong) {
+				err = WithFailureCode(FailureStreamFormat, err)
+			}
 			return nil, fmt.Errorf("%s stream line %d: %w", source, lineNum+1, err)
 		}
 		trimmed := strings.TrimSpace(string(line))
@@ -462,7 +492,7 @@ func scanNDJSON(
 			lineNum++
 			parsed, parseErr := parseLine([]byte(trimmed))
 			if parseErr != nil {
-				return nil, fmt.Errorf("%s stream line %d: %w", source, lineNum, parseErr)
+				return nil, fmt.Errorf("%s stream line %d: %w", source, lineNum, WithFailureCode(FailureStreamFormat, parseErr))
 			}
 			all = append(all, parsed...)
 		}

@@ -299,6 +299,43 @@ func (q *Queries) GetGitLabInstance(ctx context.Context, arg GetGitLabInstancePa
 	return i, err
 }
 
+const hasSavedGitLabCredential = `-- name: HasSavedGitLabCredential :one
+SELECT EXISTS (
+    SELECT 1 FROM bot_secrets s
+    WHERE s.workspace_id = $1::uuid AND s.bot_id = $2::uuid
+      AND s.adapter_id = $3::varchar AND s.domain_match = $4::varchar
+      AND NOT s.match_subdomains AND s.path_prefix IN ('', '/')
+    UNION ALL
+    SELECT 1 FROM workspace_secrets s
+    WHERE s.workspace_id = $1::uuid
+      AND s.adapter_id = $3::varchar AND s.domain_match = $4::varchar
+      AND NOT s.match_subdomains AND s.path_prefix IN ('', '/')
+      AND NOT EXISTS (
+          SELECT 1 FROM gitlab_workspace_secret_blocks b
+          WHERE b.workspace_id = s.workspace_id AND b.bot_id = $2::uuid AND b.secret_id = s.id
+      )
+)
+`
+
+type HasSavedGitLabCredentialParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	BotID       pgtype.UUID `json:"bot_id"`
+	AdapterID   string      `json:"adapter_id"`
+	DomainMatch string      `json:"domain_match"`
+}
+
+func (q *Queries) HasSavedGitLabCredential(ctx context.Context, arg HasSavedGitLabCredentialParams) (bool, error) {
+	row := q.db.QueryRow(ctx, hasSavedGitLabCredential,
+		arg.WorkspaceID,
+		arg.BotID,
+		arg.AdapterID,
+		arg.DomainMatch,
+	)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const listBlockedGitLabWorkspaceSecretsForBot = `-- name: ListBlockedGitLabWorkspaceSecretsForBot :many
 SELECT secret_id FROM gitlab_workspace_secret_blocks WHERE workspace_id=$1 AND bot_id=$2
 `

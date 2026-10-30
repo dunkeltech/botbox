@@ -8,6 +8,7 @@ import { useTranslations } from 'next-intl';
 import { BotGitLabInstancesPanel } from '@/components/settings/BotGitLabInstancesPanel';
 import { canManageBot } from '@/lib/rbac';
 import { BudgetPanel } from '@/components/chat/BudgetPanel';
+import { RunnerControl } from '@/components/chat/RunnerControl';
 import { BotBuilderForm } from '@/components/bots/BotBuilderForm';
 import { AppShell } from '@/components/shell/AppShell';
 import { Alert, Card } from '@/components/ui';
@@ -20,6 +21,7 @@ function BotSettingsContent() {
   const tActions = useTranslations('actions');
   const tBuilder = useTranslations('builder');
   const tErrors = useTranslations('errors');
+  const tRunner = useTranslations('runner');
   const params = useParams<{ botId: string }>();
   const botId = typeof params?.botId === 'string' ? params.botId : '';
   const { activeWorkspace, user } = useAuth();
@@ -90,14 +92,32 @@ function BotSettingsContent() {
     );
   }
 
+  const canManage = canManageBot(activeWorkspace.role, user?.id, bot);
+
   return (
     <div className="flex flex-col gap-6">
+      <Card className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="text-[18px] font-black text-ink">
+            {tRunner('settingsTitle')}
+          </h2>
+          <p className="mt-1 text-[13px] text-ink-2">
+            {tRunner('settingsHint')}
+          </p>
+        </div>
+        <RunnerControl
+          workspaceId={activeWorkspace.id}
+          botId={bot.id}
+          userId={user?.id ?? ''}
+          canManage={canManage}
+        />
+      </Card>
       <BotBuilderForm mode="edit" workspace={activeWorkspace} bot={bot} />
       <BotGitLabInstancesPanel
         key={`${activeWorkspace.id}:${bot.id}`}
         workspaceId={activeWorkspace.id}
         botId={bot.id}
-        canManage={canManageBot(activeWorkspace.role, user?.id, bot)}
+        canManage={canManage}
       />
       <BudgetPanel
         workspaceId={activeWorkspace.id}

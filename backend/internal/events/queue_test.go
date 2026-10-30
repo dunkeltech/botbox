@@ -70,6 +70,19 @@ func TestJetStreamQueueAndInterrupt(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("turn not delivered")
 	}
+	// A fulfilled secret resumes the same turn. JetStream must deliver that
+	// notification even inside its duplicate window; the worker owns claiming.
+	if err = queue.Enqueue(ctx, ws, bot, turn); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case job := <-jobs:
+		if job.WorkspaceID != ws || job.BotID != bot || job.TurnID != turn {
+			t.Fatalf("resumed job=%+v", job)
+		}
+	case <-ctx.Done():
+		t.Fatal("resumed turn not delivered")
+	}
 	if err = queue.Interrupt(ctx, ws, bot); err != nil {
 		t.Fatal(err)
 	}
@@ -161,5 +174,89 @@ func TestEgressPolicyRevisionInvalidationAndAck(t *testing.T) {
 	ack2, err := queue.PublishEgressPolicyRevision(ctx, ws, bot, 1)
 	if err != nil || ack2 != 2 {
 		t.Fatalf("ack2=%d err=%v, want 2", ack2, err)
+	}
+}
+
+func startQueueTestNATS(t *testing.T) string {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	_ = listener.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	//nolint:gosec // local test NATS uses an internally reserved port and temporary storage
+	cmd := exec.CommandContext(ctx, "nats-server", "-js", "-a", "127.0.0.1", "-p", fmt.Sprint(port), "-sd", t.TempDir())
+	logs, err := cmd.StderrPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cancel(); _ = cmd.Wait() })
+	ready := make(chan struct{})
+	go func() {
+		scanner := bufio.NewScanner(logs)
+		for scanner.Scan() {
+			if strings.Contains(scanner.Text(), "Server is ready") {
+				close(ready)
+				return
+			}
+		}
+	}()
+	select {
+	case <-ready:
+	case <-ctx.Done():
+		t.Fatal("NATS did not become ready")
+	}
+	return fmt.Sprintf("nats://127.0.0.1:%d", port)
+}
+
+func TestQueueRunsDifferentBotsConcurrentlyAndCancelsOnClose(t *testing.T) {
+	url := startQueueTestNATS(t)
+	started := make(chan uuid.UUID, 3)
+	finished := make(chan struct{}, 3)
+	queue, err := events.OpenQueue(url, func(ctx context.Context, job events.TurnNotification) error {
+		started <- job.BotID
+		<-ctx.Done()
+		finished <- struct{}{}
+		return ctx.Err()
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer queue.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	ws := uuid.New()
+	for range 3 {
+		if err := queue.Enqueue(ctx, ws, uuid.New(), uuid.New()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for range 3 {
+		select {
+		case <-started:
+		case <-ctx.Done():
+			t.Fatal("bots did not start concurrently")
+		}
+	}
+	queue.Close()
+	for range 3 {
+		select {
+		case <-finished:
+		default:
+			t.Fatal("close returned before processor stopped")
+		}
+	}
+}
+
+func TestQueueRejectsInvalidConcurrency(t *testing.T) {
+	for _, limit := range []int{-1, 0, 65} {
+		if _, err := events.OpenQueueWithConcurrency("invalid", limit, func(context.Context, events.TurnNotification) error { return nil }); err == nil {
+			t.Errorf("accepted concurrency %d", limit)
+		}
 	}
 }

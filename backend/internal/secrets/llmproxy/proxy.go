@@ -241,6 +241,7 @@ func NewHandler(resolve SecretResolver, opts *Options) http.Handler {
 			}
 			outReq.Body = io.NopCloser(bytes.NewReader(body))
 			outReq.ContentLength = int64(len(body))
+			requestCtx = boundedRequest(requestCtx, provider, upstreamPath, body)
 			settle, err = opts.Admit(requestCtx, provider, model.Model, upstreamPath)
 			if err != nil {
 				status := http.StatusServiceUnavailable

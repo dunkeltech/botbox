@@ -56,7 +56,7 @@ func (q *Queries) GetModelPrice(ctx context.Context, arg GetModelPriceParams) (M
 }
 
 const getRunningBotTurn = `-- name: GetRunningBotTurn :one
-SELECT t.id, t.position, t.workspace_id, t.bot_id, t.conversation_id, t.message_id, t.status, t.error_code, t.created_at, t.updated_at, t.continuation_prompt FROM bot_turns t WHERE t.workspace_id=$1 AND t.bot_id=$2 AND t.status='running'
+SELECT t.id, t.position, t.workspace_id, t.bot_id, t.conversation_id, t.message_id, t.status, t.error_code, t.created_at, t.updated_at, t.continuation_prompt, t.stop_requested FROM bot_turns t WHERE t.workspace_id=$1 AND t.bot_id=$2 AND t.status='running'
 `
 
 type GetRunningBotTurnParams struct {
@@ -79,7 +79,32 @@ func (q *Queries) GetRunningBotTurn(ctx context.Context, arg GetRunningBotTurnPa
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ContinuationPrompt,
+		&i.StopRequested,
 	)
+	return i, err
+}
+
+const groupBudgetCommitment = `-- name: GroupBudgetCommitment :one
+SELECT COALESCE(sum(COALESCE(u.cost_micros,u.reserved_micros)),0)::bigint AS committed_micros,
+count(*) FILTER (WHERE u.cost_micros IS NULL AND u.reserved_micros IS NULL AND u.billing_kind='metered')::bigint AS unknown_rows
+FROM usage_records u JOIN bot_turns t ON t.workspace_id=u.workspace_id AND t.id=u.turn_id
+WHERE u.workspace_id=$1 AND t.conversation_id=$2
+`
+
+type GroupBudgetCommitmentParams struct {
+	WorkspaceID    pgtype.UUID `json:"workspace_id"`
+	ConversationID pgtype.UUID `json:"conversation_id"`
+}
+
+type GroupBudgetCommitmentRow struct {
+	CommittedMicros int64 `json:"committed_micros"`
+	UnknownRows     int64 `json:"unknown_rows"`
+}
+
+func (q *Queries) GroupBudgetCommitment(ctx context.Context, arg GroupBudgetCommitmentParams) (GroupBudgetCommitmentRow, error) {
+	row := q.db.QueryRow(ctx, groupBudgetCommitment, arg.WorkspaceID, arg.ConversationID)
+	var i GroupBudgetCommitmentRow
+	err := row.Scan(&i.CommittedMicros, &i.UnknownRows)
 	return i, err
 }
 
@@ -102,7 +127,7 @@ func (q *Queries) HasProxyTurnUsage(ctx context.Context, arg HasProxyTurnUsagePa
 const hasUnpricedAPIUsage = `-- name: HasUnpricedAPIUsage :one
 SELECT EXISTS(SELECT 1 FROM usage_records u WHERE u.workspace_id=$1
 AND ($2::uuid IS NULL OR u.bot_id=$2::uuid)
-AND u.source IN ('api_response','proxy_meter') AND u.billing_kind='metered' AND u.cost_micros IS NULL
+AND u.source IN ('api_response','proxy_meter') AND u.billing_kind='metered' AND u.cost_micros IS NULL AND u.reserved_micros IS NULL
 AND u.created_at >= date_trunc($3::text,$4::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')
 `
 
@@ -164,7 +189,9 @@ func (q *Queries) ListBudgetApprovals(ctx context.Context, workspaceID pgtype.UU
 
 const listBudgetState = `-- name: ListBudgetState :many
 SELECT b.id, b.workspace_id, b.bot_id, b.period, b.limit_micros,COALESCE((SELECT sum(u.cost_micros) FROM usage_records u WHERE u.workspace_id=b.workspace_id AND (b.bot_id IS NULL OR u.bot_id=b.bot_id)
-AND u.created_at >= date_trunc(b.period,$2::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'),0)::bigint AS spent_micros
+AND u.created_at >= date_trunc(b.period,$2::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'),0)::bigint AS spent_micros,
+COALESCE((SELECT sum(u.reserved_micros) FROM usage_records u WHERE u.workspace_id=b.workspace_id AND (b.bot_id IS NULL OR u.bot_id=b.bot_id)
+AND u.created_at >= date_trunc(b.period,$2::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'),0)::bigint AS reserved_micros
 FROM budgets b WHERE b.workspace_id=$1 AND (b.bot_id IS NULL OR b.bot_id=$3::uuid)
 `
 
@@ -175,12 +202,13 @@ type ListBudgetStateParams struct {
 }
 
 type ListBudgetStateRow struct {
-	ID          pgtype.UUID `json:"id"`
-	WorkspaceID pgtype.UUID `json:"workspace_id"`
-	BotID       pgtype.UUID `json:"bot_id"`
-	Period      string      `json:"period"`
-	LimitMicros int64       `json:"limit_micros"`
-	SpentMicros int64       `json:"spent_micros"`
+	ID             pgtype.UUID `json:"id"`
+	WorkspaceID    pgtype.UUID `json:"workspace_id"`
+	BotID          pgtype.UUID `json:"bot_id"`
+	Period         string      `json:"period"`
+	LimitMicros    int64       `json:"limit_micros"`
+	SpentMicros    int64       `json:"spent_micros"`
+	ReservedMicros int64       `json:"reserved_micros"`
 }
 
 func (q *Queries) ListBudgetState(ctx context.Context, arg ListBudgetStateParams) ([]ListBudgetStateRow, error) {
@@ -199,6 +227,7 @@ func (q *Queries) ListBudgetState(ctx context.Context, arg ListBudgetStateParams
 			&i.Period,
 			&i.LimitMicros,
 			&i.SpentMicros,
+			&i.ReservedMicros,
 		); err != nil {
 			return nil, err
 		}
@@ -208,6 +237,15 @@ func (q *Queries) ListBudgetState(ctx context.Context, arg ListBudgetStateParams
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockWorkspaceBudgetCheck = `-- name: LockWorkspaceBudgetCheck :exec
+SELECT pg_advisory_xact_lock(hashtextextended($1::text, 1))
+`
+
+func (q *Queries) LockWorkspaceBudgetCheck(ctx context.Context, lockKey string) error {
+	_, err := q.db.Exec(ctx, lockWorkspaceBudgetCheck, lockKey)
+	return err
 }
 
 const lockWorkspaceSpend = `-- name: LockWorkspaceSpend :exec
@@ -255,6 +293,25 @@ func (q *Queries) RecordTurnUsage(ctx context.Context, arg RecordTurnUsageParams
 		arg.BillingKind,
 	)
 	return err
+}
+
+const reserveProxyUsage = `-- name: ReserveProxyUsage :execrows
+UPDATE usage_records SET reserved_micros=$3
+WHERE workspace_id=$1 AND request_id=$2 AND source='proxy_meter' AND cost_micros IS NULL
+`
+
+type ReserveProxyUsageParams struct {
+	WorkspaceID    pgtype.UUID `json:"workspace_id"`
+	RequestID      pgtype.UUID `json:"request_id"`
+	ReservedMicros pgtype.Int8 `json:"reserved_micros"`
+}
+
+func (q *Queries) ReserveProxyUsage(ctx context.Context, arg ReserveProxyUsageParams) (int64, error) {
+	result, err := q.db.Exec(ctx, reserveProxyUsage, arg.WorkspaceID, arg.RequestID, arg.ReservedMicros)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const resolveBudgetApprovals = `-- name: ResolveBudgetApprovals :exec
@@ -338,7 +395,7 @@ func (q *Queries) SetModelPrice(ctx context.Context, arg SetModelPriceParams) (M
 }
 
 const settleProxyUsage = `-- name: SettleProxyUsage :execrows
-UPDATE usage_records SET input_tokens=$3,output_tokens=$4,cache_tokens=$5,cost_micros=$6
+UPDATE usage_records SET input_tokens=$3,output_tokens=$4,cache_tokens=$5,cost_micros=$6,reserved_micros=NULL
 WHERE workspace_id=$1 AND request_id=$2 AND source='proxy_meter'
 `
 

@@ -67,6 +67,30 @@ func (q *Queries) CreateGroupBudgetApproval(ctx context.Context, arg CreateGroup
 	return id, err
 }
 
+const deleteGroupForMember = `-- name: DeleteGroupForMember :execrows
+DELETE FROM conversations c
+WHERE c.workspace_id = $1 AND c.id = $2 AND c.type = 'group'
+  AND EXISTS (
+    SELECT 1 FROM conversation_members m
+    WHERE m.workspace_id = c.workspace_id AND m.conversation_id = c.id
+      AND m.member_type = 'user' AND m.member_id = $3
+  )
+`
+
+type DeleteGroupForMemberParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ID          pgtype.UUID `json:"id"`
+	MemberID    pgtype.UUID `json:"member_id"`
+}
+
+func (q *Queries) DeleteGroupForMember(ctx context.Context, arg DeleteGroupForMemberParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteGroupForMember, arg.WorkspaceID, arg.ID, arg.MemberID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteGroupMember = `-- name: DeleteGroupMember :exec
 DELETE FROM conversation_members
 WHERE workspace_id = $1 AND conversation_id = $2
@@ -246,7 +270,7 @@ func (q *Queries) GetGroupForUpdate(ctx context.Context, arg GetGroupForUpdatePa
 const groupSpend = `-- name: GroupSpend :one
 SELECT
     COALESCE(sum(u.cost_micros) FILTER (WHERE u.cost_micros IS NOT NULL), 0)::bigint AS spent_micros,
-    (CASE WHEN bool_or(u.cost_micros IS NULL AND u.billing_kind = 'metered') THEN 1 ELSE 0 END)::int AS unknown_rows
+    (CASE WHEN bool_or(u.cost_micros IS NULL AND u.reserved_micros IS NULL AND u.billing_kind = 'metered') THEN 1 ELSE 0 END)::int AS unknown_rows
 FROM usage_records u
 JOIN bot_turns t ON t.workspace_id = u.workspace_id AND t.id = u.turn_id
 WHERE u.workspace_id = $1 AND t.conversation_id = $2 AND u.turn_id IS NOT NULL
@@ -267,6 +291,31 @@ func (q *Queries) GroupSpend(ctx context.Context, arg GroupSpendParams) (GroupSp
 	var i GroupSpendRow
 	err := row.Scan(&i.SpentMicros, &i.UnknownRows)
 	return i, err
+}
+
+const hasActiveGroupCredentials = `-- name: HasActiveGroupCredentials :one
+SELECT EXISTS (
+    SELECT 1 FROM broker_sessions bs
+    WHERE bs.workspace_id = $1 AND bs.conversation_id = $2
+      AND bs.revoked_at IS NULL AND bs.expires_at > now()
+      AND bs.status NOT IN ('revoked', 'expired')
+) OR EXISTS (
+    SELECT 1 FROM secret_leases sl
+    WHERE sl.workspace_id = $1 AND sl.conversation_id = $2
+      AND sl.revoked_at IS NULL AND sl.expires_at > now()
+) AS active
+`
+
+type HasActiveGroupCredentialsParams struct {
+	WorkspaceID    pgtype.UUID `json:"workspace_id"`
+	ConversationID pgtype.UUID `json:"conversation_id"`
+}
+
+func (q *Queries) HasActiveGroupCredentials(ctx context.Context, arg HasActiveGroupCredentialsParams) (pgtype.Bool, error) {
+	row := q.db.QueryRow(ctx, hasActiveGroupCredentials, arg.WorkspaceID, arg.ConversationID)
+	var active pgtype.Bool
+	err := row.Scan(&active)
+	return active, err
 }
 
 const hasGroupBudgetWarning = `-- name: HasGroupBudgetWarning :one
@@ -370,7 +419,8 @@ func (q *Queries) InsertGroup(ctx context.Context, arg InsertGroupParams) (Conve
 
 const listGroupMemberRows = `-- name: ListGroupMemberRows :many
 SELECT m.member_type, m.member_id, m.role_text,
-       COALESCE(u.display_name, b.name, '') AS display_name
+       COALESCE(u.display_name, b.name, '') AS display_name,
+       COALESCE(b.description, '') AS bot_description
 FROM conversation_members m
 LEFT JOIN users u ON m.member_type = 'user' AND u.id = m.member_id
 LEFT JOIN bots b ON m.member_type = 'bot' AND b.workspace_id = m.workspace_id AND b.id = m.member_id
@@ -384,10 +434,11 @@ type ListGroupMemberRowsParams struct {
 }
 
 type ListGroupMemberRowsRow struct {
-	MemberType  string      `json:"member_type"`
-	MemberID    pgtype.UUID `json:"member_id"`
-	RoleText    string      `json:"role_text"`
-	DisplayName string      `json:"display_name"`
+	MemberType     string      `json:"member_type"`
+	MemberID       pgtype.UUID `json:"member_id"`
+	RoleText       string      `json:"role_text"`
+	DisplayName    string      `json:"display_name"`
+	BotDescription string      `json:"bot_description"`
 }
 
 func (q *Queries) ListGroupMemberRows(ctx context.Context, arg ListGroupMemberRowsParams) ([]ListGroupMemberRowsRow, error) {
@@ -404,6 +455,7 @@ func (q *Queries) ListGroupMemberRows(ctx context.Context, arg ListGroupMemberRo
 			&i.MemberID,
 			&i.RoleText,
 			&i.DisplayName,
+			&i.BotDescription,
 		); err != nil {
 			return nil, err
 		}
@@ -563,6 +615,38 @@ func (q *Queries) ListRecentGroupBotSpeakers(ctx context.Context, arg ListRecent
 			return nil, err
 		}
 		items = append(items, sender_bot_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockGroupTurnsForDelete = `-- name: LockGroupTurnsForDelete :many
+SELECT status FROM bot_turns
+WHERE workspace_id = $1 AND conversation_id = $2
+ORDER BY id FOR UPDATE
+`
+
+type LockGroupTurnsForDeleteParams struct {
+	WorkspaceID    pgtype.UUID `json:"workspace_id"`
+	ConversationID pgtype.UUID `json:"conversation_id"`
+}
+
+// Lock queued turns too, so a worker cannot start after the active-turn check.
+func (q *Queries) LockGroupTurnsForDelete(ctx context.Context, arg LockGroupTurnsForDeleteParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, lockGroupTurnsForDelete, arg.WorkspaceID, arg.ConversationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var status string
+		if err := rows.Scan(&status); err != nil {
+			return nil, err
+		}
+		items = append(items, status)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

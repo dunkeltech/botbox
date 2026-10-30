@@ -152,6 +152,22 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/workspaces/{workspaceID}/conversations/{conversationID}/turns/{turnID}/stop': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations['stopChatTurn'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/workspaces/{workspaceID}/groups': {
     parameters: {
       query?: never;
@@ -183,7 +199,7 @@ export interface paths {
     get: operations['getGroup'];
     put?: never;
     post?: never;
-    delete?: never;
+    delete: operations['deleteGroup'];
     options?: never;
     head?: never;
     patch: operations['updateGroup'];
@@ -202,6 +218,22 @@ export interface paths {
     get: operations['listGroupMessages'];
     put?: never;
     post: operations['sendGroupMessage'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/workspaces/{workspaceID}/groups/{groupID}/turns/{turnID}/stop': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations['stopGroupTurn'];
     delete?: never;
     options?: never;
     head?: never;
@@ -1124,8 +1156,24 @@ export interface components {
       content: string;
       secretRequest?: components['schemas']['SecretRequestSummary'];
       tool?: components['schemas']['ToolCallMeta'];
+      inputRequest?: components['schemas']['GroupInputRequest'];
       /** Format: date-time */
       createdAt: string;
+    };
+    GroupInputRequest: {
+      /** @enum {string} */
+      state: 'waiting' | 'collected' | 'stopped';
+      /** Format: date-time */
+      deadline: string;
+      required: boolean;
+      recipients: components['schemas']['GroupInputRecipient'][];
+    };
+    GroupInputRecipient: {
+      /** Format: uuid */
+      botId: string;
+      name: string;
+      /** @enum {string} */
+      state: 'waiting' | 'replied' | 'unavailable';
     };
     /** @enum {string} */
     SecretRequestKind: 'cli_egress' | 'browser_login';
@@ -1243,6 +1291,8 @@ export interface components {
     ChatTurn: {
       /** Format: uuid */
       id: string;
+      /** Format: uuid */
+      botId?: string;
       /** @enum {string} */
       status:
         | 'queued'
@@ -1252,6 +1302,8 @@ export interface components {
         | 'failed'
         | 'interrupted'
         | 'budget_exceeded';
+      /** @description A stop request is pending for a running turn. */
+      stopRequested?: boolean;
       /** Format: int64 */
       queueAhead: number;
       errorCode: string;
@@ -2436,6 +2488,63 @@ export interface operations {
       };
     };
   };
+  stopChatTurn: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+        conversationID: string;
+        turnID: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Stop requested for the running turn. Other states are a no-op. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Invalid identifier */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Viewers cannot stop turns */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Private conversation or turn not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Chat service unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
   listGroups: {
     parameters: {
       query?: never;
@@ -2572,6 +2681,69 @@ export interface operations {
       };
       /** @description Group not found */
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  deleteGroup: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+        groupID: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Group and chat history permanently deleted; usage retained */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Invalid group identifier */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Viewers cannot delete a group */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Group not found or caller is not a member */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Group has running work, a secret wait, or active credentials */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Chat storage unavailable */
+      503: {
         headers: {
           [name: string]: unknown;
         };
@@ -2735,6 +2907,63 @@ export interface operations {
       };
       /** @description Message rate limit exceeded */
       429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  stopGroupTurn: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+        groupID: string;
+        turnID: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Stop requested for the running turn. Other states are a no-op. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Invalid identifier */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Viewers cannot stop turns */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Group or turn not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Chat service unavailable */
+      503: {
         headers: {
           [name: string]: unknown;
         };

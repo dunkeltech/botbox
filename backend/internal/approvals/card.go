@@ -166,32 +166,39 @@ func NoteBlockedHost(ctx context.Context, pool *pgxpool.Pool, workspaceID, botID
 // NoteTool records a push_protected card from a tool-call sentence. The card
 // is the gate: bot.Box does not push, and a write failure fails the turn.
 func NoteTool(ctx context.Context, pool *pgxpool.Pool, turn db.BotTurn, text string, signal notify.Signal) error {
-	return note(ctx, pool, turn, signal, func(raw []byte) []Card {
-		return pushMatchesFor(raw, text)
-	})
-}
-
-// NoteReply records a custom card when the stored bot reply contains a listed
-// label. It runs before the next bots are queued, so the pause stops the handoff.
-func NoteReply(ctx context.Context, pool *pgxpool.Pool, turn db.BotTurn, text string, signal notify.Signal) error {
-	return note(ctx, pool, turn, signal, func(raw []byte) []Card {
-		return customMatchesText(raw, text)
-	})
-}
-
-func note(ctx context.Context, pool *pgxpool.Pool, turn db.BotTurn, signal notify.Signal, match func([]byte) []Card) error {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	q := db.New(tx)
-	group, err := q.GetGroup(ctx, db.GetGroupParams{WorkspaceID: turn.WorkspaceID, ID: turn.ConversationID})
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil
-	}
+	ids, err := note(ctx, db.New(tx), turn, func(raw []byte) []Card {
+		return pushMatchesFor(raw, text)
+	})
 	if err != nil {
 		return err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return err
+	}
+	signal.Send(ctx, uuid.UUID(turn.WorkspaceID.Bytes), uuid.UUID(turn.ConversationID.Bytes), ids)
+	return nil
+}
+
+// NoteReply records a matching custom card in the reply's finalization
+// transaction so an approval pause takes effect before planning a handoff.
+func NoteReply(ctx context.Context, q *db.Queries, turn db.BotTurn, text string) ([]uuid.UUID, error) {
+	return note(ctx, q, turn, func(raw []byte) []Card {
+		return customMatchesText(raw, text)
+	})
+}
+
+func note(ctx context.Context, q *db.Queries, turn db.BotTurn, match func([]byte) []Card) ([]uuid.UUID, error) {
+	group, err := q.GetGroup(ctx, db.GetGroupParams{WorkspaceID: turn.WorkspaceID, ID: turn.ConversationID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
 	}
 	var ids []uuid.UUID
 	for _, card := range match(group.AskBefore) {
@@ -201,15 +208,11 @@ func note(ctx context.Context, pool *pgxpool.Pool, turn db.BotTurn, signal notif
 		card.TriggerMessageID = turn.MessageID
 		more, err := Open(ctx, q, card)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		ids = append(ids, more...)
 	}
-	if err = tx.Commit(ctx); err != nil {
-		return err
-	}
-	signal.Send(ctx, uuid.UUID(turn.WorkspaceID.Bytes), uuid.UUID(turn.ConversationID.Bytes), ids)
-	return nil
+	return ids, nil
 }
 
 func pushMatchesFor(raw []byte, text string) []Card {

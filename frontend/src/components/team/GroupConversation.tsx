@@ -13,6 +13,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { ChatTurnToolChip } from '@/components/chat/ChatTurnToolChip';
 import { LiveToolStatusBar } from '@/components/chat/LiveToolStatusBar';
+import { StopTurnButton } from '@/components/chat/StopTurnButton';
 import {
   buildToolTrace,
   type ToolTraceSummary,
@@ -24,6 +25,8 @@ import { SecretRequestCard } from '@/components/chat/SecretRequestCard';
 import { SecretRequestModal } from '@/components/chat/SecretRequestModal';
 import { useSecretRequestControl } from '@/components/chat/useSecretRequestControl';
 import { useChatScroll } from '@/components/chat/useChatScroll';
+import { turnFailureKey } from '@/components/chat/turnFailure';
+import { activeBotTurns, failedBotTurns } from '@/components/team/activity';
 import { ApprovalCard } from '@/components/team/ApprovalCard';
 import {
   approvalForMessage,
@@ -34,6 +37,7 @@ import {
   useApprovalList,
 } from '@/components/team/useApprovals';
 import { Alert, BotAvatar, Button } from '@/components/ui';
+import { connectConversation } from '@/lib/conversation-events';
 import { getAccessToken, requestJson } from '@/lib/api-client';
 import type { WorkspaceRole } from '@/types/api';
 import type { components } from '@/types/openapi.gen';
@@ -56,11 +60,12 @@ function formatTime(iso: string): string {
 }
 
 function targets(group: Group): MentionTarget[] {
-  return group.members.flatMap((member) => {
+  const members: MentionTarget[] = group.members.flatMap((member) => {
     const name = member.name?.trim();
     if (!name) return [];
     return [{ id: member.id, name, kind: member.type }];
   });
+  return [...members, { id: 'all', name: 'all', kind: 'all' }];
 }
 
 function speaker(
@@ -140,20 +145,32 @@ export function GroupConversation({
   useEffect(() => {
     const token = getAccessToken();
     if (!token) return;
-    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const socket = new WebSocket(
-      `${protocol}//${location.host}/ws/chat/${workspaceId}/${group.id}`,
-      ['botbox.events', `botbox.auth.${token}`],
-    );
-    socket.onmessage = () => {
+    const refresh = () => {
       void client.invalidateQueries({
         queryKey: ['group-messages', workspaceId, group.id],
       });
       void client.invalidateQueries({
         queryKey: ['notifications', workspaceId],
       });
+      void client.invalidateQueries({ queryKey: ['bots', workspaceId] });
     };
-    return () => socket.close();
+    return connectConversation(
+      workspaceId,
+      group.id,
+      getAccessToken,
+      (event) => {
+        try {
+          const data: unknown = JSON.parse(event.data);
+          if (!data || typeof data !== 'object') return;
+          // Text deltas are not persisted replies and need no snapshot reload.
+          if ('Kind' in data && data.Kind === 'text_delta') return;
+          refresh();
+        } catch {
+          /* Invalid signals cannot change current activity. */
+        }
+      },
+      refresh,
+    );
   }, [client, group.id, workspaceId]);
 
   const mention = activeMention(draft, caret);
@@ -173,6 +190,18 @@ export function GroupConversation({
   useEffect(() => {
     onToolTraceChange?.(trace);
   }, [trace, onToolTraceChange]);
+
+  function requestBotName(requestId?: string) {
+    const message = trace.chatMessages.find(
+      (message) =>
+        requestId && message.secretRequest?.secretRequestId === requestId,
+    );
+    return (
+      group.members.find(
+        (member) => member.type === 'bot' && member.id === message?.senderBotId,
+      )?.name ?? t('bot')
+    );
+  }
 
   const messages = useMemo(
     () =>
@@ -202,10 +231,13 @@ export function GroupConversation({
     }
   }, [scrollRequest, logRef]);
 
-  const liveToolTurn = trace.turns.find((item) => item.status === 'running');
-  const liveBotMember = liveToolTurn
-    ? group.members.find((member) => member.id === liveToolTurn.botId)
-    : undefined;
+  const activeTurns = activeBotTurns(history.data?.turns ?? []);
+  const failedTurns = failedBotTurns(history.data?.turns ?? []);
+  const activeToolTurns = trace.turns.filter(
+    (turn) =>
+      turn.status === 'running' &&
+      !activeTurns.some((active) => active.id === turn.turnKey),
+  );
 
   function renderUnattachedToolTurns(turnsToShow: ToolTraceTurn[]) {
     if (turnsToShow.length === 0) return null;
@@ -476,6 +508,9 @@ export function GroupConversation({
                     mentionNames={names}
                     className="mt-0.5 text-[15px] leading-[1.55] text-ink"
                   />
+                  {message.inputRequest ? (
+                    <InputRequestProgress request={message.inputRequest} />
+                  ) : null}
                   {attachedTurn ? (
                     <ChatTurnToolChip
                       turn={attachedTurn}
@@ -490,25 +525,89 @@ export function GroupConversation({
           );
         })}
       </div>
-      {liveToolTurn ? (
-        <div className="px-5 pb-2">
-          <LiveToolStatusBar
-            name={liveBotMember?.name || t('bot')}
-            avatarSeed={
-              liveBotMember?.id ?? liveToolTurn.botId ?? group.leadBotId
-            }
-            statusText={tChat('working', {
-              name: liveBotMember?.name || t('bot'),
-            })}
-            liveTurn={liveToolTurn}
-            onInspect={
-              onInspectToolTurn
-                ? (turnKey) => onInspectToolTurn(turnKey)
-                : undefined
-            }
-          />
+      {failedTurns.length > 0 ? (
+        <div className="max-h-40 shrink-0 space-y-2 overflow-y-auto px-5 pb-2">
+          {failedTurns.map((turn) => (
+            <Alert key={turn.id} tone="warning">
+              <p className="font-bold">
+                {tChat('botTurnFailed', {
+                  name:
+                    group.members.find((member) => member.id === turn.botId)
+                      ?.name || t('bot'),
+                })}
+              </p>
+              <p>{tChat(turnFailureKey(turn.errorCode))}</p>
+            </Alert>
+          ))}
         </div>
       ) : null}
+      <div
+        className="max-h-40 shrink-0 space-y-2 overflow-y-auto px-5 pb-2"
+        aria-live="polite"
+      >
+        {activeTurns.map((turn) => {
+          const member = group.members.find((row) => row.id === turn.botId);
+          const name = member?.name || t('bot');
+          const toolTurn = trace.turns.find((row) => row.turnKey === turn.id);
+          return (
+            <div key={turn.id} className="flex flex-wrap items-center gap-2">
+              <div className="min-w-0 flex-1">
+                {turn.status === 'running' && toolTurn?.status === 'running' ? (
+                  <LiveToolStatusBar
+                    name={name}
+                    avatarSeed={turn.botId!}
+                    statusText={tChat('working', { name })}
+                    liveTurn={toolTurn}
+                    onInspect={onInspectToolTurn}
+                  />
+                ) : (
+                  <div className="flex items-center gap-2 text-[13px] font-bold text-blue">
+                    <BotAvatar
+                      seed={turn.botId!}
+                      mood={turn.status === 'running' ? 'thinking' : 'idle'}
+                      size={26}
+                      decorative
+                    />
+                    <span>
+                      {tChat(
+                        turn.status === 'queued'
+                          ? 'botQueued'
+                          : turn.status === 'waiting_secret'
+                            ? 'botWaitingSecret'
+                            : 'thinking',
+                        { name },
+                      )}
+                    </span>
+                  </div>
+                )}
+              </div>
+              {canPost && turn.status === 'running' ? (
+                <StopTurnButton
+                  botName={name}
+                  path={`${base}/groups/${group.id}/turns/${turn.id}/stop`}
+                  requested={turn.stopRequested}
+                  refresh={history.refetch}
+                />
+              ) : null}
+            </div>
+          );
+        })}
+        {activeToolTurns.map((turn) => {
+          const name =
+            group.members.find((row) => row.id === turn.botId)?.name ||
+            t('bot');
+          return (
+            <LiveToolStatusBar
+              key={turn.turnKey}
+              name={name}
+              avatarSeed={turn.botId || turn.turnKey}
+              statusText={tChat('working', { name })}
+              liveTurn={turn}
+              onInspect={onInspectToolTurn}
+            />
+          );
+        })}
+      </div>
       {canPost ? (
         <form onSubmit={(event) => void send(event)} className="px-5 pb-4 pt-1">
           {mention && choices.length > 0 ? (
@@ -533,7 +632,11 @@ export function GroupConversation({
                 >
                   <span className="font-black">@{choice.name}</span>
                   <span className="rounded-xs bg-blue-tint px-1.5 text-[11px] font-black uppercase text-blue">
-                    {choice.kind === 'bot' ? t('botBadge') : t('humanBadge')}
+                    {choice.kind === 'all'
+                      ? t('allMembers')
+                      : choice.kind === 'bot'
+                        ? t('botBadge')
+                        : t('humanBadge')}
                   </span>
                 </button>
               ))}
@@ -615,7 +718,7 @@ export function GroupConversation({
 
       <SecretRequestModal
         workspaceId={workspaceId}
-        botName={group.members.find((m) => m.type === 'bot')?.name ?? t('bot')}
+        botName={requestBotName(secretControl.activeRequest?.secretRequestId)}
         role={role}
         summary={secretControl.activeRequest}
         onClose={secretControl.closeModal}
@@ -629,7 +732,7 @@ export function GroupConversation({
 
       <BrokerTakeoverModal
         workspaceId={workspaceId}
-        botName={group.members.find((m) => m.type === 'bot')?.name ?? t('bot')}
+        botName={requestBotName(secretControl.takeoverRequest?.secretRequestId)}
         role={role}
         summary={secretControl.takeoverRequest}
         onClose={secretControl.closeTakeover}
@@ -639,6 +742,47 @@ export function GroupConversation({
           });
         }}
       />
+    </div>
+  );
+}
+
+function InputRequestProgress({
+  request,
+}: {
+  request: NonNullable<ChatMessage['inputRequest']>;
+}) {
+  const t = useTranslations('team');
+  const missing = request.recipients.some(
+    (recipient) => recipient.state === 'unavailable',
+  );
+  const title = {
+    waiting: request.required
+      ? 'inputRequestWaitingRequired'
+      : 'inputRequestWaiting',
+    collected:
+      request.required && missing
+        ? 'inputRequestMissingRequired'
+        : 'inputRequestCollected',
+    stopped: 'inputRequestStopped',
+  } as const;
+  const recipientState = {
+    waiting: 'inputRecipientWaiting',
+    replied: 'inputRecipientReplied',
+    unavailable: 'inputRecipientUnavailable',
+  } as const;
+  return (
+    <div
+      role="status"
+      className="mt-2 rounded-sm border border-line px-3 py-2 text-[13px] text-ink"
+    >
+      <p className="font-bold">{t(title[request.state])}</p>
+      <ul className="mt-1 space-y-0.5">
+        {request.recipients.map((recipient) => (
+          <li key={recipient.botId}>
+            {recipient.name} · {t(recipientState[recipient.state])}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

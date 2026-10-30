@@ -44,6 +44,17 @@ are stripped before injection. CLI requests default to `GITLAB_TOKEN` and return
 only a generated placeholder plus safe host configuration guidance. Bots use
 `glab api user` to verify access, without performing a real-token auth login.
 
+Saved bot and inherited workspace credentials are available in every
+conversation of the same bot. When a turn calls `request_secret` and an eligible
+saved rule matches the exact GitLab origin and adapter, the worker continues the
+same turn with a non-secret placeholder before asking a human. This lookup
+checks metadata and respects per-bot workspace exclusions and egress policy.
+The proxy remains responsible for decrypting the credential and enforcing
+authorization on each request. The worker tries a saved credential once per
+GitLab adapter in a turn so a rejected token can still be replaced through the
+normal secret request flow. This keeps a new conversation from pausing just
+because its model session has never seen the CLI placeholder.
+
 Previously registered origins are retained in `gitlab_known_origins` until their
 workspace is deleted. This is revocation metadata, not an active registration.
 It prevents a legacy exact-domain or parent-domain workspace secret from restoring

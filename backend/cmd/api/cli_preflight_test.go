@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 
@@ -139,10 +140,15 @@ func TestClaudeSonnetPreflightAndPrivateCredentials(t *testing.T) {
 	}
 	computer.runErr = errors.New("fixture-private-provider-key")
 	run(engine.FailureProvider)
+	computer.runErr = engine.Stream(ctx, "claude", io.NopCloser(strings.NewReader(`{"type":"assistant","message":"fixture-private"}`)), nil, func(engine.Event) error { return nil })
+	if computer.runErr == nil {
+		t.Fatal("malformed stream accepted")
+	}
+	run(engine.FailureStreamFormat)
 	canceled, cancel := context.WithCancel(ctx)
 	cancel()
 	err = runCLITurn(canceled, pool, q, ring, computer, session, func(engine.Event) error { return nil })
-	if !errors.Is(err, context.Canceled) || computer.calls != 3 {
+	if !errors.Is(err, context.Canceled) || computer.calls != 4 {
 		t.Fatal("canceled request reached CLI")
 	}
 }

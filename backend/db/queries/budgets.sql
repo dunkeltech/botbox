@@ -1,6 +1,8 @@
 -- name: ListBudgetState :many
 SELECT b.*,COALESCE((SELECT sum(u.cost_micros) FROM usage_records u WHERE u.workspace_id=b.workspace_id AND (b.bot_id IS NULL OR u.bot_id=b.bot_id)
-AND u.created_at >= date_trunc(b.period,sqlc.arg(as_of)::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'),0)::bigint AS spent_micros
+AND u.created_at >= date_trunc(b.period,sqlc.arg(as_of)::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'),0)::bigint AS spent_micros,
+COALESCE((SELECT sum(u.reserved_micros) FROM usage_records u WHERE u.workspace_id=b.workspace_id AND (b.bot_id IS NULL OR u.bot_id=b.bot_id)
+AND u.created_at >= date_trunc(b.period,sqlc.arg(as_of)::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'),0)::bigint AS reserved_micros
 FROM budgets b WHERE b.workspace_id=$1 AND (b.bot_id IS NULL OR b.bot_id=sqlc.arg(bot_id)::uuid);
 
 -- name: SetBudget :one
@@ -33,6 +35,9 @@ SELECT pg_advisory_lock(hashtextextended(sqlc.arg(lock_key)::text, 1));
 -- name: UnlockWorkspaceSpend :exec
 SELECT pg_advisory_unlock(hashtextextended(sqlc.arg(lock_key)::text, 1));
 
+-- name: LockWorkspaceBudgetCheck :exec
+SELECT pg_advisory_xact_lock(hashtextextended(sqlc.arg(lock_key)::text, 1));
+
 -- name: ResolveBudgetApprovals :exec
 UPDATE approvals SET status='approved',decided_by=$3,decided_at=now() WHERE workspace_id=$1 AND budget_id=$2 AND status='pending';
 
@@ -42,11 +47,11 @@ SELECT * FROM approvals WHERE workspace_id=$1 AND status='pending' ORDER BY crea
 -- name: HasUnpricedAPIUsage :one
 SELECT EXISTS(SELECT 1 FROM usage_records u WHERE u.workspace_id=$1
 AND (sqlc.narg(bot_id)::uuid IS NULL OR u.bot_id=sqlc.narg(bot_id)::uuid)
-AND u.source IN ('api_response','proxy_meter') AND u.billing_kind='metered' AND u.cost_micros IS NULL
+AND u.source IN ('api_response','proxy_meter') AND u.billing_kind='metered' AND u.cost_micros IS NULL AND u.reserved_micros IS NULL
 AND u.created_at >= date_trunc(sqlc.arg(period)::text,sqlc.arg(as_of)::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC');
 
 -- name: SettleProxyUsage :execrows
-UPDATE usage_records SET input_tokens=$3,output_tokens=$4,cache_tokens=$5,cost_micros=$6
+UPDATE usage_records SET input_tokens=$3,output_tokens=$4,cache_tokens=$5,cost_micros=$6,reserved_micros=NULL
 WHERE workspace_id=$1 AND request_id=$2 AND source='proxy_meter';
 
 -- name: GetRunningBotTurn :one
@@ -54,3 +59,13 @@ SELECT t.* FROM bot_turns t WHERE t.workspace_id=$1 AND t.bot_id=$2 AND t.status
 
 -- name: HasProxyTurnUsage :one
 SELECT EXISTS(SELECT 1 FROM usage_records WHERE workspace_id=$1 AND turn_id=$2 AND source='proxy_meter');
+
+-- name: ReserveProxyUsage :execrows
+UPDATE usage_records SET reserved_micros=$3
+WHERE workspace_id=$1 AND request_id=$2 AND source='proxy_meter' AND cost_micros IS NULL;
+
+-- name: GroupBudgetCommitment :one
+SELECT COALESCE(sum(COALESCE(u.cost_micros,u.reserved_micros)),0)::bigint AS committed_micros,
+count(*) FILTER (WHERE u.cost_micros IS NULL AND u.reserved_micros IS NULL AND u.billing_kind='metered')::bigint AS unknown_rows
+FROM usage_records u JOIN bot_turns t ON t.workspace_id=u.workspace_id AND t.id=u.turn_id
+WHERE u.workspace_id=$1 AND t.conversation_id=$2;

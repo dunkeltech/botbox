@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -135,7 +136,11 @@ func run(logger *slog.Logger) error {
 		if natsURL := strings.TrimSpace(os.Getenv("NATS_URL")); natsURL != "" {
 			worker := &engine.Worker{Pool: pool, AuthBroker: authBroker, Execute: modelExecutor(pool, queries, keyRing, computeDrv, authBroker)}
 			ready := make(chan struct{})
-			queue, queueErr := events.OpenQueue(natsURL, func(ctx context.Context, job events.TurnNotification) error {
+			concurrency, err := turnConcurrency(os.Getenv("BOTBOX_TURN_CONCURRENCY"))
+			if err != nil {
+				return err
+			}
+			queue, queueErr := events.OpenQueueWithConcurrency(natsURL, concurrency, func(ctx context.Context, job events.TurnNotification) error {
 				select {
 				case <-ready:
 					return worker.Process(ctx, job)
@@ -167,6 +172,13 @@ func run(logger *slog.Logger) error {
 				return queue.PublishConversation(eventCtx, session.WorkspaceID, session.ConversationID, data)
 			}
 			close(ready)
+			inputCtx, stopInput := context.WithCancel(ctx)
+			inputDone := make(chan struct{})
+			defer func() { stopInput(); <-inputDone }()
+			go func() {
+				defer close(inputDone)
+				collectGroupInputs(inputCtx, worker, logger)
+			}()
 			cfg.ReadinessCheck = func(checkCtx context.Context) error {
 				if err := pool.Ping(checkCtx); err != nil {
 					return err
@@ -218,6 +230,24 @@ func run(logger *slog.Logger) error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		return srv.Shutdown(shutdownCtx)
+	}
+}
+
+func collectGroupInputs(ctx context.Context, worker *engine.Worker, logger *slog.Logger) {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		pass, cancel := context.WithTimeout(ctx, 15*time.Second)
+		err := worker.CollectGroupInputs(pass)
+		cancel()
+		if err != nil && ctx.Err() == nil {
+			logger.Warn("group input collection failed", "err", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
 	}
 }
 
@@ -315,4 +345,15 @@ func initComputeDriverWithBroker(logger *slog.Logger, authBrokerEnabled bool) (c
 	}
 	logger.Info("initialized in-process memory compute driver")
 	return memDrv, memDrv.Close, nil
+}
+
+func turnConcurrency(value string) (int, error) {
+	if strings.TrimSpace(value) == "" {
+		return 4, nil
+	}
+	count, err := strconv.Atoi(value)
+	if err != nil || count < 1 || count > 64 {
+		return 0, errors.New("BOTBOX_TURN_CONCURRENCY must be 1..64")
+	}
+	return count, nil
 }

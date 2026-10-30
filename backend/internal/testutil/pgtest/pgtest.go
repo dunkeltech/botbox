@@ -4,6 +4,7 @@ package pgtest
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"net"
 	"os"
 	"os/exec"
@@ -13,11 +14,37 @@ import (
 
 	migrations "github.com/dunkeltech/botbox/backend/db"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/pressly/goose/v3"
 )
 
 // Open starts an isolated ephemeral PostgreSQL cluster in a temporary directory,
 // runs all embedded SQL migrations, and registers cleanup to stop the server.
 func Open(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	return open(t, migrations.MigrateUp)
+}
+
+// OpenAt migrates an isolated cluster to the given version for upgrade tests.
+func OpenAt(t *testing.T, version int64) *pgxpool.Pool {
+	t.Helper()
+	return open(t, func(ctx context.Context, pool *pgxpool.Pool) error {
+		files, err := fs.Sub(migrations.Files, "migrations")
+		if err != nil {
+			return err
+		}
+		sqlDB := stdlib.OpenDBFromPool(pool)
+		defer func() { _ = sqlDB.Close() }()
+		provider, err := goose.NewProvider(goose.DialectPostgres, sqlDB, files)
+		if err != nil {
+			return err
+		}
+		_, err = provider.UpTo(ctx, version)
+		return err
+	})
+}
+
+func open(t *testing.T, migrate func(context.Context, *pgxpool.Pool) error) *pgxpool.Pool {
 	t.Helper()
 
 	if _, err := exec.LookPath("initdb"); err != nil {
@@ -87,7 +114,7 @@ func Open(t *testing.T) *pgxpool.Pool {
 	if err := pool.Ping(ctx); err != nil {
 		t.Fatalf("postgres ping: %v", err)
 	}
-	if err := migrations.MigrateUp(ctx, pool); err != nil {
+	if err := migrate(ctx, pool); err != nil {
 		t.Fatalf("migrate up: %v", err)
 	}
 

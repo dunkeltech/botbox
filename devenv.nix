@@ -21,6 +21,7 @@
     pkgs.kubernetes-helm
     pkgs.caddy
     pkgs.jq
+    pkgs.playwright-driver
     pkgs.playwright-driver.browsers
   ];
 
@@ -31,6 +32,7 @@
   languages.javascript.package = pkgs.nodejs_24;
 
   env = {
+    BOTBOX_PLAYWRIGHT_MODULE = "${pkgs.playwright-driver}";
     PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
     BOTBOX_COMPUTE_DRIVER = "docker";
     # Host tools use loopback. The egress proxy runs in Docker and reaches this

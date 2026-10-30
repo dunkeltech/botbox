@@ -3,7 +3,10 @@ package engine_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -220,6 +223,75 @@ func TestParseClaudeStreamRejectsNonBlockContent(t *testing.T) {
 			t.Parallel()
 			if _, err := engine.ParseClaudeStream(context.Background(), strings.NewReader(line+"\n")); err == nil {
 				t.Fatal("expected error")
+			}
+		})
+	}
+}
+
+func TestClaudeStreamAuxiliaryMessages(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		input  string
+		events []engine.Event
+	}{
+		{`{"type":"system","subtype":"notification","message":"fixture-private-notice"}`, []engine.Event{{Kind: engine.EventKindStatus, Status: "thinking"}}},
+		{`{"type":"tool_progress","message":"fixture-private-notice","usage":"future shape","event":1}`, nil},
+		{`{"type":"stream_event","message":"fixture-private-notice","event":{"delta":{"type":"text_delta","text":"delta"}}}`, []engine.Event{{Kind: engine.EventKindTextDelta, Text: "delta"}}},
+		{`{"type":"result","message":"fixture-private-notice","usage":{"input_tokens":1,"output_tokens":2}}`, []engine.Event{{Kind: engine.EventKindUsage, InputTokens: 1, OutputTokens: 2}, {Kind: engine.EventKindStatus, Status: "idle"}}},
+		{`{"type":"result","is_error":true,"message":"fixture-private-provider-error"}`, []engine.Event{{Kind: engine.EventKindError, ErrorCode: "cli_error", ErrorMessage: "claude reported error result"}, {Kind: engine.EventKindStatus, Status: "idle"}}},
+	} {
+		t.Run(tc.input, func(t *testing.T) {
+			t.Parallel()
+			before := `{"type":"assistant","message":{"content":[{"type":"text","text":"before"}]}}`
+			after := `{"type":"assistant","message":{"content":[{"type":"text","text":"after"}]}}`
+			input := strings.Join([]string{before, tc.input, after}, "\n")
+			want := []engine.Event{{Kind: engine.EventKindMessage, Text: "before"}}
+			want = append(want, tc.events...)
+			want = append(want, engine.Event{Kind: engine.EventKindMessage, Text: "after"})
+			parsed, err := engine.ParseClaudeStream(context.Background(), strings.NewReader(input))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var live []engine.Event
+			if err := engine.Stream(context.Background(), "claude", io.NopCloser(strings.NewReader(input)), nil, func(ev engine.Event) error {
+				live = append(live, ev)
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(parsed, want) || !reflect.DeepEqual(live, want) {
+				t.Fatalf("events differ: parsed=%+v live=%+v want=%+v", parsed, live, want)
+			}
+			for _, ev := range live {
+				if strings.Contains(fmt.Sprintf("%+v", ev), "fixture-private") {
+					t.Fatal("auxiliary message exposed")
+				}
+			}
+		})
+	}
+}
+
+func TestClaudeStreamRejectsMalformedMessages(t *testing.T) {
+	t.Parallel()
+	for _, input := range []string{
+		`null`, `[]`, `{}`, `{"type":null}`, `{"type":1}`, `{"type":""}`,
+		`{"type":"assistant"}`, `{"type":"user"}`,
+		`{"type":"assistant","message":null}`, `{"type":"user","message":null}`,
+		`{"type":"assistant","message":"fixture-private"}`, `{"type":"user","message":false}`,
+		`{"type":"assistant","message":{}}`, `{"type":"user","message":{"content":null}}`,
+		`{"type":"assistant","message":{"content":"fixture-private"}}`,
+		`{"type":"assistant","message":{"content":[1]}}`,
+		`{"type":"result","usage":"fixture-private"}`,
+		`{"type":"stream_event","event":{"delta":{"text":3}}}`,
+	} {
+		t.Run(input, func(t *testing.T) {
+			t.Parallel()
+			_, err := engine.ParseClaudeStream(context.Background(), strings.NewReader(input))
+			if engine.TurnFailureCode(err) != engine.FailureStreamFormat {
+				t.Fatalf("expected format failure, got %v", err)
+			}
+			if strings.Contains(err.Error(), "fixture-private") {
+				t.Fatal("private stream payload exposed")
 			}
 		})
 	}

@@ -34,6 +34,7 @@ Adopt **Option B** and reject **Option A**.
 - Bots invoke a dedicated `request_secret` tool (exposed via `MCPHandler` for CLIs and as a built-in engine tool for API mode).
 - Creating a request atomically inserts a `secret_requests` row, posts a `secret_request` card message in the conversation (without any plaintext or secret preview), and transitions the originating turn/tool call into `waiting_secret` (`secret_required`).
 - Waiting for human input does not expire as a stale running turn (`ExpireStaleBotTurns`) and does not hold workspace spend locks or bot queue locks (`backend/internal/engine/worker.go`).
+- Resuming a turn publishes a fresh JetStream notification without a turn-based deduplication ID. Reusing that ID would suppress fulfillment within the duplicate window and strand the queued turn; persisted worker claims already prevent duplicate execution.
 - Fulfillment uses an exclusive durable claim (`fulfilling`) keyed by an `operation_id` so concurrent `fulfill`, `deny`, `expiry`, and `cancel` operations have exactly one winner and no DB transaction stays open across vault/broker/proxy I/O.
 - RBAC (`backend/internal/workspaces/rbac.go`): `owner`, `admin`, and eligible conversation `member` users may fulfill (`ephemeral` or `bot_secret`) or deny a `secret_request`. Persisting a `workspace_secret` is restricted to `owner` and `admin` (`403` for `member`). `viewer` receives `403`; non-members and cross-workspace IDs receive `404`. Fulfilling a secret request never expands the host allowlist (`new_host` approval stays separate).
 

@@ -21,4 +21,7 @@ rm -f /tmp/.X0-lock /tmp/.X11-unix/X0
 # Ensure user directories exist even when a fresh named volume is mounted onto /home/bot.
 mkdir -p "${HOME:-/home/bot}/.pki/nssdb" "${HOME:-/home/bot}/workspace"
 
+# Remove stale Chromium singleton locks and crash state left on the /home/bot volume.
+/usr/local/bin/chromium-launch.sh --prepare-only
+
 exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/botbox.conf

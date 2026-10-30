@@ -2,6 +2,7 @@ package engine_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"reflect"
@@ -135,5 +136,49 @@ func TestClaudeAssistantTextWithoutPartialEvents(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].Kind != engine.EventKindMessage || got[0].Text != "Tests passed" {
 		t.Fatalf("assistant text lost: %+v", got)
+	}
+}
+
+func TestLiveStreamFormatFailureCategory(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ cli, input string }{
+		{"claude", `{"type":"assistant","message":"fixture-private"}`},
+		{"codex", `{"type":"fixture-private"`},
+		{"agy", `{"type":"fixture-private"`},
+		{"claude", strings.Repeat("x", (1<<20)+1)},
+	} {
+		t.Run(tc.cli, func(t *testing.T) {
+			t.Parallel()
+			err := engine.Stream(context.Background(), tc.cli, io.NopCloser(strings.NewReader(tc.input)), nil, func(engine.Event) error { return nil })
+			if engine.TurnFailureCode(err) != engine.FailureStreamFormat {
+				t.Fatalf("error = %v, want stream format failure", err)
+			}
+			if strings.Contains(err.Error(), "fixture-private") {
+				t.Fatal("private stream payload exposed")
+			}
+			if tc.cli == "claude" && len(tc.input) < 1<<20 {
+				var cause *json.UnmarshalTypeError
+				if !errors.As(err, &cause) {
+					t.Fatal("parser cause lost")
+				}
+			}
+		})
+	}
+}
+
+func TestLiveStreamDoesNotMisclassifyDependencyErrors(t *testing.T) {
+	t.Parallel()
+	for _, cause := range []error{io.ErrUnexpectedEOF, context.Canceled, context.DeadlineExceeded} {
+		t.Run(cause.Error(), func(t *testing.T) {
+			t.Parallel()
+			reader, writer := io.Pipe()
+			if err := writer.CloseWithError(cause); err != nil {
+				t.Fatal(err)
+			}
+			err := engine.Stream(context.Background(), "claude", reader, nil, func(engine.Event) error { return nil })
+			if !errors.Is(err, cause) || engine.TurnFailureCode(err) != engine.FailureTurn {
+				t.Fatalf("dependency error misclassified: %v", err)
+			}
+		})
 	}
 }

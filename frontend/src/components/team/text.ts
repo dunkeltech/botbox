@@ -6,7 +6,7 @@ type Member = components['schemas']['GroupMember'];
 export interface MentionTarget {
   id: string;
   name: string;
-  kind: 'user' | 'bot';
+  kind: 'user' | 'bot' | 'all';
 }
 
 /** The @ being typed at the caret, if it is not inside a word. */
@@ -44,21 +44,20 @@ export function filterByQuery<T extends { name: string }>(
   return items.filter((item) => item.name.toLowerCase().includes(needle));
 }
 
-/** Splits text so @Name tokens that match the roster can be marked. */
+/** Splits text so roster mentions and the reserved @all token can be marked. */
 export function mentionParts(
   content: string,
   names: string[],
 ): { text: string; mention: boolean }[] {
-  const sorted = [...new Set(names.filter((name) => name.trim() !== ''))].sort(
-    (a, b) => b.length - a.length,
-  );
-  if (sorted.length === 0) return [{ text: content, mention: false }];
+  const sorted = [
+    ...new Set(['all', ...names.filter((name) => name.trim() !== '')]),
+  ].sort((a, b) => b.length - a.length);
   const escaped = sorted.map((name) =>
     name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
   );
   const pattern = new RegExp(
-    `(^|[^A-Za-z0-9])@(${escaped.join('|')})(?![A-Za-z0-9])`,
-    'gi',
+    `(^|[^\\p{L}\\p{N}\\p{M}_])@(${escaped.join('|')})(?![\\p{L}\\p{N}\\p{M}_])`,
+    'giu',
   );
   const parts: { text: string; mention: boolean }[] = [];
   let cursor = 0;

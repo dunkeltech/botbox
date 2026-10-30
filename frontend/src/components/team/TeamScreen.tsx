@@ -24,7 +24,7 @@ import {
   type TeamSidebarSelection,
 } from '@/components/team/TeamSidebar';
 import { groupSettingsBody, initials } from '@/components/team/text';
-import { Alert, BotAvatar } from '@/components/ui';
+import { Alert, BotAvatar, Button, ModalDialog } from '@/components/ui';
 import { requestJson } from '@/lib/api-client';
 import { resolveErrorKey, type ErrorTranslationKey } from '@/lib/errors';
 import type {
@@ -132,6 +132,11 @@ export function TeamScreen({
     null,
   );
   const [saveError, setSaveError] = useState<ErrorTranslationKey | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Group | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<ErrorTranslationKey | null>(
+    null,
+  );
 
   const query = shell.hasShellHeader ? shell.searchQuery : localQuery;
   const setQuery = shell.hasShellHeader ? shell.setSearchQuery : setLocalQuery;
@@ -151,6 +156,8 @@ export function TeamScreen({
   const bots = useQuery({
     queryKey: ['bots', workspaceId],
     queryFn: () => requestJson<BotListResponse>(`${base}/bots`),
+    refetchInterval: 3000,
+    refetchOnMount: 'always',
   });
   const members = useQuery({
     queryKey: ['members', workspaceId],
@@ -172,6 +179,17 @@ export function TeamScreen({
   const humanList = members.data?.members ?? [];
 
   useEffect(() => {
+    if (
+      selection.type === 'group' &&
+      groups.data &&
+      !groupList.some((group) => group.id === selection.id)
+    ) {
+      setSelection({ type: 'none' });
+      setToolTrace(null);
+      setSelectedToolTurnKey(null);
+      setMobileToolOpen(false);
+      return;
+    }
     if (selection.type !== 'none') return;
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -189,7 +207,7 @@ export function TeamScreen({
     const first = groups.data?.[0];
     if (!first) return;
     setSelection({ type: 'group', id: first.id });
-  }, [groups.data, groupList, botList, selection.type]);
+  }, [groups.data, groupList, botList, selection]);
 
   useEffect(() => {
     if (!drawerOpen && !mobileToolOpen) return;
@@ -345,6 +363,41 @@ export function TeamScreen({
     }
   }
 
+  async function deleteGroup() {
+    if (!deleteTarget || deleting) return;
+    const id = deleteTarget.id;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await requestJson<void>(`${base}/groups/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
+      // Stop an older list response from putting the deleted group back.
+      await client.cancelQueries({ queryKey: ['groups', workspaceId] });
+      client.setQueryData<Group[]>(['groups', workspaceId], (current) =>
+        (current ?? []).filter((group) => group.id !== id),
+      );
+      client.removeQueries({ queryKey: ['group-messages', workspaceId, id] });
+      setSelection((current) =>
+        current.type === 'group' && current.id === id
+          ? { type: 'none' }
+          : current,
+      );
+      setToolTrace(null);
+      setSelectedToolTurnKey(null);
+      setMobileToolOpen(false);
+      setDeleteTarget(null);
+      void client.invalidateQueries({ queryKey: ['approvals', workspaceId] });
+      void client.invalidateQueries({
+        queryKey: ['notifications', workspaceId],
+      });
+    } catch (err) {
+      setDeleteError(resolveErrorKey(err));
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   let main: ReactNode;
   if (groups.isPending) {
     main = <p className="p-6 text-[15px] text-ink-2">{actions('loading')}</p>;
@@ -419,6 +472,17 @@ export function TeamScreen({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {canChange ? (
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setDeleteError(null);
+                  setDeleteTarget(selectedGroup);
+                }}
+              >
+                {t('deleteGroup')}
+              </Button>
+            ) : null}
             <div className="hidden items-center -space-x-1.5 sm:flex">
               {selectedGroup.members.slice(0, 4).map((member) => {
                 if (member.type === 'bot') {
@@ -618,6 +682,34 @@ export function TeamScreen({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      {deleteTarget ? (
+        <ModalDialog
+          open
+          title={t('deleteGroupTitle', { name: deleteTarget.name })}
+          closeLabel={actions('close')}
+          onClose={() => {
+            if (!deleting) setDeleteTarget(null);
+          }}
+        >
+          <p>{t('deleteGroupWarning')}</p>
+          {deleteError ? (
+            <Alert tone="warning">{errors(deleteError)}</Alert>
+          ) : null}
+          <div className="flex flex-wrap justify-end gap-3">
+            <Button
+              variant="secondary"
+              disabled={deleting}
+              autoFocus
+              onClick={() => setDeleteTarget(null)}
+            >
+              {actions('cancel')}
+            </Button>
+            <Button disabled={deleting} onClick={() => void deleteGroup()}>
+              {deleting ? t('deletingGroup') : t('deleteGroup')}
+            </Button>
+          </div>
+        </ModalDialog>
+      ) : null}
       {!shell.hasShellHeader ? (
         <div className="bg-terminal px-3 py-2">
           <label htmlFor="team-search" className="sr-only">

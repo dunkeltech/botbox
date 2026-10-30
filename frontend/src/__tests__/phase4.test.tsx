@@ -82,6 +82,9 @@ describe('Phase 4 chat and budgets', () => {
     expect(
       await screen.findByText('Queued · 2 turns ahead'),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Stop response' }),
+    ).not.toBeInTheDocument();
     expect(screen.getByText('<script>unsafe()</script>')).toBeInTheDocument();
     expect(container.querySelector('script')).toBeNull();
     expect(screen.getByText(messages.chat.privacy)).toBeInTheDocument();
@@ -106,6 +109,94 @@ describe('Phase 4 chat and budgets', () => {
       expect(body.content).toBe('Run tests');
       expect(body.id).toMatch(/^[0-9a-f-]{36}$/);
     });
+  });
+  it('stops only the running turn when a newer message is queued', async () => {
+    let stopRequested = false;
+    request.mockImplementation((path) => {
+      if (path.endsWith('/dm'))
+        return Promise.resolve({ id: 'conversation-1' });
+      if (path.endsWith('/stop')) {
+        stopRequested = true;
+        return Promise.resolve(undefined);
+      }
+      if (path.endsWith('/messages')) {
+        return Promise.resolve({
+          messages: [],
+          turns: [
+            { id: 'later', status: 'queued', queueAhead: 1, errorCode: '' },
+            {
+              id: 'active',
+              status: 'running',
+              queueAhead: 0,
+              errorCode: '',
+              stopRequested,
+            },
+          ],
+        });
+      }
+      return Promise.resolve({ budgets: [] });
+    });
+    show(
+      <ChatPanel
+        workspaceId="ws-1"
+        userId="user-1"
+        botId="bot-1"
+        name="Atlas"
+        avatarSeed="atlas-seed"
+        variant="slack"
+      />,
+    );
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Stop response' }),
+    );
+    expect(request).toHaveBeenCalledWith(
+      '/api/workspaces/ws-1/conversations/conversation-1/turns/active/stop',
+      { method: 'POST' },
+    );
+    expect(
+      await screen.findByRole('button', { name: 'Stopping…' }),
+    ).toBeDisabled();
+    expect(
+      request.mock.calls.filter(([, options]) => options?.method === 'POST'),
+    ).toHaveLength(2);
+  });
+  it('leaves the stop action available after a failed request', async () => {
+    request.mockImplementation((path) => {
+      if (path.endsWith('/dm'))
+        return Promise.resolve({ id: 'conversation-1' });
+      if (path.endsWith('/stop'))
+        return Promise.reject(new Error('private dependency detail'));
+      if (path.endsWith('/messages')) {
+        return Promise.resolve({
+          messages: [],
+          turns: [
+            { id: 'active', status: 'running', queueAhead: 0, errorCode: '' },
+          ],
+        });
+      }
+      return Promise.resolve({ budgets: [] });
+    });
+    show(
+      <ChatPanel
+        workspaceId="ws-1"
+        userId="user-1"
+        botId="bot-1"
+        name="Atlas"
+        avatarSeed="atlas-seed"
+      />,
+    );
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Stop response' }),
+    );
+    expect(
+      await screen.findByText(messages.chat.stopTurnFailed),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole('button', { name: 'Stop response' }),
+    ).toBeEnabled();
+    expect(
+      screen.queryByText('private dependency detail'),
+    ).not.toBeInTheDocument();
   });
   it('does not reuse another user’s private history after switching accounts', async () => {
     const frame = (userId: string) => (
@@ -351,6 +442,11 @@ describe('turn failure recovery', () => {
     ['engine.computer_restart_required', 'replace its simulated computer'],
     ['engine.proxy_unavailable', 'egress proxy'],
     ['engine.credentials_missing', 'provider credential'],
+    ['engine.provider_failed', 'The model provider could not complete'],
+    [
+      'engine.stream_format_invalid',
+      "bot.Box could not read the bot's response",
+    ],
     ['fixture-private-key', 'could not finish this turn'],
     ['__proto__', 'could not finish this turn'],
   ])('shows a safe recovery hint for %s', async (code, expected) => {

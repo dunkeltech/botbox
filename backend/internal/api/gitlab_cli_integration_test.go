@@ -60,9 +60,16 @@ func TestSelfHostedGitLabCLIGrantsAndRevocation(t *testing.T) {
 	}
 	group := askGroup(t, h, base, owner.AccessToken, "GitLab CLI", atlas.Id, false, 20, []any{}, []any{groupBot(atlas.Id, "lead")})
 	adapterID := "gitlab_api"
+	var tryAgain bool
+	var savedCredentialPrompt string
 	worker := &engine.Worker{Pool: h.pool, Now: h.clock.Now, Enqueue: queue.Enqueue, Execute: func(_ context.Context, s engine.Session, emit func(engine.Event) error) error {
 		if s.ContinuationPrompt != "" {
-			return emit(engine.Event{Kind: engine.EventKindTextDelta, Text: "Continue with the credential placeholder"})
+			if strings.Contains(s.ContinuationPrompt, "saved GitLab credential") {
+				savedCredentialPrompt = s.ContinuationPrompt
+			}
+			if !tryAgain {
+				return emit(engine.Event{Kind: engine.EventKindTextDelta, Text: "Continue with the credential placeholder"})
+			}
 		}
 		input, _ := json.Marshal(map[string]string{"kind": "cli_egress", "adapter_id": adapterID, "target_origin": origin, "reason": "Use GitLab CLI"})
 		return emit(engine.Event{Kind: engine.EventKindToolCall, ToolID: "gitlab-credential", ToolName: "request_secret", ToolInput: input})
@@ -263,6 +270,61 @@ func TestSelfHostedGitLabCLIGrantsAndRevocation(t *testing.T) {
 	// Persistent bot grants are destroyed by unassignment and never reappear on reassignment.
 	botGrant := request("bot_secret", false)
 	call(client, "/api/v4/user", *botGrant.PlaceholderValue, true)
+	drainTurns(t, worker, queue, 2)
+	planning := createGroup(t, h, base, owner.AccessToken, groupSettings{
+		name: "Planning", lead: atlas.Id, turnLimit: 20, members: []any{groupBot(mia.Id, ""), groupBot(atlas.Id, "lead")},
+	})
+	postGroup(t, h, base, owner.AccessToken, planning.Id, "Check GitLab without an explicit mention")
+	drainTurns(t, worker, queue, 2)
+	planningHistory := groupHistory(t, h, base, owner.AccessToken, planning.Id)
+	if !strings.Contains(savedCredentialPrompt, "GITLAB_TOKEN=botbox-placeholder-") ||
+		!strings.Contains(savedCredentialPrompt, "GITLAB_HOST=gitlab.example.org") ||
+		strings.Contains(savedCredentialPrompt, realToken) {
+		t.Fatal("lead did not receive safe CLI guidance for the saved credential")
+	}
+	if len(planningHistory.Turns) != 1 || planningHistory.Turns[0].BotId == nil || *planningHistory.Turns[0].BotId != atlas.Id ||
+		planningHistory.Turns[0].Status != "completed" || getGroup(t, h, base, owner.AccessToken, planning.Id).Paused {
+		t.Fatal("expected the lead's original turn to complete without pausing the group")
+	}
+	for _, message := range planningHistory.Messages {
+		if message.SecretRequest != nil || strings.Contains(message.Content, realToken) {
+			t.Fatal("saved credential created a request or appeared in chat")
+		}
+	}
+
+	// The REST credential does not satisfy Git HTTPS or grant access to another bot.
+	for _, tc := range []struct{ adapter, name string }{{"gitlab_git", "Atlas"}, {"gitlab_api", "Mia"}} {
+		adapterID = tc.adapter
+		savedCredentialPrompt = ""
+		postGroup(t, h, base, owner.AccessToken, planning.Id, "@"+tc.name+" check GitLab")
+		drainTurns(t, worker, queue, 2)
+		if savedCredentialPrompt != "" {
+			t.Fatalf("unexpected saved credential for %s with %s", tc.name, tc.adapter)
+		}
+		messages := groupHistory(t, h, base, owner.AccessToken, planning.Id).Messages
+		card := messages[len(messages)-1].SecretRequest
+		if card == nil || card.Status != "pending" {
+			t.Fatal("expected a human request when the scoped credential is missing")
+		}
+		must(http.MethodPost, base+"/secret-requests/"+card.SecretRequestId.String()+"/deny", nil, 200)
+		drainTurns(t, worker, queue, 2)
+	}
+	// A failed probe may still ask the human to replace the saved credential.
+	tryAgain = true
+	start()
+	tryAgain = false
+	var replacement *apigen.SecretRequestSummary
+	for _, message := range history().Messages {
+		if card := message.SecretRequest; card != nil && card.Status == "pending" {
+			replacement = card
+			break
+		}
+	}
+	if replacement == nil {
+		t.Fatal("expected a human request after retrying the saved credential")
+	}
+	must(http.MethodPost, base+"/secret-requests/"+replacement.SecretRequestId.String()+"/deny", nil, 200)
+	drainTurns(t, worker, queue, 2)
 	assignments(atlas.Id, []string{})
 	if err = proxy.RevalidatePassthrough(ctx); err != nil {
 		t.Fatal(err)

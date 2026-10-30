@@ -14,7 +14,8 @@ import (
 )
 
 // Check blocks exhausted limits and persists one pending approval per budget.
-// The caller must serialize requests and usage settlement for the workspace.
+// The caller must hold the short workspace admission lock. Reservations use
+// capacity but are not billed spend and must not create budget approvals.
 func Check(ctx context.Context, q *db.Queries, workspaceID, botID uuid.UUID, now time.Time) error {
 	ws := pgtype.UUID{Bytes: workspaceID, Valid: true}
 	bot := pgtype.UUID{Bytes: botID, Valid: true}
@@ -44,6 +45,9 @@ func Check(ctx context.Context, q *db.Queries, workspaceID, botID uuid.UUID, now
 			if _, err = notify.WorkspaceApproval(ctx, q, ws, approvalID); err != nil {
 				return err
 			}
+			return llmproxy.ErrBudgetExceeded
+		}
+		if b.ReservedMicros >= b.LimitMicros-b.SpentMicros {
 			return llmproxy.ErrBudgetExceeded
 		}
 	}

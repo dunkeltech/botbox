@@ -11,7 +11,6 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/orchestrator"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const (
@@ -44,8 +43,8 @@ func MarshalSignal(conversationID uuid.UUID, ids []uuid.UUID) ([]byte, error) {
 }
 
 // HumanMentions inserts one mention row per named human who has not muted the
-// group. The same name twice is one row. q must be the transaction that owns
-// the message, so a rolled-back post does not leave a notice behind.
+// group. The same name twice is one row. The notice commits with the post or
+// bot turn completion that caused it.
 func HumanMentions(ctx context.Context, q *db.Queries, workspaceID, conversationID, messageID pgtype.UUID, content string) ([]uuid.UUID, error) {
 	rows, err := q.ListConversationNotify(ctx, db.ListConversationNotifyParams{WorkspaceID: workspaceID, ConversationID: conversationID})
 	if err != nil {
@@ -53,25 +52,6 @@ func HumanMentions(ctx context.Context, q *db.Queries, workspaceID, conversation
 	}
 	_, humans := orchestrator.ParseMentions(content, roster(rows))
 	return insertEach(ctx, q, workspaceID, conversationID, messageID, pgtype.UUID{}, kindMention, mentionIDs(humans, people(rows)))
-}
-
-// HumanMentionsCommit stores mentions in their own transaction. A bot reply is
-// already durable when routing runs, and a full follow-up queue rolls the plan
-// back. The mention still has to stick to the stored reply.
-func HumanMentionsCommit(ctx context.Context, pool *pgxpool.Pool, workspaceID, conversationID, messageID pgtype.UUID, content string) ([]uuid.UUID, error) {
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	ids, err := HumanMentions(ctx, db.New(tx), workspaceID, conversationID, messageID, content)
-	if err != nil {
-		return nil, err
-	}
-	if err = tx.Commit(ctx); err != nil {
-		return nil, err
-	}
-	return ids, nil
 }
 
 // Approval notifies humans who may decide this group card. notify=mentions and

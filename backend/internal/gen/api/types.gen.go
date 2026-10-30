@@ -411,6 +411,48 @@ func (e GroupAnswerPolicy) Valid() bool {
 	}
 }
 
+// Defines values for GroupInputRecipientState.
+const (
+	GroupInputRecipientStateReplied     GroupInputRecipientState = "replied"
+	GroupInputRecipientStateUnavailable GroupInputRecipientState = "unavailable"
+	GroupInputRecipientStateWaiting     GroupInputRecipientState = "waiting"
+)
+
+// Valid indicates whether the value is a known member of the GroupInputRecipientState enum.
+func (e GroupInputRecipientState) Valid() bool {
+	switch e {
+	case GroupInputRecipientStateReplied:
+		return true
+	case GroupInputRecipientStateUnavailable:
+		return true
+	case GroupInputRecipientStateWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GroupInputRequestState.
+const (
+	GroupInputRequestStateCollected GroupInputRequestState = "collected"
+	GroupInputRequestStateStopped   GroupInputRequestState = "stopped"
+	GroupInputRequestStateWaiting   GroupInputRequestState = "waiting"
+)
+
+// Valid indicates whether the value is a known member of the GroupInputRequestState enum.
+func (e GroupInputRequestState) Valid() bool {
+	switch e {
+	case GroupInputRequestStateCollected:
+		return true
+	case GroupInputRequestStateStopped:
+		return true
+	case GroupInputRequestStateWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GroupMemberType.
 const (
 	GroupMemberTypeBot  GroupMemberType = "bot"
@@ -840,6 +882,7 @@ type ChatMessage struct {
 	Content       string                `json:"content"`
 	CreatedAt     time.Time             `json:"createdAt"`
 	Id            openapi_types.UUID    `json:"id"`
+	InputRequest  *GroupInputRequest    `json:"inputRequest,omitempty"`
 	Kind          ChatMessageKind       `json:"kind"`
 	Position      int64                 `json:"position"`
 	SecretRequest *SecretRequestSummary `json:"secretRequest,omitempty"`
@@ -857,10 +900,14 @@ type ChatMessageSenderType string
 
 // ChatTurn defines model for ChatTurn.
 type ChatTurn struct {
-	ErrorCode  string             `json:"errorCode"`
-	Id         openapi_types.UUID `json:"id"`
-	QueueAhead int64              `json:"queueAhead"`
-	Status     ChatTurnStatus     `json:"status"`
+	BotId      *openapi_types.UUID `json:"botId,omitempty"`
+	ErrorCode  string              `json:"errorCode"`
+	Id         openapi_types.UUID  `json:"id"`
+	QueueAhead int64               `json:"queueAhead"`
+	Status     ChatTurnStatus      `json:"status"`
+
+	// StopRequested A stop request is pending for a running turn.
+	StopRequested *bool `json:"stopRequested,omitempty"`
 }
 
 // ChatTurnStatus defines model for ChatTurn.Status.
@@ -1118,6 +1165,27 @@ type Group struct {
 
 // GroupAnswerPolicy defines model for Group.AnswerPolicy.
 type GroupAnswerPolicy string
+
+// GroupInputRecipient defines model for GroupInputRecipient.
+type GroupInputRecipient struct {
+	BotId openapi_types.UUID       `json:"botId"`
+	Name  string                   `json:"name"`
+	State GroupInputRecipientState `json:"state"`
+}
+
+// GroupInputRecipientState defines model for GroupInputRecipient.State.
+type GroupInputRecipientState string
+
+// GroupInputRequest defines model for GroupInputRequest.
+type GroupInputRequest struct {
+	Deadline   time.Time              `json:"deadline"`
+	Recipients []GroupInputRecipient  `json:"recipients"`
+	Required   bool                   `json:"required"`
+	State      GroupInputRequestState `json:"state"`
+}
+
+// GroupInputRequestState defines model for GroupInputRequest.State.
+type GroupInputRequestState string
 
 // GroupMember defines model for GroupMember.
 type GroupMember struct {

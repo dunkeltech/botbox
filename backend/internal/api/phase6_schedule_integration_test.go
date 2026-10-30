@@ -30,17 +30,21 @@ func TestPhase6GroupHandoffTurnLimitAndLoop(t *testing.T) {
 	calls := map[uuid.UUID]int{}
 	worker := &engine.Worker{Pool: h.pool, Now: h.clock.Now, Enqueue: queue.Enqueue, Execute: func(_ context.Context, s engine.Session, emit func(engine.Event) error) error {
 		calls[s.BotID]++
-		if s.ConversationID == handoff.Id && (s.Preface == "" || !strings.Contains(s.Preface, "Ship the launch") || !strings.Contains(s.Preface, "Nova") || !strings.Contains(s.Preface, "Mention the bot you hand work to.")) {
+		if s.ConversationID == handoff.Id && (s.Preface == "" || !strings.Contains(s.Preface, "Ship the launch") || !strings.Contains(s.Preface, "Nova") || !strings.Contains(s.Preface, "Request input:")) {
 			t.Errorf("preface=%q", s.Preface)
 		}
 		reply := "done"
-		if s.BotID == nova.Id {
-			reply = "@Atlas your turn"
+		if s.BotID == nova.Id && s.ContinuationPrompt == "" {
+			reply = "Atlas, your turn.\nRequest input: [\"Atlas\"]"
 		}
 		return emit(engine.Event{Kind: engine.EventKindTextDelta, Text: reply})
 	}}
 	drainTurns(t, worker, queue, 4)
-	if calls[nova.Id] != 1 || calls[atlas.Id] != 1 || len(queue.jobs) != 0 {
+	if err := worker.CollectGroupInputs(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	drainTurns(t, worker, queue, 4)
+	if calls[nova.Id] != 2 || calls[atlas.Id] != 1 || len(queue.jobs) != 0 {
 		t.Fatalf("handoff calls=%v jobs=%d", calls, len(queue.jobs))
 	}
 
@@ -50,7 +54,7 @@ func TestPhase6GroupHandoffTurnLimitAndLoop(t *testing.T) {
 	postGroup(t, h, base, owner.AccessToken, silent.Id, "Hello Atlas")
 	before := len(queue.jobs)
 	drainTurns(t, worker, queue, 4)
-	if calls[atlas.Id] != 2 || calls[nova.Id] != 1 || len(queue.jobs) != 0 || before != 1 {
+	if calls[atlas.Id] != 2 || calls[nova.Id] != 2 || len(queue.jobs) != 0 || before != 1 {
 		t.Fatalf("bot talk off calls=%v before=%d jobs=%d", calls, before, len(queue.jobs))
 	}
 
@@ -82,14 +86,28 @@ func TestPhase6GroupHandoffTurnLimitAndLoop(t *testing.T) {
 		if s.BotID == atlas.Id {
 			other = "Nova"
 		}
-		return emit(engine.Event{Kind: engine.EventKindTextDelta, Text: "@" + other + " again"})
+		return emit(engine.Event{Kind: engine.EventKindTextDelta, Text: "Again?\nRequest input: [\"" + other + "\"]"})
 	}
 	postGroup(t, h, base, owner.AccessToken, looped.Id, "@Atlas start")
-	drainTurns(t, worker, queue, 6)
+	drainInputRounds(t, worker, queue)
 	got := getGroup(t, h, base, owner.AccessToken, looped.Id)
 	if !got.Paused || got.PauseReason != "loop" || len(queue.jobs) != 0 {
 		t.Fatalf("loop pause=%s jobs=%d", mustJSON(got), len(queue.jobs))
 	}
+}
+
+func drainInputRounds(t *testing.T, worker *engine.Worker, queue *fakeTurnQueue) {
+	t.Helper()
+	for range 5 {
+		drainTurns(t, worker, queue, 8)
+		if err := worker.CollectGroupInputs(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if len(queue.jobs) == 0 {
+			return
+		}
+	}
+	t.Fatal("input chain did not stop")
 }
 
 func TestPhase6GroupBudgetAndQueueGuards(t *testing.T) {

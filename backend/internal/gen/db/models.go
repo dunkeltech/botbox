@@ -105,6 +105,7 @@ type BotTurn struct {
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 	ContinuationPrompt string             `json:"continuation_prompt"`
+	StopRequested      bool               `json:"stop_requested"`
 }
 
 type BrokerSession struct {
@@ -257,6 +258,27 @@ type GitlabWorkspaceSecretBlock struct {
 	SecretID    pgtype.UUID `json:"secret_id"`
 }
 
+type GroupInputRecipient struct {
+	WorkspaceID      pgtype.UUID `json:"workspace_id"`
+	ConversationID   pgtype.UUID `json:"conversation_id"`
+	RequestMessageID pgtype.UUID `json:"request_message_id"`
+	BotID            pgtype.UUID `json:"bot_id"`
+	BotName          string      `json:"bot_name"`
+	TurnID           pgtype.UUID `json:"turn_id"`
+	ReplyMessageID   pgtype.UUID `json:"reply_message_id"`
+}
+
+type GroupInputRequest struct {
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	ConversationID pgtype.UUID        `json:"conversation_id"`
+	MessageID      pgtype.UUID        `json:"message_id"`
+	RequesterBotID pgtype.UUID        `json:"requester_bot_id"`
+	Deadline       pgtype.Timestamptz `json:"deadline"`
+	Required       bool               `json:"required"`
+	ResumeTurnID   pgtype.UUID        `json:"resume_turn_id"`
+	State          string             `json:"state"`
+}
+
 type Invitation struct {
 	ID          pgtype.UUID        `json:"id"`
 	WorkspaceID pgtype.UUID        `json:"workspace_id"`
@@ -378,19 +400,20 @@ type SystemInfo struct {
 }
 
 type UsageRecord struct {
-	ID           pgtype.UUID        `json:"id"`
-	WorkspaceID  pgtype.UUID        `json:"workspace_id"`
-	BotID        pgtype.UUID        `json:"bot_id"`
-	TurnID       pgtype.UUID        `json:"turn_id"`
-	RequestID    pgtype.UUID        `json:"request_id"`
-	Source       string             `json:"source"`
-	Model        string             `json:"model"`
-	InputTokens  int64              `json:"input_tokens"`
-	OutputTokens int64              `json:"output_tokens"`
-	CacheTokens  int64              `json:"cache_tokens"`
-	CostMicros   pgtype.Int8        `json:"cost_micros"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	BillingKind  string             `json:"billing_kind"`
+	ID             pgtype.UUID        `json:"id"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	BotID          pgtype.UUID        `json:"bot_id"`
+	TurnID         pgtype.UUID        `json:"turn_id"`
+	RequestID      pgtype.UUID        `json:"request_id"`
+	Source         string             `json:"source"`
+	Model          string             `json:"model"`
+	InputTokens    int64              `json:"input_tokens"`
+	OutputTokens   int64              `json:"output_tokens"`
+	CacheTokens    int64              `json:"cache_tokens"`
+	CostMicros     pgtype.Int8        `json:"cost_micros"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	BillingKind    string             `json:"billing_kind"`
+	ReservedMicros pgtype.Int8        `json:"reserved_micros"`
 }
 
 type User struct {

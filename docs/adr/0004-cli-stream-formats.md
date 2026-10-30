@@ -33,6 +33,29 @@ Adopt **Option A** in `backend/internal/engine/stream.go`, normalizing all three
 
 Observed `agy` behavior exits cleanly with `0` while emitting non-fatal tool/permission rejections (matching `"permission denied"` or `"denied"`) on `stderr` rather than aborting stdout JSON. `ParseAgyStream` reads both `stdout` NDJSON and `stderr`, surfacing stderr denials as structured `Event{Kind: EventKindError, ErrorCode: "tool_soft_denied", ErrorMessage: ...}` events so the orchestrator and team chat UI can surface actionable feedback cleanly.
 
+### Event-specific decoding and format failures (2026-11-17)
+
+A Claude CLI turn aborted because the decoder expected every top-level `message`
+to be an object, while the CLI emitted a string. The retained session does not
+identify that stream event's type. Decode the type first, then only the fields
+needed by that event. Unknown event types are ignored; auxiliary text messages
+are not forwarded to chat. Assistant and user events must still contain a message
+object with content. Assistant content must be a block list; user content may
+also be the echoed prompt string.
+
+Decoding one shared payload schema was rejected because unrelated notices can
+use different field types. Ignoring all decode errors was rejected because it
+would silently lose assistant responses, tool results or accounting events.
+
+Malformed CLI JSON, invalid known payloads and records over the existing size
+limit carry the allowlisted `engine.stream_format_invalid` category through the
+live stream and turn runner. The private cause remains available for error
+matching, but its text and payload are not included in the public error or log
+message. Transport, sink and cancellation errors retain their existing behavior.
+Provider error results retain their provider error handling. The chat translates
+format failures into a compatibility recovery hint instead of suggesting that
+credentials or a budget need to change.
+
 ## Consequences
 
 - Adding or updating a CLI runner only touches `backend/internal/engine/stream.go` and its recorded fixtures in `backend/internal/engine/testdata/`.

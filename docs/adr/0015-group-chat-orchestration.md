@@ -3,6 +3,11 @@
 - **Date:** 2026-11-16
 - **Status:** Accepted
 
+[ADR-0027](0027-group-input-requests.md) updates bot reply routing and
+keeps the answer policies for human messages.
+[ADR-0028](0028-stop-private-chat-turns.md) scopes group chat stop requests
+to one running turn and orders cancellation against reply routing.
+
 ## Context
 
 Phase 6 adds Slack-style groups where humans and bots share a conversation.

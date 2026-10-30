@@ -236,6 +236,21 @@ paths:
         '409': {description: Request ID reused with different content}
         '429': {description: Message rate limit or bot queue capacity exceeded}
         '503': {description: Queue unavailable}
+  /api/workspaces/{workspaceID}/conversations/{conversationID}/turns/{turnID}/stop:
+    post:
+      operationId: stopChatTurn
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: conversationID, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: turnID, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '204': {description: Stop requested for the running turn. Other states are a no-op.}
+        '400': {description: Invalid identifier}
+        '401': {description: Authentication required}
+        '403': {description: Viewers cannot stop turns}
+        '404': {description: Private conversation or turn not found}
+        '503': {description: Chat service unavailable}
   /api/workspaces/{workspaceID}/groups:
     parameters:
       - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
@@ -307,6 +322,17 @@ paths:
         '401': {description: Authentication required}
         '403': {description: Viewers cannot change a group}
         '404': {description: Group not found}
+    delete:
+      operationId: deleteGroup
+      security: [{bearerAuth: []}]
+      responses:
+        '204': {description: Group and chat history permanently deleted; usage retained}
+        '400': {description: Invalid group identifier}
+        '401': {description: Authentication required}
+        '403': {description: Viewers cannot delete a group}
+        '404': {description: Group not found or caller is not a member}
+        '409': {description: 'Group has running work, a secret wait, or active credentials'}
+        '503': {description: Chat storage unavailable}
   /api/workspaces/{workspaceID}/groups/{groupID}/messages:
     parameters:
       - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
@@ -344,6 +370,21 @@ paths:
         '404': {description: Group not found}
         '409': {description: Request id reused with different content}
         '429': {description: Message rate limit exceeded}
+  /api/workspaces/{workspaceID}/groups/{groupID}/turns/{turnID}/stop:
+    post:
+      operationId: stopGroupTurn
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: groupID, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: turnID, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '204': {description: Stop requested for the running turn. Other states are a no-op.}
+        '400': {description: Invalid identifier}
+        '401': {description: Authentication required}
+        '403': {description: Viewers cannot stop turns}
+        '404': {description: Group or turn not found}
+        '503': {description: Chat service unavailable}
   /api/workspaces/{workspaceID}/groups/{groupID}/read:
     parameters:
       - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
@@ -2422,7 +2463,25 @@ components:
         content: {type: string}
         secretRequest: {$ref: '#/components/schemas/SecretRequestSummary'}
         tool: {$ref: '#/components/schemas/ToolCallMeta'}
+        inputRequest: {$ref: '#/components/schemas/GroupInputRequest'}
         createdAt: {type: string, format: date-time}
+    GroupInputRequest:
+      type: object
+      required: [state, deadline, required, recipients]
+      properties:
+        state: {type: string, enum: [waiting, collected, stopped]}
+        deadline: {type: string, format: date-time}
+        required: {type: boolean}
+        recipients:
+          type: array
+          items: {$ref: '#/components/schemas/GroupInputRecipient'}
+    GroupInputRecipient:
+      type: object
+      required: [botId, name, state]
+      properties:
+        botId: {type: string, format: uuid}
+        name: {type: string}
+        state: {type: string, enum: [waiting, replied, unavailable]}
     SecretRequestKind:
       type: string
       enum: [cli_egress, browser_login]
@@ -2534,7 +2593,9 @@ components:
       required: [id, status, queueAhead, errorCode]
       properties:
         id: {type: string, format: uuid}
+        botId: {type: string, format: uuid}
         status: {type: string, enum: [queued, running, waiting_secret, completed, failed, interrupted, budget_exceeded]}
+        stopRequested: {type: boolean, description: A stop request is pending for a running turn.}
         queueAhead: {type: integer, format: int64}
         errorCode: {type: string}
     ChatHistory:

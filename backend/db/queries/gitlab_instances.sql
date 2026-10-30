@@ -66,6 +66,23 @@ ON CONFLICT DO NOTHING;
 -- name: ListBlockedGitLabWorkspaceSecretsForBot :many
 SELECT secret_id FROM gitlab_workspace_secret_blocks WHERE workspace_id=$1 AND bot_id=$2;
 
+-- name: HasSavedGitLabCredential :one
+SELECT EXISTS (
+    SELECT 1 FROM bot_secrets s
+    WHERE s.workspace_id = sqlc.arg(workspace_id)::uuid AND s.bot_id = sqlc.arg(bot_id)::uuid
+      AND s.adapter_id = sqlc.arg(adapter_id)::varchar AND s.domain_match = sqlc.arg(domain_match)::varchar
+      AND NOT s.match_subdomains AND s.path_prefix IN ('', '/')
+    UNION ALL
+    SELECT 1 FROM workspace_secrets s
+    WHERE s.workspace_id = sqlc.arg(workspace_id)::uuid
+      AND s.adapter_id = sqlc.arg(adapter_id)::varchar AND s.domain_match = sqlc.arg(domain_match)::varchar
+      AND NOT s.match_subdomains AND s.path_prefix IN ('', '/')
+      AND NOT EXISTS (
+          SELECT 1 FROM gitlab_workspace_secret_blocks b
+          WHERE b.workspace_id = s.workspace_id AND b.bot_id = sqlc.arg(bot_id)::uuid AND b.secret_id = s.id
+      )
+);
+
 -- name: UnblockGitLabWorkspaceSecretForBot :exec
 DELETE FROM gitlab_workspace_secret_blocks WHERE workspace_id=$1 AND bot_id=$2 AND secret_id=$3;
 

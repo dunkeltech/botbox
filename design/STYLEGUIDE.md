@@ -188,9 +188,17 @@ The fleet shows known spend today. Budget meters follow the Stitch project `1359
 - **Message row (Slack style):** a 36 px avatar, then the name (weight 900), a BOT badge for bots (or role tag for human teammates with initials avatar and presence dot), and the time in 12 px `muted`. The body is 15/1.55. Consecutive messages from the same sender may later be grouped.
 - **Markdown in messages:** Human, bot and streamed chat messages render CommonMark and GFM (headings, lists, blockquotes, scrollable tables, inline code, `terminal` code blocks with a 44 px copy button, and `http`/`https`/`mailto` links). Raw HTML is never interpreted, and Markdown images render as links instead of loading external `<img>` tags.
 - **Mentions & `@` autocomplete:** `blue` text on `blue-tint`, weight 700, radius 4, padding 0 3 px. Typing `@` opens a keyboard-navigable `role="listbox"` popover directly above the composer (in flow, without occluding messages) listing bots and humans with presence and role metadata.
+- **Group broadcast:** the mention picker also offers `@all`, labelled "Everyone in this group", using the existing mention treatment and 44 px option targets. It addresses group members when a human posts it. Longer words and email addresses do not become broadcasts.
+- **Group input request:** show collection progress directly below the bot's question, in a compact panel with the existing `line` border and small radius. Give the panel a polite status role and use text to show each recipient as Waiting, Replied, or No reply received.
+- **Delete group:** non-viewer group members see a secondary `Delete group` button in the chat header, including on mobile. It opens the shared native dialog with the group name and explains that deletion affects everyone, removes messages and queued tasks, and retains bots, computers, and cost records. Focus starts on Cancel. Confirmation and Cancel are disabled while deleting; errors stay in the dialog with safe translated text and allow retry. Active bot work or credentials block deletion. Success removes the group and opens the next available group, or the empty state. Use existing button, dialog, warning, focus, colour, and radius tokens.
+- **Global bot role:** the bot builder and settings expose "Global role & responsibilities" as a multiline free-text field, with helper text explaining that it applies in every group and direct message from the next turn. Use the existing textarea and disabled treatment for viewers; roles have no preset categories. In team chat direct-message details, render roles as safe CommonMark/GFM using the message renderer. Bound the collapsed preview to about four body lines (15 px / 1.55); show a "More" / "Less" text button only when the rendered content overflows. Use `green-600`, a 44 px touch target, visible focus, and `aria-expanded` / `aria-controls`. Recheck overflow when the inspector resizes, reset the preview when the bot or role changes, and reveal any Markdown control that receives keyboard focus.
 - **Approval request card:** inline `amber-tint` card with dashed `amber-line` border in group chat (`new_host`, `raise_budget`, `push_protected`) plus Pending / Approved / Denied filter tabs in the dedicated Approvals inbox (`Approvals 3` counter in sidebar).
 - **Workspace chat bubble from the user:** `dark` background, white text, radius `14 14 4 14`, right-aligned.
 - **Typing or working indicator:** a 22–28 px avatar in mood `thinking` plus a `blue` 13–14 px weight-700 line, for example "Ferrit is thinking…".
+- **Concurrent bot activity:** show one labelled indicator for every active bot above the group composer. Running turns show Thinking before any tool call; tool execution uses the existing working strip. Queued turns and secret waits use explicit text. Prefer a bot's running turn over queued follow-ups. The activity area scrolls at 160 px so the composer stays reachable. Sidebar, member list, and details use the same refreshed bot snapshot. A finished lead does not change colleagues' indicators. Use existing blue and paper tokens; no new status colour or radius.
+- **Group turn failures:** show an amber warning above the composer, with the affected bot's name and translated recovery copy. Show only the latest failure per bot; later queued, running, or completed work replaces it. Never show raw provider output or internal error details. Keep the warning area scrollable at 160 px so the composer remains reachable.
+
+
 - **Composer:** 1.5 px `line-strong` border, radius 12. Toolbar: mention (@), attach and a hint text, with the send button on the right (`green-600`, 44 × 40).
 
 ### Navigation
@@ -309,9 +317,15 @@ theme: {
 - Port the avatar as a React component (`<BotAvatar seed mood size tile />`) from [`source/Avatar.dc.html`](source/Avatar.dc.html), and write a Go test that checks the hash and part selection against the same fixtures.
 - The `.dc.html` files in [`source/`](source/) are reference markup from the design canvas, with exact inline styles. They need the canvas runtime and are not meant to run in the app.
 
-### Bot pause control
+### Bot stop and pause controls
 
-The workspace header exposes Pause bot / Resume bot to bot managers, with the
+Direct messages and group chats show **Stop response** beside each running
+bot's activity. In a group, the button's accessible name identifies the bot.
+The secondary button targets that turn even when newer messages are queued.
+It changes to **Stopping…** while the request is pending. A failed request
+shows an amber inline alert and lets the user retry.
+
+The workspace header and bot settings expose Pause bot / Resume bot to bot managers, with the
 persisted state readable by every workspace role. Use the secondary button style,
 44 px touch targets, and explicit text labels. Paused bots show that queued
 messages keep their order and interrupted turns are not replayed. A failed control
@@ -329,6 +343,9 @@ the cause. Computer failures link to the workspace computer controls; missing
 provider credentials link to the bot Secrets page. Keep the amber warning style,
 visible underlined links and 44 px targets. Unknown codes use the generic message.
 Never interpolate raw dependency errors or unknown codes into user-facing text.
+CLI stream format failures explain that bot.Box could not read the response and
+suggest another message, then administrator help with CLI compatibility if it
+persists. Keep this separate from provider, credential and budget recovery hints.
 
 Claude CLI bots show a Pro / Max setup card on Secrets & network. It prepares the
 write-only secret form with the fixed credential name, provider host and Bearer
@@ -361,8 +378,29 @@ credentials never appear in instance settings or chat cards.
 
 The existing GitLab instance and bot-assignment panels cover browser, REST API and
 Git HTTPS access. Removing access explains that sessions, token grants and pending
-requests are revoked. Secret cards show the exact canonical origin and adapter;
-only non-secret placeholders may appear in CLI continuation guidance. Failed
+requests are revoked. Secret cards show the exact canonical origin and adapter.
+Group secret and broker dialogs name the bot that sent the selected request.
+Eligible saved GitLab credentials are tried without opening a secret card.
+Only non-secret placeholders may appear in CLI continuation guidance. Failed
 credential requests use specific next-intl messages for registration, assignment,
 network permission, invalid input, limits and policy availability instead of the
 generic model/computer failure. Never render dependency errors or secret previews.
+Successful fulfillment resumes the existing turn immediately, including when the
+user submits the credential shortly after the card appears.
+
+Git transfer size failures are operational limits, not missing host permission or
+rejected authentication. The `gitlab_git` response cap is 64 MiB; API adapters
+retain 2 MiB (ADR-0023). Recovery copy must distinguish size limits from interrupted
+upstream reads and must not suggest repeated credential requests, expanding host
+permissions or fetching archives to bypass mediation. Show only safe failure
+details, never upstream error text that could reflect credentials.
+
+### Bot computer housekeeping
+
+Bots maintain their own persistent computer and decide routine local cleanup
+without confirmation prompts. They may briefly report meaningful cleanup in the
+conversation; trivial file-management decisions should not interrupt the user.
+Questions should identify an unresolved risk to valuable work, shared data or
+user-provided files. This conversational guidance adds no approval dialog or
+permission control; external actions follow the user's authorization and existing
+infrastructure limits still apply. See ADR-0024.

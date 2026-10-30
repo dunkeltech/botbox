@@ -195,11 +195,15 @@ func createBrowserLoginRequest(ctx context.Context, pool *pgxpool.Pool, in Creat
 	}); err != nil {
 		return CreateResult{}, err
 	}
-	if _, err = q.SetBotTurnWaitingSecret(ctx, db.SetBotTurnWaitingSecretParams{
+	changed, err := q.SetBotTurnWaitingSecret(ctx, db.SetBotTurnWaitingSecretParams{
 		WorkspaceID: wsPG,
 		ID:          turnPG,
-	}); err != nil {
+	})
+	if err != nil {
 		return CreateResult{}, err
+	}
+	if changed == 0 {
+		return CreateResult{}, context.Canceled
 	}
 
 	if err = tx.Commit(ctx); err != nil {

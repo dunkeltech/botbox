@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -6,6 +7,7 @@ import {
   waitFor,
   within,
 } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { NextIntlClientProvider } from 'next-intl';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TeamScreen } from '@/components/team/TeamScreen';
@@ -173,18 +175,26 @@ function handler(path: string, options?: { method?: string; body?: unknown }) {
   return Promise.resolve({});
 }
 
-function show(role: 'member' | 'viewer' = 'member') {
+function show(
+  role: 'owner' | 'admin' | 'member' | 'viewer' = 'member',
+  client?: QueryClient,
+) {
+  const content = (
+    <TeamScreen
+      workspaceId="ws-1"
+      userId="user-1"
+      displayName="Jan"
+      role={role}
+      workspaceName="dunkel.Tech"
+    />
+  );
   return render(
     <NextIntlClientProvider locale="en" messages={messages}>
-      <QueryProvider>
-        <TeamScreen
-          workspaceId="ws-1"
-          userId="user-1"
-          displayName="Jan"
-          role={role}
-          workspaceName="dunkel.Tech"
-        />
-      </QueryProvider>
+      {client ? (
+        <QueryClientProvider client={client}>{content}</QueryClientProvider>
+      ) : (
+        <QueryProvider>{content}</QueryProvider>
+      )}
     </NextIntlClientProvider>,
   );
 }
@@ -199,9 +209,490 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe('Phase 6 team chat', () => {
+  it('names the requesting bot in both group secret dialogs', async () => {
+    groupRows = [
+      {
+        ...group,
+        members: [
+          ...group.members,
+          { type: 'bot', id: 'bot-2', roleText: '', name: 'Nova' },
+        ],
+      },
+    ];
+    request.mockImplementation((path, opts) => {
+      if (path.endsWith('/messages')) {
+        return Promise.resolve({
+          messages: [
+            ...history,
+            {
+              id: 'credential-card',
+              position: 3,
+              senderType: 'bot',
+              senderBotId: 'bot-2',
+              kind: 'secret_request',
+              content: 'Sign in to GitLab',
+              createdAt: '2026-11-16T00:00:02Z',
+              secretRequest: {
+                secretRequestId: 'request-1',
+                kind: 'browser_login',
+                status: 'pending',
+                adapterId: 'gitlab_web',
+                targetOrigin: 'https://gitlab.example.org:443',
+                reason: 'Sign in to GitLab',
+                brokerEnabled: true,
+              },
+            } satisfies ChatMessage,
+          ],
+        });
+      }
+      return handler(path, opts);
+    });
+    show();
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Provide secret securely' }),
+    );
+    expect(
+      screen.getByRole('dialog', { name: 'Provide secret for Nova' }),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Close secret dialog' }),
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Open broker takeover' }),
+    );
+    expect(
+      screen.getByRole('dialog', { name: 'Complete login for Nova' }),
+    ).toBeInTheDocument();
+  });
+
+  it('shows who replied and who is still needed on a group input request', async () => {
+    request.mockImplementation((path, opts) => {
+      if (path.endsWith('/messages'))
+        return Promise.resolve({
+          messages: [
+            ...history,
+            {
+              id: 'input-message',
+              position: 3,
+              senderType: 'bot',
+              senderBotId: 'bot-1',
+              kind: 'text',
+              content: 'Any ideas for a holiday by train?',
+              createdAt: '2026-11-16T00:00:02Z',
+              inputRequest: {
+                state: 'waiting',
+                deadline: '2026-11-16T00:05:02Z',
+                required: false,
+                recipients: [
+                  { botId: 'bot-2', name: 'Nova', state: 'replied' },
+                  { botId: 'bot-3', name: 'Rook', state: 'waiting' },
+                ],
+              },
+            } satisfies ChatMessage,
+          ],
+          turns: [],
+        });
+      return handler(path, opts);
+    });
+    show();
+    await screen.findByText('Collecting input');
+    const progress = screen.getByRole('status');
+    expect(within(progress).getByText('Nova · Replied')).toBeInTheDocument();
+    expect(within(progress).getByText('Rook · Waiting')).toBeInTheDocument();
+  });
+
+  it('shows named group turn failures without exposing raw dependency details', async () => {
+    request.mockImplementation((path, opts) => {
+      if (path.endsWith('/messages'))
+        return Promise.resolve({
+          messages: history,
+          turns: [
+            {
+              id: 'failed-turn',
+              botId: 'bot-1',
+              status: 'failed',
+              queueAhead: 0,
+              errorCode: 'engine.provider_failed',
+            },
+          ],
+        });
+      return handler(path, opts);
+    });
+    show();
+    expect(
+      await screen.findByText(messages.chat.providerFailed),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Atlas could not finish this turn.'),
+    ).toBeInTheDocument();
+  });
+
+  it('refreshes every bot status on live events and shows all running bots without tool calls', async () => {
+    class FakeSocket {
+      static current: FakeSocket;
+      onmessage: ((event: MessageEvent<string>) => void) | null = null;
+      close = vi.fn();
+      constructor() {
+        FakeSocket.current = this;
+      }
+    }
+    vi.stubGlobal('WebSocket', FakeSocket);
+    vi.mocked(getAccessToken).mockReturnValue('fixture-token');
+    const roster = [bots[0]!, { ...bots[0]!, id: 'bot-2', name: 'Nova' }];
+    groupRows = [
+      {
+        ...group,
+        members: [
+          ...group.members,
+          { type: 'bot', id: 'bot-2', name: 'Nova', roleText: 'reviewer' },
+        ],
+      },
+    ];
+    let active = false;
+    request.mockImplementation((path, opts) => {
+      if (path.endsWith('/bots'))
+        return Promise.resolve({
+          bots: roster.map((bot) => ({
+            ...bot,
+            status: active ? 'thinking' : 'idle',
+          })),
+        });
+      if (path.endsWith('/messages'))
+        return Promise.resolve({
+          messages: history,
+          turns: active
+            ? roster.map((bot) => ({
+                id: `turn-${bot.id}`,
+                botId: bot.id,
+                status: 'running',
+                queueAhead: 0,
+                errorCode: '',
+              }))
+            : [],
+        });
+      return handler(path, opts);
+    });
+    show();
+    await screen.findByRole('textbox', { name: messages.team.composer });
+    active = true;
+    act(() =>
+      FakeSocket.current.onmessage?.({
+        data: JSON.stringify({
+          Kind: 'status',
+          BotID: 'bot-2',
+          TurnID: 'turn-bot-2',
+          Status: 'thinking',
+        }),
+      } as MessageEvent<string>),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getAllByText(messages.team.statusThinking).length,
+      ).toBeGreaterThanOrEqual(2),
+    );
+    expect(await screen.findByText('Atlas is thinking…')).toBeInTheDocument();
+    expect(screen.getByText('Nova is thinking…')).toBeInTheDocument();
+  });
+
+  it('stops an individual running bot and leaves the other stop action available', async () => {
+    groupRows = [
+      {
+        ...group,
+        members: [
+          ...group.members,
+          { type: 'bot', id: 'bot-2', name: 'Nova', roleText: 'reviewer' },
+          { type: 'bot', id: 'bot-3', name: 'Quill', roleText: 'writer' },
+        ],
+      },
+    ];
+    const stopAtlas =
+      '/api/workspaces/ws-1/groups/group-1/turns/turn-atlas/stop';
+    let attempts = 0;
+    let stopRequested = false;
+    request.mockImplementation((path, opts) => {
+      if (path === stopAtlas) {
+        if (++attempts === 1)
+          return Promise.reject(new Error('private dependency detail'));
+        stopRequested = true;
+        return Promise.resolve(undefined);
+      }
+      if (path.endsWith('/messages')) {
+        return Promise.resolve({
+          messages: [
+            ...history,
+            {
+              id: 'nova-tool',
+              position: 3,
+              senderType: 'bot',
+              senderBotId: 'bot-2',
+              kind: 'tool',
+              content: 'Bash\n{}',
+              createdAt: '2026-11-16T00:00:02Z',
+              tool: {
+                phase: 'call',
+                isError: false,
+                turnId: 'turn-nova',
+                toolCallId: 'nova-call',
+              },
+            },
+          ],
+          turns: [
+            {
+              id: 'queued-atlas',
+              botId: 'bot-1',
+              status: 'queued',
+              queueAhead: 1,
+              errorCode: '',
+            },
+            {
+              id: 'turn-atlas',
+              botId: 'bot-1',
+              status: 'running',
+              queueAhead: 0,
+              errorCode: '',
+              stopRequested,
+            },
+            {
+              id: 'turn-nova',
+              botId: 'bot-2',
+              status: 'running',
+              queueAhead: 0,
+              errorCode: '',
+            },
+            {
+              id: 'turn-quill',
+              botId: 'bot-3',
+              status: 'queued',
+              queueAhead: 0,
+              errorCode: '',
+            },
+          ],
+        });
+      }
+      return handler(path, opts);
+    });
+    show();
+
+    const atlas = await screen.findByRole('button', {
+      name: 'Stop response from Atlas',
+    });
+    expect(screen.getByText(/^Nova is running /)).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Stop response from Nova' }),
+    ).toBeEnabled();
+    expect(
+      screen.queryByRole('button', { name: 'Stop response from Quill' }),
+    ).toBeNull();
+    fireEvent.click(atlas);
+    await screen.findByText(messages.chat.stopTurnFailed);
+    expect(screen.queryByText('private dependency detail')).toBeNull();
+    await waitFor(() => expect(atlas).toBeEnabled());
+    fireEvent.click(atlas);
+    expect(
+      await screen.findByRole('button', { name: 'Stopping Atlas…' }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'Stop response from Nova' }),
+    ).toBeEnabled();
+    expect(
+      request.mock.calls.filter(([path]) => path.includes('/turns/')),
+    ).toEqual([
+      [stopAtlas, { method: 'POST' }],
+      [stopAtlas, { method: 'POST' }],
+    ]);
+  });
+
+  it('requires confirmation and leaves the group intact when cancelled', async () => {
+    show();
+    fireEvent.click(
+      await screen.findByRole('button', { name: messages.team.deleteGroup }),
+    );
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveAccessibleName('Delete #Launch?');
+    expect(
+      within(dialog).getByText(messages.team.deleteGroupWarning),
+    ).toBeInTheDocument();
+    expect(
+      request.mock.calls.some(([, options]) => options?.method === 'DELETE'),
+    ).toBe(false);
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: messages.actions.cancel }),
+    );
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: /Launch/, level: 1 }),
+    ).toBeInTheDocument();
+  });
+
+  it.each(['owner', 'admin', 'member'] as const)(
+    'lets a %s delete a group and clears the last transcript',
+    async (role) => {
+      request.mockImplementation((path, options) => {
+        if (options?.method === 'DELETE') {
+          groupRows = [];
+          return Promise.resolve(undefined);
+        }
+        return handler(path, options);
+      });
+      show(role);
+      fireEvent.click(
+        await screen.findByRole('button', { name: messages.team.deleteGroup }),
+      );
+      fireEvent.click(
+        within(screen.getByRole('dialog')).getByRole('button', {
+          name: messages.team.deleteGroup,
+        }),
+      );
+      await waitFor(() =>
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+      );
+      expect(request).toHaveBeenCalledWith(
+        '/api/workspaces/ws-1/groups/group-1',
+        { method: 'DELETE' },
+      );
+      expect(
+        screen.queryByRole('heading', { name: /Launch/ }),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByRole('log')).not.toBeInTheDocument();
+      expect(screen.getByText(messages.team.emptyGroups)).toBeInTheDocument();
+    },
+  );
+
+  it('keeps a failed deletion open with safe feedback and allows retry', async () => {
+    let attempts = 0;
+    request.mockImplementation((path, options) => {
+      if (options?.method === 'DELETE') {
+        attempts += 1;
+        if (attempts === 1)
+          return Promise.reject(
+            new ApiClientError(409, 'group.busy', 'private dependency detail'),
+          );
+        groupRows = [];
+        return Promise.resolve(undefined);
+      }
+      return handler(path, options);
+    });
+    show();
+    fireEvent.click(
+      await screen.findByRole('button', { name: messages.team.deleteGroup }),
+    );
+    const dialog = screen.getByRole('dialog');
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: messages.team.deleteGroup }),
+    );
+    expect(
+      await within(dialog).findByText(messages.errors.groupBusy),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText('private dependency detail'),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: /Launch/, level: 1 }),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: messages.team.deleteGroup }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+    );
+    expect(attempts).toBe(2);
+  });
+
+  it('blocks duplicate deletion and closing while the request is pending', async () => {
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    request.mockImplementation((path, options) =>
+      options?.method === 'DELETE' ? pending : handler(path, options),
+    );
+    show();
+    fireEvent.click(
+      await screen.findByRole('button', { name: messages.team.deleteGroup }),
+    );
+    const dialog = screen.getByRole('dialog');
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: messages.team.deleteGroup }),
+    );
+    expect(
+      within(dialog).getByRole('button', { name: messages.team.deletingGroup }),
+    ).toBeDisabled();
+    expect(
+      within(dialog).getByRole('button', { name: messages.actions.cancel }),
+    ).toBeDisabled();
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: messages.actions.close }),
+    );
+    expect(dialog).toBeInTheDocument();
+    expect(
+      request.mock.calls.filter(([, options]) => options?.method === 'DELETE'),
+    ).toHaveLength(1);
+    groupRows = [];
+    finish();
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+    );
+  });
+
+  it('opens the next group after deleting the selected one', async () => {
+    groupRows = [group, { ...group, id: 'group-2', name: 'Ops' }];
+    request.mockImplementation((path, options) => {
+      if (options?.method === 'DELETE') {
+        groupRows = groupRows.filter((row) => row.id !== group.id);
+        return Promise.resolve(undefined);
+      }
+      return handler(path, options);
+    });
+    show();
+    fireEvent.click(
+      await screen.findByRole('button', { name: messages.team.deleteGroup }),
+    );
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', {
+        name: messages.team.deleteGroup,
+      }),
+    );
+    expect(
+      await screen.findByRole('heading', { name: /Ops/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: /Launch/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('hides group deletion from viewers', async () => {
+    show('viewer');
+    await screen.findByRole('heading', { name: /Launch/ });
+    expect(
+      screen.queryByRole('button', { name: messages.team.deleteGroup }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('switches groups when another member deletes the open chat', async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    });
+    groupRows = [group, { ...group, id: 'group-2', name: 'Ops' }];
+    show('member', client);
+    await screen.findByRole('heading', { name: /Launch/, level: 1 });
+    groupRows = groupRows.filter((row) => row.id !== group.id);
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ['groups', 'ws-1'] });
+    });
+    expect(
+      await screen.findByRole('heading', { name: /Ops/, level: 1 }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: /Launch/, level: 1 }),
+    ).not.toBeInTheDocument();
+    client.clear();
+  });
+
   it('inserts a mention from the keyboard and leaves an unmatched approval without decision buttons', async () => {
     show();
     const composer = await screen.findByLabelText(messages.team.composer);
@@ -212,7 +703,9 @@ describe('Phase 6 team chat', () => {
     );
     expect(screen.getByText('2 pending')).toBeInTheDocument();
     const log = screen.getByRole('log', { name: messages.team.messages });
-    expect(log).toHaveTextContent('Waiting on a protected push');
+    expect(
+      await within(log).findByText('Waiting on a protected push'),
+    ).toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: /^(Approve|Deny)/ }),
     ).toBeNull();
@@ -243,6 +736,25 @@ describe('Phase 6 team chat', () => {
     expect(composer).toHaveValue('@Sam ');
   });
 
+  it('offers @all in the mention picker and posts it unchanged', async () => {
+    show();
+    const composer = await screen.findByLabelText(messages.team.composer);
+    fireEvent.change(composer, { target: { value: '@al', selectionStart: 3 } });
+    fireEvent.click(await screen.findByRole('option', { name: /@all/ }));
+    expect(composer).toHaveValue('@all ');
+    fireEvent.submit(composer.closest('form') as HTMLFormElement);
+    await waitFor(() =>
+      expect(
+        request.mock.calls.some(
+          ([path, options]) =>
+            String(path).endsWith('/messages') &&
+            options?.method === 'POST' &&
+            (options.body as { content?: string })?.content === '@all ',
+        ),
+      ).toBe(true),
+    );
+  });
+
   it('filters the open transcript and keeps the selected group listed', async () => {
     show();
     const log = await screen.findByRole('log', {
@@ -261,6 +773,22 @@ describe('Phase 6 team chat', () => {
   });
 
   it('hides posting, settings, hire, and new group from a viewer', async () => {
+    request.mockImplementation((path, opts) =>
+      path.endsWith('/messages')
+        ? Promise.resolve({
+            messages: history,
+            turns: [
+              {
+                id: 'turn-atlas',
+                botId: 'bot-1',
+                status: 'running',
+                queueAhead: 0,
+                errorCode: '',
+              },
+            ],
+          })
+        : handler(path, opts),
+    );
     show('viewer');
     expect(
       await screen.findByText(messages.team.viewerRead),
@@ -282,6 +810,10 @@ describe('Phase 6 team chat', () => {
     expect(await screen.findByText('2 pending')).toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: /^(Approve|Deny)/ }),
+    ).toBeNull();
+    expect(await screen.findByText('Atlas is thinking…')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Stop response from Atlas' }),
     ).toBeNull();
   });
 
@@ -433,19 +965,17 @@ describe('Phase 6 team chat', () => {
       },
     );
 
+    let currentScrollHeight = 1000;
+    // Layout effects run on mount, before findByRole returns the element.
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(
+      () => currentScrollHeight,
+    );
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(400);
+
     show();
 
     const log = await screen.findByRole('log', {
       name: messages.team.messages,
-    });
-    let currentScrollHeight = 1000;
-    Object.defineProperty(log, 'scrollHeight', {
-      configurable: true,
-      get: () => currentScrollHeight,
-    });
-    Object.defineProperty(log, 'clientHeight', {
-      configurable: true,
-      get: () => 400,
     });
 
     await waitFor(() => expect(log).toHaveTextContent('Ask @Atlas'));

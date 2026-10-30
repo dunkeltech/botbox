@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
@@ -39,16 +40,26 @@ type askRule struct {
 // PlanHuman routes a human message that is already stored in q's transaction.
 // A human clears every pause and the turn counter, then queues the selected bots.
 func PlanHuman(ctx context.Context, q *db.Queries, workspaceID, conversationID pgtype.UUID, sender uuid.UUID, message db.Message) ([]Turn, error) {
-	return plan(ctx, q, workspaceID, conversationID, orchestrator.MemberUser, sender, message)
+	return plan(ctx, q, workspaceID, conversationID, orchestrator.MemberUser, sender, message, message.Content, time.Time{})
 }
 
-// PlanBotReply routes a stored bot reply. Bot-to-bot off, the turn limit, and
-// the loop guard all return no turns. The caller publishes before commit.
-func PlanBotReply(ctx context.Context, q *db.Queries, workspaceID, conversationID pgtype.UUID, sender uuid.UUID, message db.Message) ([]Turn, error) {
-	return plan(ctx, q, workspaceID, conversationID, orchestrator.MemberBot, sender, message)
+// PlanBotReply routes a stored bot reply. The directive stays out of the transcript.
+// A reply to a request contributes to that request without opening a nested round.
+func PlanBotReply(ctx context.Context, q *db.Queries, turn db.BotTurn, message db.Message, content string, inputReply bool, now time.Time) ([]Turn, error) {
+	if inputReply {
+		content = ""
+	}
+	next, err := plan(ctx, q, turn.WorkspaceID, turn.ConversationID, orchestrator.MemberBot, uuid.UUID(turn.BotID.Bytes), message, content, now)
+	if err == nil && inputReply {
+		err = q.RecordGroupInputReply(ctx, db.RecordGroupInputReplyParams{
+			WorkspaceID: turn.WorkspaceID, ConversationID: turn.ConversationID,
+			TurnID: turn.ID, ReplyMessageID: message.ID, AsOf: timestamp(now),
+		})
+	}
+	return next, err
 }
 
-func plan(ctx context.Context, q *db.Queries, workspaceID, conversationID pgtype.UUID, senderKind orchestrator.MemberKind, sender uuid.UUID, message db.Message) ([]Turn, error) {
+func plan(ctx context.Context, q *db.Queries, workspaceID, conversationID pgtype.UUID, senderKind orchestrator.MemberKind, sender uuid.UUID, message db.Message, content string, now time.Time) ([]Turn, error) {
 	group, err := q.GetGroupForUpdate(ctx, db.GetGroupForUpdateParams{WorkspaceID: workspaceID, ID: conversationID})
 	if err != nil {
 		return nil, err
@@ -65,7 +76,7 @@ func plan(ctx context.Context, q *db.Queries, workspaceID, conversationID pgtype
 	decision := orchestrator.Route(orchestrator.Request{
 		SenderKind:        senderKind,
 		SenderID:          sender,
-		Content:           message.Content,
+		Content:           content,
 		BotTalk:           group.BotTalk,
 		Policy:            orchestrator.AnswerPolicy(group.AnswerPolicy),
 		LeadBotID:         uuid.UUID(group.LeadBotID.Bytes),
@@ -77,19 +88,16 @@ func plan(ctx context.Context, q *db.Queries, workspaceID, conversationID pgtype
 		Members:           roster,
 		RecentBotSpeakers: speakers,
 	})
-	// Lock and count before writing the plan. A full queue then rolls back the
-	// human message instead of pausing the group without a turn (ADR-0015).
-	for _, botID := range decision.Bots {
-		if err = q.LockBotQueue(ctx, uuid.UUID(workspaceID.Bytes).String()+"/"+botID.String()); err != nil {
-			return nil, err
-		}
-		pending, err := q.CountPendingBotTurns(ctx, db.CountPendingBotTurnsParams{WorkspaceID: workspaceID, BotID: pgID(botID)})
+	if senderKind == orchestrator.MemberBot && len(decision.Bots) > 0 {
+		decision.Bots, err = openInputRequest(ctx, q, group, message, sender, roster, decision, now)
 		if err != nil {
 			return nil, err
 		}
-		if pending >= 100 {
-			return nil, ErrQueueFull
-		}
+	}
+	// Lock and count before writing the plan. A full queue then rolls back the
+	// human message instead of pausing the group without a turn (ADR-0015).
+	if err = lockBotQueues(ctx, q, workspaceID, decision.Bots); err != nil {
+		return nil, err
 	}
 	summary, err := summaryFor(ctx, q, workspaceID, conversationID, roster, group.Summary)
 	if err != nil {
@@ -114,19 +122,21 @@ func plan(ctx context.Context, q *db.Queries, workspaceID, conversationID pgtype
 	}); err != nil {
 		return nil, err
 	}
-	if decision.Pause {
+	if decision.Pause && !group.Paused {
 		if err = postPause(ctx, q, group, decision.Reason); err != nil {
 			return nil, err
 		}
 	}
 	turns := make([]Turn, 0, len(decision.Bots))
 	for _, botID := range decision.Bots {
-		row, err := q.CreateBotTurn(ctx, db.CreateBotTurnParams{
-			WorkspaceID:    workspaceID,
-			BotID:          pgID(botID),
-			ConversationID: conversationID,
-			MessageID:      message.ID,
-		})
+		var row db.BotTurn
+		if senderKind == orchestrator.MemberBot {
+			row, err = createInputRecipient(ctx, q, message, botID, roster)
+		} else {
+			row, err = q.CreateBotTurn(ctx, db.CreateBotTurnParams{
+				WorkspaceID: workspaceID, BotID: pgID(botID), ConversationID: conversationID, MessageID: message.ID,
+			})
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -157,14 +167,31 @@ func postPause(ctx context.Context, q *db.Queries, group db.Conversation, reason
 	return err
 }
 
-// NoteClaim counts a group bot turn when it is claimed. Direct messages are unchanged.
-func NoteClaim(ctx context.Context, q *db.Queries, workspaceID, conversationID pgtype.UUID) error {
-	_, err := q.IncrementGroupTurnsSinceHuman(ctx, db.IncrementGroupTurnsSinceHumanParams{WorkspaceID: workspaceID, ID: conversationID})
-	return err
+// NoteClaim admits one group turn under the conversation lock. Direct messages
+// always proceed. Rechecking at claim prevents a queued fan-out exceeding the cap.
+func NoteClaim(ctx context.Context, q *db.Queries, workspaceID, conversationID pgtype.UUID) (bool, error) {
+	group, err := q.GetGroupForUpdate(ctx, db.GetGroupForUpdateParams{WorkspaceID: workspaceID, ID: conversationID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if group.Paused {
+		return false, nil
+	}
+	if group.TurnsSinceHuman >= group.TurnLimit {
+		if err = q.ApplyGroupPlan(ctx, db.ApplyGroupPlanParams{WorkspaceID: workspaceID, ID: conversationID, TurnsSinceHuman: group.TurnsSinceHuman, Paused: true, PauseReason: string(orchestrator.PauseTurnLimit), RrIndex: group.RrIndex, Summary: group.Summary}); err != nil {
+			return false, err
+		}
+		return false, postPause(ctx, q, group, orchestrator.PauseTurnLimit)
+	}
+	_, err = q.IncrementGroupTurnsSinceHuman(ctx, db.IncrementGroupTurnsSinceHumanParams{WorkspaceID: workspaceID, ID: conversationID})
+	return err == nil, err
 }
 
 // Preface is the group brief for one bot turn. A direct message returns an empty string.
-func Preface(ctx context.Context, q *db.Queries, workspaceID, conversationID pgtype.UUID) (string, error) {
+func Preface(ctx context.Context, q *db.Queries, workspaceID, conversationID, botID pgtype.UUID, now time.Time) (string, error) {
 	group, err := q.GetGroup(ctx, db.GetGroupParams{WorkspaceID: workspaceID, ID: conversationID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil
@@ -199,15 +226,22 @@ func Preface(ctx context.Context, q *db.Queries, workspaceID, conversationID pgt
 	for _, rule := range rules {
 		ask = append(ask, orchestrator.AskRule{Kind: rule.Kind, Label: rule.Label})
 	}
+	progress, err := openInputProgress(ctx, q, workspaceID, conversationID, botID, now)
+	if err != nil {
+		return "", err
+	}
 	return orchestrator.BuildContext(orchestrator.ContextInput{
-		Goal:      group.Goal,
-		Members:   roster,
-		BotTalk:   group.BotTalk,
-		TurnLimit: int(group.TurnLimit),
-		Policy:    orchestrator.AnswerPolicy(group.AnswerPolicy),
-		AskBefore: ask,
-		Summary:   group.Summary,
-		Recent:    lines,
+		InputProgress: progress,
+		BotID:         uuid.UUID(botID.Bytes),
+		LeadBotID:     uuid.UUID(group.LeadBotID.Bytes),
+		Goal:          group.Goal,
+		Members:       roster,
+		BotTalk:       group.BotTalk,
+		TurnLimit:     int(group.TurnLimit),
+		Policy:        orchestrator.AnswerPolicy(group.AnswerPolicy),
+		AskBefore:     ask,
+		Summary:       group.Summary,
+		Recent:        lines,
 	}), nil
 }
 
@@ -222,6 +256,11 @@ func ScreenBudget(ctx context.Context, pool *pgxpool.Pool, workspaceID, conversa
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	q := db.New(tx)
+	// An opaque metered request settles under this lock. Its provisional row
+	// is not a billing failure and must not pause concurrently starting peers.
+	if err = q.LockWorkspaceBudgetCheck(ctx, uuid.UUID(workspaceID.Bytes).String()); err != nil {
+		return false, err
+	}
 	group, err := q.GetGroupForUpdate(ctx, db.GetGroupForUpdateParams{WorkspaceID: workspaceID, ID: conversationID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
@@ -352,10 +391,11 @@ func rosterFrom(rows []db.ListGroupMemberRowsRow) []orchestrator.Member {
 			kind = orchestrator.MemberBot
 		}
 		out = append(out, orchestrator.Member{
-			Kind: kind,
-			ID:   uuid.UUID(row.MemberID.Bytes),
-			Name: row.DisplayName,
-			Role: row.RoleText,
+			Kind:         kind,
+			ID:           uuid.UUID(row.MemberID.Bytes),
+			Name:         row.DisplayName,
+			Role:         row.RoleText,
+			Instructions: row.BotDescription,
 		})
 	}
 	return out

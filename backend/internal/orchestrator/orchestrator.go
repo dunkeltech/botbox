@@ -50,10 +50,11 @@ const (
 
 // Member is one roster entry. Name is the display name used for @mentions.
 type Member struct {
-	Kind MemberKind
-	ID   uuid.UUID
-	Name string
-	Role string
+	Kind         MemberKind
+	ID           uuid.UUID
+	Name         string
+	Role         string
+	Instructions string
 }
 
 // Request is the pure input to Route. RecentBotSpeakers is oldest first and
@@ -78,6 +79,7 @@ type Request struct {
 type Plan struct {
 	Bots                []uuid.UUID
 	Humans              []uuid.UUID
+	RequiredInput       bool
 	NextTurnsSinceHuman int
 	NextRoundIndex      int
 	Pause               bool
@@ -98,31 +100,61 @@ type ContextMessage struct {
 
 // ContextInput is everything BuildContext may see. It has no secret field.
 type ContextInput struct {
-	Goal      string
-	Members   []Member
-	BotTalk   bool
-	TurnLimit int
-	Policy    AnswerPolicy
-	AskBefore []AskRule
-	Summary   string
-	Recent    []ContextMessage
+	InputProgress string
+	BotID         uuid.UUID
+	LeadBotID     uuid.UUID
+	Goal          string
+	Members       []Member
+	BotTalk       bool
+	TurnLimit     int
+	Policy        AnswerPolicy
+	AskBefore     []AskRule
+	Summary       string
+	Recent        []ContextMessage
 }
 
 // ParseMentions returns member ids named with @Name, in order of appearance.
-// Matching is case-insensitive and prefers the longest display name.
+// The reserved @all token expands to the roster once. Matching is case-insensitive.
 func ParseMentions(content string, members []Member) (bots, humans []uuid.UUID) {
+	bots, humans, _ = parseMentions(content, members)
+	return bots, humans
+}
+
+func parseMentions(content string, members []Member) (bots, humans []uuid.UUID, broadcast bool) {
 	ordered := append([]Member(nil), members...)
 	sort.SliceStable(ordered, func(i, j int) bool {
 		return utf8.RuneCountInString(ordered[i].Name) > utf8.RuneCountInString(ordered[j].Name)
 	})
 	seenBot := map[uuid.UUID]bool{}
 	seenHuman := map[uuid.UUID]bool{}
+	add := func(member Member) {
+		switch member.Kind {
+		case MemberBot:
+			if !seenBot[member.ID] {
+				bots = append(bots, member.ID)
+				seenBot[member.ID] = true
+			}
+		case MemberUser:
+			if !seenHuman[member.ID] {
+				humans = append(humans, member.ID)
+				seenHuman[member.ID] = true
+			}
+		}
+	}
 	for i := 0; i < len(content); {
 		if content[i] != '@' {
 			i++
 			continue
 		}
 		rest := content[i+1:]
+		if hasPrefixFold(rest, "all") && mentionBoundary(content[:i], true) && mentionBoundary(rest[3:], false) {
+			broadcast = true
+			for _, member := range members {
+				add(member)
+			}
+			i += 4
+			continue
+		}
 		matched := false
 		for _, member := range ordered {
 			name := strings.TrimSpace(member.Name)
@@ -136,18 +168,7 @@ func ParseMentions(content string, members []Member) (bots, humans []uuid.UUID) 
 					continue
 				}
 			}
-			switch member.Kind {
-			case MemberBot:
-				if !seenBot[member.ID] {
-					bots = append(bots, member.ID)
-					seenBot[member.ID] = true
-				}
-			case MemberUser:
-				if !seenHuman[member.ID] {
-					humans = append(humans, member.ID)
-					seenHuman[member.ID] = true
-				}
-			}
+			add(member)
 			i += 1 + len(name)
 			matched = true
 			break
@@ -156,13 +177,30 @@ func ParseMentions(content string, members []Member) (bots, humans []uuid.UUID) 
 			i++
 		}
 	}
-	return bots, humans
+	return bots, humans, broadcast
+}
+
+func mentionBoundary(text string, before bool) bool {
+	if text == "" {
+		return true
+	}
+	r, _ := utf8.DecodeRuneInString(text)
+	if before {
+		r, _ = utf8.DecodeLastRuneInString(text)
+	}
+	return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && !unicode.IsMark(r)
 }
 
 // Route decides the next bot turns. A human sender clears a pause and the
 // turn counter. A bot sender does not, so a limit or an approval keeps holding.
 func Route(req Request) Plan {
-	mentioned, humans := ParseMentions(req.Content, req.Members)
+	content := req.Content
+	var inputNames []string
+	var required bool
+	if req.SenderKind == MemberBot {
+		content, inputNames, required = SplitInputDirective(content)
+	}
+	mentioned, humans, broadcast := parseMentions(content, req.Members)
 	plan := Plan{
 		Humans:              humans,
 		NextTurnsSinceHuman: req.TurnsSinceHuman,
@@ -183,16 +221,29 @@ func Route(req Request) Plan {
 		plan.Reason = PauseTurnLimit
 		return plan
 	}
-	if req.SenderKind == MemberBot && !req.BotTalk {
+	if req.SenderKind == MemberBot {
+		if !req.BotTalk {
+			return plan
+		}
+		selected := inputRecipients(req, inputNames)
+		if pingPong(req.RecentBotSpeakers, selected) {
+			plan.Pause = true
+			plan.Reason = PauseLoop
+			return plan
+		}
+		plan.Bots = selected
+		plan.RequiredInput = len(selected) > 0 && required
 		return plan
 	}
 	selected, nextRR := selectBots(req, mentioned)
-	plan.NextRoundIndex = nextRR
-	if req.SenderKind == MemberBot && pingPong(req.RecentBotSpeakers, selected) {
-		plan.Pause = true
-		plan.Reason = PauseLoop
-		return plan
+	// An explicit broadcast must reach the whole group even under round robin.
+	if broadcast {
+		selected, nextRR = withoutSelf(req, mentioned), req.RoundIndex
+		if req.Policy == PolicyLeadFirst {
+			selected = leadFirst(req, mentioned)
+		}
 	}
+	plan.NextRoundIndex = nextRR
 	plan.Bots = selected
 	return plan
 }
@@ -200,13 +251,22 @@ func Route(req Request) Plan {
 // BuildContext renders the group brief prepended to one bot turn.
 func BuildContext(in ContextInput) string {
 	var b strings.Builder
+	for _, member := range in.Members {
+		if member.Kind != MemberBot {
+			continue
+		}
+		if member.ID == in.BotID {
+			fmt.Fprintf(&b, "You are %s, the bot responding in this turn.\n", member.Name)
+		}
+		if member.ID == in.LeadBotID {
+			fmt.Fprintf(&b, "Group lead: %s.\n", member.Name)
+		}
+	}
 	b.WriteString("Group goal: ")
 	b.WriteString(strings.TrimSpace(in.Goal))
-	b.WriteString("\nRoster:\n")
-	for _, member := range in.Members {
-		fmt.Fprintf(&b, "- %s (%s) %s\n", member.Name, member.Kind, member.Role)
-	}
+	b.WriteString("\n")
 	fmt.Fprintf(&b, "Rules: bot_talk=%t turn_limit=%d answer_policy=%s\n", in.BotTalk, in.TurnLimit, in.Policy)
+	b.WriteString(in.InputProgress)
 	if len(in.AskBefore) > 0 {
 		b.WriteString("Ask before:")
 		for _, rule := range in.AskBefore {
@@ -218,19 +278,14 @@ func BuildContext(in ContextInput) string {
 		}
 		b.WriteString("\n")
 	}
-	if strings.TrimSpace(in.Summary) != "" {
-		b.WriteString("Earlier summary:\n")
-		b.WriteString(in.Summary)
-		b.WriteString("\n")
-	}
-	if len(in.Recent) > 0 {
-		b.WriteString("Recent messages:\n")
-		for _, message := range in.Recent {
-			fmt.Fprintf(&b, "%s: %s\n", message.Speaker, message.Body)
+	b.WriteString("Roster:\n")
+	for _, member := range in.Members {
+		fmt.Fprintf(&b, "- %s (%s) %s\n", member.Name, member.Kind, member.Role)
+		if member.Kind == MemberBot && strings.TrimSpace(member.Instructions) != "" {
+			fmt.Fprintf(&b, "  Global role and responsibilities: %s\n", strings.TrimSpace(member.Instructions))
 		}
 	}
-	b.WriteString("Mention the bot you hand work to.\n")
-	return b.String()
+	return boundedContext(b.String(), in.Summary, in.Recent)
 }
 
 func selectBots(req Request, mentioned []uuid.UUID) ([]uuid.UUID, int) {

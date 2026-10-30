@@ -216,15 +216,20 @@ func TestPhase4QueueOrderAcrossPrivateConversations(t *testing.T) {
 	if err := worker.Process(context.Background(), queue.jobs[1]); err == nil {
 		t.Fatal("later notification skipped queued input")
 	}
-	first, second := make(chan error, 1), make(chan error, 1)
+	first := make(chan error, 1)
 	go func() { first <- worker.Process(context.Background(), queue.jobs[0]) }()
 	<-started
-	go func() { second <- worker.Process(context.Background(), queue.jobs[1]) }()
+	// A busy bot leaves the later turn queued for redelivery. It must not
+	// occupy a dispatcher slot waiting for another turn to release its computer.
+	busyErr := worker.Process(context.Background(), queue.jobs[1])
 	close(release)
+	if busyErr == nil {
+		t.Fatal("busy bot admitted a second turn")
+	}
 	if err := <-first; err != nil {
 		t.Fatal(err)
 	}
-	if err := <-second; err != nil {
+	if err := worker.Process(context.Background(), queue.jobs[1]); err != nil {
 		t.Fatal(err)
 	}
 	mu.Lock()

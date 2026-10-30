@@ -6,7 +6,7 @@
 
 bot.Box is a multi-user web application for creating and running **bot computer agents**. Each bot combines a large language model (LLM) with its own isolated sandbox computer. The computer has a desktop that users can watch and take over in the browser, and the bot has full root access inside it.
 
-Bots behave like **colleagues**. Users talk to them in direct messages and put them together in group chats, where bots hand work to each other through mentions while humans stay in control (turn limits, approvals, budgets).
+Bots behave like **colleagues**. Users talk to them in direct messages and put them together in group chats, where bots request each other's input while humans stay in control through turn limits, approvals, and budgets.
 
 ### Goals
 - Create, configure and run bots, each with a sandboxed Linux desktop, browser and agent CLIs.
@@ -150,10 +150,20 @@ type AgentRunner interface {
 
 - **Permissions:** permission prompts inside the CLI are disabled, because the sandbox is the boundary. For `agy`, scoped `permissions.allow` rules are possible. `agy` soft-denies tools (exit code 0, notice on stderr), so the adapter must surface these notices.
 - **One event model** for all runners. Every adapter is tested against recorded stream fixtures.
-- **Per-bot work queue** (NATS JetStream). A bot has one computer, so it runs **one turn at a time**. Messages from other conversations are queued, and the UI shows their position.
+- **Per-bot work queue** (NATS JetStream). A bot has one computer, so it runs **one turn at a time** across groups and direct messages. Different bots execute concurrently. Each API instance has a bounded dispatcher (`BOTBOX_TURN_CONCURRENCY`, default 4, range 1..64); duplicate deliveries cannot replay a running turn. Conversation locks precede bot locks, and the group turn cap is rechecked atomically when claiming queued work. See [ADR-0025](docs/adr/0025-parallel-bot-turns-and-activity.md).
 - **Sessions:** one CLI session per (bot, conversation), so every conversation keeps its own context.
-- **Status:** derived from the events (`idle`, `thinking`, `action`, `offline`). It drives the status chips and the avatar mood.
+- **Status:** persisted running turns and tool activity determine each bot's current status. Private live events carry bot, turn, and execution ids plus a sequence within that execution. Provider step completion cannot mark an ongoing bot turn idle. The Team bot list refreshes on live activity and every 3 seconds, including work in other conversations. Reconnecting reloads snapshots rather than applying stale event status. Group chat shows one indicator per active bot, including thinking before the first tool call, queued work, and secret waits.
 - **Reply language** is a per-bot setting. System prompts are in English.
+- **Responsibility for the bot computer:** every API and CLI turn, including
+  resumed sessions and continuations, reminds the bot to maintain its own
+  persistent sandbox. Bots decide routine local housekeeping themselves,
+  including removing their own obsolete helper scripts and stale working copies
+  after checking references and ongoing work. Uncertainty favors recoverable
+  cleanup; unresolved risk to valuable work warrants a question. User-provided
+  files, shared data and uncommitted work require authorization before deletion.
+  External actions still follow the user's authorization, and secret handling,
+  workspace isolation, network rules, budgets and human control remain enforced.
+  See [ADR-0024](docs/adr/0024-sandbox-housekeeping-responsibility.md).
 
 Claude CLI bots can use a Pro/Max subscription through an encrypted
 `llm-anthropic-oauth` secret, prepared on the bot Secrets page. The user completes
@@ -183,18 +193,31 @@ and CLI preflight checks provider credentials before launching a process. Privat
 dependency errors are never displayed. See
 [ADR-0010](docs/adr/0010-explicit-simulation-and-turn-recovery.md).
 
+Claude stream decoding selects the event type before reading its payload, so
+auxiliary notices with a text `message` cannot interrupt assistant or tool output.
+Malformed assistant/user messages and oversized CLI records still fail the turn
+with `engine.stream_format_invalid`, shown as a response compatibility problem
+rather than a provider, credential or budget failure. Raw payloads remain private.
+See [ADR-0004](docs/adr/0004-cli-stream-formats.md).
+
 Phase 4 implementation: private DM APIs persist conversation-local history and
-turns. JetStream notifications drive the API worker, and authorized conversation
+turns. JetStream notifications drive the API worker. Re-enqueueing a turn after
+secret fulfillment always publishes a new notification, even within JetStream's
+duplicate window; persisted worker claims prevent duplicate execution.
+Authorized conversation
 WebSockets stream normalized events. `/team` is the group chat and still opens
 the same DM panel for a colleague. A chat message carries the sender's user or
 bot id so a group transcript can name the speaker. A group approval message is a card, and `/team/approvals` is the inbox for the same decisions. Workspace and bot settings
-show spend and budget limits. The workspace provides a persisted bot-wide
-Pause/Resume control. Pausing cancels the active
+show spend and budget limits. The workspace header and bot settings provide a
+persisted bot-wide Pause/Resume control. Pausing cancels the active
 turn, keeps queued messages in order, and survives API restarts. Taking desktop
 control also blocks new turns until release. Interrupted turns are never replayed;
 resuming only permits queued work. Bot managers can change pause state; viewers
 can read it. The runner lifecycle owns a bounded event stream and propagates
-cancellation to CLI process groups and API requests. API runners
+cancellation to CLI process groups and API requests. In a private DM, **Stop
+response** cancels the identified running turn for the caller's conversation.
+Later messages remain queued and may run after cleanup.
+See [ADR-0028](docs/adr/0028-stop-private-chat-turns.md). API runners
 support OpenAI-compatible providers and native Anthropic Messages with bounded
 sandbox tools. Credentials named `llm-openrouter`, `llm-openai` and `llm-anthropic`
 are resolved from encrypted bot/workspace secrets outside the sandbox.
@@ -220,8 +243,17 @@ isolated sandbox; processes are terminated as a group on cancellation.
 The sandbox installs a provided public proxy CA into its user-owned combined
 trust bundle and NSS store; supervised tools inherit the CA environment without
 sudo. The Docker driver provisions one trusted proxy per bot, using the database
-URL derived from `DATABASE_URL` or the `BOTBOX_EGRESS_DATABASE_URL` override. Claude/Codex requests take a workspace budget lock,
-create a provisional usage record, and settle usage before the next request.
+URL derived from `DATABASE_URL` or the `BOTBOX_EGRESS_DATABASE_URL` override. API and CLI model requests share a workspace-scoped admission lock. For supported
+text-only requests with an enforced output-token limit, admission reserves a
+conservative cost bound in `usage_records.reserved_micros` and releases the lock
+before forwarding. Workspace, bot, and group caps include pending reservations;
+spend displays and warnings use settled charges only. Settlement releases unused
+capacity, including after cancellation. Missing, invalid, or over-bound billing
+leaves unknown cost and blocks applicable monetary budgets. Requests with opaque
+inputs, hosted tools, or no enforceable output limit retain serialization for
+that provider request when monetary caps apply. Subscription requests and requests
+without monetary caps release the lock before forwarding. No lock spans a whole
+bot turn.
 Native provider CONNECT tunnels cannot bypass this route. Provider-reported cost
 wins over configured prices; CLI summaries do not double charge proxy records.
 Missing usage/prices on metered requests block applicable monetary budgets until reconciliation.
@@ -291,6 +323,7 @@ type ComputeDriver interface {
 6. **Allowlist & explicit blocklist policy ([ADR-0017](docs/adr/0017-egress-blocklist-triage-and-enforcement.md)):** `allowlist` (default) or `open` internet, paired with an explicit `blocked_hosts` list (`<= 200` entries per list). Explicit blocks (exact hosts or `*.domain` subdomain-only wildcards) are evaluated **first** and override `open` mode, `allowed_hosts`, and secret-derived rules without exposing or altering secret values. Identical normalized allow/block patterns are rejected (`400`), while narrower deny exceptions under broader allows (e.g. `*.example.com` allowed with `api.example.com` blocked) are valid. `PATCH /api/workspaces/{workspaceID}/bots/{botID}/egress` requires `expectedRevision` (`428` missing, `409` stale); omitting `blockedHosts` preserves stored blocks while `[]` clears them. Policy mutations serialize under a per-bot transaction lock, persist an audit row and durable invalidation intent atomically, and return `200` (`applied`) once the running proxy adopts the revision and closes affected passthrough tunnels (or `202` `pending` when ack times out, and `200` `not_running` when stopped). Running proxies enforce a `1 s` fail-closed policy freshness window for active passthrough tunnels and reject subsequent requests on open MITM connections when blocked. On the bot **Secrets & network** page, bot managers can triage domains in one click from the egress log (`Allow`/`Block`) with pattern-specific `Undo` that preserves unrelated concurrent rules and unsaved form drafts. A blocked host gets `403` and an approval request ("allow new host"); removing an exact block via approval requires bot-management rights (`403` otherwise), and wildcard blocks never narrow or clear through approval (`409`).
 7. **Metering:** the proxy reads `usage` from LLM responses, including streaming ones. A **kill switch** blocks LLM calls when a budget is exhausted (§4.9).
 8. **Egress log:** time, method, host, path without query, result (`token added`, `passed`, `blocked`), bytes and latency. Stored partitioned by day with a retention period.
+9. **Credentialed response sizes ([ADR-0023](docs/adr/0023-git-response-size.md)):** The reviewed `gitlab_git` adapter accepts responses up to 64 MiB on GitLab.com and assigned self-hosted origins; other adapters retain a 2 MiB cap. Both wire and decoded gzip/deflate bodies are bounded and fully inspected before forwarding. Oversized responses return a safe `502` identifying the byte limit; body read failures return a separate generic error. Packfile MIME-type checks and credential-reflection rejection remain enforced.
 
 **Result:** the bot reaches external repositories and APIs without knowing any secret. Exfiltration through the LLM fails, because there is nothing to exfiltrate and unknown hosts are blocked.
 
@@ -298,7 +331,7 @@ type ComputeDriver interface {
 - Envelope encryption: AES-256-GCM with a data key per secret, wrapped by a key-encryption key from a file or environment variable (Vault or KMS later). KEK rotation is supported.
 - The API is **write-only**: secrets can be created, replaced and deleted, but never read back.
 - Bot secrets and workspace secrets (inherited by bots), plus bounded ephemeral `secret_leases` created by in-chat `request_secret` fulfillment.
-- **In-chat secret requests ([ADR-0016](docs/adr/0016-zero-context-secret-requests.md)):** Bots invoke `request_secret` (`cli_egress` with a reviewed HTTPS credential adapter and optional validated `env_placeholder_name`, or `browser_login` when the external `auth-broker` is configured via `BOTBOX_AUTH_BROKER_URL`). The turn pauses as `waiting_secret`, workspace `owner`/`admin`/conversation `member` users submit via the write-only modal (`POST .../secret-requests/{id}/fulfill`), and `mitmproxy` evaluates lease expiry, revocation, adapter routes, fail-closed dynamic policy reload, and all-status response mediation per request on every `CONNECT`/TLS tunnel. For `browser_login`, the standalone `cmd/auth-broker` service owns credential-bearing Chromium targets/cookies outside sandbox containers with atomic `(target, frame, document, origin, form)` binding, restricted bot browsing (`broker_open`, `broker_read`, `broker_click`, `broker_screenshot`), and dedicated human-only broker takeover (`POST .../broker-takeover/*`); when unconfigured (`AuthBroker == nil`), `browser_login` fails closed with `422 unsupported_capability`.
+- **In-chat secret requests ([ADR-0016](docs/adr/0016-zero-context-secret-requests.md)):** Bots invoke `request_secret` (`cli_egress` with a reviewed HTTPS credential adapter and optional validated `env_placeholder_name`, or `browser_login` when the external `auth-broker` is configured via `BOTBOX_AUTH_BROKER_URL`). For GitLab CLI access, an eligible saved secret for the bot, exact origin and adapter is tried using a non-secret placeholder before requesting human input ([ADR-0020](docs/adr/0020-self-hosted-gitlab-cli-grants.md)). When human input is needed, the turn pauses as `waiting_secret` and eligible workspace owners, admins and conversation members submit via the write-only modal (`POST .../secret-requests/{id}/fulfill`). Group secret dialogs identify the bot that sent the request. The `mitmproxy` evaluates lease expiry, revocation, adapter routes, fail-closed dynamic policy reload, and all-status response mediation per request on every `CONNECT`/TLS tunnel. For `browser_login`, the standalone `cmd/auth-broker` service owns credential-bearing Chromium targets/cookies outside sandbox containers with atomic `(target, frame, document, origin, form)` binding, restricted bot browsing (`broker_open`, `broker_read`, `broker_click`, `broker_screenshot`), and dedicated human-only broker takeover (`POST .../broker-takeover/*`). When unconfigured (`AuthBroker == nil`), `browser_login` fails closed with `422 unsupported_capability`.
 - **Self-hosted GitLab access ([ADR-0019](docs/adr/0019-live-public-gitlab-and-bot-assignment.md), [ADR-0020](docs/adr/0020-self-hosted-gitlab-cli-grants.md)):** Workspace owners/admins register up to 20 named HTTPS origins through `GET/POST/DELETE .../gitlab-instances`. Bot managers select origins through `GET/PUT .../bots/{botID}/gitlab-instances`; new registrations grant no implicit access. Reviewed `gitlab_web`, `gitlab_api` and `gitlab_git` adapters use the exact assigned origin and independent egress permission. Real API/Git tokens remain envelope-encrypted outside sandboxes; `glab` receives only a generated `GITLAB_TOKEN` placeholder and host guidance, while the proxy injects PRIVATE-TOKEN on REST `/api/v4/` or Basic on smart-HTTP Git routes. Public DNS checks and literal-IP dialing apply to each custom upstream connection; all-status response mediation and live assignment checks remain enforced. Removing access revokes sessions/leases and saved bot credentials, cancels requests, and records per-bot exclusions of existing inherited workspace tokens; reassignment does not resurrect them. Removing an instance removes its saved adapter tokens globally within the workspace. Retained `gitlab_known_origins` metadata prevents legacy generic/wildcard secrets or secret-derived host allowances from bypassing registration, assignment and explicit network policy after removal. Expected failures produce safe tool results and actionable localized turn codes. Default GitLab.com behavior remains. GraphQL, SSH, private targets, custom upstream CAs, alternate ports, subpaths and cross-origin SSO are deferred.
 - Every change goes to the audit log.
 
@@ -342,10 +375,26 @@ Membership is the only read path, including for workspace admins. See
   viewers) create it, replace its settings, and post. A human post stores the
   message and queues the bots the orchestrator selects. A failed publish rolls
   the post back. Someone who is not a member, including a workspace admin, gets 404.
+- **Delete group:** a non-viewer group member can permanently delete the group
+  for everyone through `DELETE /api/workspaces/{workspaceID}/groups/{groupID}`.
+  The chat header opens a confirmation dialog with Cancel focused first.
+  Messages, memberships, queued turns, sessions, group approvals, and notifications
+  are removed together. Bots, computers, and metered usage remain. Running turns,
+  secret waits, and active broker sessions or secret leases block deletion with
+  `409 group.busy`; finish or stop that work before retrying. The operation records
+  a `group.deleted` audit entry. See [ADR-0022](docs/adr/0022-group-deletion.md).
 - **Orchestrator** (`internal/orchestrator`), used for groups only:
-  - **Router:** mentioned bots, otherwise the lead; lead first plus mentions; or round robin.
-  - **Context builder:** goal, roster with roles, rules, the last 50 messages, and an extractive summary of older text. The summary does not call a model. The prompt tells the bot to mention the colleague it hands work to. Secrets are not included.
-  - **Handoffs:** mentions in a bot reply schedule the next bot through the per-bot queue, only when bot-to-bot is on.
+  - **Router:** human messages use mentioned bots, otherwise the lead; lead first plus mentions; or round robin. A human's case-insensitive `@all` token addresses all group members and queues each member bot once, overriding round robin. Human recipients use the existing mention notification preferences.
+  - **Context builder:** the responding bot's identity, the lead, goal, roster with global bot responsibilities and group metadata, rules, up to the last 50 messages, and an extractive summary of older text. The group brief is bounded to 48 KiB so the current input, bot identity, and desktop guidance fit the agent's 64 KiB CLI input limit. Newer messages take priority over the old summary; oversized recent replies keep their ending. Very large roster metadata is limited to half the brief. Truncation is UTF-8-safe, identified in the prompt, and never deletes stored history. See [ADR-0026](docs/adr/0026-bounded-group-context-and-visible-turn-failures.md). The summary does not call a model. The prompt describes how to request input explicitly. Secrets are not included.
+  - **Global bot roles:** the free-form "Global role & responsibilities" field in bot settings (`bots.description`, up to 4000 bytes) applies across groups and direct messages. It supports Markdown; the team chat's direct-message details render it with the same safe CommonMark/GFM renderer as messages. Long roles show a preview about four body lines high, with "More" to expand and "Less" to collapse. It is prompt context, not a fixed role enum or permission grant. The current name, role, and reply language are sent on every API and CLI turn, including resumed CLI sessions and continuations. Group context is refreshed on every turn so colleagues' replies and role edits are visible. Existing bot-management permissions govern edits. See [ADR-0021](docs/adr/0021-broadcast-mentions-and-global-bot-roles.md).
+  - **Requests for input:** with bot-to-bot on, a bot can ask up to eight other member bots for input on a question. It ends its turn while recipients answer in parallel. The request message shows who is waiting, who replied, and whose input was unavailable. There is one open request per requester per group. When recipients finish or the five-minute deadline passes, the scheduler queues the requester once with the collected replies and any gaps. The requester can ask for required input and report a blocker if that input is missing. Human messages can still steer the discussion. Group pauses, budgets, and turn limits govern the continuation. See [ADR-0027](docs/adr/0027-group-input-requests.md).
+- **Stop response:** a non-viewer group member can stop a running bot turn through
+  `POST /api/workspaces/{workspaceID}/groups/{groupID}/turns/{turnID}/stop`.
+  Each running bot has its own button beside its activity above the composer.
+  Other bots continue, and queued turns keep their order. A stop recorded before
+  reply finalization prevents the stopped reply from handing off work or opening
+  an approval or input request. See [ADR-0028](docs/adr/0028-stop-private-chat-turns.md).
+- **Failed turns:** the group composer shows the latest failed turn per bot, labelled with its name and a safe translated recovery message. Starting a new turn or completing a later one replaces the old warning. Raw provider errors are never displayed.
 - **Limits:**
   - The turn counter resets on every human message and increments when a group bot turn is claimed. At the limit the group pauses and posts `Turn <limit> of <limit> · paused, waiting for you`.
   - Ping-pong A, B, A, B pauses the group before the limit. A bot is not scheduled to answer itself.

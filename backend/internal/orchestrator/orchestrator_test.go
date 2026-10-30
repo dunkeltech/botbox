@@ -1,11 +1,82 @@
 package orchestrator
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 )
+
+func TestBroadcastMentions(t *testing.T) {
+	a, b, human := uuid.New(), uuid.New(), uuid.New()
+	members := []Member{{Kind: MemberBot, ID: a, Name: "Yoda"}, {Kind: MemberBot, ID: b, Name: "Mace Windu"}, {Kind: MemberUser, ID: human, Name: "Jan"}}
+	for _, content := range []string{"@all discuss", "(@ALL), please", "@Yoda @all @Mace Windu @all"} {
+		bots, humans := ParseMentions(content, members)
+		if !slices.Equal(bots, []uuid.UUID{a, b}) || !slices.Equal(humans, []uuid.UUID{human}) {
+			t.Fatalf("%q: bots=%v humans=%v", content, bots, humans)
+		}
+	}
+	for _, content := range []string{"", "all", "@alliance", "@all2", "@all_name", "@allé", "mail@all.com", "é@all"} {
+		bots, humans := ParseMentions(content, members)
+		if len(bots)+len(humans) != 0 {
+			t.Fatalf("%q unexpectedly broadcasts: %v %v", content, bots, humans)
+		}
+	}
+	for _, policy := range []AnswerPolicy{PolicyMentionedElseLead, PolicyLeadFirst, PolicyRoundRobin} {
+		t.Run(string(policy), func(t *testing.T) {
+			req := Request{SenderKind: MemberUser, SenderID: human, Content: "@all", BotTalk: true, Policy: policy, LeadBotID: a, TurnLimit: 20, Members: members}
+			if plan := Route(req); !slices.Equal(plan.Bots, []uuid.UUID{a, b}) {
+				t.Fatalf("human broadcast=%+v", plan)
+			}
+			req.SenderKind, req.SenderID = MemberBot, a
+			req.Content = "Please give your perspective.\nRequest input: [\"@all\"]"
+			if plan := Route(req); !slices.Equal(plan.Bots, []uuid.UUID{b}) {
+				t.Fatalf("lead broadcast=%+v", plan)
+			}
+			req.BotTalk = false
+			if plan := Route(req); len(plan.Bots) != 0 {
+				t.Fatalf("bot talk off=%+v", plan)
+			}
+			req.BotTalk = true
+			for _, reason := range []PauseReason{PauseApproval, PauseBudget, PauseLoop, PauseTurnLimit} {
+				req.Paused, req.PauseReason = true, reason
+				if plan := Route(req); len(plan.Bots) != 0 || !plan.Pause || plan.Reason != reason {
+					t.Fatalf("paused broadcast=%+v", plan)
+				}
+			}
+			req.Paused, req.TurnsSinceHuman = false, 20
+			if plan := Route(req); len(plan.Bots) != 0 || plan.Reason != PauseTurnLimit {
+				t.Fatalf("limited broadcast=%+v", plan)
+			}
+			req.TurnsSinceHuman = 0
+			req.RecentBotSpeakers = []uuid.UUID{b, a, b, a}
+			if plan := Route(req); len(plan.Bots) != 0 || plan.Reason != PauseLoop {
+				t.Fatalf("loop broadcast=%+v", plan)
+			}
+			req.RecentBotSpeakers, req.Members = nil, members[:1]
+			if plan := Route(req); len(plan.Bots) != 0 {
+				t.Fatalf("single bot broadcast=%+v", plan)
+			}
+			req.Members = nil
+			if plan := Route(req); len(plan.Bots) != 0 {
+				t.Fatalf("empty group broadcast=%+v", plan)
+			}
+		})
+	}
+}
+
+func TestContextIdentifiesBotAndLead(t *testing.T) {
+	self, lead := uuid.New(), uuid.New()
+	text := BuildContext(ContextInput{BotID: self, LeadBotID: lead, Members: []Member{
+		{Kind: MemberBot, ID: self, Name: "Mace Windu", Instructions: "Keep the system architecture understandable."}, {Kind: MemberBot, ID: lead, Name: "Yoda", Instructions: "Check GDPR compliance."},
+	}})
+	for _, want := range []string{"You are Mace Windu", "Group lead: Yoda", "Request input:", "@all", "Keep the system architecture understandable.", "Check GDPR compliance."} {
+		if !strings.Contains(text, want) {
+			t.Errorf("missing %q in %s", want, text)
+		}
+	}
+}
 
 func TestParseMentions(t *testing.T) {
 	ann := uuid.New()
@@ -116,7 +187,7 @@ func TestRoute(t *testing.T) {
 		req := base
 		req.SenderKind = MemberBot
 		req.SenderID = lead
-		req.Content = "@Lead @Other"
+		req.Content = "What do you think?\nRequest input: [\"Lead\", \"Other\"]"
 		plan := Route(req)
 		if len(plan.Bots) != 1 || plan.Bots[0] != other {
 			t.Fatalf("plan=%+v", plan)
@@ -161,7 +232,7 @@ func TestRoute(t *testing.T) {
 		req := base
 		req.SenderKind = MemberBot
 		req.SenderID = other
-		req.Content = "@Lead"
+		req.Content = "Thoughts?\nRequest input: [\"Lead\"]"
 		req.RecentBotSpeakers = []uuid.UUID{lead, other, lead, other}
 		plan := Route(req)
 		if !plan.Pause || plan.Reason != PauseLoop || len(plan.Bots) != 0 {
@@ -231,19 +302,20 @@ func TestBuildContextOmitsSecrets(t *testing.T) {
 		Summary:   "older notes",
 		Recent:    []ContextMessage{{Speaker: "Ada", Body: "go"}},
 	})
-	for _, want := range []string{"ship the migration", "Lead", "bot_talk=true", "deleting data", "older notes", "Ada: go", "Mention the bot you hand work to."} {
+	for _, want := range []string{"ship the migration", "Lead", "bot_talk=true", "deleting data", "older notes", "Ada: go", "Request input:"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing %q in %s", want, text)
 		}
 	}
 }
 
-func TestRoundRobinSkipsSender(t *testing.T) {
+func TestInputRequestLeavesRoundRobinPositionUnchanged(t *testing.T) {
 	lead := uuid.MustParse("00000000-0000-4000-8000-000000000001")
 	other := uuid.MustParse("00000000-0000-4000-8000-000000000002")
 	req := Request{
 		SenderKind: MemberBot,
 		SenderID:   lead,
+		Content:    "What do you think?\nRequest input: [\"Lead\", \"Other\"]",
 		BotTalk:    true,
 		Policy:     PolicyRoundRobin,
 		LeadBotID:  lead,
@@ -255,7 +327,7 @@ func TestRoundRobinSkipsSender(t *testing.T) {
 		},
 	}
 	plan := Route(req)
-	if len(plan.Bots) != 1 || plan.Bots[0] != other || plan.NextRoundIndex != 2 {
+	if len(plan.Bots) != 1 || plan.Bots[0] != other || plan.NextRoundIndex != 0 {
 		t.Fatalf("plan=%+v", plan)
 	}
 }

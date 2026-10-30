@@ -10,7 +10,7 @@ import (
 
 func TestTurnFailureCodesNeverExposePrivateCauses(t *testing.T) {
 	private := errors.New("credential=fixture-private-value")
-	for _, code := range []string{"secret_request.gitlab_not_registered", "secret_request.gitlab_not_assigned", "secret_request.host_not_allowed", "secret_request.policy_unavailable", engine.FailureCLIUnavailable, engine.FailureComputerNotRunning, engine.FailureComputerRestart, engine.FailureControlHeld, engine.FailureProxyUnavailable, engine.FailureCredentialsMissing, engine.FailureCredentialsUnavailable, engine.FailureProvider, "fixture-private-value", ""} {
+	for _, code := range []string{"secret_request.gitlab_not_registered", "secret_request.gitlab_not_assigned", "secret_request.host_not_allowed", "secret_request.policy_unavailable", engine.FailureCLIUnavailable, engine.FailureComputerNotRunning, engine.FailureComputerRestart, engine.FailureControlHeld, engine.FailureProxyUnavailable, engine.FailureCredentialsMissing, engine.FailureCredentialsUnavailable, engine.FailureProvider, engine.FailureStreamFormat, "fixture-private-value", ""} {
 		wrapped := engine.WithFailureCode(code, private)
 		safe := engine.TurnFailureCode(wrapped)
 		if strings.Contains(safe, "fixture") || strings.Contains(wrapped.Error(), "fixture") {

@@ -214,6 +214,12 @@ func (s *server) handleUpdateGroup(w http.ResponseWriter, r *http.Request) {
 		s.writeGroupStoreError(w, err)
 		return
 	}
+	if !spec.botTalk {
+		if err = q.StopGroupInputRequests(r.Context(), db.StopGroupInputRequestsParams{WorkspaceID: row.WorkspaceID, ConversationID: row.ID}); err != nil {
+			s.writeGroupStoreError(w, err)
+			return
+		}
+	}
 	if err = tx.Commit(r.Context()); err != nil {
 		s.logger.Error("commit update group", "err", err)
 		s.chatFailure(w)
@@ -227,7 +233,85 @@ func (s *server) handleListGroupMessages(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	s.writeConversationHistory(w, r, row.WorkspaceID, row.ID)
+	s.writeConversationHistory(w, r, row.WorkspaceID, row.ID, true)
+}
+
+func (s *server) handleStopGroupTurn(w http.ResponseWriter, r *http.Request) {
+	row, ok := s.groupForMember(w, r, true)
+	if !ok {
+		return
+	}
+	s.stopConversationTurn(w, r, row.WorkspaceID, row.ID)
+}
+
+func (s *server) handleDeleteGroup(w http.ResponseWriter, r *http.Request) {
+	row, ok := s.groupForMember(w, r, true)
+	if !ok {
+		return
+	}
+	claims, _ := claimsFromContext(r.Context())
+	tx, err := s.pool.Begin(r.Context())
+	if err != nil {
+		s.logger.Error("begin delete group", "err", err)
+		s.chatFailure(w)
+		return
+	}
+	defer rollbackTx(r.Context(), tx)
+	q := s.queries.WithTx(tx)
+	// The parent lock blocks new messages and turns while deletion is checked.
+	// Active work must finish first: deleting its row would not stop sandbox tools.
+	if _, err = q.GetGroupForUpdate(r.Context(), db.GetGroupForUpdateParams{WorkspaceID: row.WorkspaceID, ID: row.ID}); errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, s.logger, http.StatusNotFound, "group.not_found", "group not found")
+		return
+	} else if err != nil {
+		s.logger.Error("lock group for delete", "err", err)
+		s.chatFailure(w)
+		return
+	}
+	turns, err := q.LockGroupTurnsForDelete(r.Context(), db.LockGroupTurnsForDeleteParams{WorkspaceID: row.WorkspaceID, ConversationID: row.ID})
+	if err != nil {
+		s.logger.Error("lock group turns for delete", "err", err)
+		s.chatFailure(w)
+		return
+	}
+	for _, status := range turns {
+		if status == "running" || status == "waiting_secret" {
+			writeError(w, s.logger, http.StatusConflict, "group.busy", "group has active bot work")
+			return
+		}
+	}
+	active, err := q.HasActiveGroupCredentials(r.Context(), db.HasActiveGroupCredentialsParams{WorkspaceID: row.WorkspaceID, ConversationID: row.ID})
+	if err != nil {
+		s.logger.Error("check group credentials for delete", "err", err)
+		s.chatFailure(w)
+		return
+	}
+	if active.Bool {
+		writeError(w, s.logger, http.StatusConflict, "group.busy", "group has active bot work")
+		return
+	}
+	n, err := q.DeleteGroupForMember(r.Context(), db.DeleteGroupForMemberParams{WorkspaceID: row.WorkspaceID, ID: row.ID, MemberID: toPGUUID(claims.Subject)})
+	if err != nil {
+		s.logger.Error("delete group", "err", err)
+		s.chatFailure(w)
+		return
+	}
+	if n == 0 {
+		writeError(w, s.logger, http.StatusNotFound, "group.not_found", "group not found")
+		return
+	}
+	workspaceID, groupID := fromPGUUID(row.WorkspaceID), fromPGUUID(row.ID)
+	if err = recordAudit(r.Context(), q, &workspaceID, &claims.Subject, "group.deleted", "group", &groupID, map[string]any{}); err != nil {
+		s.logger.Error("audit group deletion", "err", err)
+		s.chatFailure(w)
+		return
+	}
+	if err = tx.Commit(r.Context()); err != nil {
+		s.logger.Error("commit delete group", "err", err)
+		s.chatFailure(w)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *server) handleSendGroupMessage(w http.ResponseWriter, r *http.Request) {

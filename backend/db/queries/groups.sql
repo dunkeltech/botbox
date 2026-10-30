@@ -48,7 +48,8 @@ WHERE workspace_id = $1 AND conversation_id = $2
 
 -- name: ListGroupMemberRows :many
 SELECT m.member_type, m.member_id, m.role_text,
-       COALESCE(u.display_name, b.name, '') AS display_name
+       COALESCE(u.display_name, b.name, '') AS display_name,
+       COALESCE(b.description, '') AS bot_description
 FROM conversation_members m
 LEFT JOIN users u ON m.member_type = 'user' AND u.id = m.member_id
 LEFT JOIN bots b ON m.member_type = 'bot' AND b.workspace_id = m.workspace_id AND b.id = m.member_id
@@ -63,6 +64,33 @@ WHERE workspace_id = $1 AND id = $2 AND type = 'group';
 
 -- name: GetGroup :one
 SELECT * FROM conversations WHERE workspace_id = $1 AND id = $2 AND type = 'group';
+
+-- name: DeleteGroupForMember :execrows
+DELETE FROM conversations c
+WHERE c.workspace_id = $1 AND c.id = $2 AND c.type = 'group'
+  AND EXISTS (
+    SELECT 1 FROM conversation_members m
+    WHERE m.workspace_id = c.workspace_id AND m.conversation_id = c.id
+      AND m.member_type = 'user' AND m.member_id = $3
+  );
+
+-- name: LockGroupTurnsForDelete :many
+-- Lock queued turns too, so a worker cannot start after the active-turn check.
+SELECT status FROM bot_turns
+WHERE workspace_id = $1 AND conversation_id = $2
+ORDER BY id FOR UPDATE;
+
+-- name: HasActiveGroupCredentials :one
+SELECT EXISTS (
+    SELECT 1 FROM broker_sessions bs
+    WHERE bs.workspace_id = $1 AND bs.conversation_id = $2
+      AND bs.revoked_at IS NULL AND bs.expires_at > now()
+      AND bs.status NOT IN ('revoked', 'expired')
+) OR EXISTS (
+    SELECT 1 FROM secret_leases sl
+    WHERE sl.workspace_id = $1 AND sl.conversation_id = $2
+      AND sl.revoked_at IS NULL AND sl.expires_at > now()
+) AS active;
 
 -- name: GetGroupForUpdate :one
 SELECT * FROM conversations WHERE workspace_id = $1 AND id = $2 AND type = 'group' FOR UPDATE;
@@ -96,7 +124,7 @@ ORDER BY position ASC;
 -- name: GroupSpend :one
 SELECT
     COALESCE(sum(u.cost_micros) FILTER (WHERE u.cost_micros IS NOT NULL), 0)::bigint AS spent_micros,
-    (CASE WHEN bool_or(u.cost_micros IS NULL AND u.billing_kind = 'metered') THEN 1 ELSE 0 END)::int AS unknown_rows
+    (CASE WHEN bool_or(u.cost_micros IS NULL AND u.reserved_micros IS NULL AND u.billing_kind = 'metered') THEN 1 ELSE 0 END)::int AS unknown_rows
 FROM usage_records u
 JOIN bot_turns t ON t.workspace_id = u.workspace_id AND t.id = u.turn_id
 WHERE u.workspace_id = $1 AND t.conversation_id = $2 AND u.turn_id IS NOT NULL;

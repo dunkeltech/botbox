@@ -62,6 +62,9 @@ func Stream(ctx context.Context, cli string, stdout, stderr io.ReadCloser, emit 
 			}
 			line, err := readBoundedLine(reader)
 			if err != nil && !errors.Is(err, io.EOF) {
+				if errors.Is(err, ErrLineTooLong) {
+					return WithFailureCode(FailureStreamFormat, err)
+				}
 				return err
 			}
 			if len(bytes.TrimSpace(line)) > 0 && decode != nil {

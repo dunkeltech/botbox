@@ -7,6 +7,7 @@ import type { Bot, BotStatus } from '@/types/api';
 import type { components } from '@/types/openapi.gen';
 import { initials } from '@/components/team/text';
 import { TalkSwitch } from '@/components/team/TalkSwitch';
+import { BotRoleDescription } from '@/components/team/BotRoleDescription';
 
 type Group = components['schemas']['Group'];
 type AskBefore = components['schemas']['AskBeforeRule'];
@@ -267,8 +268,11 @@ export function DirectDetails({
         />
         <h2 className="text-[22px] font-black">{bot.name}</h2>
         <p className="text-[14px] font-bold">{t(statusKey(bot.status))}</p>
-        {bot.description ? (
-          <p className="text-[15px]">{bot.description}</p>
+        {bot.description?.trim() ? (
+          <BotRoleDescription
+            key={`${bot.id}:${bot.description}`}
+            content={bot.description}
+          />
         ) : null}
         <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-[14px]">
           <dt className="font-bold text-muted">{t('brain')}</dt>

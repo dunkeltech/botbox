@@ -65,4 +65,14 @@ describe('team text helpers', () => {
     expect(body.budgetLimitMicros).toBe(100);
     expect(body.turnLimit).toBe(20);
   });
+
+  it('marks broadcast mentions but ignores longer words and email addresses', () => {
+    const parts = mentionParts(
+      '@all (@ALL) @alliance @all_name mail@all.com @allé é@all',
+      [],
+    );
+    expect(
+      parts.filter((part) => part.mention).map((part) => part.text),
+    ).toEqual(['@all', '@ALL']);
+  });
 });

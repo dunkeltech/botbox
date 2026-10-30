@@ -62,4 +62,12 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    files: ['e2e/*.mjs'],
+    extends: [tseslint.configs.disableTypeChecked],
+    languageOptions: {
+      globals: { process: 'readonly', console: 'readonly' },
+      parserOptions: { projectService: false },
+    },
+  },
 );

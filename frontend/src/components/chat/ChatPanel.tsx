@@ -1,5 +1,8 @@
 'use client';
 
+import { turnFailureKey } from '@/components/chat/turnFailure';
+import { connectConversation } from '@/lib/conversation-events';
+
 import { Send, X } from 'lucide-react';
 import Link from 'next/link';
 import {
@@ -25,6 +28,7 @@ import {
 } from '@/components/chat/toolTrace';
 import { ChatTurnToolChip } from '@/components/chat/ChatTurnToolChip';
 import { LiveToolStatusBar } from '@/components/chat/LiveToolStatusBar';
+import { StopTurnButton } from '@/components/chat/StopTurnButton';
 import { ToolCallsSidebar } from '@/components/chat/ToolCallsSidebar';
 import { ToolImage } from '@/components/chat/ToolImage';
 import { BrokerTakeoverModal } from '@/components/chat/BrokerTakeoverModal';
@@ -39,24 +43,6 @@ import type { components } from '@/types/openapi.gen';
 type Conversation = components['schemas']['ChatConversation'];
 type History = components['schemas']['ChatHistory'];
 type BudgetSummary = components['schemas']['BudgetSummary'];
-
-const turnFailureKeys: Record<string, string> = {
-  'secret_request.gitlab_not_registered': 'secretGitLabNotRegistered',
-  'secret_request.gitlab_not_assigned': 'secretGitLabNotAssigned',
-  'secret_request.host_not_allowed': 'secretHostNotAllowed',
-  'secret_request.invalid_input': 'secretInvalidInput',
-  'secret_request.rate_limited': 'secretRateLimited',
-  'secret_request.policy_unavailable': 'secretPolicyUnavailable',
-  'secret_request.unsupported_capability': 'secretCapabilityUnavailable',
-  'engine.cli_unavailable': 'cliUnavailable',
-  'engine.computer_not_running': 'computerNotRunning',
-  'engine.computer_restart_required': 'computerRestartRequired',
-  'engine.computer_controlled': 'computerControlled',
-  'engine.proxy_unavailable': 'proxyUnavailable',
-  'engine.credentials_missing': 'credentialsMissing',
-  'engine.credentials_unavailable': 'credentialsUnavailable',
-  'engine.provider_failed': 'providerFailed',
-};
 
 function formatTime(iso: string): string {
   const date = new Date(iso);
@@ -193,13 +179,8 @@ export function ChatPanel({
     if (!conversationId) return;
     const token = getAccessToken();
     if (!token) return;
-    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const socket = new WebSocket(
-      `${protocol}//${location.host}/ws/chat/${workspaceId}/${conversationId}`,
-      ['botbox.events', `botbox.auth.${token}`],
-    );
     let deltasSinceMessage = false;
-    socket.onmessage = (message: MessageEvent<string>) => {
+    const onMessage = (message: MessageEvent<string>) => {
       try {
         const data: unknown = JSON.parse(message.data);
         if (typeof data !== 'object' || data === null) return;
@@ -219,11 +200,13 @@ export function ChatPanel({
           'Kind' in data &&
           (data.Kind === 'tool_call' || data.Kind === 'tool_result')
         ) {
+          void client.invalidateQueries({ queryKey: ['bots', workspaceId] });
           void client.invalidateQueries({
             queryKey: ['chat', workspaceId, userId, conversationId],
           });
         }
         if ('Kind' in data && data.Kind === 'status') {
+          void client.invalidateQueries({ queryKey: ['bots', workspaceId] });
           if (
             'Status' in data &&
             (data.Status === 'idle' || data.Status === 'offline')
@@ -239,7 +222,18 @@ export function ChatPanel({
         setError(true);
       }
     };
-    return () => socket.close();
+    return connectConversation(
+      workspaceId,
+      conversationId,
+      getAccessToken,
+      onMessage,
+      () => {
+        void client.invalidateQueries({
+          queryKey: ['chat', workspaceId, userId, conversationId],
+        });
+        void client.invalidateQueries({ queryKey: ['bots', workspaceId] });
+      },
+    );
   }, [conversationId, workspaceId, userId, client]);
 
   async function submitMessage() {
@@ -297,9 +291,13 @@ export function ChatPanel({
   const [localToolTurnKey, setLocalToolTurnKey] = useState<string | null>(null);
   const [localDrawerOpen, setLocalDrawerOpen] = useState(false);
 
-  const turn = history.data?.turns[0];
+  const runningTurn = history.data?.turns.find(
+    (item) => item.status === 'running',
+  );
+  const turn = runningTurn ?? history.data?.turns[0];
   const active = turn?.status === 'queued' || turn?.status === 'running';
   const waitingSecret = turn?.status === 'waiting_secret';
+
   const secretControl = useSecretRequestControl(workspaceId, async () => {
     await client.invalidateQueries({
       queryKey: ['chat', workspaceId, userId, conversationId],
@@ -591,17 +589,29 @@ export function ChatPanel({
       </div>
 
       {active && turn ? (
-        <LiveToolStatusBar
-          name={name}
-          avatarSeed={avatarSeed}
-          statusText={
-            turn.status === 'queued'
-              ? t('queued', { count: turn.queueAhead })
-              : t('working', { name })
-          }
-          liveTurn={liveToolTurn}
-          onInspect={liveToolTurn ? handleInspectTurn : undefined}
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="min-w-0 flex-1">
+            <LiveToolStatusBar
+              name={name}
+              avatarSeed={avatarSeed}
+              statusText={
+                turn.status === 'queued'
+                  ? t('queued', { count: turn.queueAhead })
+                  : t('working', { name })
+              }
+              liveTurn={liveToolTurn}
+              onInspect={liveToolTurn ? handleInspectTurn : undefined}
+            />
+          </div>
+          {canChat && conversationId && runningTurn ? (
+            <StopTurnButton
+              key={runningTurn.id}
+              path={`${base}/conversations/${conversationId}/turns/${runningTurn.id}/stop`}
+              requested={runningTurn.stopRequested}
+              refresh={history.refetch}
+            />
+          ) : null}
+        </div>
       ) : waitingSecret ? (
         <div
           role="status"
@@ -614,11 +624,7 @@ export function ChatPanel({
 
       {turn?.errorCode ? (
         <Alert tone="warning">
-          {t(
-            Object.hasOwn(turnFailureKeys, turn.errorCode)
-              ? (turnFailureKeys[turn.errorCode] ?? 'turnFailed')
-              : 'turnFailed',
-          )}
+          {t(turnFailureKey(turn.errorCode))}
           {turn.errorCode === 'engine.credentials_missing' ||
           turn.errorCode === 'engine.credentials_unavailable' ? (
             <Link

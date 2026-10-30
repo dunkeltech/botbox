@@ -13,6 +13,10 @@ import (
 
 const defaultMaxMediatedResponseBytes int64 = 2 << 20 // 2 MiB
 
+// Git packfiles routinely exceed API payloads. Keep buffering bounded within
+// the proxy's memory budget while preserving full-response inspection (ADR-0023).
+const maxGitMediatedResponseBytes int64 = 64 << 20 // 64 MiB
+
 // HTTPSAdapter defines an explicitly reviewed upstream HTTPS integration that may
 // receive egress-proxy injected credentials from an in-chat secret request.
 // Host allowlisting alone never grants credential injection rights (ADR-0016).
@@ -73,7 +77,7 @@ var reviewedHTTPSAdapters = map[string]HTTPSAdapter{
 		DefaultEnvName:   "GITLAB_TOKEN",
 		AllowRedirects:   false,
 		AllowBinaryPack:  true,
-		MaxResponseBytes: defaultMaxMediatedResponseBytes,
+		MaxResponseBytes: maxGitMediatedResponseBytes,
 	},
 	"npm_registry": {
 		ID:               "npm_registry",

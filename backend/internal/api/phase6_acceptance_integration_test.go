@@ -42,7 +42,6 @@ func TestPhase6GroupHandoffAcceptance(t *testing.T) {
 
 	// Turn limit 4 leaves room for the 3-turn handoff plus the approval resume,
 	// then stops on the fourth bot turn without queuing another handoff.
-	// Nova is the lead so Turn 2 (without mentions) does not re-queue Atlas.
 	odoo := createGroup(t, h, base, humanA.AccessToken, groupSettings{
 		name:      "odoo-maintenance",
 		goal:      "Keep odoo-maintenance migrations clean",
@@ -55,26 +54,27 @@ func TestPhase6GroupHandoffAcceptance(t *testing.T) {
 
 	fake := enginetest.NewProvider(
 		// 1. Atlas answers Human A with a mention of Nova (plus the MR card below).
-		fakeSSEResponse(t, "@Nova please review MR !42", "0.000001", func(r *http.Request) error {
-			return assertProviderRequest(r, "Keep odoo-maintenance migrations clean", "Mention the bot you hand work to.", "CorrectHorse123!")
+		fakeSSEResponse(t, "Nova, please review MR !42.\nRequest input: [\"Nova\"]", "0.000001", func(r *http.Request) error {
+			return assertProviderRequest(r, "Keep odoo-maintenance migrations clean", "Request input:", "CorrectHorse123!")
 		}),
 		// 2. Nova finishes the direct human mention before taking Atlas's handoff.
 		fakeSSEResponse(t, "Inspecting the migration diff", "0.000001", nil),
 		// 3. Nova runs on Atlas's mention, mentions Alice, and triggers ask-before.
 		fakeSSEResponse(t, "@Alice migration looks ready to ship the release", "0.000001", func(r *http.Request) error {
-			return assertProviderRequest(r, "@Nova please review MR !42")
+			return assertProviderRequest(r, "Nova, please review MR !42.")
 		}),
 		// 4. Resumed Nova finishes Turn 4 and hits turn_limit.
 		fakeSSEResponse(t, "@Atlas release checks complete", "0.000001", nil),
 		// 5-6. bot_talk = false: both bots answer Human A and ignore each other's mentions.
 		fakeSSEResponse(t, "@Nova first check done", "0.000001", nil),
 		fakeSSEResponse(t, "@Atlas second check done", "0.000001", nil),
-		// 7-10. Ping-pong fixture: A, B, A, B triggers loop guard before turn_limit 20.
-		fakeSSEResponse(t, "@Nova ping", "0.000001", nil),
-		fakeSSEResponse(t, "@Atlas pong", "0.000001", nil),
-		fakeSSEResponse(t, "@Nova ping", "0.000001", nil),
-		fakeSSEResponse(t, "@Atlas pong", "0.000001", nil),
-		// 11. 1-microdollar cap: first turn spends 1 microdollar, second never calls provider.
+		// 7-11. Repeated input rounds trigger the loop guard before the turn limit.
+		fakeSSEResponse(t, "Ping?\nRequest input: [\"Nova\"]", "0.000001", nil),
+		fakeSSEResponse(t, "Pong.", "0.000001", nil),
+		fakeSSEResponse(t, "Ping?\nRequest input: [\"Nova\"]", "0.000001", nil),
+		fakeSSEResponse(t, "Pong.", "0.000001", nil),
+		fakeSSEResponse(t, "Ping?\nRequest input: [\"Nova\"]", "0.000001", nil),
+		// 12. 1-microdollar cap: first turn spends 1 microdollar, second never calls provider.
 		fakeSSEResponse(t, "Spent the group cap", "0.000001", nil),
 	)
 	providerServer := httptest.NewServer(fake)
@@ -177,7 +177,7 @@ func TestPhase6GroupHandoffAcceptance(t *testing.T) {
 		members: []any{groupUser(humanA.User.Id, "member"), groupBot(atlas.Id, "lead"), groupBot(nova.Id, "reviewer")},
 	})
 	postGroup(t, h, base, humanA.AccessToken, pingPong.Id, "@Atlas start")
-	drainTurns(t, worker, queue, 8)
+	drainInputRounds(t, worker, queue)
 	loopGot := getGroup(t, h, base, humanA.AccessToken, pingPong.Id)
 	if !loopGot.Paused || loopGot.PauseReason != "loop" || loopGot.TurnsSinceHuman >= 20 || len(queue.jobs) != 0 {
 		t.Fatalf("loop got=%s turns=%d jobs=%d", mustJSON(loopGot), loopGot.TurnsSinceHuman, len(queue.jobs))

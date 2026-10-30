@@ -50,7 +50,7 @@ func (q *Queries) CountPendingBotTurns(ctx context.Context, arg CountPendingBotT
 }
 
 const createBotTurn = `-- name: CreateBotTurn :one
-INSERT INTO bot_turns(workspace_id,bot_id,conversation_id,message_id) VALUES($1,$2,$3,$4) RETURNING id, position, workspace_id, bot_id, conversation_id, message_id, status, error_code, created_at, updated_at, continuation_prompt
+INSERT INTO bot_turns(workspace_id,bot_id,conversation_id,message_id) VALUES($1,$2,$3,$4) RETURNING id, position, workspace_id, bot_id, conversation_id, message_id, status, error_code, created_at, updated_at, continuation_prompt, stop_requested
 `
 
 type CreateBotTurnParams struct {
@@ -80,6 +80,7 @@ func (q *Queries) CreateBotTurn(ctx context.Context, arg CreateBotTurnParams) (B
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ContinuationPrompt,
+		&i.StopRequested,
 	)
 	return i, err
 }
@@ -131,7 +132,9 @@ func (q *Queries) CreateChatMessage(ctx context.Context, arg CreateChatMessagePa
 }
 
 const expireStaleBotTurns = `-- name: ExpireStaleBotTurns :exec
-UPDATE bot_turns SET status='interrupted',error_code='engine.worker_lost',updated_at=$3::timestamptz
+UPDATE bot_turns SET status='interrupted',
+error_code=CASE WHEN stop_requested THEN 'engine.interrupted' ELSE 'engine.worker_lost' END,
+updated_at=$3::timestamptz
 WHERE workspace_id=$1 AND bot_id=$2 AND status='running' AND updated_at < $3::timestamptz - interval '20 minutes'
 `
 
@@ -143,6 +146,32 @@ type ExpireStaleBotTurnsParams struct {
 
 func (q *Queries) ExpireStaleBotTurns(ctx context.Context, arg ExpireStaleBotTurnsParams) error {
 	_, err := q.db.Exec(ctx, expireStaleBotTurns, arg.WorkspaceID, arg.BotID, arg.AsOf)
+	return err
+}
+
+const finishRunningBotTurn = `-- name: FinishRunningBotTurn :exec
+UPDATE bot_turns SET
+status=CASE WHEN stop_requested THEN 'interrupted' ELSE $3::text END,
+error_code=CASE WHEN stop_requested THEN 'engine.interrupted' ELSE $4::text END,
+updated_at=now()
+WHERE workspace_id=$1 AND id=$2 AND status='running'
+`
+
+type FinishRunningBotTurnParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ID          pgtype.UUID `json:"id"`
+	Status      string      `json:"status"`
+	ErrorCode   string      `json:"error_code"`
+}
+
+// Preserve the running slot until execution has returned and cleanup is done.
+func (q *Queries) FinishRunningBotTurn(ctx context.Context, arg FinishRunningBotTurnParams) error {
+	_, err := q.db.Exec(ctx, finishRunningBotTurn,
+		arg.WorkspaceID,
+		arg.ID,
+		arg.Status,
+		arg.ErrorCode,
+	)
 	return err
 }
 
@@ -170,7 +199,7 @@ func (q *Queries) GetBotSession(ctx context.Context, arg GetBotSessionParams) (B
 }
 
 const getBotTurn = `-- name: GetBotTurn :one
-SELECT id, position, workspace_id, bot_id, conversation_id, message_id, status, error_code, created_at, updated_at, continuation_prompt FROM bot_turns WHERE workspace_id=$1 AND id=$2
+SELECT id, position, workspace_id, bot_id, conversation_id, message_id, status, error_code, created_at, updated_at, continuation_prompt, stop_requested FROM bot_turns WHERE workspace_id=$1 AND id=$2
 `
 
 type GetBotTurnParams struct {
@@ -193,6 +222,7 @@ func (q *Queries) GetBotTurn(ctx context.Context, arg GetBotTurnParams) (BotTurn
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ContinuationPrompt,
+		&i.StopRequested,
 	)
 	return i, err
 }
@@ -281,6 +311,22 @@ func (q *Queries) InterruptWaitingSecretTurnsForBot(ctx context.Context, arg Int
 	return result.RowsAffected(), nil
 }
 
+const isBotTurnStopRequested = `-- name: IsBotTurnStopRequested :one
+SELECT stop_requested FROM bot_turns WHERE workspace_id=$1 AND id=$2
+`
+
+type IsBotTurnStopRequestedParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ID          pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) IsBotTurnStopRequested(ctx context.Context, arg IsBotTurnStopRequestedParams) (bool, error) {
+	row := q.db.QueryRow(ctx, isBotTurnStopRequested, arg.WorkspaceID, arg.ID)
+	var stop_requested bool
+	err := row.Scan(&stop_requested)
+	return stop_requested, err
+}
+
 const listChatMessages = `-- name: ListChatMessages :many
 SELECT id, position, workspace_id, conversation_id, sender_type, sender_user_id, sender_bot_id, kind, content, metadata, created_at FROM messages WHERE workspace_id=$1 AND conversation_id=$2
 AND position < $3::bigint ORDER BY position DESC LIMIT $4::int
@@ -331,7 +377,7 @@ func (q *Queries) ListChatMessages(ctx context.Context, arg ListChatMessagesPara
 }
 
 const listConversationTurns = `-- name: ListConversationTurns :many
-SELECT t.id, t.position, t.workspace_id, t.bot_id, t.conversation_id, t.message_id, t.status, t.error_code, t.created_at, t.updated_at, t.continuation_prompt, (SELECT count(*) FROM bot_turns q WHERE q.workspace_id=t.workspace_id AND q.bot_id=t.bot_id AND q.status IN ('queued','running') AND q.position<t.position)::bigint AS queue_ahead
+SELECT t.id, t.position, t.workspace_id, t.bot_id, t.conversation_id, t.message_id, t.status, t.error_code, t.created_at, t.updated_at, t.continuation_prompt, t.stop_requested, (SELECT count(*) FROM bot_turns q WHERE q.workspace_id=t.workspace_id AND q.bot_id=t.bot_id AND q.status IN ('queued','running') AND q.position<t.position)::bigint AS queue_ahead
 FROM bot_turns t WHERE t.workspace_id=$1 AND t.conversation_id=$2 ORDER BY t.position DESC LIMIT 100
 `
 
@@ -352,6 +398,7 @@ type ListConversationTurnsRow struct {
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 	ContinuationPrompt string             `json:"continuation_prompt"`
+	StopRequested      bool               `json:"stop_requested"`
 	QueueAhead         int64              `json:"queue_ahead"`
 }
 
@@ -376,6 +423,7 @@ func (q *Queries) ListConversationTurns(ctx context.Context, arg ListConversatio
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.ContinuationPrompt,
+			&i.StopRequested,
 			&i.QueueAhead,
 		); err != nil {
 			return nil, err
@@ -574,8 +622,24 @@ func (q *Queries) LockBotQueue(ctx context.Context, lockKey string) error {
 	return err
 }
 
+const lockRunningBotTurnForFinalization = `-- name: LockRunningBotTurnForFinalization :one
+SELECT stop_requested FROM bot_turns WHERE workspace_id=$1 AND id=$2 AND status='running' FOR NO KEY UPDATE
+`
+
+type LockRunningBotTurnForFinalizationParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ID          pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) LockRunningBotTurnForFinalization(ctx context.Context, arg LockRunningBotTurnForFinalizationParams) (bool, error) {
+	row := q.db.QueryRow(ctx, lockRunningBotTurnForFinalization, arg.WorkspaceID, arg.ID)
+	var stop_requested bool
+	err := row.Scan(&stop_requested)
+	return stop_requested, err
+}
+
 const nextQueuedBotTurn = `-- name: NextQueuedBotTurn :one
-SELECT t.id, t.position, t.workspace_id, t.bot_id, t.conversation_id, t.message_id, t.status, t.error_code, t.created_at, t.updated_at, t.continuation_prompt FROM bot_turns t
+SELECT t.id, t.position, t.workspace_id, t.bot_id, t.conversation_id, t.message_id, t.status, t.error_code, t.created_at, t.updated_at, t.continuation_prompt, t.stop_requested FROM bot_turns t
 WHERE t.workspace_id=$1 AND t.bot_id=$2 AND t.status='queued'
   AND NOT EXISTS (SELECT 1 FROM bot_turns running WHERE running.workspace_id=$1 AND running.bot_id=$2 AND running.status='running')
   AND NOT EXISTS (SELECT 1 FROM secret_leases sl WHERE sl.workspace_id=$1 AND sl.bot_id=$2 AND sl.revoked_at IS NULL AND sl.expires_at > now() AND sl.turn_id <> t.id)
@@ -602,6 +666,7 @@ func (q *Queries) NextQueuedBotTurn(ctx context.Context, arg NextQueuedBotTurnPa
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ContinuationPrompt,
+		&i.StopRequested,
 	)
 	return i, err
 }
@@ -645,6 +710,22 @@ func (q *Queries) OpenDirectMessage(ctx context.Context, arg OpenDirectMessagePa
 	return i, err
 }
 
+const requestBotTurnStop = `-- name: RequestBotTurnStop :exec
+UPDATE bot_turns SET stop_requested=true
+WHERE workspace_id=$1 AND conversation_id=$2 AND id=$3 AND status='running' AND NOT stop_requested
+`
+
+type RequestBotTurnStopParams struct {
+	WorkspaceID    pgtype.UUID `json:"workspace_id"`
+	ConversationID pgtype.UUID `json:"conversation_id"`
+	ID             pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) RequestBotTurnStop(ctx context.Context, arg RequestBotTurnStopParams) error {
+	_, err := q.db.Exec(ctx, requestBotTurnStop, arg.WorkspaceID, arg.ConversationID, arg.ID)
+	return err
+}
+
 const resumeBotTurnFromSecret = `-- name: ResumeBotTurnFromSecret :execrows
 UPDATE bot_turns
 SET status='queued', continuation_prompt=$3, error_code='', updated_at=now()
@@ -668,7 +749,7 @@ func (q *Queries) ResumeBotTurnFromSecret(ctx context.Context, arg ResumeBotTurn
 const setBotTurnWaitingSecret = `-- name: SetBotTurnWaitingSecret :execrows
 UPDATE bot_turns
 SET status='waiting_secret', error_code='', updated_at=now()
-WHERE workspace_id=$1 AND id=$2 AND status='running'
+WHERE workspace_id=$1 AND id=$2 AND status='running' AND NOT stop_requested
 `
 
 type SetBotTurnWaitingSecretParams struct {

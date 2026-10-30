@@ -34,8 +34,16 @@ type Queue struct {
 // OpenQueue starts a durable worker. process must make duplicate deliveries harmless
 // and must not replay a running turn's side effects after a worker failure.
 func OpenQueue(url string, process func(context.Context, TurnNotification) error, interrupt ...func(uuid.UUID, uuid.UUID)) (*Queue, error) {
+	return OpenQueueWithConcurrency(url, 4, process, interrupt...)
+}
+
+// OpenQueueWithConcurrency bounds active deliveries; the worker owns per-bot ordering.
+func OpenQueueWithConcurrency(url string, concurrency int, process func(context.Context, TurnNotification) error, interrupt ...func(uuid.UUID, uuid.UUID)) (*Queue, error) {
 	if process == nil {
 		return nil, errors.New("turn processor is required")
+	}
+	if concurrency < 1 || concurrency > 64 {
+		return nil, errors.New("turn concurrency must be 1..64")
 	}
 	nc, err := nats.Connect(url, nats.Timeout(5*time.Second))
 	if err != nil {
@@ -52,27 +60,38 @@ func OpenQueue(url string, process func(context.Context, TurnNotification) error
 	}
 	queueCtx, cancel := context.WithCancel(context.Background())
 	q := &Queue{conn: nc, js: js, ctx: queueCtx, cancel: cancel}
+	slots := make(chan struct{}, concurrency)
 	q.sub, err = js.QueueSubscribe("turns.*.*", "engine", func(msg *nats.Msg) {
+		// Wait before starting a goroutine so pending deliveries cannot create
+		// unbounded tasks. Cancellation also releases a blocked dispatcher.
+		select {
+		case slots <- struct{}{}:
+		case <-q.ctx.Done():
+			return
+		}
 		q.mu.Lock()
 		if q.closed {
 			q.mu.Unlock()
+			<-slots
 			return
 		}
 		q.inflight.Add(1)
 		q.mu.Unlock()
-		defer q.inflight.Done()
-		var job TurnNotification
-		if json.Unmarshal(msg.Data, &job) != nil || job.WorkspaceID == uuid.Nil || job.BotID == uuid.Nil || job.TurnID == uuid.Nil {
-			_ = msg.Term()
-			return
-		}
-		ctx, cancel := context.WithTimeout(q.ctx, 15*time.Minute)
-		defer cancel()
-		if err := process(ctx, job); err != nil {
-			_ = msg.NakWithDelay(time.Second)
-			return
-		}
-		_ = msg.Ack()
+		go func() {
+			defer func() { <-slots; q.inflight.Done() }()
+			var job TurnNotification
+			if json.Unmarshal(msg.Data, &job) != nil || job.WorkspaceID == uuid.Nil || job.BotID == uuid.Nil || job.TurnID == uuid.Nil {
+				_ = msg.Term()
+				return
+			}
+			ctx, cancel := context.WithTimeout(q.ctx, 15*time.Minute)
+			defer cancel()
+			if err := process(ctx, job); err != nil {
+				_ = msg.NakWithDelay(time.Second)
+				return
+			}
+			_ = msg.Ack()
+		}()
 	}, nats.Durable("engine"), nats.ManualAck(), nats.AckWait(16*time.Minute))
 	if err != nil {
 		cancel()
@@ -104,7 +123,10 @@ func (q *Queue) Enqueue(ctx context.Context, ws, bot, turn uuid.UUID) error {
 	if err != nil {
 		return err
 	}
-	_, err = q.js.Publish("turns."+ws.String()+"."+bot.String(), data, nats.Context(ctx), nats.MsgId(turn.String()))
+	// Secret fulfillment queues the same turn again. A turn-based message ID
+	// would discard that continuation inside JetStream's duplicate window.
+	// The worker's persisted claim makes repeated notifications harmless.
+	_, err = q.js.Publish("turns."+ws.String()+"."+bot.String(), data, nats.Context(ctx))
 	return err
 }
 

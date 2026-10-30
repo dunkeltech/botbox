@@ -186,10 +186,10 @@ func (s *server) handleChatHistory(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	s.writeConversationHistory(w, r, c.WorkspaceID, c.ID)
+	s.writeConversationHistory(w, r, c.WorkspaceID, c.ID, false)
 }
 
-func (s *server) writeConversationHistory(w http.ResponseWriter, r *http.Request, workspaceID, conversationID pgtype.UUID) {
+func (s *server) writeConversationHistory(w http.ResponseWriter, r *http.Request, workspaceID, conversationID pgtype.UUID, group bool) {
 	before := int64(math.MaxInt64)
 	if raw := r.URL.Query().Get("before"); raw != "" {
 		n, err := strconv.ParseInt(raw, 10, 64)
@@ -210,13 +210,60 @@ func (s *server) writeConversationHistory(w http.ResponseWriter, r *http.Request
 		return
 	}
 	out := apigen.ChatHistory{Messages: make([]apigen.ChatMessage, 0, len(rows)), Turns: make([]apigen.ChatTurn, 0, len(turns))}
+	var progress map[pgtype.UUID]*apigen.GroupInputRequest
+	if group {
+		progress, err = s.groupInputProgress(r.Context(), workspaceID, conversationID, rows)
+		if err != nil {
+			s.chatFailure(w)
+			return
+		}
+	}
 	for i := len(rows) - 1; i >= 0; i-- {
-		out.Messages = append(out.Messages, chatMessage(rows[i]))
+		message := chatMessage(rows[i])
+		message.InputRequest = progress[rows[i].ID]
+		out.Messages = append(out.Messages, message)
 	}
 	for _, t := range turns {
-		out.Turns = append(out.Turns, apigen.ChatTurn{Id: fromPGUUID(t.ID), Status: apigen.ChatTurnStatus(t.Status), QueueAhead: t.QueueAhead, ErrorCode: t.ErrorCode})
+		turn := apigen.ChatTurn{Id: fromPGUUID(t.ID), BotId: botIDPtr(t.BotID), Status: apigen.ChatTurnStatus(t.Status), QueueAhead: t.QueueAhead, ErrorCode: t.ErrorCode}
+		if t.Status == "running" && t.StopRequested {
+			turn.StopRequested = &t.StopRequested
+		}
+		out.Turns = append(out.Turns, turn)
 	}
 	writeJSON(w, s.logger, 200, out)
+}
+
+func (s *server) handleStopChatTurn(w http.ResponseWriter, r *http.Request) {
+	c, ok := s.privateConversation(w, r, true)
+	if !ok {
+		return
+	}
+	s.stopConversationTurn(w, r, c.WorkspaceID, c.ID)
+}
+
+func (s *server) stopConversationTurn(w http.ResponseWriter, r *http.Request, workspaceID, conversationID pgtype.UUID) {
+	turnID, err := uuid.Parse(chi.URLParam(r, "turnID"))
+	if err != nil || turnID == uuid.Nil {
+		writeError(w, s.logger, http.StatusBadRequest, "validation_error", "invalid turn identifier")
+		return
+	}
+	ctx := r.Context()
+	turn, err := s.queries.GetBotTurn(ctx, db.GetBotTurnParams{WorkspaceID: workspaceID, ID: toPGUUID(turnID)})
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && turn.ConversationID != conversationID) {
+		writeError(w, s.logger, http.StatusNotFound, "chat.not_found", "turn not found")
+		return
+	}
+	if err != nil {
+		s.chatFailure(w)
+		return
+	}
+	if turn.Status == "running" {
+		if err = s.queries.RequestBotTurnStop(ctx, db.RequestBotTurnStopParams{WorkspaceID: workspaceID, ConversationID: conversationID, ID: turn.ID}); err != nil {
+			s.chatFailure(w)
+			return
+		}
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *server) handleSendChat(w http.ResponseWriter, r *http.Request) {
@@ -290,4 +337,9 @@ func (s *server) handleSendChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, s.logger, 202, chatMessage(msg))
+}
+
+func botIDPtr(id pgtype.UUID) *uuid.UUID {
+	value := fromPGUUID(id)
+	return &value
 }

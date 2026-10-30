@@ -46,6 +46,8 @@ export type ErrorTranslationKey =
   | 'secretPolicyUnavailable'
   | 'chatQueueFull'
   | 'chatUnavailable'
+  | 'groupBusy'
+  | 'groupNotFound'
   | 'unknownError';
 
 const ERROR_CODE_TO_KEY: Record<string, ErrorTranslationKey> = {
@@ -94,6 +96,8 @@ const ERROR_CODE_TO_KEY: Record<string, ErrorTranslationKey> = {
   'secret_request.policy_unavailable': 'secretPolicyUnavailable',
   'chat.queue_full': 'chatQueueFull',
   'chat.unavailable': 'chatUnavailable',
+  'group.busy': 'groupBusy',
+  'group.not_found': 'groupNotFound',
 };
 
 /**

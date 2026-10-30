@@ -34,8 +34,9 @@ vi.mock('next/navigation', () => ({
   useParams: () => ({ botId: 'bot-1' }),
 }));
 
-vi.mock('@/context/AuthContext', () => ({
-  useAuth: () => ({
+vi.mock('@/context/AuthContext', () => {
+  // The selected workspace keeps its identity across local UI updates.
+  const auth = {
     user: { id: 'user-1', email: 'jan@example.com', displayName: 'Jan' },
     activeWorkspace: {
       id: 'ws-1',
@@ -43,8 +44,9 @@ vi.mock('@/context/AuthContext', () => ({
       slug: 'dunkel-tech',
       role: 'owner',
     },
-  }),
-}));
+  };
+  return { useAuth: () => auth };
+});
 
 vi.mock('@/lib/api-client', async () => {
   const actual =

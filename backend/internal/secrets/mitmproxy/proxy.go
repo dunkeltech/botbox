@@ -849,7 +849,7 @@ func mediateAndWriteResponse(w http.ResponseWriter, resp *http.Response, rule Se
 
 	rawBody, err := readBounded(resp.Body, maxBytes)
 	if err != nil {
-		http.Error(w, "upstream response rejected by mediation policy", http.StatusBadGateway)
+		writeMediatedReadError(w, err, maxBytes)
 		return
 	}
 
@@ -868,14 +868,14 @@ func mediateAndWriteResponse(w http.ResponseWriter, resp *http.Response, rule Se
 		decoded, err = readBounded(gr, maxBytes)
 		_ = gr.Close()
 		if err != nil {
-			http.Error(w, "upstream compressed response rejected", http.StatusBadGateway)
+			writeMediatedReadError(w, err, maxBytes)
 			return
 		}
 		decodedCompressed = true
 	case "deflate":
 		decoded, err = decompressDeflateBounded(rawBody, maxBytes)
 		if err != nil {
-			http.Error(w, "upstream compressed response rejected", http.StatusBadGateway)
+			writeMediatedReadError(w, err, maxBytes)
 			return
 		}
 		decodedCompressed = true
@@ -966,6 +966,17 @@ func classifyMediatedBody(contentType string, body []byte, adapter *HTTPSAdapter
 	return bodyClassReject
 }
 
+var errMediatedResponseTooLarge = errors.New("response exceeds size limit")
+
+func writeMediatedReadError(w http.ResponseWriter, err error, maxBytes int64) {
+	message := "failed reading upstream response"
+	if errors.Is(err, errMediatedResponseTooLarge) {
+		message = fmt.Sprintf("upstream response exceeds mediation size limit (%d bytes)", maxBytes)
+	}
+	// Upstream read errors may contain reflected credentials; never expose them.
+	http.Error(w, message, http.StatusBadGateway)
+}
+
 func readBounded(r io.Reader, maxBytes int64) ([]byte, error) {
 	if maxBytes <= 0 {
 		maxBytes = defaultMaxMediatedResponseBytes
@@ -975,7 +986,7 @@ func readBounded(r io.Reader, maxBytes int64) ([]byte, error) {
 		return nil, err
 	}
 	if int64(len(buf)) > maxBytes {
-		return nil, errors.New("response exceeds size limit")
+		return nil, errMediatedResponseTooLarge
 	}
 	return buf, nil
 }

@@ -94,15 +94,17 @@ type CreateInput struct {
 	Reason             string
 	EnvPlaceholderName string
 	UsernameHint       string
+	TrySavedGitLab     bool
 	Broker             authbroker.Client
 	Now                time.Time
 }
 
-// CreateResult holds the created secret request row and chat card message.
+// CreateResult holds a new request and card, or safe guidance to try a saved credential.
 type CreateResult struct {
-	Request db.SecretRequest
-	Message db.Message
-	Card    CardPayload
+	Request               db.SecretRequest
+	Message               db.Message
+	Card                  CardPayload
+	SavedCredentialPrompt string
 }
 
 // FulfillInput captures human submission parameters for a pending secret request.
@@ -160,8 +162,9 @@ type DenyResult struct {
 	ContinuationPrompt string
 }
 
-// CreateRequest validates a bot's secret request, enforces capability & rate gates,
-// and atomically creates the request, chat card message, and waiting_secret pause state.
+// CreateRequest validates a bot's secret request and checks for a saved GitLab
+// credential when requested. If human input is needed it atomically creates
+// the request, chat card and waiting_secret pause after enforcing rate limits.
 func CreateRequest(ctx context.Context, pool *pgxpool.Pool, in CreateInput) (CreateResult, error) {
 	if pool == nil {
 		return CreateResult{}, errors.New("database pool is required")
@@ -251,6 +254,16 @@ func CreateRequest(ctx context.Context, pool *pgxpool.Pool, in CreateInput) (Cre
 			return CreateResult{}, err
 		}
 	}
+	if in.TrySavedGitLab && mitmproxy.IsGitLabAdapter(adapter.ID) {
+		hasSaved, err := hasSavedGitLabCredential(ctx, q, wsPG, botPG, adapter)
+		if err != nil {
+			return CreateResult{}, err
+		}
+		if hasSaved {
+			prompt := fmt.Sprintf("A saved GitLab credential is configured for %s at %s. Continue from the requested step with %s=%s. The egress proxy verifies and injects the credential. %s If authentication fails, request a replacement credential for this adapter and origin.", adapter.ID, targetOrigin, envName, placeholderVal, gitLabCLIHint(adapter.Host))
+			return CreateResult{SavedCredentialPrompt: prompt}, nil
+		}
+	}
 
 	pendingCount, err := q.CountPendingSecretRequestsForBot(ctx, db.CountPendingSecretRequestsForBotParams{
 		WorkspaceID: wsPG,
@@ -338,11 +351,15 @@ func CreateRequest(ctx context.Context, pool *pgxpool.Pool, in CreateInput) (Cre
 	}); err != nil {
 		return CreateResult{}, err
 	}
-	if _, err = q.SetBotTurnWaitingSecret(ctx, db.SetBotTurnWaitingSecretParams{
+	changed, err := q.SetBotTurnWaitingSecret(ctx, db.SetBotTurnWaitingSecretParams{
 		WorkspaceID: wsPG,
 		ID:          turnPG,
-	}); err != nil {
+	})
+	if err != nil {
 		return CreateResult{}, err
+	}
+	if changed == 0 {
+		return CreateResult{}, context.Canceled
 	}
 
 	if err = tx.Commit(ctx); err != nil {
@@ -757,7 +774,7 @@ func FulfillRequest(ctx context.Context, pool *pgxpool.Pool, ring *secrets.KeyRi
 
 	continuation := fmt.Sprintf("Secret provided for adapter %s (%s); hidden from AI. Scope: %s.", adapter.ID, adapter.Host, in.Scope)
 	if mitmproxy.IsGitLabAdapter(adapter.ID) {
-		continuation += fmt.Sprintf(" Use GITLAB_HOST=%s and GITLAB_API_HOST=%s with HTTPS; never run glab auth login with a real token. Verify using glab api user.", adapter.Host, adapter.Host)
+		continuation += " " + gitLabCLIHint(adapter.Host)
 	}
 	if completed.EnvPlaceholderName != "" && completed.PlaceholderValue != "" {
 		continuation += fmt.Sprintf(" Use environment placeholder %s=%s; the egress proxy injects the real credential outbound.", completed.EnvPlaceholderName, completed.PlaceholderValue)
@@ -982,6 +999,27 @@ func CancelForTurnWithBroker(ctx context.Context, pool *pgxpool.Pool, broker aut
 		})
 	}
 	return nil
+}
+
+func hasSavedGitLabCredential(ctx context.Context, q *db.Queries, ws, bot pgtype.UUID, adapter mitmproxy.HTTPSAdapter) (bool, error) {
+	// Custom instances already passed the registration, assignment and egress
+	// check in the current transaction. GitLab.com still needs egress permission.
+	if adapter.Host == "gitlab.com" {
+		row, err := q.GetEgressRuleByWorkspaceAndBot(ctx, db.GetEgressRuleByWorkspaceAndBotParams{WorkspaceID: ws, BotID: bot})
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return false, err
+		}
+		if !hostAllowedByEgressRow(row, err == nil, adapter.Host) {
+			return false, nil
+		}
+	}
+	return q.HasSavedGitLabCredential(ctx, db.HasSavedGitLabCredentialParams{
+		WorkspaceID: ws, BotID: bot, AdapterID: adapter.ID, DomainMatch: adapter.Host,
+	})
+}
+
+func gitLabCLIHint(host string) string {
+	return fmt.Sprintf("Use GITLAB_HOST=%s and GITLAB_API_HOST=%s with HTTPS. Verify REST access with glab api user and Git HTTPS access with git ls-remote against the requested repository. Never run glab auth login with a real token.", host, host)
 }
 
 func hostAllowedByEgressRow(row db.EgressRule, found bool, host string) bool {
