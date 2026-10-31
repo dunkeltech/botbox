@@ -19,6 +19,7 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/compute"
 	apigen "github.com/dunkeltech/botbox/backend/internal/gen/api"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
+	"github.com/dunkeltech/botbox/backend/internal/mcpproxy"
 	"github.com/dunkeltech/botbox/backend/internal/secrets"
 	"github.com/dunkeltech/botbox/backend/internal/testutil/pgtest"
 	"github.com/google/uuid"
@@ -74,6 +75,7 @@ type harnessOpts struct {
 	envSetupSecret   string
 	keyRing          *secrets.KeyRing
 	authBroker       authbroker.Client
+	mcpUpstream      *mcpproxy.UpstreamClient
 	decorateCompute  func(*compute.MemoryDriver) compute.Driver
 }
 
@@ -172,6 +174,7 @@ func newTestHarness(t *testing.T, existingPool *pgxpool.Pool, opts harnessOpts) 
 		LoginEmailRateLimiter: auth.NewRateLimiter(opts.loginEmailLimit, 15*time.Minute, clock.Now),
 		RefreshRateLimiter:    auth.NewRateLimiter(50, time.Minute, clock.Now),
 		PublicBaseURL:         "http://127.0.0.1:3000",
+		MCPUpstream:           opts.mcpUpstream,
 		Now:                   clock.Now,
 	})
 

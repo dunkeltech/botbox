@@ -236,6 +236,17 @@ func (q *Queue) PublishEgressPolicyRevision(ctx context.Context, ws, bot uuid.UU
 	return ack.AcknowledgedRevision, nil
 }
 
+// PublishMCPPolicyInvalidate notifies a bot's egress proxy to drop cached MCP policies.
+func (q *Queue) PublishMCPPolicyInvalidate(ctx context.Context, ws, bot uuid.UUID) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if ws == uuid.Nil || bot == uuid.Nil {
+		return nil
+	}
+	return q.conn.Publish("mcp.invalidate."+ws.String()+"."+bot.String(), []byte("{}"))
+}
+
 // Publisher emits conversation signals without consuming the turn queue.
 // The egress proxy uses it so a blocked host can ping the conversation
 // channel without starting a second worker.
@@ -299,6 +310,24 @@ func (p *Publisher) SubscribeEgressPolicyInvalidate(
 				_ = msg.Respond(ackBytes)
 			}
 		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := p.conn.Flush(); err != nil {
+		_ = sub.Unsubscribe()
+		return nil, err
+	}
+	return func() { _ = sub.Unsubscribe() }, nil
+}
+
+// SubscribeMCPPolicyInvalidate invokes onInvalidate whenever a bot's MCP policy changes.
+func (p *Publisher) SubscribeMCPPolicyInvalidate(ws, bot uuid.UUID, onInvalidate func()) (func(), error) {
+	if p == nil || p.conn == nil || onInvalidate == nil {
+		return func() {}, nil
+	}
+	sub, err := p.conn.Subscribe("mcp.invalidate."+ws.String()+"."+bot.String(), func(_ *nats.Msg) {
+		onInvalidate()
 	})
 	if err != nil {
 		return nil, err

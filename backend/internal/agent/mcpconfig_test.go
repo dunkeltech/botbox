@@ -62,3 +62,33 @@ func TestInstallDesktopMCPMergesWithoutDroppingExistingConfig(t *testing.T) {
 		t.Fatal("empty home was accepted")
 	}
 }
+
+func TestInstallBotMCPServersRegistersAssignedSlugs(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	path, err := agent.InstallBotMCPServers("claude", home, []string{"linear", "sentry"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rawClaude, err := os.ReadFile(path) // #nosec G304 -- config written inside t.TempDir
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(rawClaude), "http://egress:8081/mcp/linear") || !strings.Contains(string(rawClaude), "http://egress:8081/mcp/sentry") {
+		t.Fatalf("claude MCP config missing slugs: %s", rawClaude)
+	}
+	if _, err = agent.InstallBotMCPServers("codex", home, []string{"linear"}); err != nil {
+		t.Fatal(err)
+	}
+	rawCodex, err := os.ReadFile(filepath.Join(home, ".codex", "config.toml")) // #nosec G304 -- config written inside t.TempDir
+	if err != nil || !strings.Contains(string(rawCodex), "[mcp_servers.mcp_linear]") {
+		t.Fatalf("codex MCP config missing slug: %s %v", rawCodex, err)
+	}
+	if _, err = agent.InstallBotMCPServers("agy", home, []string{"linear"}); err != nil {
+		t.Fatal(err)
+	}
+	rawAgy, err := os.ReadFile(filepath.Join(home, ".gemini", "config", "mcp_config.json")) // #nosec G304 -- config written inside t.TempDir
+	if err != nil || !strings.Contains(string(rawAgy), "mcp-linear") {
+		t.Fatalf("agy MCP config missing slug: %s %v", rawAgy, err)
+	}
+}

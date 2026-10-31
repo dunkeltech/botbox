@@ -207,13 +207,23 @@ func BuildContainerSpec(cfg compute.BotConfig, seccompProfile string) (Container
 		secOpts = append(secOpts, "seccomp="+strings.TrimSpace(seccompProfile))
 	}
 
+	noProxy := "localhost,127.0.0.1,::1"
+	if proxyURL := strings.TrimSpace(cfg.ProxyURL); proxyURL != "" {
+		if u, parseErr := url.Parse(proxyURL); parseErr == nil {
+			host := strings.TrimSpace(u.Hostname())
+			if host != "" && host != "localhost" && host != "127.0.0.1" && host != "::1" {
+				// Direct internal requests to the proxy (e.g. http://egress:8081/mcp/*) must not tunnel through HTTP_PROXY.
+				noProxy += "," + host
+			}
+		}
+	}
 	env := []string{
 		"DISPLAY=:0",
 		"VNC_RESOLUTION=1280x800",
 		"BOTBOX_HOME_DIR=/home/bot",
 		"AGENT_GRPC_ADDR=0.0.0.0:9090",
-		"NO_PROXY=localhost,127.0.0.1,::1",
-		"no_proxy=localhost,127.0.0.1,::1",
+		"NO_PROXY=" + noProxy,
+		"no_proxy=" + noProxy,
 	}
 	if strings.TrimSpace(cfg.AgentToken) != "" {
 		env = append(env, "BOTBOX_AGENT_TOKEN="+strings.TrimSpace(cfg.AgentToken))

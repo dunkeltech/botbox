@@ -38,8 +38,9 @@ func (t anthropicTransport) RoundTrip(req *http.Request) (*http.Response, error)
 		} `json:"messages"`
 		Tools []struct {
 			Function struct {
-				Name       string          `json:"name"`
-				Parameters json.RawMessage `json:"parameters"`
+				Name        string          `json:"name"`
+				Description string          `json:"description"`
+				Parameters  json.RawMessage `json:"parameters"`
 			} `json:"function"`
 		} `json:"tools"`
 	}
@@ -111,7 +112,11 @@ func (t anthropicTransport) RoundTrip(req *http.Request) (*http.Response, error)
 			}
 			continue
 		}
-		tools = append(tools, map[string]any{"name": tool.Function.Name, "input_schema": tool.Function.Parameters})
+		toolDef := map[string]any{"name": tool.Function.Name, "input_schema": tool.Function.Parameters}
+		if tool.Function.Description != "" {
+			toolDef["description"] = tool.Function.Description
+		}
+		tools = append(tools, toolDef)
 	}
 	payload := map[string]any{"model": input.Model, "system": system, "messages": messages, "stream": true, "max_tokens": 4096}
 	if len(tools) > 0 {

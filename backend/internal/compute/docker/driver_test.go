@@ -121,6 +121,27 @@ func TestBuildAndValidateContainerSpecSecurityInvariants(t *testing.T) {
 			t.Fatalf("proxy env %s = %q, want %q", want.k, envMap[want.k], want.v)
 		}
 	}
+
+	egressSpec, _, _, err := docker.BuildContainerSpec(compute.BotConfig{
+		WorkspaceID: "ws-1",
+		BotID:       "bot-42",
+		Image:       "botbox/sandbox:dev",
+		CPUMillis:   2000,
+		MemoryMiB:   2048,
+		ProxyURL:    "http://egress:8081",
+	}, "")
+	if err != nil {
+		t.Fatalf("BuildContainerSpec with egress proxy failed: %v", err)
+	}
+	hasEgressNoProxy := false
+	for _, kv := range egressSpec.Env {
+		if kv == "NO_PROXY=localhost,127.0.0.1,::1,egress" {
+			hasEgressNoProxy = true
+		}
+	}
+	if !hasEgressNoProxy {
+		t.Fatalf("expected egress in NO_PROXY, got %v", egressSpec.Env)
+	}
 }
 
 func TestAgentClientDialsLoopbackPublication(t *testing.T) {

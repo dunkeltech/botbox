@@ -12,6 +12,7 @@ import (
 // Defines values for ApprovalKind.
 const (
 	ApprovalKindCustom        ApprovalKind = "custom"
+	ApprovalKindMcpTool       ApprovalKind = "mcp_tool"
 	ApprovalKindNewHost       ApprovalKind = "new_host"
 	ApprovalKindPushProtected ApprovalKind = "push_protected"
 	ApprovalKindRaiseBudget   ApprovalKind = "raise_budget"
@@ -21,6 +22,8 @@ const (
 func (e ApprovalKind) Valid() bool {
 	switch e {
 	case ApprovalKindCustom:
+		return true
+	case ApprovalKindMcpTool:
 		return true
 	case ApprovalKindNewHost:
 		return true
@@ -75,6 +78,7 @@ func (e ApprovalDecisionRequestDecision) Valid() bool {
 // Defines values for AskBeforeRuleKind.
 const (
 	AskBeforeRuleKindCustom        AskBeforeRuleKind = "custom"
+	AskBeforeRuleKindMcpTool       AskBeforeRuleKind = "mcp_tool"
 	AskBeforeRuleKindNewHost       AskBeforeRuleKind = "new_host"
 	AskBeforeRuleKindPushProtected AskBeforeRuleKind = "push_protected"
 	AskBeforeRuleKindRaiseBudget   AskBeforeRuleKind = "raise_budget"
@@ -84,6 +88,8 @@ const (
 func (e AskBeforeRuleKind) Valid() bool {
 	switch e {
 	case AskBeforeRuleKindCustom:
+		return true
+	case AskBeforeRuleKindMcpTool:
 		return true
 	case AskBeforeRuleKindNewHost:
 		return true
@@ -489,6 +495,81 @@ func (e LlmMode) Valid() bool {
 	}
 }
 
+// Defines values for MCPAuthScheme.
+const (
+	MCPAuthSchemeBasic  MCPAuthScheme = "basic"
+	MCPAuthSchemeBearer MCPAuthScheme = "bearer"
+	MCPAuthSchemeHeader MCPAuthScheme = "header"
+	MCPAuthSchemeNone   MCPAuthScheme = "none"
+)
+
+// Valid indicates whether the value is a known member of the MCPAuthScheme enum.
+func (e MCPAuthScheme) Valid() bool {
+	switch e {
+	case MCPAuthSchemeBasic:
+		return true
+	case MCPAuthSchemeBearer:
+		return true
+	case MCPAuthSchemeHeader:
+		return true
+	case MCPAuthSchemeNone:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MCPCallLogAction.
+const (
+	Allowed         MCPCallLogAction = "allowed"
+	ApprovedByHuman MCPCallLogAction = "approved_by_human"
+	AskPending      MCPCallLogAction = "ask_pending"
+	Blocked         MCPCallLogAction = "blocked"
+	DeniedByHuman   MCPCallLogAction = "denied_by_human"
+	UpstreamError   MCPCallLogAction = "upstream_error"
+)
+
+// Valid indicates whether the value is a known member of the MCPCallLogAction enum.
+func (e MCPCallLogAction) Valid() bool {
+	switch e {
+	case Allowed:
+		return true
+	case ApprovedByHuman:
+		return true
+	case AskPending:
+		return true
+	case Blocked:
+		return true
+	case DeniedByHuman:
+		return true
+	case UpstreamError:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MCPToolPolicyMode.
+const (
+	Allow MCPToolPolicyMode = "allow"
+	Ask   MCPToolPolicyMode = "ask"
+	Deny  MCPToolPolicyMode = "deny"
+)
+
+// Valid indicates whether the value is a known member of the MCPToolPolicyMode enum.
+func (e MCPToolPolicyMode) Valid() bool {
+	switch e {
+	case Allow:
+		return true
+	case Ask:
+		return true
+	case Deny:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for NotificationKind.
 const (
 	NotificationKindApproval NotificationKind = "approval"
@@ -512,19 +593,19 @@ func (e NotificationKind) Valid() bool {
 
 // Defines values for SecretAuthScheme.
 const (
-	Basic  SecretAuthScheme = "basic"
-	Bearer SecretAuthScheme = "bearer"
-	Header SecretAuthScheme = "header"
+	SecretAuthSchemeBasic  SecretAuthScheme = "basic"
+	SecretAuthSchemeBearer SecretAuthScheme = "bearer"
+	SecretAuthSchemeHeader SecretAuthScheme = "header"
 )
 
 // Valid indicates whether the value is a known member of the SecretAuthScheme enum.
 func (e SecretAuthScheme) Valid() bool {
 	switch e {
-	case Basic:
+	case SecretAuthSchemeBasic:
 		return true
-	case Bearer:
+	case SecretAuthSchemeBearer:
 		return true
-	case Header:
+	case SecretAuthSchemeHeader:
 		return true
 	default:
 		return false
@@ -814,6 +895,31 @@ type BotListResponse struct {
 	Bots []Bot `json:"bots"`
 }
 
+// BotMCPConfigResponse defines model for BotMCPConfigResponse.
+type BotMCPConfigResponse struct {
+	BotId       openapi_types.UUID   `json:"botId"`
+	Servers     []BotMCPServerPolicy `json:"servers"`
+	WorkspaceId openapi_types.UUID   `json:"workspaceId"`
+}
+
+// BotMCPServerPolicy defines model for BotMCPServerPolicy.
+type BotMCPServerPolicy struct {
+	AcknowledgedRevision int64                        `json:"acknowledgedRevision"`
+	AuthScheme           MCPAuthScheme                `json:"authScheme"`
+	DefaultPolicy        MCPToolPolicyMode            `json:"defaultPolicy"`
+	Enabled              bool                         `json:"enabled"`
+	EndpointUrl          string                       `json:"endpointUrl"`
+	EnforcementStatus    EgressEnforcementStatus      `json:"enforcementStatus"`
+	HasSecret            bool                         `json:"hasSecret"`
+	Revision             int64                        `json:"revision"`
+	ServerId             openapi_types.UUID           `json:"serverId"`
+	ServerName           string                       `json:"serverName"`
+	ServerSlug           string                       `json:"serverSlug"`
+	ToolPolicies         map[string]MCPToolPolicyMode `json:"toolPolicies"`
+	Tools                []MCPServerTool              `json:"tools"`
+	UpdatedAt            time.Time                    `json:"updatedAt"`
+}
+
 // BotRuntime defines model for BotRuntime.
 type BotRuntime struct {
 	Paused bool `json:"paused"`
@@ -953,6 +1059,18 @@ type CreateGroupRequestAnswerPolicy string
 type CreateInvitationRequest struct {
 	Email *openapi_types.Email `json:"email,omitempty"`
 	Role  WorkspaceRole        `json:"role"`
+}
+
+// CreateMCPServerRequest defines model for CreateMCPServerRequest.
+type CreateMCPServerRequest struct {
+	AuthHeaderName *string                   `json:"authHeaderName,omitempty"`
+	AuthScheme     MCPAuthScheme             `json:"authScheme"`
+	AuthUsername   *string                   `json:"authUsername,omitempty"`
+	EndpointUrl    string                    `json:"endpointUrl"`
+	Name           string                    `json:"name"`
+	SecretValue    *string                   `json:"secretValue,omitempty"`
+	Slug           string                    `json:"slug"`
+	Tools          *[]MCPToolDefinitionInput `json:"tools,omitempty"`
 }
 
 // CreateSecretRequest defines model for CreateSecretRequest.
@@ -1239,6 +1357,72 @@ type LoginRequest struct {
 	Password string              `json:"password"`
 }
 
+// MCPAuthScheme defines model for MCPAuthScheme.
+type MCPAuthScheme string
+
+// MCPCallLogAction defines model for MCPCallLogAction.
+type MCPCallLogAction string
+
+// MCPCallLogEntry defines model for MCPCallLogEntry.
+type MCPCallLogEntry struct {
+	Action     MCPCallLogAction    `json:"action"`
+	BotId      openapi_types.UUID  `json:"botId"`
+	CreatedAt  time.Time           `json:"createdAt"`
+	Id         openapi_types.UUID  `json:"id"`
+	LatencyMs  int                 `json:"latencyMs"`
+	ServerId   *openapi_types.UUID `json:"serverId"`
+	ServerSlug string              `json:"serverSlug"`
+	StatusCode int                 `json:"statusCode"`
+	ToolName   string              `json:"toolName"`
+}
+
+// MCPCallLogListResponse defines model for MCPCallLogListResponse.
+type MCPCallLogListResponse struct {
+	Logs []MCPCallLogEntry `json:"logs"`
+}
+
+// MCPServer defines model for MCPServer.
+type MCPServer struct {
+	AuthHeaderName string             `json:"authHeaderName"`
+	AuthScheme     MCPAuthScheme      `json:"authScheme"`
+	AuthUsername   string             `json:"authUsername"`
+	CreatedAt      time.Time          `json:"createdAt"`
+	EndpointUrl    string             `json:"endpointUrl"`
+	HasSecret      bool               `json:"hasSecret"`
+	Id             openapi_types.UUID `json:"id"`
+	LastSyncError  string             `json:"lastSyncError"`
+	LastSyncedAt   *time.Time         `json:"lastSyncedAt"`
+	MaskedPreview  string             `json:"maskedPreview"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Tools          []MCPServerTool    `json:"tools"`
+	UpdatedAt      time.Time          `json:"updatedAt"`
+	WorkspaceId    openapi_types.UUID `json:"workspaceId"`
+}
+
+// MCPServerList defines model for MCPServerList.
+type MCPServerList struct {
+	Servers []MCPServer `json:"servers"`
+}
+
+// MCPServerTool defines model for MCPServerTool.
+type MCPServerTool struct {
+	Description  string                 `json:"description"`
+	DiscoveredAt time.Time              `json:"discoveredAt"`
+	InputSchema  map[string]interface{} `json:"inputSchema"`
+	ToolName     string                 `json:"toolName"`
+}
+
+// MCPToolDefinitionInput defines model for MCPToolDefinitionInput.
+type MCPToolDefinitionInput struct {
+	Description *string                 `json:"description,omitempty"`
+	InputSchema *map[string]interface{} `json:"inputSchema,omitempty"`
+	ToolName    string                  `json:"toolName"`
+}
+
+// MCPToolPolicyMode defines model for MCPToolPolicyMode.
+type MCPToolPolicyMode string
+
 // MeResponse defines model for MeResponse.
 type MeResponse struct {
 	User       User               `json:"user"`
@@ -1417,6 +1601,14 @@ type ToolCallMeta struct {
 // ToolCallPhase defines model for ToolCallPhase.
 type ToolCallPhase string
 
+// UpdateBotMCPServerPolicyRequest defines model for UpdateBotMCPServerPolicyRequest.
+type UpdateBotMCPServerPolicyRequest struct {
+	DefaultPolicy    *MCPToolPolicyMode            `json:"defaultPolicy,omitempty"`
+	Enabled          bool                          `json:"enabled"`
+	ExpectedRevision *int64                        `json:"expectedRevision,omitempty"`
+	ToolPolicies     *map[string]MCPToolPolicyMode `json:"toolPolicies,omitempty"`
+}
+
 // UpdateBotRequest defines model for UpdateBotRequest.
 type UpdateBotRequest struct {
 	AvatarSeed    *string     `json:"avatarSeed,omitempty"`
@@ -1452,6 +1644,17 @@ type UpdateGroupRequest struct {
 
 // UpdateGroupRequestAnswerPolicy defines model for UpdateGroupRequest.AnswerPolicy.
 type UpdateGroupRequestAnswerPolicy string
+
+// UpdateMCPServerRequest defines model for UpdateMCPServerRequest.
+type UpdateMCPServerRequest struct {
+	AuthHeaderName *string                   `json:"authHeaderName,omitempty"`
+	AuthScheme     *MCPAuthScheme            `json:"authScheme,omitempty"`
+	AuthUsername   *string                   `json:"authUsername,omitempty"`
+	EndpointUrl    *string                   `json:"endpointUrl,omitempty"`
+	Name           *string                   `json:"name,omitempty"`
+	SecretValue    *string                   `json:"secretValue,omitempty"`
+	Tools          *[]MCPToolDefinitionInput `json:"tools,omitempty"`
+}
 
 // UpdateMemberRoleRequest defines model for UpdateMemberRoleRequest.
 type UpdateMemberRoleRequest struct {
@@ -1575,6 +1778,13 @@ type ReadBotFileParams struct {
 	Path string `form:"path" json:"path"`
 }
 
+// ListBotMCPLogsParams defines parameters for ListBotMCPLogs.
+type ListBotMCPLogsParams struct {
+	Action *MCPCallLogAction `form:"action,omitempty" json:"action,omitempty"`
+	Limit  *int              `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *int              `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
 // SetBotRuntimeJSONBody defines parameters for SetBotRuntime.
 type SetBotRuntimeJSONBody struct {
 	Paused *bool `json:"paused,omitempty"`
@@ -1645,6 +1855,9 @@ type WriteBotFileJSONRequestBody = WriteFileContentRequest
 // SetBotGitLabInstancesJSONRequestBody defines body for SetBotGitLabInstances for application/json ContentType.
 type SetBotGitLabInstancesJSONRequestBody = BotGitLabInstances
 
+// UpdateBotMCPServerPolicyJSONRequestBody defines body for UpdateBotMCPServerPolicy for application/json ContentType.
+type UpdateBotMCPServerPolicyJSONRequestBody = UpdateBotMCPServerPolicyRequest
+
 // SetBotRuntimeJSONRequestBody defines body for SetBotRuntime for application/json ContentType.
 type SetBotRuntimeJSONRequestBody SetBotRuntimeJSONBody
 
@@ -1680,6 +1893,12 @@ type SendGroupMessageJSONRequestBody = SendChatMessageRequest
 
 // CreateInvitationJSONRequestBody defines body for CreateInvitation for application/json ContentType.
 type CreateInvitationJSONRequestBody = CreateInvitationRequest
+
+// CreateMCPServerJSONRequestBody defines body for CreateMCPServer for application/json ContentType.
+type CreateMCPServerJSONRequestBody = CreateMCPServerRequest
+
+// UpdateMCPServerJSONRequestBody defines body for UpdateMCPServer for application/json ContentType.
+type UpdateMCPServerJSONRequestBody = UpdateMCPServerRequest
 
 // UpdateWorkspaceMemberRoleJSONRequestBody defines body for UpdateWorkspaceMemberRole for application/json ContentType.
 type UpdateWorkspaceMemberRoleJSONRequestBody = UpdateMemberRoleRequest

@@ -21,6 +21,7 @@ The interactive canvas (clickable prototype with live avatars) lives in Claude: 
 | New bot | [`new-bot.png`](screens/new-bot.png) | Phase 1, 4, 7 |
 | Secrets, egress proxy & bot budgets | [`secrets-egress.png`](screens/secrets-egress.png) | Phase 3, 4 |
 | Egress activity domain triage & blocklist | [`secrets-egress-triage.png`](screens/secrets-egress-triage.png) | #31 |
+| MCP proxy & command access control | [`mcp-proxy-management.png`](screens/mcp-proxy-management.png) | ADR-0029 |
 | In-chat secret requests (CLI & isolated broker) | [`chat-secret-requests.png`](screens/chat-secret-requests.png) | #30 |
 | Secret input modal (isolated browser broker) | [`secret-input-modal-browser.png`](screens/secret-input-modal-browser.png) | #30 |
 | Secret input modal (CLI / HTTPS adapter) | [`secret-input-modal-cli.png`](screens/secret-input-modal-cli.png) | #30 |
@@ -70,6 +71,11 @@ How a secret leaves the sandbox, write-only secrets, the outbound allowlist, a f
 Extends the bot **Secrets & network** view (Stitch project `13598702750338265050`, screen `9134a93a74a544c48764366fbaac88ff`) with an explicit **Blocked hosts** list (dashed `amber-line` / `amber-tint` chips overriding both `Allowlist` and `Open internet` modes), one-click **Allow** / **Block** actions directly inside the dark **Recent egress activity** log table, read-only `Via secret` indicators for secret-bound rows, wildcard-block **Edit rule** jumps, applied vs. `202` pending enforcement badges, and pattern-specific **Undo**.
 
 ![Egress activity domain triage and blocklist](screens/secrets-egress-triage.png)
+
+### MCP proxy & command access control
+Central workspace MCP server registry (`Owner` / `Admin`) paired with per-bot server assignment, three-tier per-command policies (`Allow`, `Ask approval`, `Block` with fail-closed default), sandbox/API runner wiring summary, and dark terminal `Recent MCP proxy activity` log (`projects/13598702750338265050`, screen `5dbbd2440e4f46d6b33b9818c9cb7bfe`).
+
+![MCP proxy and command access control](screens/mcp-proxy-management.png)
 
 ### In-chat secret requests & write-only modals
 Inline `secret_request` cards inside bot DMs and group chats paired with write-only secret input dialogs for reviewed CLI HTTPS adapters (`github_api`, `gitlab_api`, `gitlab_git`, `npm_registry`, `pypi_upload`, `pypi_simple`) and the isolated browser authentication broker target design (`browser_login` remains gated behind `unsupported_capability` until the isolated broker lands).

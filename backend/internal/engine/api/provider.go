@@ -42,6 +42,8 @@ type Provider struct {
 	BrokerEnabled  bool
 	// Computer selects anthropic, openai, or generic computer-use tools.
 	Computer string
+	// ExtraTools appends dynamic function definitions such as policy-filtered MCP commands.
+	ExtraTools []map[string]any
 }
 
 type toolCall struct {
@@ -184,6 +186,9 @@ func (p *Provider) Run(ctx context.Context, messages []Message, emit func(engine
 					},
 				)
 			}
+			for _, extra := range p.ExtraTools {
+				tools = append(tools, extra)
+			}
 		}
 		payload := map[string]any{"model": p.Model, "messages": history, "stream": true, "stream_options": map[string]bool{"include_usage": true}, "max_tokens": 4096}
 		if len(tools) > 0 {
@@ -254,7 +259,7 @@ func (p *Provider) Run(ctx context.Context, messages []Message, emit func(engine
 				}
 			}
 			output, callErr := p.Tools.Call(ctx, call.Function.Name, json.RawMessage(call.Function.Arguments))
-			if callErr != nil {
+			if callErr != nil && output == "" {
 				output = "sandbox tool failed"
 			}
 			if len(output) > 65536 {

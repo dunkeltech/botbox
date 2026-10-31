@@ -49,7 +49,9 @@ export function ApprovalCard({
           ? t('chipPush')
           : kind === 'custom'
             ? t('chipCustom')
-            : t('chipApproval');
+            : kind === 'mcp_tool'
+              ? t('chipMcpTool')
+              : t('chipApproval');
   const kindTitle =
     kind === 'new_host'
       ? t('titleNewHost')
@@ -59,7 +61,9 @@ export function ApprovalCard({
           ? t('titlePush')
           : kind === 'custom'
             ? t('titleCustom')
-            : '';
+            : kind === 'mcp_tool'
+              ? t('titleMcpTool')
+              : '';
   const approveLabel =
     kind === 'raise_budget'
       ? t('approveBudget')
@@ -67,7 +71,9 @@ export function ApprovalCard({
         ? t('approvePush')
         : kind === 'custom'
           ? t('approveCustom')
-          : t('approveHost');
+          : kind === 'mcp_tool'
+            ? t('approveMcpTool')
+            : t('approveHost');
   const title = approval ? kindTitle : content || chip;
   const payload = approval ? payloadField(approval) : '';
   const detail =

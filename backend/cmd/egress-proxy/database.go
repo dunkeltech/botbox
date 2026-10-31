@@ -18,6 +18,7 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/budgets"
 	"github.com/dunkeltech/botbox/backend/internal/events"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
+	"github.com/dunkeltech/botbox/backend/internal/mcpproxy"
 	"github.com/dunkeltech/botbox/backend/internal/notify"
 	"github.com/dunkeltech/botbox/backend/internal/secrets"
 	"github.com/dunkeltech/botbox/backend/internal/secrets/llmproxy"
@@ -31,6 +32,7 @@ import (
 type egressDeps struct {
 	Connect         http.Handler
 	LLM             http.Handler
+	MCP             http.Handler
 	AuthMode        func(context.Context) (string, error)
 	Health          func(context.Context) error
 	CACert          []byte
@@ -119,13 +121,29 @@ func databaseHandlerWithLifecycle(
 		stopReval()
 		return nil, nil, err
 	}
+	mcpSvc := mcpproxy.NewService(pool, ring, nil, signal, logger)
+	mcpUnsub := func() {}
+	if pub != nil {
+		subStop, subErr := pub.SubscribeMCPPolicyInvalidate(workspace, bot, func() {
+			mcpSvc.InvalidateBot(workspace, bot)
+		})
+		if subErr != nil {
+			if logger != nil {
+				logger.Warn("mcp invalidation subscription unavailable", "err", subErr)
+			}
+		} else {
+			mcpUnsub = subStop
+		}
+	}
 	stopAll := func() {
+		mcpUnsub()
 		unsub()
 		stopReval()
 	}
 	return newEgressHandler(egressDeps{
 		Connect: connect,
 		LLM:     llm,
+		MCP:     mcpSvc.Handler(workspace, bot),
 		AuthMode: func(ctx context.Context) (string, error) {
 			return llmproxy.AuthMode(ctx, resolve, bot.String(), llmproxy.ProviderAnthropic)
 		},
@@ -196,6 +214,14 @@ func newEgressHandler(deps egressDeps) http.Handler {
 		}
 		if strings.HasPrefix(r.URL.Path, "/broker/") {
 			serveBrokerBridge(w, r, deps)
+			return
+		}
+		if r.URL.Path == "/mcp" || strings.HasPrefix(r.URL.Path, "/mcp/") {
+			if deps.MCP == nil {
+				http.Error(w, "unavailable", http.StatusServiceUnavailable)
+				return
+			}
+			deps.MCP.ServeHTTP(w, r)
 			return
 		}
 		http.NotFound(w, r)

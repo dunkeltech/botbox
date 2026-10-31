@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 
+import { BotMCPProxyPanel } from '@/components/bots/BotMCPProxyPanel';
 import { BotGitLabInstancesPanel } from '@/components/settings/BotGitLabInstancesPanel';
 import { canManageBot } from '@/lib/rbac';
 import { BudgetPanel } from '@/components/chat/BudgetPanel';
@@ -118,6 +119,14 @@ function BotSettingsContent() {
         workspaceId={activeWorkspace.id}
         botId={bot.id}
         canManage={canManage}
+      />
+      <BotMCPProxyPanel
+        key={`mcp-${activeWorkspace.id}:${bot.id}`}
+        workspaceId={activeWorkspace.id}
+        botId={bot.id}
+        botName={bot.name}
+        canManage={canManage}
+        ignoreMissing
       />
       <BudgetPanel
         workspaceId={activeWorkspace.id}

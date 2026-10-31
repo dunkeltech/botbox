@@ -18,6 +18,7 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/engine"
 	modelapi "github.com/dunkeltech/botbox/backend/internal/engine/api"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
+	"github.com/dunkeltech/botbox/backend/internal/mcpproxy"
 	"github.com/dunkeltech/botbox/backend/internal/secrets"
 	"github.com/dunkeltech/botbox/backend/internal/secrets/llmproxy"
 	"github.com/dunkeltech/botbox/backend/internal/secrets/mitmproxy"
@@ -46,10 +47,33 @@ func modelExecutor(pool *pgxpool.Pool, q *db.Queries, ring *secrets.KeyRing, dri
 		}
 		var tools modelapi.Tools
 		profile := ""
+		var mcpSvc *mcpproxy.Service
+		var extraTools []map[string]any
+		mcpGuidance, exposedMCP := mcpTurnGuidance(ctx, pool, ring, session.WorkspaceID, session.BotID)
+		if mcpGuidance != "" {
+			prompt += "\n" + mcpGuidance
+		}
+		if len(exposedMCP) > 0 && pool != nil {
+			mcpSvc = mcpproxy.NewService(pool, ring, nil, nil, nil)
+			for _, t := range exposedMCP {
+				var schema any = map[string]any{"type": "object"}
+				if len(t.InputSchema) > 0 && json.Valid(t.InputSchema) {
+					schema = json.RawMessage(t.InputSchema)
+				}
+				extraTools = append(extraTools, map[string]any{
+					"type": "function",
+					"function": map[string]any{
+						"name":        t.Name,
+						"description": t.Description,
+						"parameters":  schema,
+					},
+				})
+			}
+		}
 		// The memory driver executes local commands for deterministic development
 		// tests; model-generated tools must never use it to reach the API host.
 		if _, isolated := driver.(*docker.Driver); isolated {
-			tools = &sandboxTools{q: q, driver: driver, broker: broker, workspaceID: session.WorkspaceID, botID: session.BotID}
+			tools = &sandboxTools{q: q, driver: driver, broker: broker, mcp: mcpSvc, workspaceID: session.WorkspaceID, botID: session.BotID}
 			switch session.Bot.LlmProvider {
 			case "anthropic":
 				profile = modelapi.ComputerAnthropic
@@ -59,6 +83,8 @@ func modelExecutor(pool *pgxpool.Pool, q *db.Queries, ring *secrets.KeyRing, dri
 				profile = modelapi.ComputerGeneric
 			}
 			prompt += "\n" + engine.DesktopGuidanceFor(broker != nil)
+		} else if len(extraTools) > 0 && mcpSvc != nil {
+			tools = &sandboxTools{q: q, driver: driver, broker: broker, mcp: mcpSvc, workspaceID: session.WorkspaceID, botID: session.BotID}
 		}
 		messages := []modelapi.Message{{Role: "system", Content: prompt}}
 		for i := len(session.Messages) - 1; i >= 0; i-- {
@@ -72,7 +98,7 @@ func modelExecutor(pool *pgxpool.Pool, q *db.Queries, ring *secrets.KeyRing, dri
 		if session.ContinuationPrompt != "" {
 			messages = append(messages, modelapi.Message{Role: "user", Content: session.ContinuationPrompt})
 		}
-		provider := &modelapi.Provider{Client: llmproxy.ClientForHandler(proxy), URL: "http://proxy/llm/" + session.Bot.LlmProvider + "/v1/chat/completions", Model: session.Bot.LlmModel, BotID: session.BotID.String(), Tools: tools, Computer: profile, BrokerEnabled: broker != nil}
+		provider := &modelapi.Provider{Client: llmproxy.ClientForHandler(proxy), URL: "http://proxy/llm/" + session.Bot.LlmProvider + "/v1/chat/completions", Model: session.Bot.LlmModel, BotID: session.BotID.String(), Tools: tools, Computer: profile, BrokerEnabled: broker != nil, ExtraTools: extraTools}
 		if profile != "" {
 			provider.MaxSteps = 25
 			provider.MaxScreenshots = 12
@@ -92,10 +118,29 @@ type sandboxTools struct {
 	q                  *db.Queries
 	driver             compute.Driver
 	broker             authbroker.Client
+	mcp                *mcpproxy.Service
 	workspaceID, botID uuid.UUID
 }
 
 func (t *sandboxTools) Call(ctx context.Context, name string, args json.RawMessage) (string, error) {
+	if slug, toolName, ok := mcpproxy.ParsePrefixedToolName(name); ok && t.mcp != nil {
+		res, err := t.mcp.CallBotTool(ctx, t.workspaceID, t.botID, slug, toolName, args)
+		if err != nil {
+			switch {
+			case errors.Is(err, mcpproxy.ErrApprovalRequired):
+				return "mcp.approval_required: human approval requested in chat; wait for confirmation before retrying.", err
+			case errors.Is(err, mcpproxy.ErrToolDenied):
+				return "mcp.tool_denied: command is not permitted for this bot.", err
+			default:
+				return "mcp.upstream_failed: upstream MCP server error.", err
+			}
+		}
+		if res.IsError {
+			return res.Text, errors.New("mcp tool error")
+		}
+		return res.Text, nil
+	}
+
 	if _, isolated := t.driver.(*docker.Driver); !isolated {
 		return "", errors.New("model tools require isolated compute")
 	}
@@ -286,7 +331,11 @@ func runCLITurnWithBroker(ctx context.Context, pool *pgxpool.Pool, q *db.Queries
 	if len(s.Messages) == 0 {
 		return errors.New("missing turn input")
 	}
-	prompt := cliTurnPrompt(s, external, engine.DesktopGuidanceFor(brokerEnabled))
+	guidance := engine.DesktopGuidanceFor(brokerEnabled)
+	if mcpGuidance, _ := mcpTurnGuidance(ctx, pool, ring, s.WorkspaceID, s.BotID); mcpGuidance != "" {
+		guidance += "\n" + mcpGuidance
+	}
+	prompt := cliTurnPrompt(s, external, guidance)
 	run := transport.RunCLI
 	if subscription {
 		authenticated, ok := driver.(interface {
@@ -464,6 +513,44 @@ Do not delete user-provided files, shared data, or uncommitted work without auth
 Local housekeeping does not authorize external actions such as sending messages, publishing, changing shared systems, or incurring costs; follow the user's authorization for those actions.
 Continue to obey secret-handling rules, workspace boundaries, network policy, budgets, and human desktop control.
 Report meaningful results briefly; do not interrupt the user for trivial housekeeping decisions.`
+
+func mcpTurnGuidance(ctx context.Context, pool *pgxpool.Pool, ring *secrets.KeyRing, workspaceID, botID uuid.UUID) (string, []mcpproxy.ExposedTool) {
+	if pool == nil || workspaceID == uuid.Nil || botID == uuid.Nil {
+		return "", nil
+	}
+	mcpSvc := mcpproxy.NewService(pool, ring, nil, nil, nil)
+	exposed, err := mcpSvc.ListBotTools(ctx, workspaceID, botID, "")
+	if err != nil || len(exposed) == 0 {
+		return "", nil
+	}
+	type serverGroup struct {
+		slug  string
+		name  string
+		items []string
+	}
+	bySlug := make(map[string]*serverGroup)
+	order := make([]string, 0)
+	for _, t := range exposed {
+		grp := bySlug[t.ServerSlug]
+		if grp == nil {
+			grp = &serverGroup{slug: t.ServerSlug, name: t.ServerName}
+			bySlug[t.ServerSlug] = grp
+			order = append(order, t.ServerSlug)
+		}
+		entry := fmt.Sprintf("%s (%s)", t.OriginalToolName, t.Name)
+		if t.Policy == mcpproxy.PolicyAsk {
+			entry += " [requires chat approval]"
+		}
+		grp.items = append(grp.items, entry)
+	}
+	var sb strings.Builder
+	sb.WriteString("MCP Proxy tools are assigned and active for you on this turn (credentials are injected automatically outside the sandbox; use these MCP tools directly rather than shell scripts or request_secret):")
+	for _, slug := range order {
+		grp := bySlug[slug]
+		fmt.Fprintf(&sb, " Server %s (mcp-%s): %s.", grp.name, grp.slug, strings.Join(grp.items, ", "))
+	}
+	return sb.String(), exposed
+}
 
 func botIdentityPrompt(s engine.Session) string {
 	return fmt.Sprintf("You are %s, a bot in a collaborative workspace.\nYour global role and responsibilities apply in every conversation:\n%s\nReply language: %s.\nSpeak only as yourself. Do not mention yourself or hand work to yourself. Follow your role when evaluating requests and proposals; it does not grant additional permissions.\n%s", s.Bot.Name, s.Bot.Description, s.Bot.ReplyLanguage, sandboxResponsibilityGuidance)

@@ -2,6 +2,8 @@ package agent_test
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -134,5 +136,53 @@ printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"
 	}
 	if err := server.RunCLI(&agentv1.RunCLIRequest{Cli: "codex", Prompt: "fixture", ClaudeSubscription: true}, &fakeCLIStream{ctx: context.Background()}); status.Code(err) != codes.InvalidArgument {
 		t.Fatal("subscription auth accepted for another CLI")
+	}
+}
+
+func TestRunCLIDiscoversMCPSlugsAndBypassesProxyHost(t *testing.T) {
+	proxySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/mcp" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"mcp__gitlab__get_job","description":"Fetch GitLab job","inputSchema":{"type":"object"}}]}}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer proxySrv.Close()
+
+	home := t.TempDir()
+	binary := filepath.Join(home, "fake-claude")
+	script := `#!/bin/sh
+cat >/dev/null
+printf '%s|%s\n' "$NO_PROXY" "$no_proxy"
+`
+	//nolint:gosec // executable fixture owned only by this test
+	if err := os.WriteFile(binary, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HTTP_PROXY", proxySrv.URL)
+	t.Setenv("NO_PROXY", "localhost,127.0.0.1,::1")
+
+	server := agent.NewServerWithOptions(agent.ServerOptions{HomeDir: home, CLIBinaries: map[string]string{"claude": binary}})
+	stream := &fakeCLIStream{ctx: context.Background()}
+	if err := server.RunCLI(&agentv1.RunCLIRequest{Cli: "claude", Prompt: "list tools"}, stream); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout strings.Builder
+	for _, frame := range stream.frames {
+		if !frame.Stderr {
+			stdout.Write(frame.Data)
+		}
+	}
+	if !strings.Contains(stdout.String(), "127.0.0.1") {
+		t.Fatalf("expected NO_PROXY to preserve loopback hosts, got %q", stdout.String())
+	}
+	cfgRaw, err := os.ReadFile(filepath.Join(home, ".botbox", "desktop-mcp.json")) // #nosec G304 -- config written inside t.TempDir
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(cfgRaw), `"mcp-gitlab"`) || !strings.Contains(string(cfgRaw), "http://egress:8081/mcp/gitlab") {
+		t.Fatalf("expected desktop-mcp.json to register mcp-gitlab, got %s", cfgRaw)
 	}
 }

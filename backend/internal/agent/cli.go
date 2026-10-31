@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -53,7 +55,11 @@ func (s *Server) RunCLI(req *agentv1.RunCLIRequest, stream grpc.ServerStreamingS
 	default:
 		return status.Error(codes.InvalidArgument, "unsupported CLI")
 	}
-	if configPath, mcpErr := InstallDesktopMCP(req.Cli, s.homeDir); mcpErr == nil && req.Cli == "claude" && configPath != "" {
+	var assignedSlugs []string
+	if proxy := strings.TrimSpace(os.Getenv("HTTP_PROXY")); proxy != "" {
+		assignedSlugs = DiscoverAssignedMCPSlugs(stream.Context(), proxy)
+	}
+	if configPath, mcpErr := InstallBotMCPServers(req.Cli, s.homeDir, assignedSlugs); mcpErr == nil && req.Cli == "claude" && configPath != "" {
 		args = append(args, "--mcp-config", configPath)
 	}
 	if req.Model != "" {
@@ -70,13 +76,25 @@ func (s *Server) RunCLI(req *agentv1.RunCLIRequest, stream grpc.ServerStreamingS
 	cmd.Dir = s.homeDir
 	cmd.Stdin = strings.NewReader(string(input))
 	cmd.Env = sanitizedSandboxEnv(s.homeDir)
-	for _, key := range []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS", "REQUESTS_CA_BUNDLE", "GIT_SSL_CAINFO"} {
+	for _, key := range []string{"HTTP_PROXY", "HTTPS_PROXY", "SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS", "REQUESTS_CA_BUNDLE", "GIT_SSL_CAINFO"} {
 		if value := os.Getenv(key); value != "" {
 			cmd.Env = append(cmd.Env, key+"="+value)
 		}
 	}
-	if proxy := os.Getenv("HTTP_PROXY"); proxy != "" {
-		cmd.Env = append(cmd.Env, "ANTHROPIC_BASE_URL="+strings.TrimRight(proxy, "/")+"/llm/anthropic", "OPENAI_BASE_URL="+strings.TrimRight(proxy, "/")+"/llm/openai/v1")
+	if proxy := strings.TrimSpace(os.Getenv("HTTP_PROXY")); proxy != "" {
+		// Bypass the egress HTTP forward proxy for direct control-plane proxy endpoints like http://egress:8081/mcp/*.
+		noProxy := appendNoProxyHost(os.Getenv("NO_PROXY"), proxy)
+		trimmedProxy := strings.TrimRight(proxy, "/")
+		cmd.Env = append(cmd.Env,
+			"NO_PROXY="+noProxy,
+			"no_proxy="+noProxy,
+			"http_proxy="+proxy,
+			"https_proxy="+proxy,
+			"ANTHROPIC_BASE_URL="+trimmedProxy+"/llm/anthropic",
+			"OPENAI_BASE_URL="+trimmedProxy+"/llm/openai/v1",
+		)
+	} else if noProxy := strings.TrimSpace(os.Getenv("NO_PROXY")); noProxy != "" {
+		cmd.Env = append(cmd.Env, "NO_PROXY="+noProxy, "no_proxy="+noProxy)
 	}
 	if req.ClaudeSubscription {
 		cmd.Env = append(cmd.Env, "CLAUDE_CODE_OAUTH_TOKEN=botbox-placeholder")
@@ -153,4 +171,22 @@ func (s *Server) RunCLI(req *agentv1.RunCLIRequest, stream grpc.ServerStreamingS
 		}
 	}
 	return stream.Send(&agentv1.RunCLIResponse{Exited: true, ExitCode: code})
+}
+
+func appendNoProxyHost(existing, proxyURL string) string {
+	entries := []string{"localhost", "127.0.0.1", "::1"}
+	if strings.TrimSpace(existing) != "" {
+		entries = entries[:0]
+		for _, part := range strings.Split(existing, ",") {
+			if p := strings.TrimSpace(part); p != "" {
+				entries = append(entries, p)
+			}
+		}
+	}
+	if u, err := url.Parse(proxyURL); err == nil {
+		if host := strings.TrimSpace(u.Hostname()); host != "" && !slices.Contains(entries, host) {
+			entries = append(entries, host)
+		}
+	}
+	return strings.Join(entries, ",")
 }

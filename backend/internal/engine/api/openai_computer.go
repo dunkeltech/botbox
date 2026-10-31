@@ -86,8 +86,9 @@ func (t openaiComputerTransport) RoundTrip(req *http.Request) (*http.Response, e
 
 type openAITool struct {
 	Function struct {
-		Name       string          `json:"name"`
-		Parameters json.RawMessage `json:"parameters"`
+		Name        string          `json:"name"`
+		Description string          `json:"description"`
+		Parameters  json.RawMessage `json:"parameters"`
 	} `json:"function"`
 }
 
@@ -153,7 +154,11 @@ func responsesPayload(model string, messages []openAIChatMessage, tools []openAI
 			})
 			continue
 		}
-		outTools = append(outTools, map[string]any{"type": "function", "name": tool.Function.Name, "parameters": tool.Function.Parameters})
+		toolDef := map[string]any{"type": "function", "name": tool.Function.Name, "parameters": tool.Function.Parameters}
+		if tool.Function.Description != "" {
+			toolDef["description"] = tool.Function.Description
+		}
+		outTools = append(outTools, toolDef)
 	}
 	payload := map[string]any{"model": model, "input": input, "stream": true}
 	if instructions.Len() > 0 {

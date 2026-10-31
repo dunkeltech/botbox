@@ -180,10 +180,44 @@ func (s *server) canDecideApproval(w http.ResponseWriter, r *http.Request, q *db
 		writeError(w, s.logger, http.StatusNotFound, "approval.not_found", "approval not found")
 		return false
 	}
+	convType, err := q.GetConversationType(r.Context(), db.GetConversationTypeParams{
+		WorkspaceID: row.WorkspaceID,
+		ID:          row.ConversationID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, s.logger, http.StatusNotFound, "approval.not_found", "approval not found")
+		return false
+	}
+	if err != nil {
+		s.logger.Error("load approval conversation type", "err", err)
+		s.chatFailure(w)
+		return false
+	}
+	if convType == "dm" {
+		_, dmErr := q.GetPrivateConversation(r.Context(), db.GetPrivateConversationParams{
+			WorkspaceID: row.WorkspaceID,
+			ID:          row.ConversationID,
+			UserID:      toPGUUID(actor),
+		})
+		if errors.Is(dmErr, pgx.ErrNoRows) {
+			writeError(w, s.logger, http.StatusNotFound, "approval.not_found", "approval not found")
+			return false
+		}
+		if dmErr != nil {
+			s.logger.Error("load approval dm", "err", dmErr)
+			s.chatFailure(w)
+			return false
+		}
+		if role == workspaces.RoleViewer {
+			writeError(w, s.logger, http.StatusForbidden, "auth.forbidden", "viewers cannot decide an approval")
+			return false
+		}
+		return true
+	}
 	if role == workspaces.RoleOwner || role == workspaces.RoleAdmin {
 		return true
 	}
-	_, err := q.GetGroupForMember(r.Context(), db.GetGroupForMemberParams{
+	_, err = q.GetGroupForMember(r.Context(), db.GetGroupForMemberParams{
 		WorkspaceID: row.WorkspaceID,
 		ID:          row.ConversationID,
 		MemberID:    toPGUUID(actor),

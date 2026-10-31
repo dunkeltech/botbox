@@ -11,6 +11,7 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/compute"
 	"github.com/dunkeltech/botbox/backend/internal/compute/vncrelay"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
+	"github.com/dunkeltech/botbox/backend/internal/mcpproxy"
 	"github.com/dunkeltech/botbox/backend/internal/secrets"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -18,30 +19,31 @@ import (
 )
 
 type server struct {
-	chatRL           *auth.RateLimiter
-	chatEvents       ChatEvents
-	turnQueue        TurnQueue
-	logger           *slog.Logger
-	pool             *pgxpool.Pool
-	queries          *db.Queries
-	jwt              *auth.JWTService
-	authProvider     auth.Provider
-	argon2           auth.Argon2Params
-	setup            *auth.SetupManager
-	setupRL          *auth.RateLimiter
-	loginIPRL        *auth.RateLimiter
-	loginEmailRL     *auth.RateLimiter
-	refreshRL        *auth.RateLimiter
-	compute          compute.Driver
-	authBroker       authbroker.Client
-	ticketSigner     *vncrelay.Signer
-	keyRing          *secrets.KeyRing
-	watchersMu       sync.RWMutex
-	watchers         map[uuid.UUID]map[uuid.UUID]watcherEntry
-	cookieSecure     bool
-	publicBaseURL    string
-	egressAckTimeout time.Duration
-	now              func() time.Time
+	chatRL            *auth.RateLimiter
+	chatEvents        ChatEvents
+	turnQueue         TurnQueue
+	logger            *slog.Logger
+	pool              *pgxpool.Pool
+	queries           *db.Queries
+	jwt               *auth.JWTService
+	authProvider      auth.Provider
+	argon2            auth.Argon2Params
+	setup             *auth.SetupManager
+	setupRL           *auth.RateLimiter
+	loginIPRL         *auth.RateLimiter
+	loginEmailRL      *auth.RateLimiter
+	refreshRL         *auth.RateLimiter
+	compute           compute.Driver
+	authBroker        authbroker.Client
+	ticketSigner      *vncrelay.Signer
+	keyRing           *secrets.KeyRing
+	watchersMu        sync.RWMutex
+	watchers          map[uuid.UUID]map[uuid.UUID]watcherEntry
+	cookieSecure      bool
+	publicBaseURL     string
+	egressAckTimeout  time.Duration
+	mcpUpstreamClient *mcpproxy.UpstreamClient
+	now               func() time.Time
 }
 
 func newServer(cfg Config, logger *slog.Logger) *server {
@@ -126,29 +128,30 @@ func newServer(cfg Config, logger *slog.Logger) *server {
 		egressAckTimeout = 1500 * time.Millisecond
 	}
 	return &server{
-		chatRL:           chatRL,
-		chatEvents:       cfg.ChatEvents,
-		turnQueue:        cfg.TurnQueue,
-		logger:           logger,
-		pool:             cfg.Pool,
-		queries:          queries,
-		jwt:              jwtSvc,
-		authProvider:     authProvider,
-		argon2:           params,
-		setup:            cfg.Setup,
-		setupRL:          setupRL,
-		loginIPRL:        loginIPRL,
-		loginEmailRL:     loginEmailRL,
-		refreshRL:        refreshRL,
-		compute:          computeDrv,
-		authBroker:       cfg.AuthBroker,
-		ticketSigner:     ticketSigner,
-		keyRing:          keyRing,
-		watchers:         make(map[uuid.UUID]map[uuid.UUID]watcherEntry),
-		cookieSecure:     cfg.CookieSecure,
-		publicBaseURL:    cfg.PublicBaseURL,
-		egressAckTimeout: egressAckTimeout,
-		now:              now,
+		chatRL:            chatRL,
+		chatEvents:        cfg.ChatEvents,
+		turnQueue:         cfg.TurnQueue,
+		logger:            logger,
+		pool:              cfg.Pool,
+		queries:           queries,
+		jwt:               jwtSvc,
+		authProvider:      authProvider,
+		argon2:            params,
+		setup:             cfg.Setup,
+		setupRL:           setupRL,
+		loginIPRL:         loginIPRL,
+		loginEmailRL:      loginEmailRL,
+		refreshRL:         refreshRL,
+		compute:           computeDrv,
+		authBroker:        cfg.AuthBroker,
+		ticketSigner:      ticketSigner,
+		keyRing:           keyRing,
+		watchers:          make(map[uuid.UUID]map[uuid.UUID]watcherEntry),
+		cookieSecure:      cfg.CookieSecure,
+		publicBaseURL:     cfg.PublicBaseURL,
+		egressAckTimeout:  egressAckTimeout,
+		mcpUpstreamClient: cfg.MCPUpstream,
+		now:               now,
 	}
 }
 
@@ -262,6 +265,16 @@ func (s *server) mountRoutes(r chi.Router) {
 			r.Get("/bots/{botID}/egress", s.handleGetBotEgressPolicy)
 			r.Patch("/bots/{botID}/egress", s.handleUpdateBotEgressPolicy)
 			r.Get("/bots/{botID}/egress/logs", s.handleListBotEgressLogs)
+
+			r.Get("/mcp-servers", s.handleListMCPServers)
+			r.Post("/mcp-servers", s.handleCreateMCPServer)
+			r.Patch("/mcp-servers/{serverID}", s.handleUpdateMCPServer)
+			r.Delete("/mcp-servers/{serverID}", s.handleDeleteMCPServer)
+			r.Post("/mcp-servers/{serverID}/sync", s.handleSyncMCPServer)
+
+			r.Get("/bots/{botID}/mcp", s.handleGetBotMCP)
+			r.Put("/bots/{botID}/mcp/{serverID}", s.handleUpdateBotMCPServer)
+			r.Get("/bots/{botID}/mcp/logs", s.handleListBotMCPLogs)
 		})
 	})
 }

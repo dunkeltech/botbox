@@ -24,6 +24,7 @@ const (
 	kindRaiseBudget   = "raise_budget"
 	kindPushProtected = "push_protected"
 	kindCustom        = "custom"
+	kindMCPTool       = "mcp_tool"
 )
 
 // Card is one ask-before request. TriggerMessageID is the user or bot text
@@ -48,6 +49,9 @@ type cardPayload struct {
 	Host             string `json:"host,omitempty"`
 	Branch           string `json:"branch,omitempty"`
 	Label            string `json:"label,omitempty"`
+	ServerSlug       string `json:"serverSlug,omitempty"`
+	ToolName         string `json:"toolName,omitempty"`
+	ArgsHash         string `json:"argsHash,omitempty"`
 	TriggerMessageID string `json:"triggerMessageId,omitempty"`
 }
 
@@ -286,9 +290,159 @@ func cardContent(card Card) string {
 		return "Protected push · " + card.Branch
 	case kindCustom:
 		return card.Label
+	case kindMCPTool:
+		return "Approve MCP command · " + card.Label
 	default:
 		return card.Kind
 	}
+}
+
+// MCPToolRequest describes an ask-gated MCP command invocation awaiting human approval.
+type MCPToolRequest struct {
+	WorkspaceID uuid.UUID
+	BotID       uuid.UUID
+	ServerID    uuid.UUID
+	ServerSlug  string
+	ToolName    string
+	ArgsHash    string
+	Preview     string
+}
+
+// OpenMCPTool records a deduplicated mcp_tool approval card and pending grant in the
+// bot's active DM or group conversation, pausing groups until a human decides.
+func OpenMCPTool(ctx context.Context, pool *pgxpool.Pool, req MCPToolRequest, signal notify.Signal) (uuid.UUID, bool, error) {
+	if pool == nil || req.WorkspaceID == uuid.Nil || req.BotID == uuid.Nil || req.ServerID == uuid.Nil {
+		return uuid.Nil, false, errors.New("mcp approval request is incomplete")
+	}
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return uuid.Nil, false, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := db.New(tx)
+	turn, err := q.GetRunningBotTurn(ctx, db.GetRunningBotTurnParams{
+		WorkspaceID: pgID(req.WorkspaceID),
+		BotID:       pgID(req.BotID),
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, false, nil
+	}
+	if err != nil {
+		return uuid.Nil, false, err
+	}
+	conv, err := q.GetConversationUserID(ctx, db.GetConversationUserIDParams{
+		WorkspaceID: turn.WorkspaceID,
+		ID:          turn.ConversationID,
+	})
+	if err != nil {
+		return uuid.Nil, false, err
+	}
+
+	label := req.ServerSlug + " / " + req.ToolName
+	payload, err := json.Marshal(cardPayload{
+		Label:            label,
+		ServerSlug:       req.ServerSlug,
+		ToolName:         req.ToolName,
+		ArgsHash:         req.ArgsHash,
+		TriggerMessageID: triggerID(turn.MessageID),
+	})
+	if err != nil {
+		return uuid.Nil, false, err
+	}
+	approvalID, err := q.CreateAskApproval(ctx, db.CreateAskApprovalParams{
+		WorkspaceID:    turn.WorkspaceID,
+		BotID:          turn.BotID,
+		ConversationID: turn.ConversationID,
+		Kind:           kindMCPTool,
+		Payload:        payload,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		existingID, lookupErr := q.GetPendingApprovalByPayload(ctx, db.GetPendingApprovalByPayloadParams{
+			WorkspaceID:    turn.WorkspaceID,
+			ConversationID: turn.ConversationID,
+			Kind:           kindMCPTool,
+			Payload:        payload,
+		})
+		if lookupErr != nil {
+			return uuid.Nil, false, lookupErr
+		}
+		return uuid.UUID(existingID.Bytes), false, nil
+	}
+	if err != nil {
+		return uuid.Nil, false, err
+	}
+
+	meta, err := json.Marshal(map[string]string{"kind": kindMCPTool})
+	if err != nil {
+		return uuid.Nil, false, err
+	}
+	content := "Approve MCP command · " + label
+	if strings.TrimSpace(req.Preview) != "" {
+		content += "\n" + strings.TrimSpace(req.Preview)
+	}
+	message, err := q.CreateChatMessage(ctx, db.CreateChatMessageParams{
+		ID:             pgID(uuid.New()),
+		WorkspaceID:    turn.WorkspaceID,
+		ConversationID: turn.ConversationID,
+		SenderType:     "system",
+		Kind:           "approval",
+		Content:        content,
+		Metadata:       meta,
+	})
+	if err != nil {
+		return uuid.Nil, false, err
+	}
+	if err = q.AttachApprovalMessage(ctx, db.AttachApprovalMessageParams{
+		WorkspaceID: turn.WorkspaceID,
+		ID:          approvalID,
+		MessageID:   message.ID,
+	}); err != nil {
+		return uuid.Nil, false, err
+	}
+	if _, err = q.CreateMCPToolGrant(ctx, db.CreateMCPToolGrantParams{
+		ID:          pgID(uuid.New()),
+		WorkspaceID: turn.WorkspaceID,
+		BotID:       turn.BotID,
+		ServerID:    pgID(req.ServerID),
+		ToolName:    req.ToolName,
+		ArgsSha256:  req.ArgsHash,
+		ApprovalID:  approvalID,
+		Status:      "pending",
+	}); err != nil {
+		return uuid.Nil, false, err
+	}
+
+	var notifyIDs []uuid.UUID
+	if conv.Type == "group" {
+		if err = q.PauseGroupForApproval(ctx, db.PauseGroupForApprovalParams{
+			WorkspaceID: turn.WorkspaceID,
+			ID:          turn.ConversationID,
+		}); err != nil {
+			return uuid.Nil, false, err
+		}
+		notifyIDs, err = notify.Approval(ctx, q, turn.WorkspaceID, turn.ConversationID, message.ID, approvalID)
+		if err != nil {
+			return uuid.Nil, false, err
+		}
+	} else if conv.UserID.Valid {
+		nid, nErr := q.InsertNotification(ctx, db.InsertNotificationParams{
+			WorkspaceID:    turn.WorkspaceID,
+			UserID:         conv.UserID,
+			Kind:           "approval",
+			ConversationID: turn.ConversationID,
+			MessageID:      message.ID,
+			ApprovalID:     approvalID,
+		})
+		if nErr != nil {
+			return uuid.Nil, false, nErr
+		}
+		notifyIDs = []uuid.UUID{uuid.UUID(nid.Bytes)}
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return uuid.Nil, false, err
+	}
+	signal.Send(ctx, req.WorkspaceID, uuid.UUID(turn.ConversationID.Bytes), notifyIDs)
+	return uuid.UUID(approvalID.Bytes), true, nil
 }
 
 func triggerID(id pgtype.UUID) string {

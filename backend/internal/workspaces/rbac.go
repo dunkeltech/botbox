@@ -25,6 +25,8 @@ const (
 	ActionManageWorkspace Action = "manage_workspace"
 	// ActionManageGitLabInstances allows registering and removing trusted GitLab origins.
 	ActionManageGitLabInstances Action = "manage_gitlab_instances"
+	// ActionManageMCPServers allows registering, syncing, and removing workspace MCP servers.
+	ActionManageMCPServers Action = "manage_mcp_servers"
 	// ActionManageMembers allows changing or removing workspace memberships.
 	ActionManageMembers Action = "manage_members"
 	// ActionManageInvitations allows viewing, creating, and revoking invitations.
@@ -71,7 +73,7 @@ func Can(role Role, action Action, isBotOwner bool) bool {
 		return true
 	case ActionManageWorkspace:
 		return role == RoleOwner
-	case ActionManageMembers, ActionManageInvitations, ActionManageGitLabInstances:
+	case ActionManageMembers, ActionManageInvitations, ActionManageGitLabInstances, ActionManageMCPServers:
 		return role == RoleOwner || role == RoleAdmin
 	case ActionCreateBot, ActionFulfillSecretRequest:
 		return role == RoleOwner || role == RoleAdmin || role == RoleMember

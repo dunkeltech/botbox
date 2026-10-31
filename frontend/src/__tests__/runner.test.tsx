@@ -26,6 +26,9 @@ vi.mock('@/components/bots/BotBuilderForm', () => ({
 vi.mock('@/components/settings/BotGitLabInstancesPanel', () => ({
   BotGitLabInstancesPanel: () => null,
 }));
+vi.mock('@/components/bots/BotMCPProxyPanel', () => ({
+  BotMCPProxyPanel: () => null,
+}));
 vi.mock('@/components/chat/BudgetPanel', () => ({ BudgetPanel: () => null }));
 const request = vi.mocked(requestJson);
 afterEach(() => {

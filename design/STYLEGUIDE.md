@@ -404,3 +404,14 @@ Questions should identify an unresolved risk to valuable work, shared data or
 user-provided files. This conversational guidance adds no approval dialog or
 permission control; external actions follow the user's authorization and existing
 infrastructure limits still apply. See ADR-0024.
+
+### MCP proxy & command permissions
+
+Workspace Settings lists registered HTTPS MCP servers with monospace slugs, canonical
+endpoints, masked write-only auth previews (`••••••••`), and discovered tool counts.
+Bot settings / Secrets & MCP displays assigned servers with a three-way segmented
+control per command (`Allow` in `mint-soft`/`green-600`, `Ask approval` in
+`blue-tint`/`blue`, and `Block` in `amber-tint` with dashed `amber-line` — zero red).
+Unconfigured tools remain blocked by default (`fail-closed`). Maintain 44 px touch
+targets, `role="switch"` for server assignment, `aria-pressed` on policy segments,
+and dark `terminal` (`#14201a`) cards for runner wiring and `Recent MCP proxy activity`.

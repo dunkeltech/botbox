@@ -48,6 +48,9 @@ export type ErrorTranslationKey =
   | 'chatUnavailable'
   | 'groupBusy'
   | 'groupNotFound'
+  | 'mcpToolDenied'
+  | 'mcpServerConflict'
+  | 'mcpSyncFailed'
   | 'unknownError';
 
 const ERROR_CODE_TO_KEY: Record<string, ErrorTranslationKey> = {
@@ -98,6 +101,9 @@ const ERROR_CODE_TO_KEY: Record<string, ErrorTranslationKey> = {
   'chat.unavailable': 'chatUnavailable',
   'group.busy': 'groupBusy',
   'group.not_found': 'groupNotFound',
+  'mcp.tool_denied': 'mcpToolDenied',
+  'mcp.server_conflict': 'mcpServerConflict',
+  'mcp.sync_failed': 'mcpSyncFailed',
 };
 
 /**

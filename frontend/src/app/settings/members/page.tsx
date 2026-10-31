@@ -11,6 +11,7 @@ import {
 import { useTranslations } from 'next-intl';
 
 import { GitLabInstancesPanel } from '@/components/settings/GitLabInstancesPanel';
+import { MCPServersPanel } from '@/components/settings/MCPServersPanel';
 import { BudgetPanel } from '@/components/chat/BudgetPanel';
 import { AppShell } from '@/components/shell/AppShell';
 import { initials } from '@/components/team/text';
@@ -276,11 +277,19 @@ function MembersContent() {
   return (
     <div className="flex flex-col gap-6">
       {activeWorkspace && (
-        <GitLabInstancesPanel
-          key={activeWorkspace.id}
-          workspaceId={activeWorkspace.id}
-          role={activeWorkspace.role}
-        />
+        <>
+          <GitLabInstancesPanel
+            key={activeWorkspace.id}
+            workspaceId={activeWorkspace.id}
+            role={activeWorkspace.role}
+          />
+          <MCPServersPanel
+            key={`mcp-${activeWorkspace.id}`}
+            workspaceId={activeWorkspace.id}
+            role={activeWorkspace.role}
+            ignoreMissing
+          />
+        </>
       )}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="flex flex-col gap-1.5">

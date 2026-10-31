@@ -30,6 +30,7 @@ import {
   useState,
 } from 'react';
 
+import { BotMCPProxyPanel } from '@/components/bots/BotMCPProxyPanel';
 import { BudgetPanel } from '@/components/chat/BudgetPanel';
 
 import {
@@ -2175,6 +2176,14 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
               )}
             </div>
           </section>
+
+          <BotMCPProxyPanel
+            workspaceId={workspace.id}
+            botId={bot.id}
+            botName={bot.name}
+            canManage={canEditBotSecrets}
+            ignoreMissing
+          />
 
           <section className="flex flex-col gap-4">
             <div className="flex flex-wrap items-end justify-between gap-3">

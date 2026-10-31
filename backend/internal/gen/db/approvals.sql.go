@@ -155,6 +155,35 @@ func (q *Queries) GetBudgetForUpdate(ctx context.Context, arg GetBudgetForUpdate
 	return i, err
 }
 
+const getPendingApprovalByPayload = `-- name: GetPendingApprovalByPayload :one
+SELECT id FROM approvals
+WHERE workspace_id = $1
+  AND conversation_id = $2
+  AND kind = $3
+  AND payload = $4
+  AND status = 'pending'
+LIMIT 1
+`
+
+type GetPendingApprovalByPayloadParams struct {
+	WorkspaceID    pgtype.UUID `json:"workspace_id"`
+	ConversationID pgtype.UUID `json:"conversation_id"`
+	Kind           string      `json:"kind"`
+	Payload        []byte      `json:"payload"`
+}
+
+func (q *Queries) GetPendingApprovalByPayload(ctx context.Context, arg GetPendingApprovalByPayloadParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getPendingApprovalByPayload,
+		arg.WorkspaceID,
+		arg.ConversationID,
+		arg.Kind,
+		arg.Payload,
+	)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const latestRunnableGroupMessage = `-- name: LatestRunnableGroupMessage :one
 SELECT id FROM messages
 WHERE workspace_id = $1 AND conversation_id = $2 AND kind = 'text'
@@ -183,12 +212,21 @@ WHERE a.workspace_id = $1
   AND (
     (
       a.conversation_id IS NOT NULL
-      AND EXISTS (
-        SELECT 1 FROM conversation_members m
-        WHERE m.workspace_id = a.workspace_id
-          AND m.conversation_id = a.conversation_id
-          AND m.member_type = 'user'
-          AND m.member_id = $3
+      AND (
+        EXISTS (
+          SELECT 1 FROM conversation_members m
+          WHERE m.workspace_id = a.workspace_id
+            AND m.conversation_id = a.conversation_id
+            AND m.member_type = 'user'
+            AND m.member_id = $3
+        )
+        OR EXISTS (
+          SELECT 1 FROM conversations c
+          WHERE c.workspace_id = a.workspace_id
+            AND c.id = a.conversation_id
+            AND c.type = 'dm'
+            AND c.user_id = $3
+        )
       )
     )
     OR (

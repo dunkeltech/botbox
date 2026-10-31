@@ -56,6 +56,27 @@ type BotGitlabInstance struct {
 	Origin      string      `json:"origin"`
 }
 
+type BotMcpAssignment struct {
+	WorkspaceID          pgtype.UUID        `json:"workspace_id"`
+	BotID                pgtype.UUID        `json:"bot_id"`
+	ServerID             pgtype.UUID        `json:"server_id"`
+	Enabled              bool               `json:"enabled"`
+	DefaultPolicy        string             `json:"default_policy"`
+	Revision             int64              `json:"revision"`
+	AcknowledgedRevision int64              `json:"acknowledged_revision"`
+	AcknowledgedAt       pgtype.Timestamptz `json:"acknowledged_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+}
+
+type BotMcpToolPolicy struct {
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	BotID       pgtype.UUID        `json:"bot_id"`
+	ServerID    pgtype.UUID        `json:"server_id"`
+	ToolName    string             `json:"tool_name"`
+	Policy      string             `json:"policy"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
 type BotRuntime struct {
 	WorkspaceID pgtype.UUID `json:"workspace_id"`
 	BotID       pgtype.UUID `json:"bot_id"`
@@ -289,6 +310,60 @@ type Invitation struct {
 	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
 	AcceptedAt  pgtype.Timestamptz `json:"accepted_at"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type McpCallLog struct {
+	ID          pgtype.UUID        `json:"id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	BotID       pgtype.UUID        `json:"bot_id"`
+	ServerID    pgtype.UUID        `json:"server_id"`
+	ServerSlug  string             `json:"server_slug"`
+	ToolName    string             `json:"tool_name"`
+	Action      string             `json:"action"`
+	StatusCode  int32              `json:"status_code"`
+	LatencyMs   int32              `json:"latency_ms"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type McpServer struct {
+	ID             pgtype.UUID        `json:"id"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	Slug           string             `json:"slug"`
+	Name           string             `json:"name"`
+	EndpointUrl    string             `json:"endpoint_url"`
+	AuthScheme     string             `json:"auth_scheme"`
+	AuthHeaderName string             `json:"auth_header_name"`
+	AuthUsername   string             `json:"auth_username"`
+	KekID          string             `json:"kek_id"`
+	WrappedDek     []byte             `json:"wrapped_dek"`
+	EncryptedValue []byte             `json:"encrypted_value"`
+	MaskedPreview  string             `json:"masked_preview"`
+	LastSyncedAt   pgtype.Timestamptz `json:"last_synced_at"`
+	LastSyncError  string             `json:"last_sync_error"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+type McpServerTool struct {
+	ServerID     pgtype.UUID        `json:"server_id"`
+	WorkspaceID  pgtype.UUID        `json:"workspace_id"`
+	ToolName     string             `json:"tool_name"`
+	Description  string             `json:"description"`
+	InputSchema  []byte             `json:"input_schema"`
+	DiscoveredAt pgtype.Timestamptz `json:"discovered_at"`
+}
+
+type McpToolGrant struct {
+	ID          pgtype.UUID        `json:"id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	BotID       pgtype.UUID        `json:"bot_id"`
+	ServerID    pgtype.UUID        `json:"server_id"`
+	ToolName    string             `json:"tool_name"`
+	ArgsSha256  string             `json:"args_sha256"`
+	ApprovalID  pgtype.UUID        `json:"approval_id"`
+	Status      string             `json:"status"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	DecidedAt   pgtype.Timestamptz `json:"decided_at"`
 }
 
 type Message struct {

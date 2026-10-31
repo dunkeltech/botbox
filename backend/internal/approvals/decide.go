@@ -60,6 +60,14 @@ func Apply(ctx context.Context, q *db.Queries, approval db.Approval, decision st
 		if err := allow(ctx, q, approval, actor, now, applyOpts); err != nil {
 			return nil, err
 		}
+	} else if approval.Kind == kindMCPTool {
+		if _, err := q.UpdateMCPToolGrantByApproval(ctx, db.UpdateMCPToolGrantByApprovalParams{
+			WorkspaceID: approval.WorkspaceID,
+			ApprovalID:  approval.ID,
+			Status:      "denied",
+		}); err != nil {
+			return nil, err
+		}
 	}
 	n, err := q.DecideApproval(ctx, db.DecideApprovalParams{
 		WorkspaceID: approval.WorkspaceID,
@@ -110,8 +118,19 @@ func Apply(ctx context.Context, q *db.Queries, approval db.Approval, decision st
 		return nil, err
 	}
 	// Only an approval pause resumes the bot. A turn limit stays in place.
+	// Direct messages do not set group pause flags, so an approved mcp_tool on
+	// a DM still queues continuation when no turn is currently running.
 	if cleared != 1 {
-		return nil, nil
+		if approval.Kind != kindMCPTool {
+			return nil, nil
+		}
+		convType, typeErr := q.GetConversationType(ctx, db.GetConversationTypeParams{
+			WorkspaceID: approval.WorkspaceID,
+			ID:          approval.ConversationID,
+		})
+		if typeErr != nil || convType != "dm" {
+			return nil, typeErr
+		}
 	}
 	return queueResume(ctx, q, approval)
 }
@@ -125,6 +144,13 @@ func allow(ctx context.Context, q *db.Queries, approval db.Approval, actor pgtyp
 			return allowGroupCap(ctx, q, approval)
 		}
 		return allowBudget(ctx, q, approval, now)
+	case kindMCPTool:
+		_, err := q.UpdateMCPToolGrantByApproval(ctx, db.UpdateMCPToolGrantByApprovalParams{
+			WorkspaceID: approval.WorkspaceID,
+			ApprovalID:  approval.ID,
+			Status:      "approved",
+		})
+		return err
 	default:
 		return nil
 	}

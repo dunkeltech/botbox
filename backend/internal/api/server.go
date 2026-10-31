@@ -16,6 +16,7 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/authbroker"
 	"github.com/dunkeltech/botbox/backend/internal/compute"
 	"github.com/dunkeltech/botbox/backend/internal/compute/vncrelay"
+	"github.com/dunkeltech/botbox/backend/internal/mcpproxy"
 	"github.com/dunkeltech/botbox/backend/internal/secrets"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -49,6 +50,7 @@ type Config struct {
 	CookieSecure          bool
 	PublicBaseURL         string
 	EgressAckTimeout      time.Duration
+	MCPUpstream           *mcpproxy.UpstreamClient
 	Now                   func() time.Time
 }
 

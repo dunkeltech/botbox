@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -117,5 +118,36 @@ func TestProviderReportedCostWins(t *testing.T) {
 	}
 	if cost == nil || *cost != 5 {
 		t.Fatalf("cost=%v", cost)
+	}
+}
+
+func TestAnthropicAdapterPreservesExtraToolDescriptions(t *testing.T) {
+	var seenBody string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		seenBody = string(raw)
+		_, _ = w.Write([]byte("data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":4,\"cache_read_input_tokens\":0}}}\n\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"ok\"}}\n\ndata: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":1}}\n\ndata: {\"type\":\"message_stop\"}\n\n"))
+	}))
+	defer server.Close()
+
+	p := &modelapi.Provider{
+		Client: modelapi.AnthropicClient(server.Client()),
+		URL:    server.URL + "/v1/chat/completions",
+		Model:  "fixture",
+		Tools:  &fakeTools{},
+		ExtraTools: []map[string]any{{
+			"type": "function",
+			"function": map[string]any{
+				"name":        "mcp__gitlab__get_job",
+				"description": "Get details of a GitLab CI job",
+				"parameters":  map[string]any{"type": "object"},
+			},
+		}},
+	}
+	if err := p.Run(context.Background(), []modelapi.Message{{Role: "user", Content: "check job"}}, func(engine.Event) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(seenBody, "Get details of a GitLab CI job") {
+		t.Fatalf("expected tool description in Anthropic request, got %s", seenBody)
 	}
 }

@@ -136,11 +136,11 @@ func validateSecretInput(
 	}
 
 	switch scheme {
-	case api.Bearer:
+	case api.SecretAuthSchemeBearer:
 		if headerName == "" {
 			headerName = "Authorization"
 		}
-	case api.Basic:
+	case api.SecretAuthSchemeBasic:
 		if headerName == "" {
 			headerName = "Authorization"
 		}
@@ -150,7 +150,7 @@ func validateSecretInput(
 		if strings.Contains(username, ":") || strings.ContainsAny(username, "\r\n") {
 			return validatedSecretInput{}, "username cannot contain ':' or newlines"
 		}
-	case api.Header:
+	case api.SecretAuthSchemeHeader:
 		if headerName == "" {
 			return validatedSecretInput{}, "headerName is required when authScheme is header"
 		}
@@ -1400,9 +1400,9 @@ func decryptSecretRule(
 
 func mapDBAuthScheme(scheme string) mitmproxy.AuthScheme {
 	switch scheme {
-	case string(api.Header):
+	case string(api.SecretAuthSchemeHeader):
 		return mitmproxy.SchemeRaw
-	case string(api.Basic):
+	case string(api.SecretAuthSchemeBasic):
 		return mitmproxy.SchemeBasic
 	default:
 		return mitmproxy.SchemeBearer

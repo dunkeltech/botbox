@@ -8,6 +8,15 @@ ON CONFLICT (workspace_id, conversation_id, kind, payload)
 DO NOTHING
 RETURNING id;
 
+-- name: GetPendingApprovalByPayload :one
+SELECT id FROM approvals
+WHERE workspace_id = $1
+  AND conversation_id = $2
+  AND kind = sqlc.arg(kind)
+  AND payload = sqlc.arg(payload)
+  AND status = 'pending'
+LIMIT 1;
+
 -- name: AttachApprovalMessage :exec
 UPDATE approvals SET message_id = $3 WHERE workspace_id = $1 AND id = $2;
 
@@ -40,12 +49,21 @@ WHERE a.workspace_id = $1
   AND (
     (
       a.conversation_id IS NOT NULL
-      AND EXISTS (
-        SELECT 1 FROM conversation_members m
-        WHERE m.workspace_id = a.workspace_id
-          AND m.conversation_id = a.conversation_id
-          AND m.member_type = 'user'
-          AND m.member_id = sqlc.arg(member_id)
+      AND (
+        EXISTS (
+          SELECT 1 FROM conversation_members m
+          WHERE m.workspace_id = a.workspace_id
+            AND m.conversation_id = a.conversation_id
+            AND m.member_type = 'user'
+            AND m.member_id = sqlc.arg(member_id)
+        )
+        OR EXISTS (
+          SELECT 1 FROM conversations c
+          WHERE c.workspace_id = a.workspace_id
+            AND c.id = a.conversation_id
+            AND c.type = 'dm'
+            AND c.user_id = sqlc.arg(member_id)
+        )
       )
     )
     OR (

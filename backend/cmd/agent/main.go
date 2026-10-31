@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -58,6 +59,10 @@ func main() {
 	// MCP stays on loopback in this process so takeover cancels the live xdotool.
 	mcpHandler := agent.NewMCPHandler(desktop)
 	mcpHandler.BrokerEnabled = os.Getenv("BOTBOX_AUTH_BROKER_ENABLED") == "true"
+	if proxyURL := strings.TrimSpace(os.Getenv("HTTP_PROXY")); proxyURL != "" {
+		mcpHandler.BrokerProxyURL = strings.TrimRight(proxyURL, "/")
+		mcpHandler.MCPProxyEnabled = true
+	}
 	mux := http.NewServeMux()
 	mux.Handle("POST /mcp", mcpHandler)
 	mcpServer := &http.Server{
@@ -96,6 +101,10 @@ func serveMCPStdio(ctx context.Context) error {
 	desktop := newSandboxDesktop()
 	h := agent.NewMCPHandler(desktop)
 	h.BrokerEnabled = os.Getenv("BOTBOX_AUTH_BROKER_ENABLED") == "true"
+	if proxyURL := strings.TrimSpace(os.Getenv("HTTP_PROXY")); proxyURL != "" {
+		h.BrokerProxyURL = strings.TrimRight(proxyURL, "/")
+		h.MCPProxyEnabled = true
+	}
 	return h.ServeStream(ctx, os.Stdin, os.Stdout)
 }
 

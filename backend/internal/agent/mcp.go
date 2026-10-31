@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -23,10 +24,11 @@ const maxMCPBodyBytes = 1 << 20
 // MCPHandler exposes DesktopService over JSON-RPC 2.0 (Stdio and Streamable HTTP /mcp)
 // so both claude and agy CLIs can call desktop tools directly inside the sandbox.
 type MCPHandler struct {
-	desktop        *DesktopService
-	BrokerEnabled  bool
-	BrokerProxyURL string
-	BrokerClient   *http.Client
+	desktop         *DesktopService
+	BrokerEnabled   bool
+	MCPProxyEnabled bool
+	BrokerProxyURL  string
+	BrokerClient    *http.Client
 }
 
 // NewMCPHandler constructs an MCP server backed by desktop.
@@ -161,7 +163,7 @@ func (m *MCPHandler) HandleMessage(ctx context.Context, raw []byte) (rpcResponse
 		return rpcResponse{
 			JSONRPC: "2.0",
 			ID:      id,
-			Result:  map[string]any{"tools": m.mcpToolsList()},
+			Result:  map[string]any{"tools": m.mcpToolsList(ctx)},
 		}, true
 	case "tools/call":
 		res, rpcErr := m.callTool(ctx, req.Params)
@@ -194,6 +196,9 @@ func (m *MCPHandler) callTool(ctx context.Context, rawParams json.RawMessage) (a
 	}
 	if isBrokerMCPTool(params.Name) {
 		return m.handleBrokerBridgeMCP(ctx, params.Name, params.Arguments)
+	}
+	if m.MCPProxyEnabled && strings.HasPrefix(params.Name, "mcp__") {
+		return m.handleMCPProxyCall(ctx, params.Name, params.Arguments)
 	}
 
 	act, err := desk.Parse(params.Name, params.Arguments)
@@ -244,7 +249,7 @@ func writeRPCErrorHTTP(w http.ResponseWriter, status int, id json.RawMessage, co
 	})
 }
 
-func (m *MCPHandler) mcpToolsList() []map[string]any {
+func (m *MCPHandler) mcpToolsList(ctx context.Context) []map[string]any {
 	point := map[string]any{
 		"x":            map[string]any{"type": "integer"},
 		"y":            map[string]any{"type": "integer"},
@@ -339,7 +344,136 @@ func (m *MCPHandler) mcpToolsList() []map[string]any {
 			},
 		)
 	}
+	if m.MCPProxyEnabled {
+		tools = append(tools, m.fetchMCPProxyTools(ctx)...)
+	}
 	return tools
+}
+
+func (m *MCPHandler) fetchMCPProxyTools(ctx context.Context) []map[string]any {
+	baseURL := strings.TrimRight(strings.TrimSpace(m.BrokerProxyURL), "/")
+	if baseURL == "" {
+		baseURL = "http://egress:8081"
+	}
+	client := m.BrokerClient
+	if client == nil {
+		client = &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{Proxy: nil}}
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, baseURL+"/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)) //nolint:gosec // controlled per-bot egress proxy MCP endpoint
+	if err != nil {
+		return nil
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req) //nolint:gosec // controlled per-bot egress proxy MCP endpoint
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close() //nolint:errcheck // best-effort close
+	if resp.StatusCode != http.StatusOK {
+		return nil
+	}
+	var rpc struct {
+		Result struct {
+			Tools []map[string]any `json:"tools"`
+		} `json:"result"`
+	}
+	if json.NewDecoder(io.LimitReader(resp.Body, 2<<20)).Decode(&rpc) != nil {
+		return nil
+	}
+	return rpc.Result.Tools
+}
+
+// DiscoverAssignedMCPSlugs queries the egress proxy /mcp tools catalog and returns
+// unique sorted MCP server slugs exposed to this sandbox.
+func DiscoverAssignedMCPSlugs(ctx context.Context, proxyURL string) []string {
+	trimmed := strings.TrimRight(strings.TrimSpace(proxyURL), "/")
+	if trimmed == "" {
+		return nil
+	}
+	h := &MCPHandler{
+		BrokerProxyURL:  trimmed,
+		MCPProxyEnabled: true,
+		BrokerClient: &http.Client{
+			Timeout:   3 * time.Second,
+			Transport: &http.Transport{Proxy: nil},
+		},
+	}
+	tools := h.fetchMCPProxyTools(ctx)
+	if len(tools) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	var slugs []string
+	for _, tool := range tools {
+		name, _ := tool["name"].(string)
+		rest, ok := strings.CutPrefix(name, "mcp__")
+		if !ok {
+			continue
+		}
+		slug, _, hasSep := strings.Cut(rest, "__")
+		if !hasSep || slug == "" {
+			continue
+		}
+		if _, exists := seen[slug]; !exists {
+			seen[slug] = struct{}{}
+			slugs = append(slugs, slug)
+		}
+	}
+	sort.Strings(slugs)
+	return slugs
+}
+
+func (m *MCPHandler) handleMCPProxyCall(ctx context.Context, name string, raw json.RawMessage) (any, *rpcError) {
+	baseURL := strings.TrimRight(strings.TrimSpace(m.BrokerProxyURL), "/")
+	if baseURL == "" {
+		baseURL = "http://egress:8081"
+	}
+	client := m.BrokerClient
+	if client == nil {
+		client = &http.Client{Timeout: 30 * time.Second, Transport: &http.Transport{Proxy: nil}}
+	}
+	if len(raw) == 0 {
+		raw = json.RawMessage(`{}`)
+	}
+	body, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "tools/call",
+		"params": map[string]any{
+			"name":      name,
+			"arguments": json.RawMessage(raw),
+		},
+	})
+	if err != nil {
+		return nil, &rpcError{Code: -32603, Message: err.Error()}
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/mcp", strings.NewReader(string(body))) //nolint:gosec // controlled per-bot egress proxy MCP endpoint
+	if err != nil {
+		return nil, &rpcError{Code: -32603, Message: err.Error()}
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req) //nolint:gosec // controlled per-bot egress proxy MCP endpoint
+	if err != nil {
+		return map[string]any{
+			"isError": true,
+			"content": []map[string]any{{"type": "text", "text": "mcp proxy unavailable"}},
+		}, nil
+	}
+	defer resp.Body.Close() //nolint:errcheck // best-effort close
+	rawResp, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	if err != nil {
+		return nil, &rpcError{Code: -32603, Message: err.Error()}
+	}
+	var rpc rpcResponse
+	if err := json.Unmarshal(rawResp, &rpc); err != nil {
+		return nil, &rpcError{Code: -32603, Message: "invalid mcp proxy response"}
+	}
+	if rpc.Error != nil {
+		return nil, rpc.Error
+	}
+	return rpc.Result, nil
 }
 
 func (m *MCPHandler) handleRequestSecretMCP(raw json.RawMessage) (any, *rpcError) {

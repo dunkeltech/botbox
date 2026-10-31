@@ -1068,6 +1068,124 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/workspaces/{workspaceID}/mcp-servers': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+      };
+      cookie?: never;
+    };
+    get: operations['listMCPServers'];
+    put?: never;
+    post: operations['createMCPServer'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/workspaces/{workspaceID}/mcp-servers/{serverID}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+        serverID: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete: operations['deleteMCPServer'];
+    options?: never;
+    head?: never;
+    patch: operations['updateMCPServer'];
+    trace?: never;
+  };
+  '/api/workspaces/{workspaceID}/mcp-servers/{serverID}/sync': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+        serverID: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations['syncMCPServerTools'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/workspaces/{workspaceID}/bots/{botID}/mcp': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+        botID: components['parameters']['BotID'];
+      };
+      cookie?: never;
+    };
+    get: operations['getBotMCPConfig'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/workspaces/{workspaceID}/bots/{botID}/mcp/{serverID}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+        botID: components['parameters']['BotID'];
+        serverID: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put: operations['updateBotMCPServerPolicy'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/workspaces/{workspaceID}/bots/{botID}/mcp/logs': {
+    parameters: {
+      query?: {
+        action?: components['schemas']['MCPCallLogAction'];
+        limit?: number;
+        offset?: number;
+      };
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+        botID: components['parameters']['BotID'];
+      };
+      cookie?: never;
+    };
+    get: operations['listBotMCPLogs'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1250,7 +1368,8 @@ export interface components {
       /** Format: uuid */
       messageId?: string;
       /** @enum {string} */
-      kind: 'new_host' | 'raise_budget' | 'push_protected' | 'custom';
+      kind:
+        'new_host' | 'raise_budget' | 'push_protected' | 'custom' | 'mcp_tool';
       /** @enum {string} */
       status: 'pending' | 'approved' | 'denied';
       host?: string;
@@ -1319,7 +1438,8 @@ export interface components {
     };
     AskBeforeRule: {
       /** @enum {string} */
-      kind: 'new_host' | 'raise_budget' | 'push_protected' | 'custom';
+      kind:
+        'new_host' | 'raise_budget' | 'push_protected' | 'custom' | 'mcp_tool';
       label?: string;
     };
     GroupMember: {
@@ -1799,6 +1919,134 @@ export interface components {
     };
     EgressLogListResponse: {
       logs: components['schemas']['EgressLogEntry'][];
+    };
+    /** @enum {string} */
+    MCPAuthScheme: 'none' | 'bearer' | 'header' | 'basic';
+    /** @enum {string} */
+    MCPToolPolicyMode: 'allow' | 'ask' | 'deny';
+    MCPToolDefinitionInput: {
+      toolName: string;
+      description?: string;
+      inputSchema?: {
+        [key: string]: unknown;
+      };
+    };
+    MCPServerTool: {
+      toolName: string;
+      description: string;
+      inputSchema: {
+        [key: string]: unknown;
+      };
+      /** Format: date-time */
+      discoveredAt: string;
+    };
+    MCPServer: {
+      /** Format: uuid */
+      id: string;
+      /** Format: uuid */
+      workspaceId: string;
+      slug: string;
+      name: string;
+      endpointUrl: string;
+      authScheme: components['schemas']['MCPAuthScheme'];
+      authHeaderName: string;
+      authUsername: string;
+      hasSecret: boolean;
+      maskedPreview: string;
+      tools: components['schemas']['MCPServerTool'][];
+      /** Format: date-time */
+      lastSyncedAt: string | null;
+      lastSyncError: string;
+      /** Format: date-time */
+      createdAt: string;
+      /** Format: date-time */
+      updatedAt: string;
+    };
+    MCPServerList: {
+      servers: components['schemas']['MCPServer'][];
+    };
+    CreateMCPServerRequest: {
+      name: string;
+      slug: string;
+      endpointUrl: string;
+      authScheme: components['schemas']['MCPAuthScheme'];
+      authHeaderName?: string;
+      authUsername?: string;
+      secretValue?: string;
+      tools?: components['schemas']['MCPToolDefinitionInput'][];
+    };
+    UpdateMCPServerRequest: {
+      name?: string;
+      endpointUrl?: string;
+      authScheme?: components['schemas']['MCPAuthScheme'];
+      authHeaderName?: string;
+      authUsername?: string;
+      secretValue?: string;
+      tools?: components['schemas']['MCPToolDefinitionInput'][];
+    };
+    BotMCPServerPolicy: {
+      /** Format: uuid */
+      serverId: string;
+      serverSlug: string;
+      serverName: string;
+      endpointUrl: string;
+      authScheme: components['schemas']['MCPAuthScheme'];
+      hasSecret: boolean;
+      enabled: boolean;
+      defaultPolicy: components['schemas']['MCPToolPolicyMode'];
+      /** Format: int64 */
+      revision: number;
+      /** Format: int64 */
+      acknowledgedRevision: number;
+      enforcementStatus: components['schemas']['EgressEnforcementStatus'];
+      toolPolicies: {
+        [key: string]: components['schemas']['MCPToolPolicyMode'];
+      };
+      tools: components['schemas']['MCPServerTool'][];
+      /** Format: date-time */
+      updatedAt: string;
+    };
+    BotMCPConfigResponse: {
+      /** Format: uuid */
+      botId: string;
+      /** Format: uuid */
+      workspaceId: string;
+      servers: components['schemas']['BotMCPServerPolicy'][];
+    };
+    UpdateBotMCPServerPolicyRequest: {
+      enabled: boolean;
+      defaultPolicy?: components['schemas']['MCPToolPolicyMode'];
+      toolPolicies?: {
+        [key: string]: components['schemas']['MCPToolPolicyMode'];
+      };
+      /** Format: int64 */
+      expectedRevision?: number;
+    };
+    /** @enum {string} */
+    MCPCallLogAction:
+      | 'allowed'
+      | 'blocked'
+      | 'ask_pending'
+      | 'approved_by_human'
+      | 'denied_by_human'
+      | 'upstream_error';
+    MCPCallLogEntry: {
+      /** Format: uuid */
+      id: string;
+      /** Format: uuid */
+      botId: string;
+      /** Format: uuid */
+      serverId?: string | null;
+      serverSlug: string;
+      toolName: string;
+      action: components['schemas']['MCPCallLogAction'];
+      statusCode: number;
+      latencyMs: number;
+      /** Format: date-time */
+      createdAt: string;
+    };
+    MCPCallLogListResponse: {
+      logs: components['schemas']['MCPCallLogEntry'][];
     };
   };
   responses: never;
@@ -6276,6 +6524,455 @@ export interface operations {
         };
       };
       /** @description Invalid filter or pagination parameter */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Workspace or bot not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  listMCPServers: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Registered workspace MCP servers and cached tools */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['MCPServerList'];
+        };
+      };
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Workspace not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  createMCPServer: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateMCPServerRequest'];
+      };
+    };
+    responses: {
+      /** @description Workspace MCP server registered */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['MCPServer'];
+        };
+      };
+      /** @description Validation error */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Owner or admin required */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Workspace not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Duplicate MCP server slug */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  deleteMCPServer: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+        serverID: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description MCP server deleted */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Owner or admin required */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Workspace or server not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  updateMCPServer: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+        serverID: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateMCPServerRequest'];
+      };
+    };
+    responses: {
+      /** @description MCP server updated */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['MCPServer'];
+        };
+      };
+      /** @description Validation error */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Owner or admin required */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Workspace or server not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  syncMCPServerTools: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+        serverID: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Tool catalog refreshed from upstream MCP server */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['MCPServer'];
+        };
+      };
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Owner or admin required */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Workspace or server not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Upstream MCP server sync failed */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  getBotMCPConfig: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+        botID: components['parameters']['BotID'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Per-bot MCP server assignments and command policies */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['BotMCPConfigResponse'];
+        };
+      };
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Workspace or bot not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  updateBotMCPServerPolicy: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+        botID: components['parameters']['BotID'];
+        serverID: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateBotMCPServerPolicyRequest'];
+      };
+    };
+    responses: {
+      /** @description Bot MCP server policy saved */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['BotMCPServerPolicy'];
+        };
+      };
+      /** @description Validation error */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Bot manager required */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Workspace */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Stale policy revision conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  listBotMCPLogs: {
+    parameters: {
+      query?: {
+        action?: components['schemas']['MCPCallLogAction'];
+        limit?: number;
+        offset?: number;
+      };
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+        botID: components['parameters']['BotID'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Recent MCP proxy decision logs for the bot */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['MCPCallLogListResponse'];
+        };
+      };
+      /** @description Invalid query parameter */
       400: {
         headers: {
           [name: string]: unknown;
