@@ -17,6 +17,8 @@ export type ErrorTranslationKey =
   | 'workspaceNotFound'
   | 'workspaceMemberNotFound'
   | 'workspaceLastOwner'
+  | 'workspaceLastWorkspace'
+  | 'workspaceBusy'
   | 'workspaceAlreadyMember'
   | 'invitationNotFound'
   | 'invitationEmailMismatch'
@@ -70,6 +72,8 @@ const ERROR_CODE_TO_KEY: Record<string, ErrorTranslationKey> = {
   'workspace.not_found': 'workspaceNotFound',
   'workspace.member_not_found': 'workspaceMemberNotFound',
   'workspace.last_owner': 'workspaceLastOwner',
+  'workspace.last_workspace': 'workspaceLastWorkspace',
+  'workspace.busy': 'workspaceBusy',
   'workspace.already_member': 'workspaceAlreadyMember',
   'invitation.not_found': 'invitationNotFound',
   'invitation.email_mismatch': 'invitationEmailMismatch',

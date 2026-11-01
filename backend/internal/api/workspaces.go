@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/dunkeltech/botbox/backend/internal/auth"
+	"github.com/dunkeltech/botbox/backend/internal/compute"
 	"github.com/dunkeltech/botbox/backend/internal/gen/api"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
 	"github.com/dunkeltech/botbox/backend/internal/workspaces"
@@ -144,7 +145,7 @@ func (s *server) handleGetWorkspace(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleUpdateWorkspace(w http.ResponseWriter, r *http.Request) {
-	wsRow, _, role, ok := s.loadWorkspaceMembership(w, r, workspaces.ActionManageWorkspace)
+	wsRow, claims, role, ok := s.loadWorkspaceMembership(w, r, workspaces.ActionManageWorkspace)
 	if !ok {
 		return
 	}
@@ -152,20 +153,230 @@ func (s *server) handleUpdateWorkspace(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, s.logger, &req) {
 		return
 	}
-	if req.ScreenshotRetentionDays == nil || *req.ScreenshotRetentionDays < 1 || *req.ScreenshotRetentionDays > 30 {
-		writeError(w, s.logger, http.StatusBadRequest, "validation_error", "screenshot retention must be between 1 and 30 days")
+	if req.Name == nil && req.DefaultDriver == nil && req.DefaultLocale == nil && req.ScreenshotRetentionDays == nil {
+		writeError(w, s.logger, http.StatusBadRequest, "validation_error", "at least one workspace field is required")
 		return
 	}
-	updated, err := s.queries.UpdateScreenshotRetention(r.Context(), db.UpdateScreenshotRetentionParams{
-		ID:                      wsRow.ID,
-		ScreenshotRetentionDays: int32(*req.ScreenshotRetentionDays),
-	})
+
+	var nextName *string
+	if req.Name != nil {
+		trimmed, nameOK := validateWorkspaceName(*req.Name)
+		if !nameOK {
+			writeError(w, s.logger, http.StatusBadRequest, "validation_error", "name must be 1..100 characters")
+			return
+		}
+		nextName = &trimmed
+	}
+	if req.DefaultDriver != nil && !req.DefaultDriver.Valid() {
+		writeError(w, s.logger, http.StatusBadRequest, "validation_error", "invalid defaultDriver")
+		return
+	}
+	var nextLocale *string
+	if req.DefaultLocale != nil {
+		trimmed, localeOK := validateLocale(req.DefaultLocale, "")
+		if !localeOK || trimmed == "" {
+			writeError(w, s.logger, http.StatusBadRequest, "validation_error", "defaultLocale must be 1..10 characters")
+			return
+		}
+		nextLocale = &trimmed
+	}
+	var nextRetention *int32
+	if req.ScreenshotRetentionDays != nil {
+		days := *req.ScreenshotRetentionDays
+		if days < 1 || days > 30 {
+			writeError(w, s.logger, http.StatusBadRequest, "validation_error", "screenshot retention must be between 1 and 30 days")
+			return
+		}
+		v := int32(days)
+		nextRetention = &v
+	}
+
+	tx, err := s.pool.Begin(r.Context())
 	if err != nil {
-		s.logger.Error("update screenshot retention", "err", err)
+		s.logger.Error("begin update workspace tx", "err", err)
 		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to update workspace")
 		return
 	}
+	defer rollbackTx(r.Context(), tx)
+
+	txq := s.queries.WithTx(tx)
+	existing, err := txq.GetWorkspaceForUpdate(r.Context(), wsRow.ID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, s.logger, http.StatusNotFound, "workspace.not_found", "workspace not found")
+			return
+		}
+		s.logger.Error("lock workspace for update", "err", err)
+		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to update workspace")
+		return
+	}
+
+	params := db.UpdateWorkspaceSettingsParams{
+		ID:                      existing.ID,
+		Name:                    existing.Name,
+		DefaultDriver:           existing.DefaultDriver,
+		DefaultLocale:           existing.DefaultLocale,
+		ScreenshotRetentionDays: existing.ScreenshotRetentionDays,
+	}
+	if nextName != nil {
+		params.Name = *nextName
+	}
+	if req.DefaultDriver != nil {
+		params.DefaultDriver = string(*req.DefaultDriver)
+	}
+	if nextLocale != nil {
+		params.DefaultLocale = *nextLocale
+	}
+	if nextRetention != nil {
+		params.ScreenshotRetentionDays = *nextRetention
+	}
+
+	updated, err := txq.UpdateWorkspaceSettings(r.Context(), params)
+	if err != nil {
+		s.logger.Error("update workspace settings", "err", err)
+		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to update workspace")
+		return
+	}
+
+	wsUUID := fromPGUUID(wsRow.ID)
+	actorUUID := claims.Subject
+	if err := recordAudit(r.Context(), txq, &wsUUID, &actorUUID, "workspace.updated", "workspace", &wsUUID, map[string]any{
+		"name":                    updated.Name,
+		"defaultDriver":           updated.DefaultDriver,
+		"defaultLocale":           updated.DefaultLocale,
+		"screenshotRetentionDays": updated.ScreenshotRetentionDays,
+	}); err != nil {
+		s.logger.Error("audit workspace update", "err", err)
+		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to record audit log")
+		return
+	}
+
+	if err := tx.Commit(r.Context()); err != nil {
+		s.logger.Error("commit workspace update", "err", err)
+		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to update workspace")
+		return
+	}
+
 	writeJSON(w, s.logger, http.StatusOK, toAPIWorkspaceFromRow(updated, string(role)))
+}
+
+func (s *server) handleDeleteWorkspace(w http.ResponseWriter, r *http.Request) {
+	wsRow, claims, _, ok := s.loadWorkspaceMembership(w, r, workspaces.ActionManageWorkspace)
+	if !ok {
+		return
+	}
+
+	tx, err := s.pool.Begin(r.Context())
+	if err != nil {
+		s.logger.Error("begin delete workspace tx", "err", err)
+		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to delete workspace")
+		return
+	}
+	defer rollbackTx(r.Context(), tx)
+
+	txq := s.queries.WithTx(tx)
+	existing, err := txq.GetWorkspaceForUpdate(r.Context(), wsRow.ID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, s.logger, http.StatusNotFound, "workspace.not_found", "workspace not found")
+			return
+		}
+		s.logger.Error("lock workspace for delete", "err", err)
+		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to delete workspace")
+		return
+	}
+
+	wsCount, err := txq.CountWorkspacesForUser(r.Context(), toPGUUID(claims.Subject))
+	if err != nil {
+		s.logger.Error("count user workspaces", "err", err)
+		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to validate workspaces")
+		return
+	}
+	if wsCount <= 1 {
+		writeError(w, s.logger, http.StatusBadRequest, "workspace.last_workspace", "cannot delete your last remaining workspace")
+		return
+	}
+
+	busy, err := txq.HasActiveWorkspaceWork(r.Context(), existing.ID)
+	if err != nil {
+		s.logger.Error("check active workspace work", "err", err)
+		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to check workspace activity")
+		return
+	}
+	if busy {
+		writeError(w, s.logger, http.StatusConflict, "workspace.busy", "workspace has active bot work or credential sessions")
+		return
+	}
+
+	bots, err := txq.ListBotsByWorkspace(r.Context(), existing.ID)
+	if err != nil {
+		s.logger.Error("list workspace bots before delete", "err", err)
+		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to delete workspace")
+		return
+	}
+	envs, err := txq.ListEnvironmentsByWorkspace(r.Context(), existing.ID)
+	if err != nil {
+		s.logger.Error("list workspace environments before delete", "err", err)
+		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to delete workspace")
+		return
+	}
+
+	if s.compute != nil {
+		for _, envRow := range envs {
+			if strings.TrimSpace(envRow.EnvID) != "" {
+				if destroyErr := s.compute.DestroyEnvironment(r.Context(), compute.EnvID(envRow.EnvID)); destroyErr != nil && !errors.Is(destroyErr, compute.ErrEnvironmentNotFound) {
+					s.logger.Warn("failed to destroy sandbox container during workspace deletion", "err", destroyErr, "env_id", envRow.EnvID)
+				}
+			}
+		}
+	}
+
+	// Clear conversations first so messages.sender_* FKs do not block cascading
+	// deletions of workspace_members and bots when the workspace row is removed.
+	if err := txq.DeleteWorkspaceConversations(r.Context(), existing.ID); err != nil {
+		s.logger.Error("delete workspace conversations", "err", err)
+		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to delete workspace")
+		return
+	}
+
+	affected, err := txq.DeleteWorkspaceByID(r.Context(), existing.ID)
+	if err != nil {
+		s.logger.Error("delete workspace", "err", err)
+		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to delete workspace")
+		return
+	}
+	if affected == 0 {
+		writeError(w, s.logger, http.StatusNotFound, "workspace.not_found", "workspace not found")
+		return
+	}
+
+	wsUUID := fromPGUUID(existing.ID)
+	actorUUID := claims.Subject
+	// Record with nil workspace_id so ON DELETE CASCADE does not remove the audit row.
+	if err := recordAudit(r.Context(), txq, nil, &actorUUID, "workspace.deleted", "workspace", &wsUUID, map[string]any{
+		"slug": existing.Slug,
+		"name": existing.Name,
+	}); err != nil {
+		s.logger.Error("audit workspace deletion", "err", err)
+		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to record audit log")
+		return
+	}
+
+	if err := tx.Commit(r.Context()); err != nil {
+		s.logger.Error("commit delete workspace", "err", err)
+		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to delete workspace")
+		return
+	}
+
+	if s.authBroker != nil {
+		for _, b := range bots {
+			if bErr := s.authBroker.RevokeBotSessions(r.Context(), wsUUID, fromPGUUID(b.ID)); bErr != nil {
+				s.logger.Warn("failed to revoke isolated broker sessions during workspace deletion", "err", bErr, "bot_id", fromPGUUID(b.ID).String())
+			}
+		}
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *server) handleListMembers(w http.ResponseWriter, r *http.Request) {

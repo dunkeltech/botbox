@@ -274,7 +274,7 @@ export function AppShell({ children, variant = 'default' }: AppShellProps) {
       visible: activeBotId !== null,
     },
     {
-      href: '/settings/members',
+      href: '/settings/general',
       label: t('navMembers'),
       icon: Settings,
       active: pathname.startsWith('/settings'),

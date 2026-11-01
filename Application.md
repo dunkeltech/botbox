@@ -112,7 +112,7 @@ type AuthProvider interface {
   - Cookies are `HttpOnly`, `Secure` and `SameSite=Lax`. Mutating requests are protected against CSRF.
   - Login and refresh are rate-limited, and failed logins go to the audit log.
 - **Later:** OpenID Connect / OAuth2, LDAP / Active Directory, SAML 2.0.
-- **Workspaces:** a user can belong to several workspaces. Bots, chats, secrets and budgets belong to a workspace.
+- **Workspaces:** a user can belong to several workspaces. Bots, chats, secrets and budgets belong to a workspace. Owners can update workspace profile (`name`, `defaultDriver`, `defaultLocale`, `screenshotRetentionDays` 1–30 via `PATCH /api/workspaces/{workspaceID}`), transfer ownership by promoting another member to `owner`, or permanently delete an idle workspace (`DELETE /api/workspaces/{workspaceID}` when the user belongs to at least two workspaces and no bot turn, secret request, lease, or broker session is active; active work returns `409 workspace.busy` and deleting the last workspace returns `400 workspace.last_workspace`). Workspace settings in the UI are organized into `/settings/general`, `/settings/members`, `/settings/budgets`, `/settings/secrets`, and `/settings/integrations` under a shared grouped sub-navigation.
 - **Roles:** `owner`, `admin`, `member`, `viewer`.
 
   | Action | owner | admin | member | viewer |
@@ -223,7 +223,8 @@ sandbox tools. Credentials named `llm-openrouter`, `llm-openai` and `llm-anthrop
 are resolved from encrypted bot/workspace secrets outside the sandbox.
 
 Budget accounting uses UTC periods and integer microdollars. Execution is
-serialized per workspace to protect shared spend. Model prices can be edited via
+serialized per workspace to protect shared spend. Model prices can be listed via
+`GET /api/workspaces/{workspaceID}/model-prices` and edited via
 `PUT /api/workspaces/{workspaceID}/model-prices`; budgeted API turns require a
 configured price. At exhaustion the next API request is denied and a deduplicated
 budget approval is created. Raising a budget above current spend resolves its

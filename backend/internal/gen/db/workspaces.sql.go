@@ -48,6 +48,19 @@ func (q *Queries) CountWorkspaceOwners(ctx context.Context, workspaceID pgtype.U
 	return column_1, err
 }
 
+const countWorkspacesForUser = `-- name: CountWorkspacesForUser :one
+SELECT count(*)::bigint
+FROM workspace_members
+WHERE user_id = $1
+`
+
+func (q *Queries) CountWorkspacesForUser(ctx context.Context, userID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countWorkspacesForUser, userID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const createWorkspace = `-- name: CreateWorkspace :one
 INSERT INTO workspaces (name, slug, default_driver, default_locale)
 VALUES ($1, $2, $3, $4)
@@ -79,6 +92,29 @@ func (q *Queries) CreateWorkspace(ctx context.Context, arg CreateWorkspaceParams
 		&i.ScreenshotRetentionDays,
 	)
 	return i, err
+}
+
+const deleteWorkspaceByID = `-- name: DeleteWorkspaceByID :execrows
+DELETE FROM workspaces
+WHERE id = $1
+`
+
+func (q *Queries) DeleteWorkspaceByID(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteWorkspaceByID, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteWorkspaceConversations = `-- name: DeleteWorkspaceConversations :exec
+DELETE FROM conversations
+WHERE workspace_id = $1
+`
+
+func (q *Queries) DeleteWorkspaceConversations(ctx context.Context, workspaceID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteWorkspaceConversations, workspaceID)
+	return err
 }
 
 const getWorkspaceByIDForUser = `-- name: GetWorkspaceByIDForUser :one
@@ -159,6 +195,28 @@ func (q *Queries) GetWorkspaceBySlugForUser(ctx context.Context, arg GetWorkspac
 	return i, err
 }
 
+const getWorkspaceForUpdate = `-- name: GetWorkspaceForUpdate :one
+SELECT id, name, slug, default_driver, default_locale, created_at, screenshot_retention_days
+FROM workspaces
+WHERE id = $1
+FOR UPDATE
+`
+
+func (q *Queries) GetWorkspaceForUpdate(ctx context.Context, id pgtype.UUID) (Workspace, error) {
+	row := q.db.QueryRow(ctx, getWorkspaceForUpdate, id)
+	var i Workspace
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Slug,
+		&i.DefaultDriver,
+		&i.DefaultLocale,
+		&i.CreatedAt,
+		&i.ScreenshotRetentionDays,
+	)
+	return i, err
+}
+
 const getWorkspaceMember = `-- name: GetWorkspaceMember :one
 SELECT wm.workspace_id, wm.user_id, wm.role, wm.joined_at, u.email, u.display_name, u.locale
 FROM workspace_members wm
@@ -194,6 +252,39 @@ func (q *Queries) GetWorkspaceMember(ctx context.Context, arg GetWorkspaceMember
 		&i.Locale,
 	)
 	return i, err
+}
+
+const hasActiveWorkspaceWork = `-- name: HasActiveWorkspaceWork :one
+SELECT (
+    EXISTS (
+        SELECT 1 FROM bot_turns bt
+        WHERE bt.workspace_id = w.id AND bt.status IN ('running', 'waiting_secret')
+    )
+    OR EXISTS (
+        SELECT 1 FROM secret_requests sr
+        WHERE sr.workspace_id = w.id AND sr.status = 'pending'
+    )
+    OR EXISTS (
+        SELECT 1 FROM secret_leases sl
+        WHERE sl.workspace_id = w.id AND sl.revoked_at IS NULL AND sl.expires_at > now()
+    )
+    OR EXISTS (
+        SELECT 1 FROM broker_sessions bs
+        WHERE bs.workspace_id = w.id
+          AND bs.revoked_at IS NULL
+          AND bs.status IN ('bound', 'authenticated', 'mfa_required', 'takeover')
+          AND bs.expires_at > now()
+    )
+)::boolean AS has_active_work
+FROM workspaces w
+WHERE w.id = $1
+`
+
+func (q *Queries) HasActiveWorkspaceWork(ctx context.Context, id pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, hasActiveWorkspaceWork, id)
+	var has_active_work bool
+	err := row.Scan(&has_active_work)
+	return has_active_work, err
 }
 
 const listWorkspaceMembers = `-- name: ListWorkspaceMembers :many
@@ -329,6 +420,45 @@ func (q *Queries) UpdateWorkspaceMemberRole(ctx context.Context, arg UpdateWorks
 		&i.UserID,
 		&i.Role,
 		&i.JoinedAt,
+	)
+	return i, err
+}
+
+const updateWorkspaceSettings = `-- name: UpdateWorkspaceSettings :one
+UPDATE workspaces
+SET name = $2,
+    default_driver = $3,
+    default_locale = $4,
+    screenshot_retention_days = $5
+WHERE id = $1
+RETURNING id, name, slug, default_driver, default_locale, created_at, screenshot_retention_days
+`
+
+type UpdateWorkspaceSettingsParams struct {
+	ID                      pgtype.UUID `json:"id"`
+	Name                    string      `json:"name"`
+	DefaultDriver           string      `json:"default_driver"`
+	DefaultLocale           string      `json:"default_locale"`
+	ScreenshotRetentionDays int32       `json:"screenshot_retention_days"`
+}
+
+func (q *Queries) UpdateWorkspaceSettings(ctx context.Context, arg UpdateWorkspaceSettingsParams) (Workspace, error) {
+	row := q.db.QueryRow(ctx, updateWorkspaceSettings,
+		arg.ID,
+		arg.Name,
+		arg.DefaultDriver,
+		arg.DefaultLocale,
+		arg.ScreenshotRetentionDays,
+	)
+	var i Workspace
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Slug,
+		&i.DefaultDriver,
+		&i.DefaultLocale,
+		&i.CreatedAt,
+		&i.ScreenshotRetentionDays,
 	)
 	return i, err
 }

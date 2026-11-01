@@ -87,7 +87,7 @@ export interface paths {
       };
       cookie?: never;
     };
-    get?: never;
+    get: operations['listModelPrices'];
     put: operations['setModelPrice'];
     post?: never;
     delete?: never;
@@ -645,7 +645,7 @@ export interface paths {
     get: operations['getWorkspace'];
     put?: never;
     post?: never;
-    delete?: never;
+    delete: operations['deleteWorkspace'];
     options?: never;
     head?: never;
     patch: operations['updateWorkspace'];
@@ -1243,6 +1243,19 @@ export interface components {
       /** Format: int64 */
       cacheMicrosPerMillion: number;
     };
+    ModelPrice: {
+      provider: string;
+      model: string;
+      /** Format: int64 */
+      inputMicrosPerMillion: number;
+      /** Format: int64 */
+      outputMicrosPerMillion: number;
+      /** Format: int64 */
+      cacheMicrosPerMillion: number;
+    };
+    ModelPriceListResponse: {
+      prices: components['schemas']['ModelPrice'][];
+    };
     ChatConversation: {
       /** Format: uuid */
       id: string;
@@ -1566,6 +1579,9 @@ export interface components {
       screenshotRetentionDays?: number;
     };
     UpdateWorkspaceRequest: {
+      name?: string;
+      defaultDriver?: components['schemas']['DriverType'];
+      defaultLocale?: string;
       screenshotRetentionDays?: number;
     };
     DesktopAction: {
@@ -2488,6 +2504,42 @@ export interface operations {
         content?: never;
       };
       /** @description Workspace or bot not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  listModelPrices: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Configured model pricing rates */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ModelPriceListResponse'];
+        };
+      };
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Workspace not found */
       404: {
         headers: {
           [name: string]: unknown;
@@ -4415,6 +4467,71 @@ export interface operations {
       };
       /** @description Workspace not found or not a member */
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  deleteWorkspace: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Workspace deleted */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Cannot delete the user's last remaining workspace */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Only the owner may delete a workspace */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Workspace not found or not a member */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Workspace has active bot turns or credential sessions */
+      409: {
         headers: {
           [name: string]: unknown;
         };

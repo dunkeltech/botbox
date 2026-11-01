@@ -134,6 +134,7 @@ The fleet shows known spend today. Budget meters follow the Stitch project `1359
 | Shell | Measurements |
 |---|---|
 | App header | Full-width `terminal` (`#14201a`) top bar (~54 px tall) across all authenticated views; current nav item white with a 2 px `green-light` (`#5eab60`) underline; workspace switcher pill `<workspace> · <role>`, approvals bell and account menu on the right |
+| Workspace settings | Two-column layout under the standard header: `256 px` sticky left sub-navigation (`Workspace`, `Spend & billing`, `Security & integrations`) + dark `terminal` tenant-isolation card on desktop (horizontal wrap pills on narrow viewports), paired with `14 px`-radius main content cards; active nav item uses `mint-soft` fill, `green-600` bold text, and a `3 px` `green` left accent; Owner-only Danger zone uses dashed `amber-line` / `amber-tint` (zero red) |
 | Team chat | Same full-width `terminal` top bar with integrated search input, sidebar 264 px (`dark-2`), main pane flexible, right `paper-2` inspector aside 320–340 px (`Details` \| `Tool calls` segmented switch; slide-over sheet on narrow viewports) |
 | Bot workspace | Chat column 380–460 px, computer column flexible, 16:10 desktop viewport |
 | Phone shell (390 px) | 16 px side gutters, ≥ 44 × 44 px header and noVNC touch controls (`Tap / Pan`), sticky bottom composer, and a slide-over `dark-2` team sidebar drawer with `overlay` scrim |

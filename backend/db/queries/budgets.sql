@@ -19,6 +19,9 @@ RETURNING id;
 INSERT INTO usage_records(workspace_id,bot_id,turn_id,request_id,source,model,input_tokens,output_tokens,cache_tokens,cost_micros,created_at,billing_kind)
 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,COALESCE(NULLIF(sqlc.arg(billing_kind)::text,''),'metered')) ON CONFLICT(workspace_id,request_id) DO NOTHING;
 
+-- name: ListModelPrices :many
+SELECT * FROM model_prices WHERE workspace_id=$1 ORDER BY provider ASC, model ASC;
+
 -- name: GetModelPrice :one
 SELECT * FROM model_prices WHERE workspace_id=$1 AND provider=$2 AND model=$3;
 

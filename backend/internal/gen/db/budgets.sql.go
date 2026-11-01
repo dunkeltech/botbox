@@ -239,6 +239,37 @@ func (q *Queries) ListBudgetState(ctx context.Context, arg ListBudgetStateParams
 	return items, nil
 }
 
+const listModelPrices = `-- name: ListModelPrices :many
+SELECT workspace_id, provider, model, input_micros_per_million, output_micros_per_million, cache_micros_per_million FROM model_prices WHERE workspace_id=$1 ORDER BY provider ASC, model ASC
+`
+
+func (q *Queries) ListModelPrices(ctx context.Context, workspaceID pgtype.UUID) ([]ModelPrice, error) {
+	rows, err := q.db.Query(ctx, listModelPrices, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ModelPrice
+	for rows.Next() {
+		var i ModelPrice
+		if err := rows.Scan(
+			&i.WorkspaceID,
+			&i.Provider,
+			&i.Model,
+			&i.InputMicrosPerMillion,
+			&i.OutputMicrosPerMillion,
+			&i.CacheMicrosPerMillion,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockWorkspaceBudgetCheck = `-- name: LockWorkspaceBudgetCheck :exec
 SELECT pg_advisory_xact_lock(hashtextextended($1::text, 1))
 `

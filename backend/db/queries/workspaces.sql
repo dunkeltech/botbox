@@ -54,3 +54,56 @@ WHERE workspace_id = $1 AND user_id = $2;
 SELECT count(*)::bigint
 FROM workspace_members
 WHERE workspace_id = $1 AND role = 'owner';
+
+-- name: GetWorkspaceForUpdate :one
+SELECT *
+FROM workspaces
+WHERE id = $1
+FOR UPDATE;
+
+-- name: UpdateWorkspaceSettings :one
+UPDATE workspaces
+SET name = $2,
+    default_driver = $3,
+    default_locale = $4,
+    screenshot_retention_days = $5
+WHERE id = $1
+RETURNING *;
+
+-- name: CountWorkspacesForUser :one
+SELECT count(*)::bigint
+FROM workspace_members
+WHERE user_id = $1;
+
+-- name: HasActiveWorkspaceWork :one
+SELECT (
+    EXISTS (
+        SELECT 1 FROM bot_turns bt
+        WHERE bt.workspace_id = w.id AND bt.status IN ('running', 'waiting_secret')
+    )
+    OR EXISTS (
+        SELECT 1 FROM secret_requests sr
+        WHERE sr.workspace_id = w.id AND sr.status = 'pending'
+    )
+    OR EXISTS (
+        SELECT 1 FROM secret_leases sl
+        WHERE sl.workspace_id = w.id AND sl.revoked_at IS NULL AND sl.expires_at > now()
+    )
+    OR EXISTS (
+        SELECT 1 FROM broker_sessions bs
+        WHERE bs.workspace_id = w.id
+          AND bs.revoked_at IS NULL
+          AND bs.status IN ('bound', 'authenticated', 'mfa_required', 'takeover')
+          AND bs.expires_at > now()
+    )
+)::boolean AS has_active_work
+FROM workspaces w
+WHERE w.id = $1;
+
+-- name: DeleteWorkspaceConversations :exec
+DELETE FROM conversations
+WHERE workspace_id = $1;
+
+-- name: DeleteWorkspaceByID :execrows
+DELETE FROM workspaces
+WHERE id = $1;

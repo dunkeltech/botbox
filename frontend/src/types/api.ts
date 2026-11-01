@@ -1,3 +1,5 @@
+import type { components } from './openapi.gen';
+
 /**
  * TypeScript definitions matching backend/api/openapi.yaml for Phase 1 endpoints.
  */
@@ -64,9 +66,12 @@ export interface WorkspaceSummary {
   screenshotRetentionDays?: number;
 }
 
-export interface UpdateWorkspaceRequest {
-  screenshotRetentionDays: number;
-}
+export type UpdateWorkspaceRequest =
+  components['schemas']['UpdateWorkspaceRequest'];
+export type ModelPrice = components['schemas']['ModelPrice'];
+export type ModelPriceListResponse =
+  components['schemas']['ModelPriceListResponse'];
+export type ModelPriceRequest = components['schemas']['ModelPriceRequest'];
 
 export interface DesktopAction {
   id: string;

@@ -16,7 +16,11 @@ The interactive canvas (clickable prototype with live avatars) lives in Claude: 
 | Fleet dashboard | [`fleet-dashboard.png`](screens/fleet-dashboard.png) | Phase 1, 4, 7 |
 | First-run setup wizard | [`setup-wizard.png`](screens/setup-wizard.png) | Phase 1 |
 | Sign in, invitation & workspace switcher | [`auth-login-invite.png`](screens/auth-login-invite.png) | Phase 1 |
-| Workspace members, roles & budgets | [`workspace-settings.png`](screens/workspace-settings.png) | Phase 1, 4 |
+| Workspace settings: general, runtime & danger zone | [`workspace-settings-general.png`](screens/workspace-settings-general.png) | Phase 1, 5, 7 |
+| Workspace settings: members, roles & RBAC | [`workspace-settings.png`](screens/workspace-settings.png) | Phase 1 |
+| Workspace settings: budgets & model pricing | [`workspace-settings-budgets.png`](screens/workspace-settings-budgets.png) | Phase 4 |
+| Workspace settings: shared workspace secrets | [`workspace-settings-secrets.png`](screens/workspace-settings-secrets.png) | Phase 3 |
+| Workspace settings: MCP servers & self-hosted GitLab | [`workspace-settings-integrations.png`](screens/workspace-settings-integrations.png) | #18, ADR-0029 |
 | Bot workspace: chat + live computer + action timeline | [`bot-workspace.png`](screens/bot-workspace.png) | Phase 2, 4, 5 |
 | New bot | [`new-bot.png`](screens/new-bot.png) | Phase 1, 4, 7 |
 | Secrets, egress proxy & bot budgets | [`secrets-egress.png`](screens/secrets-egress.png) | Phase 3, 4 |
@@ -47,10 +51,24 @@ Active workspace switcher bar with cross-workspace 404 isolation notice, passwor
 
 ![Sign in, invitation and workspace switcher](screens/auth-login-invite.png)
 
-### Workspace members, roles & budgets
-Workspace settings showing active members and roles, an interactive invite form and pending invitations list, monthly and daily workspace budget caps with 80 % warning / 100 % stop markers, editable per-bot daily caps, the `model_prices` rate table and the §4.1 RBAC permission matrix.
+### Workspace settings (general, members, budgets, secrets & integrations)
+Reorganized into a two-column workspace settings shell (`256 px` grouped left sub-navigation + main content cards, Stitch project `13598702750338265050`):
 
-![Workspace members, roles and budgets](screens/workspace-settings.png)
+- **General, runtime & danger zone** (`screens/50d579be537840b3b5eca818c9416cf1`): workspace profile (`name`, read-only `slug`, `defaultLocale`), default sandbox driver (`docker` / `kubernetes`), `desktop_actions` screenshot retention (`1–30 days`), ownership transfer, and dashed amber **Danger zone** workspace deletion.
+- **Members, roles & RBAC** (`screens/e7cd130d743c4b93923be92c7b73216b`): active member roster and role selector, pending invitations with amber `Revoke`, single-use invitation link generator, and the §4.1 RBAC permission matrix.
+- **Budgets & model pricing** (`screens/5671deebdace4986b4f745a6004d89c0`): monthly workspace budget cap with 80 % / 100 % threshold markers, bot daily caps, and the `model_prices` rate table + edit form.
+- **Workspace secrets** (`screens/073343dcb2c84976be78ed2208434a38`): write-only workspace-scoped secrets inherited by workspace bots alongside the dark `terminal` zero-plaintext & `404` isolation invariant card.
+- **Integrations (MCP servers & GitLab)** (`screens/9bcf5e8139344e838174fbf3539a5756`): central workspace MCP server registry (`Sync tools` / `Remove`) and approved self-hosted GitLab HTTPS origins with revocation notice.
+
+![Workspace settings — general, runtime and danger zone](screens/workspace-settings-general.png)
+
+![Workspace settings — members, roles and RBAC](screens/workspace-settings.png)
+
+![Workspace settings — budgets and model pricing](screens/workspace-settings-budgets.png)
+
+![Workspace settings — workspace secrets](screens/workspace-settings-secrets.png)
+
+![Workspace settings — MCP servers and self-hosted GitLab](screens/workspace-settings-integrations.png)
 
 ### Bot workspace
 Chat with the bot on the left and its live XFCE desktop over noVNC on the right, with tabs for Desktop, Actions (`desktop_actions` timeline with 7-day screenshot retention note and amber `409` click-conflict state), Terminal and Files, human watcher indicator, "You have control" takeover hand-back bar with note field, and resource meters.

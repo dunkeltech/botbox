@@ -320,7 +320,7 @@ function FleetContent() {
           )}
           <div className="mt-2">
             <Link
-              href="/settings/members#budgets"
+              href="/settings/budgets"
               className="text-[13px] font-bold text-green-600 hover:underline"
             >
               {t('budgetsCta')}

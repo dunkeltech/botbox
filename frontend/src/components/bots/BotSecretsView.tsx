@@ -2194,7 +2194,7 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
                 </h2>
               </div>
               <Link
-                href="/settings/members#budgets"
+                href="/settings/budgets"
                 className="inline-flex min-h-[44px] items-center gap-1.5 rounded-sm border-[1.5px] border-line bg-paper px-4 text-[14px] font-bold text-green-600 transition duration-150 hover:border-green-light hover:bg-mint-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
               >
                 <span>{t('workspaceBudgetsLink')}</span>

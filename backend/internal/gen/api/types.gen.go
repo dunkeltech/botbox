@@ -1429,6 +1429,20 @@ type MeResponse struct {
 	Workspaces []WorkspaceSummary `json:"workspaces"`
 }
 
+// ModelPrice defines model for ModelPrice.
+type ModelPrice struct {
+	CacheMicrosPerMillion  int64  `json:"cacheMicrosPerMillion"`
+	InputMicrosPerMillion  int64  `json:"inputMicrosPerMillion"`
+	Model                  string `json:"model"`
+	OutputMicrosPerMillion int64  `json:"outputMicrosPerMillion"`
+	Provider               string `json:"provider"`
+}
+
+// ModelPriceListResponse defines model for ModelPriceListResponse.
+type ModelPriceListResponse struct {
+	Prices []ModelPrice `json:"prices"`
+}
+
 // ModelPriceRequest defines model for ModelPriceRequest.
 type ModelPriceRequest struct {
 	CacheMicrosPerMillion  int64  `json:"cacheMicrosPerMillion"`
@@ -1675,7 +1689,10 @@ type UpdateSecretRequest struct {
 
 // UpdateWorkspaceRequest defines model for UpdateWorkspaceRequest.
 type UpdateWorkspaceRequest struct {
-	ScreenshotRetentionDays *int `json:"screenshotRetentionDays,omitempty"`
+	DefaultDriver           *DriverType `json:"defaultDriver,omitempty"`
+	DefaultLocale           *string     `json:"defaultLocale,omitempty"`
+	Name                    *string     `json:"name,omitempty"`
+	ScreenshotRetentionDays *int        `json:"screenshotRetentionDays,omitempty"`
 }
 
 // User defines model for User.

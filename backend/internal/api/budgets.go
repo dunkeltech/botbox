@@ -123,6 +123,29 @@ func (s *server) handleSetBudget(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, s.logger, 200, map[string]bool{"saved": true})
 }
+func (s *server) handleListModelPrices(w http.ResponseWriter, r *http.Request) {
+	ws, _, _, ok := s.loadWorkspaceMembership(w, r, workspaces.ActionViewWorkspace)
+	if !ok {
+		return
+	}
+	rows, err := s.queries.ListModelPrices(r.Context(), ws.ID)
+	if err != nil {
+		s.chatFailure(w)
+		return
+	}
+	out := make([]apigen.ModelPrice, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, apigen.ModelPrice{
+			Provider:               row.Provider,
+			Model:                  row.Model,
+			InputMicrosPerMillion:  row.InputMicrosPerMillion,
+			OutputMicrosPerMillion: row.OutputMicrosPerMillion,
+			CacheMicrosPerMillion:  row.CacheMicrosPerMillion,
+		})
+	}
+	writeJSON(w, s.logger, http.StatusOK, apigen.ModelPriceListResponse{Prices: out})
+}
+
 func (s *server) handleSetModelPrice(w http.ResponseWriter, r *http.Request) {
 	ws, claims, _, ok := s.loadWorkspaceMembership(w, r, workspaces.ActionManageMembers)
 	if !ok {

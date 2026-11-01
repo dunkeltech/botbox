@@ -20,6 +20,8 @@ import type {
   InvitationPreviewResponse,
   LoginRequest,
   MeResponse,
+  ModelPriceListResponse,
+  ModelPriceRequest,
   ReleaseControlRequest,
   SecretListResponse,
   SecretMetadata,
@@ -345,7 +347,7 @@ export function getWorkspace(workspaceId: string): Promise<WorkspaceSummary> {
   );
 }
 
-/** Updates owner-only workspace settings, including screenshot retention. */
+/** Updates owner-only workspace profile, compute driver, locale, and screenshot retention. */
 export function updateWorkspace(
   workspaceId: string,
   body: UpdateWorkspaceRequest,
@@ -353,6 +355,34 @@ export function updateWorkspace(
   return requestJson<WorkspaceSummary>(
     `/api/workspaces/${encodeURIComponent(workspaceId)}`,
     { method: 'PATCH', body },
+  );
+}
+
+/** Permanently deletes an idle workspace when the caller belongs to at least two workspaces. */
+export function deleteWorkspace(workspaceId: string): Promise<void> {
+  return requestJson<void>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}`,
+    { method: 'DELETE' },
+  );
+}
+
+/** Lists configured model pricing rates for the workspace. */
+export function listModelPrices(
+  workspaceId: string,
+): Promise<ModelPriceListResponse> {
+  return requestJson<ModelPriceListResponse>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/model-prices`,
+  );
+}
+
+/** Creates or updates a model pricing rate row for the workspace. */
+export function setModelPrice(
+  workspaceId: string,
+  body: ModelPriceRequest,
+): Promise<{ saved: boolean }> {
+  return requestJson<{ saved: boolean }>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/model-prices`,
+    { method: 'PUT', body },
   );
 }
 

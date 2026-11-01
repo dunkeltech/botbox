@@ -186,6 +186,7 @@ func (s *server) mountRoutes(r chi.Router) {
 		r.Route("/api/workspaces/{workspaceID}", func(r chi.Router) {
 			r.Get("/", s.handleGetWorkspace)
 			r.Patch("/", s.handleUpdateWorkspace)
+			r.Delete("/", s.handleDeleteWorkspace)
 			r.Get("/gitlab-instances", s.handleListGitLabInstances)
 			r.Get("/bots/{botID}/gitlab-instances", s.handleListBotGitLabInstances)
 			r.Put("/bots/{botID}/gitlab-instances", s.handleSetBotGitLabInstances)
@@ -202,6 +203,7 @@ func (s *server) mountRoutes(r chi.Router) {
 
 			r.Get("/budgets", s.handleBudgetSummary)
 			r.Put("/budgets", s.handleSetBudget)
+			r.Get("/model-prices", s.handleListModelPrices)
 			r.Put("/model-prices", s.handleSetModelPrice)
 			r.Get("/conversations", s.handleListDMs)
 			r.Post("/bots/{botID}/dm", s.handleOpenDM)
