@@ -14,6 +14,7 @@ import (
 
 	"github.com/dunkeltech/botbox/backend/internal/auth"
 	"github.com/dunkeltech/botbox/backend/internal/authbroker"
+	"github.com/dunkeltech/botbox/backend/internal/codexplan"
 	"github.com/dunkeltech/botbox/backend/internal/compute"
 	"github.com/dunkeltech/botbox/backend/internal/compute/vncrelay"
 	"github.com/dunkeltech/botbox/backend/internal/mcpproxy"
@@ -51,6 +52,7 @@ type Config struct {
 	PublicBaseURL         string
 	EgressAckTimeout      time.Duration
 	MCPUpstream           *mcpproxy.UpstreamClient
+	CodexPlanOAuth        *codexplan.OAuth
 	Now                   func() time.Time
 }
 

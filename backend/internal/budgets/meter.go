@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dunkeltech/botbox/backend/internal/codexplan"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
 	"github.com/dunkeltech/botbox/backend/internal/secrets/llmproxy"
 	"github.com/google/uuid"
@@ -40,18 +41,36 @@ func ProxyAdmission(pool *pgxpool.Pool, workspaceID, botID uuid.UUID, now func()
 		if err != nil || state.Paused {
 			return nil, errors.New("bot execution suspended")
 		}
-		// A desktop CLI can use the metered route without a chat turn.
-		turn, turnErr := q.GetRunningBotTurn(ctx, db.GetRunningBotTurnParams{WorkspaceID: ws, BotID: bot})
+		var turn db.BotTurn
 		var turnID pgtype.UUID
-		if turnErr == nil {
-			turnID = turn.ID
-		} else if !errors.Is(turnErr, pgx.ErrNoRows) {
-			return nil, turnErr
+		priceProvider := provider
+		if provider == llmproxy.ProviderOpenAIPlan {
+			revision := llmproxy.PlanRevision(ctx)
+			if revision == "" {
+				return nil, llmproxy.ErrPlanAccess
+			}
+			if err = codexplan.CheckDesktop(ctx, q, ws, bot, revision); err != nil {
+				if errors.Is(err, codexplan.ErrForbidden) {
+					return nil, llmproxy.ErrPlanAccess
+				}
+				return nil, err
+			}
+			priceProvider = llmproxy.ProviderOpenAI
+		} else {
+			// A desktop CLI can use the metered route without a chat turn.
+			var turnErr error
+			turn, turnErr = q.GetRunningBotTurn(ctx, db.GetRunningBotTurnParams{WorkspaceID: ws, BotID: bot})
+			if turnErr == nil {
+				turnID = turn.ID
+			} else if !errors.Is(turnErr, pgx.ErrNoRows) {
+				return nil, turnErr
+			}
+			config, cfgErr := q.GetBotByWorkspaceAndID(ctx, db.GetBotByWorkspaceAndIDParams{WorkspaceID: ws, ID: bot})
+			if cfgErr != nil || cliProvider(config.LlmProvider) != provider {
+				return nil, errors.New("provider is not configured for bot")
+			}
 		}
-		config, err := q.GetBotByWorkspaceAndID(ctx, db.GetBotByWorkspaceAndIDParams{WorkspaceID: ws, ID: bot})
-		if err != nil || cliProvider(config.LlmProvider) != provider {
-			return nil, errors.New("provider is not configured for bot")
-		}
+
 		if err = Check(ctx, q, workspaceID, botID, now()); err != nil {
 			return nil, err
 		}
@@ -83,15 +102,23 @@ func ProxyAdmission(pool *pgxpool.Pool, workspaceID, botID uuid.UUID, now func()
 		}
 		limited := len(limits) > 0 || groupLimit != nil
 		subscription := llmproxy.SubscriptionRequest(ctx)
-		price, priceErr := q.GetModelPrice(ctx, db.GetModelPriceParams{WorkspaceID: ws, Provider: provider, Model: model})
+		var subscriptionBudgeted bool
+		if subscription {
+			subscriptionBudgeted, err = q.GetSubscriptionBudgetPolicy(ctx, ws)
+			if err != nil {
+				return nil, err
+			}
+		}
+		budgeted := !subscription || subscriptionBudgeted
+		price, priceErr := q.GetModelPrice(ctx, db.GetModelPriceParams{WorkspaceID: ws, Provider: priceProvider, Model: model})
 		if priceErr != nil && !errors.Is(priceErr, pgx.ErrNoRows) {
 			return nil, priceErr
 		}
-		if limited && priceErr != nil && !subscription {
-			return nil, errors.New("budgeted model requires a configured price")
+		if limited && priceErr != nil && budgeted {
+			return nil, llmproxy.ErrModelPriceRequired
 		}
 		var reserved pgtype.Int8
-		if input, output, bounded := llmproxy.RequestTokenBound(ctx); limited && bounded && !subscription {
+		if input, output, bounded := llmproxy.RequestTokenBound(ctx); limited && bounded && budgeted {
 			inputRate := max(price.InputMicrosPerMillion, price.CacheMicrosPerMillion)
 			amount, e := PriceMicros(input, output, 0, inputRate, price.OutputMicrosPerMillion, 0)
 			if e != nil {
@@ -112,7 +139,7 @@ func ProxyAdmission(pool *pgxpool.Pool, workspaceID, botID uuid.UUID, now func()
 			billingKind = "subscription"
 		}
 		request := pgtype.UUID{Bytes: uuid.New(), Valid: true}
-		if err = q.RecordTurnUsage(ctx, db.RecordTurnUsageParams{WorkspaceID: ws, BotID: bot, TurnID: turnID, RequestID: request, Source: "proxy_meter", Model: model, BillingKind: billingKind, CreatedAt: pgtype.Timestamptz{Time: now(), Valid: true}}); err != nil {
+		if err = q.RecordTurnUsage(ctx, db.RecordTurnUsageParams{WorkspaceID: ws, BotID: bot, TurnID: turnID, RequestID: request, Source: "proxy_meter", Model: model, BillingKind: billingKind, SubscriptionBudgeted: subscriptionBudgeted, CreatedAt: pgtype.Timestamptz{Time: now(), Valid: true}}); err != nil {
 			return nil, err
 		}
 		if reserved.Valid {
@@ -124,7 +151,7 @@ func ProxyAdmission(pool *pgxpool.Pool, workspaceID, botID uuid.UUID, now func()
 				return nil, errors.New("usage record disappeared")
 			}
 		}
-		retained = limited && !subscription && !reserved.Valid
+		retained = limited && budgeted && !reserved.Valid
 		var once sync.Once
 		var settleErr error
 		return func(usage llmproxy.Usage) error {
@@ -142,13 +169,13 @@ func ProxyAdmission(pool *pgxpool.Pool, workspaceID, botID uuid.UUID, now func()
 					}
 					defer unlock()
 				}
-				cost := pgtype.Int8{}
+				var cost, internalCharge pgtype.Int8
 				valid := usage.Known && usage.InputTokens >= 0 && usage.OutputTokens >= 0 && usage.CacheTokens >= 0 && usage.CacheTokens <= usage.InputTokens
-				if valid && !subscription {
+				if valid && budgeted {
 					var amount int64
 					var e error
 					switch {
-					case usage.ReportedCost != "":
+					case usage.ReportedCost != "" && !subscription:
 						amount, e = ReportedMicros(string(usage.ReportedCost))
 					case usage.InputTokens == 0 && usage.OutputTokens == 0:
 						amount = 0
@@ -158,7 +185,11 @@ func ProxyAdmission(pool *pgxpool.Pool, workspaceID, botID uuid.UUID, now func()
 						e = errors.New("model price unavailable")
 					}
 					if e == nil && (!reserved.Valid || amount <= reserved.Int64) {
-						cost = pgtype.Int8{Int64: amount, Valid: true}
+						if subscription {
+							internalCharge = pgtype.Int8{Int64: amount, Valid: true}
+						} else {
+							cost = pgtype.Int8{Int64: amount, Valid: true}
+						}
 					}
 				}
 				// Unknown or excessive usage clears the estimate but keeps a
@@ -166,7 +197,7 @@ func ProxyAdmission(pool *pgxpool.Pool, workspaceID, botID uuid.UUID, now func()
 				if !valid {
 					usage.InputTokens, usage.OutputTokens, usage.CacheTokens = 0, 0, 0
 				}
-				rows, e := settleQ.SettleProxyUsage(settlement, db.SettleProxyUsageParams{WorkspaceID: ws, RequestID: request, InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens, CacheTokens: usage.CacheTokens, CostMicros: cost})
+				rows, e := settleQ.SettleProxyUsage(settlement, db.SettleProxyUsageParams{WorkspaceID: ws, RequestID: request, InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens, CacheTokens: usage.CacheTokens, CostMicros: cost, InternalChargeMicros: internalCharge, UsageKnown: pgtype.Bool{Bool: valid, Valid: true}})
 				if e != nil {
 					settleErr = e
 				} else if rows != 1 {

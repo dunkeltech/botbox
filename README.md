@@ -112,14 +112,22 @@ The real token stays encrypted in bot.Box and is injected only by the external
 proxy. The official CLI receives a placeholder, with no API-key fallback.
 `claude` typed in the bot computer uses the same route. Rebuild the sandbox and
 proxy images, then restart the computer, after changing that launcher.
-Subscription requests record tokens only; they do not require model prices or
-appear as unknown monetary charges. Provider plan limits remain in effect.
+Subscription requests record tokens. Enable **Count subscription usage toward
+budgets** in workspace settings to apply configured model prices as internal
+charges. Provider plan limits remain in effect.
 Rotate the connection by running setup again and replacing the token in Secrets.
 Generic API-mode bots do not use this subscription credential. See ADR-0011.
 
 Build the updated images with `make sandbox-image proxy-image`, then start the
 bot computer. `make test-sandbox-cli` verifies the actual pinned CLI and Sonnet
 alias against a local fake provider with networking disabled.
+
+### ChatGPT plan for interactive Codex
+
+Follow the [Codex desktop setup guide](docs/guides/codex-desktop-setup.md) to
+connect your ChatGPT plan, start `codex` in the bot computer, and review its token
+usage. The [implementation plan](docs/plans/codex-desktop-subscription.md)
+describes the metered route and the subscription budget policy.
 
 ### Deterministic engine doubles
 

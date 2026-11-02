@@ -18,7 +18,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Pinned agent CLIs. Claude Code 2.1.323 is the native package; its
 # postinstall must run or bin/claude.exe stays a text stub (ADR-0012).
 ARG CLAUDE_CLI_VERSION=2.1.323
-ARG CODEX_CLI_VERSION=0.39.0
+ARG CODEX_CLI_VERSION=0.155.0
 # agy release URLs and SHA-512 digests are pinned in releases/.
 
 RUN apt-get update \
@@ -30,8 +30,6 @@ RUN apt-get update \
         build-essential \
         python3 \
         python3-venv \
-        nodejs \
-        npm \
         sudo \
         procps \
         supervisor \
@@ -47,11 +45,16 @@ RUN apt-get update \
         chromium \
     && rm -rf /var/lib/apt/lists/*
 
-# CLI launchers require Node 20 or later; match the Node 24 devenv toolchain.
+# Use the Node 24 toolchain for the CLIs and interactive tools. Keeping the
+# Debian Node and npm packages as well would exceed the sandbox image budget.
 COPY --from=agent-builder /out/node /usr/local/bin/node
 COPY --from=node-runtime /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
 RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
-    && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
+    && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+    && ln -s /usr/local/bin/node /usr/bin/nodejs \
+    && ln -s /usr/local/bin/node /usr/bin/node \
+    && ln -s /usr/local/bin/npm /usr/bin/npm \
+    && ln -s /usr/local/bin/npx /usr/bin/npx
 
 # Create unprivileged user 'bot' with passwordless sudo inside the sandbox only.
 # Security invariant: container runs unprivileged without host Docker socket.
@@ -86,6 +89,10 @@ COPY --chmod=0755 images/sandbox/install-bot-ca.sh /usr/local/bin/install-bot-ca
 COPY --chmod=0755 images/sandbox/chromium-launch.sh /usr/local/bin/chromium-launch.sh
 # Install the launcher as its own file. COPY onto the npm symlink would
 # overwrite cli.js, and the launcher would then ask Node to parse itself.
+RUN mv /usr/local/bin/codex /usr/local/bin/codex-real \
+    && /usr/local/bin/codex-real --version | grep -F "${CODEX_CLI_VERSION}"
+COPY --chmod=0755 images/sandbox/codex-launch.sh /usr/local/bin/codex
+
 COPY images/sandbox/claude-launch.sh /tmp/claude-launch.sh
 COPY images/sandbox/install-claude-launcher.sh /tmp/install-claude-launcher.sh
 RUN chmod +x /tmp/install-claude-launcher.sh \

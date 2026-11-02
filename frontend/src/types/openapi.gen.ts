@@ -4,6 +4,78 @@
  */
 
 export interface paths {
+  '/api/workspaces/{workspaceID}/subscription-budget-policy': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put: operations['setSubscriptionBudgetPolicy'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/workspaces/{workspaceID}/bots/{botID}/codex-plan': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+        botID: string;
+      };
+      cookie?: never;
+    };
+    get: operations['getCodexPlan'];
+    put?: never;
+    post?: never;
+    delete: operations['disconnectCodexPlan'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/workspaces/{workspaceID}/bots/{botID}/codex-plan/pairing': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+        botID: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations['startCodexPlanPairing'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/codex-plan/pairing/complete': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations['completeCodexPlanPairing'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/workspaces/{workspaceID}/bots/{botID}/gitlab-instances': {
     parameters: {
       query?: never;
@@ -1206,10 +1278,49 @@ export interface components {
     BotRuntime: {
       paused: boolean;
     };
+    SubscriptionBudgetPolicy: {
+      enabled: boolean;
+    };
+    SubscriptionUsage: {
+      model: string;
+      /** @enum {string} */
+      period: 'day' | 'month';
+      /** Format: int64 */
+      inputTokens: number;
+      /** Format: int64 */
+      outputTokens: number;
+      /** Format: int64 */
+      cacheTokens: number;
+      /** Format: int64 */
+      internalChargeMicros: number;
+      /** Format: int64 */
+      unknownRequests: number;
+    };
+    CodexPlanStatus: {
+      /** @enum {string} */
+      status: 'disconnected' | 'connected' | 'reconnect';
+      ownedByYou: boolean;
+    };
+    CodexPlanPairing: {
+      code: string;
+    };
+    CodexPlanDisconnect: {
+      revocationConfirmed: boolean;
+    };
+    CompleteCodexPlanRequest: {
+      pairing: string;
+      code: string;
+      clientId: string;
+      verifier: string;
+      nonce: string;
+      redirect: string;
+    };
     BudgetSummary: {
       /** Format: int64 */
       spendTodayMicros: number;
       budgets: components['schemas']['BudgetState'][];
+      countSubscriptionUsage?: boolean;
+      subscriptionUsage?: components['schemas']['SubscriptionUsage'][];
     };
     BudgetState: {
       /** Format: uuid */
@@ -2080,6 +2191,261 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  setSubscriptionBudgetPolicy: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SubscriptionBudgetPolicy'];
+      };
+    };
+    responses: {
+      /** @description Policy updated */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Invalid policy */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Insufficient permissions */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Workspace not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  getCodexPlan: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+        botID: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Bot desktop ChatGPT connection status */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['CodexPlanStatus'];
+        };
+      };
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Insufficient permissions */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Workspace or bot not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  disconnectCodexPlan: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+        botID: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Connection removed locally */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['CodexPlanDisconnect'];
+        };
+      };
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Insufficient permissions */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Workspace or bot not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  startCodexPlanPairing: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: string;
+        botID: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description One-use workstation pairing code */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['CodexPlanPairing'];
+        };
+      };
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Insufficient permissions */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Workspace or bot not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description A different user has a pending pairing */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Pairing rate limit reached */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  completeCodexPlanPairing: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CompleteCodexPlanRequest'];
+      };
+    };
+    responses: {
+      /** @description Desktop ChatGPT connection authorized */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Invalid pairing or OAuth proof */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description ChatGPT plan consent or bot permission is missing */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Pairing expired or already used */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Pairing rate limit reached */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Connection service unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
   listBotGitLabInstances: {
     parameters: {
       query?: never;

@@ -416,3 +416,13 @@ control per command (`Allow` in `mint-soft`/`green-600`, `Ask approval` in
 Unconfigured tools remain blocked by default (`fail-closed`). Maintain 44 px touch
 targets, `role="switch"` for server assignment, `aria-pressed` on policy segments,
 and dark `terminal` (`#14201a`) cards for runner wiring and `Recent MCP proxy activity`.
+
+### Codex connection and subscription budgets
+
+- Put **ChatGPT plan for Codex** on **Secrets & network**. Show the connection
+  status in text. Label the one-time pairing code as a read-only input and show
+  the workstation command only during pairing.
+- Put **Count subscription usage toward budgets** with the workspace budget
+  controls. Label provider spend and internal subscription charges separately.
+- Show input, output, and cached-input token totals by model and period. Use a
+  text status for usage awaiting reconciliation.

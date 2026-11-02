@@ -4,6 +4,85 @@ info:
   version: 0.1.0
   description: REST API for first-run setup, authentication, workspaces, RBAC, invitations, and bot configuration.
 paths:
+  /api/workspaces/{workspaceID}/subscription-budget-policy:
+    parameters:
+      - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
+    put:
+      operationId: setSubscriptionBudgetPolicy
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SubscriptionBudgetPolicy'}
+      responses:
+        '204': {description: Policy updated}
+        '400': {description: Invalid policy}
+        '401': {description: Authentication required}
+        '403': {description: Insufficient permissions}
+        '404': {description: Workspace not found}
+  /api/workspaces/{workspaceID}/bots/{botID}/codex-plan:
+    parameters:
+      - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: botID, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      operationId: getCodexPlan
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Bot desktop ChatGPT connection status
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CodexPlanStatus'}
+        '401': {description: Authentication required}
+        '403': {description: Insufficient permissions}
+        '404': {description: Workspace or bot not found}
+    delete:
+      operationId: disconnectCodexPlan
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Connection removed locally
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CodexPlanDisconnect'}
+        '401': {description: Authentication required}
+        '403': {description: Insufficient permissions}
+        '404': {description: Workspace or bot not found}
+  /api/workspaces/{workspaceID}/bots/{botID}/codex-plan/pairing:
+    parameters:
+      - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: botID, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      operationId: startCodexPlanPairing
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: One-use workstation pairing code
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CodexPlanPairing'}
+        '401': {description: Authentication required}
+        '403': {description: Insufficient permissions}
+        '404': {description: Workspace or bot not found}
+        '409': {description: A different user has a pending pairing}
+        '429': {description: Pairing rate limit reached}
+  /api/codex-plan/pairing/complete:
+    post:
+      operationId: completeCodexPlanPairing
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CompleteCodexPlanRequest'}
+      responses:
+        '204': {description: Desktop ChatGPT connection authorized}
+        '400': {description: Invalid pairing or OAuth proof}
+        '403': {description: ChatGPT plan consent or bot permission is missing}
+        '409': {description: Pairing expired or already used}
+        '429': {description: Pairing rate limit reached}
+        '503': {description: Connection service unavailable}
   /api/workspaces/{workspaceID}/bots/{botID}/gitlab-instances:
     parameters:
       - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
@@ -2630,12 +2709,56 @@ components:
       required: [paused]
       properties:
         paused: {type: boolean}
+    SubscriptionBudgetPolicy:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: {type: boolean}
+    SubscriptionUsage:
+      type: object
+      required: [model, period, inputTokens, outputTokens, cacheTokens, internalChargeMicros, unknownRequests]
+      properties:
+        model: {type: string}
+        period: {type: string, enum: [day, month]}
+        inputTokens: {type: integer, format: int64}
+        outputTokens: {type: integer, format: int64}
+        cacheTokens: {type: integer, format: int64}
+        internalChargeMicros: {type: integer, format: int64}
+        unknownRequests: {type: integer, format: int64}
+    CodexPlanStatus:
+      type: object
+      required: [status, ownedByYou]
+      properties:
+        status: {type: string, enum: [disconnected, connected, reconnect]}
+        ownedByYou: {type: boolean}
+    CodexPlanPairing:
+      type: object
+      required: [code]
+      properties:
+        code: {type: string}
+    CodexPlanDisconnect:
+      type: object
+      required: [revocationConfirmed]
+      properties:
+        revocationConfirmed: {type: boolean}
+    CompleteCodexPlanRequest:
+      type: object
+      required: [pairing, code, clientId, verifier, nonce, redirect]
+      properties:
+        pairing: {type: string, maxLength: 1024}
+        code: {type: string, maxLength: 4096}
+        clientId: {type: string, maxLength: 200}
+        verifier: {type: string, maxLength: 128}
+        nonce: {type: string, maxLength: 128}
+        redirect: {type: string, maxLength: 100}
     BudgetSummary:
       type: object
       required: [spendTodayMicros, budgets]
       properties:
         spendTodayMicros: {type: integer, format: int64}
         budgets: {type: array, items: {$ref: '#/components/schemas/BudgetState'}}
+        countSubscriptionUsage: {type: boolean}
+        subscriptionUsage: {type: array, items: {$ref: '#/components/schemas/SubscriptionUsage'}}
     BudgetState:
       type: object
       required: [id, period, limitMicros, spentMicros, warning, exceeded]

@@ -68,6 +68,15 @@ admission policy. Proxy request records replace duplicate CLI aggregates.
   cannot corrupt the frontend while the user's development server is running.
 - Image contexts exclude host credentials, build outputs and development caches.
 
+## Follow-up
+
+[ADR 0030](0030-codex-desktop-chatgpt-plan.md) adds a workspace opt-in to count
+Claude subscription usage toward bot, group, and workspace budgets. It uses the
+`model_prices` rates for the model ID sent by the CLI, reserves a conservative
+amount for supported requests, and settles against the reported input, output,
+and cache tokens. The UI shows totals per bot and labels the estimate as an
+internal budget charge. Anthropic continues to enforce its own plan limits.
+
 ## References
 
 - [Claude Code authentication](https://code.claude.com/docs/en/authentication)

@@ -8,6 +8,7 @@ import (
 
 	"github.com/dunkeltech/botbox/backend/internal/auth"
 	"github.com/dunkeltech/botbox/backend/internal/authbroker"
+	"github.com/dunkeltech/botbox/backend/internal/codexplan"
 	"github.com/dunkeltech/botbox/backend/internal/compute"
 	"github.com/dunkeltech/botbox/backend/internal/compute/vncrelay"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
@@ -43,6 +44,8 @@ type server struct {
 	publicBaseURL     string
 	egressAckTimeout  time.Duration
 	mcpUpstreamClient *mcpproxy.UpstreamClient
+	codexPlan         *codexplan.Service
+	codexPairRL       *auth.RateLimiter
 	now               func() time.Time
 }
 
@@ -151,11 +154,15 @@ func newServer(cfg Config, logger *slog.Logger) *server {
 		publicBaseURL:     cfg.PublicBaseURL,
 		egressAckTimeout:  egressAckTimeout,
 		mcpUpstreamClient: cfg.MCPUpstream,
+		codexPlan:         codexplan.NewService(cfg.Pool, keyRing, cfg.CodexPlanOAuth, now),
+		codexPairRL:       auth.NewRateLimiter(30, time.Minute, now),
 		now:               now,
 	}
 }
 
 func (s *server) mountRoutes(r chi.Router) {
+	r.With(s.requireCSRF).Post("/api/codex-plan/pairing/complete", s.handleCompleteCodexPlan)
+
 	// First-run setup wizard (returns 404 permanently once users exist).
 	r.Group(func(r chi.Router) {
 		r.Use(s.requireCSRF)
@@ -203,6 +210,7 @@ func (s *server) mountRoutes(r chi.Router) {
 
 			r.Get("/budgets", s.handleBudgetSummary)
 			r.Put("/budgets", s.handleSetBudget)
+			r.Put("/subscription-budget-policy", s.handleSetSubscriptionBudgetPolicy)
 			r.Get("/model-prices", s.handleListModelPrices)
 			r.Put("/model-prices", s.handleSetModelPrice)
 			r.Get("/conversations", s.handleListDMs)
@@ -259,6 +267,9 @@ func (s *server) mountRoutes(r chi.Router) {
 			r.Put("/secrets/{secretID}", s.handleUpdateWorkspaceSecret)
 			r.Delete("/secrets/{secretID}", s.handleDeleteWorkspaceSecret)
 
+			r.Get("/bots/{botID}/codex-plan", s.handleGetCodexPlan)
+			r.Post("/bots/{botID}/codex-plan/pairing", s.handleStartCodexPlan)
+			r.Delete("/bots/{botID}/codex-plan", s.handleDisconnectCodexPlan)
 			r.Get("/bots/{botID}/secrets", s.handleListBotSecrets)
 			r.Post("/bots/{botID}/secrets", s.handleCreateBotSecret)
 			r.Put("/bots/{botID}/secrets/{secretID}", s.handleUpdateBotSecret)

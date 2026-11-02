@@ -31,6 +31,7 @@ import {
 } from 'react';
 
 import { BotMCPProxyPanel } from '@/components/bots/BotMCPProxyPanel';
+import { CodexPlanPanel } from '@/components/bots/CodexPlanPanel';
 import { BudgetPanel } from '@/components/chat/BudgetPanel';
 
 import {
@@ -997,6 +998,14 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
           </Link>
         </nav>
       </div>
+
+      {canEditBotSecrets ? (
+        <CodexPlanPanel
+          key={bot.id}
+          workspaceId={workspace.id}
+          botId={bot.id}
+        />
+      ) : null}
 
       {bot.llmMode === 'cli' &&
       ['anthropic', 'claude'].includes(bot.llmProvider) ? (

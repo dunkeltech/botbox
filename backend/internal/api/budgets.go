@@ -54,12 +54,29 @@ func (s *server) handleBudgetSummary(w http.ResponseWriter, r *http.Request) {
 		s.chatFailure(w)
 		return
 	}
-	spent, err := s.queries.SpendToday(r.Context(), db.SpendTodayParams{WorkspaceID: ws.ID, AsOf: asOf})
+	spent, err := s.queries.SpendToday(r.Context(), db.SpendTodayParams{WorkspaceID: ws.ID, BotID: bot, AsOf: asOf})
 	if err != nil {
 		s.chatFailure(w)
 		return
 	}
-	out := apigen.BudgetSummary{SpendTodayMicros: spent, Budgets: make([]apigen.BudgetState, 0, len(rows))}
+	policy, err := s.queries.GetSubscriptionBudgetPolicy(r.Context(), ws.ID)
+	if err != nil {
+		s.chatFailure(w)
+		return
+	}
+	totals, err := s.queries.ListSubscriptionUsage(r.Context(), db.ListSubscriptionUsageParams{WorkspaceID: ws.ID, BotID: bot, AsOf: asOf})
+	if err != nil {
+		s.chatFailure(w)
+		return
+	}
+	usage := make([]apigen.SubscriptionUsage, 0, len(totals))
+	for _, total := range totals {
+		usage = append(usage, apigen.SubscriptionUsage{Model: total.Model, Period: apigen.SubscriptionUsagePeriod(total.Period),
+			InputTokens: total.InputTokens, OutputTokens: total.OutputTokens, CacheTokens: total.CacheTokens,
+			InternalChargeMicros: total.InternalChargeMicros, UnknownRequests: total.UnknownRequests})
+	}
+	out := apigen.BudgetSummary{SpendTodayMicros: spent, Budgets: make([]apigen.BudgetState, 0, len(rows)),
+		CountSubscriptionUsage: &policy, SubscriptionUsage: &usage}
 	for _, b := range rows {
 		row := apigen.BudgetState{Id: fromPGUUID(b.ID), Period: apigen.BudgetStatePeriod(b.Period), LimitMicros: b.LimitMicros, SpentMicros: b.SpentMicros, Warning: b.SpentMicros >= b.LimitMicros-b.LimitMicros/5, Exceeded: b.SpentMicros >= b.LimitMicros}
 		if b.BotID.Valid {
@@ -187,4 +204,30 @@ func (s *server) handleSetModelPrice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, s.logger, 200, map[string]bool{"saved": true})
+}
+
+func (s *server) handleSetSubscriptionBudgetPolicy(w http.ResponseWriter, r *http.Request) {
+	ws, claims, _, ok := s.loadWorkspaceMembership(w, r, workspaces.ActionManageMembers)
+	if !ok {
+		return
+	}
+	var input struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if !decodeJSON(w, r, s.logger, &input) {
+		return
+	}
+	if input.Enabled == nil {
+		writeError(w, s.logger, 400, "validation_error", "enabled is required")
+		return
+	}
+	rows, err := s.queries.SetSubscriptionBudgetPolicy(r.Context(), db.SetSubscriptionBudgetPolicyParams{ID: ws.ID, CountSubscriptionUsage: *input.Enabled})
+	if err != nil || rows != 1 {
+		s.chatFailure(w)
+		return
+	}
+	actor := claims.Subject
+	workspace := fromPGUUID(ws.ID)
+	_ = recordAudit(r.Context(), s.queries, &workspace, &actor, "subscription_budget_policy.updated", "workspace", &workspace, map[string]any{"enabled": *input.Enabled})
+	w.WriteHeader(http.StatusNoContent)
 }

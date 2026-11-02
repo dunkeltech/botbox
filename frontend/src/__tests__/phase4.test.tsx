@@ -252,7 +252,9 @@ describe('Phase 4 chat and budgets', () => {
   });
   it('restricts budget editing to administrators', async () => {
     const view = show(<BudgetPanel workspaceId="ws-1" />);
-    expect(await screen.findByText(/Spend today:/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Provider spend today:/),
+    ).toBeInTheDocument();
     expect(screen.getByRole('progressbar')).toHaveAttribute(
       'aria-valuenow',
       '80',

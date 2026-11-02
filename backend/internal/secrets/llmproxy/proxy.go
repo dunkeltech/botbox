@@ -35,7 +35,7 @@ func AuthMode(ctx context.Context, resolve SecretResolver, botID, provider strin
 		return "none", nil
 	}
 	switch cfg.AuthKind {
-	case AuthKindClaudeOAuth:
+	case AuthKindClaudeOAuth, AuthKindOpenAIPlan:
 		return "oauth", nil
 	case AuthKindAnthropicKey, AuthKindBearer:
 		return "api_key", nil
@@ -48,22 +48,25 @@ func AuthMode(ctx context.Context, resolve SecretResolver, botID, provider strin
 const (
 	ProviderAnthropic  = "anthropic"
 	ProviderOpenAI     = "openai"
+	ProviderOpenAIPlan = "openai-plan"
 	ProviderGoogle     = "google"
 	ProviderOpenRouter = "openrouter"
 
 	AuthKindAnthropicKey = "anthropic_key"
 	AuthKindBearer       = "bearer"
 	AuthKindClaudeOAuth  = "claude_oauth"
+	AuthKindOpenAIPlan   = "openai_plan"
 	AuthKindOAuthRefresh = "oauth_refresh"
 )
 
 // SecretConfig holds the upstream base URL and credential material stored outside the sandbox.
 type SecretConfig struct {
 	// PathPrefix restricts the full upstream path, including any configured base path.
-	PathPrefix  string
-	UpstreamURL string
-	AuthKind    string
-	SecretValue string
+	PathPrefix   string
+	UpstreamURL  string
+	AuthKind     string
+	SecretValue  string
+	PlanRevision string
 }
 
 // SecretResolver fetches a bot's credential for a specific LLM provider.
@@ -136,6 +139,14 @@ func NewHandler(resolve SecretResolver, opts *Options) http.Handler {
 			return
 		}
 
+		plan := provider == ProviderOpenAIPlan
+		if plan && (opts == nil || opts.workspaceID == "" || opts.Admit == nil ||
+			r.Method != http.MethodPost || !meteredPath(provider, upstreamPath) ||
+			r.URL.RawQuery != "" || r.Header.Get("Upgrade") != "" || r.Header.Get("Authorization") != "Bearer botbox-placeholder") {
+			writeError(w, logger, http.StatusForbidden, "forbidden", "unsupported ChatGPT plan request")
+			return
+		}
+
 		if resolve == nil {
 			writeError(w, logger, http.StatusForbidden, "forbidden", "credential resolver unavailable")
 			return
@@ -162,7 +173,15 @@ func NewHandler(resolve SecretResolver, opts *Options) http.Handler {
 		}
 
 		cfg, err := resolve(r.Context(), botID, provider)
-		if err != nil || cfg == nil || cfg.SecretValue == "" {
+		if plan && err != nil && !errors.Is(err, ErrSecretNotFound) {
+			status, code, message := http.StatusServiceUnavailable, "plan_unavailable", "ChatGPT plan is temporarily unavailable"
+			if errors.Is(err, ErrPlanReconnect) {
+				status, code, message = http.StatusUnauthorized, "plan_reconnect", "reconnect the ChatGPT plan in bot.Box"
+			}
+			writeError(w, logger, status, code, message)
+			return
+		}
+		if err != nil || cfg == nil || cfg.SecretValue == "" || plan != (cfg.AuthKind == AuthKindOpenAIPlan) {
 			emitAudit(onAudit, botID, provider, r.Method, upstreamPath, "blocked")
 			writeError(w, logger, http.StatusForbidden, "forbidden", "provider credential not configured")
 			return
@@ -194,14 +213,23 @@ func NewHandler(resolve SecretResolver, opts *Options) http.Handler {
 		}
 		// Security invariant: copy headers and strip all sandbox placeholder auth headers
 		// before adding real credentials so placeholders never reach upstream providers.
-		requestCtx := context.WithValue(r.Context(), subscriptionContextKey{}, cfg.AuthKind == AuthKindClaudeOAuth)
+		requestCtx := context.WithValue(r.Context(), subscriptionContextKey{}, cfg.AuthKind == AuthKindClaudeOAuth || plan)
+		if plan {
+			requestCtx = context.WithValue(requestCtx, planRevisionContextKey{}, cfg.PlanRevision)
+		}
 		outReq, err := http.NewRequestWithContext(requestCtx, r.Method, targetURL.String(), r.Body)
 		if err != nil {
 			emitAudit(onAudit, botID, provider, r.Method, upstreamPath, "upstream_error")
 			writeError(w, logger, http.StatusBadGateway, "upstream_error", "failed to build upstream request")
 			return
 		}
-		copyHeaders(outReq.Header, r.Header)
+		if plan {
+			outReq.Header.Set("Content-Type", "application/json")
+			outReq.Header.Set("Accept", "text/event-stream")
+			outReq.Header.Set("User-Agent", "bot.Box")
+		} else {
+			copyHeaders(outReq.Header, r.Header)
+		}
 		stripSandboxAuthHeaders(outReq.Header)
 		outReq.Header.Del(botHeader)
 		// Claude Code asks for br and zstd. net/http only decompresses gzip
@@ -239,6 +267,13 @@ func NewHandler(resolve SecretResolver, opts *Options) http.Handler {
 				writeError(w, logger, 400, "validation_error", "model is required")
 				return
 			}
+			if plan {
+				body, bodyErr = planRequest(body, model.Model)
+				if bodyErr != nil {
+					writeError(w, logger, http.StatusBadRequest, "plan_request_unsupported", "Codex sent an unsupported ChatGPT plan request")
+					return
+				}
+			}
 			outReq.Body = io.NopCloser(bytes.NewReader(body))
 			outReq.ContentLength = int64(len(body))
 			requestCtx = boundedRequest(requestCtx, provider, upstreamPath, body)
@@ -250,7 +285,14 @@ func NewHandler(resolve SecretResolver, opts *Options) http.Handler {
 					status = http.StatusTooManyRequests
 					code = "budget_exceeded"
 				}
-				writeError(w, logger, status, code, "model request is blocked")
+				message := "model request is blocked"
+				if errors.Is(err, ErrModelPriceRequired) {
+					code, message = "model_price_required", "configure a price for the selected model"
+				}
+				if errors.Is(err, ErrPlanAccess) {
+					status, code, message = http.StatusForbidden, "plan_forbidden", "ChatGPT plan is unavailable for this desktop"
+				}
+				writeError(w, logger, status, code, message)
 				return
 			}
 			if settle == nil {
@@ -273,7 +315,13 @@ func NewHandler(resolve SecretResolver, opts *Options) http.Handler {
 			}
 			outReq.Header.Set("anthropic-beta", beta+"oauth-2025-04-20")
 		}
-		resp, err := client.Do(outReq) //nolint:gosec // target URL originates from verified server-side SecretConfig, not user input
+		upstreamClient := client
+		if plan {
+			withoutRedirects := *client
+			withoutRedirects.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+			upstreamClient = &withoutRedirects
+		}
+		resp, err := upstreamClient.Do(outReq) //nolint:gosec // target URL originates from verified server-side SecretConfig, not user input
 		if err != nil {
 			// Security invariant: never include err.Error() or headers in logs/response in case a driver embeds request metadata.
 			logger.Warn("upstream LLM call failed",
@@ -289,6 +337,11 @@ func NewHandler(resolve SecretResolver, opts *Options) http.Handler {
 			_ = resp.Body.Close()
 		}()
 
+		if plan && (resp.StatusCode != http.StatusOK || !isEventStream(resp.Header.Get("Content-Type"))) {
+			usage = Usage{Known: resp.StatusCode >= 300 && resp.StatusCode < 500}
+			writePlanError(w, logger, resp, cfg.SecretValue)
+			return
+		}
 		if settle != nil && resp.StatusCode >= 400 {
 			// Provider error bodies may echo credentials or request headers.
 			// Return a fixed envelope instead of forwarding those details.
@@ -299,13 +352,17 @@ func NewHandler(resolve SecretResolver, opts *Options) http.Handler {
 		emitAudit(onAudit, botID, provider, r.Method, upstreamPath, "token_added")
 
 		if settle != nil {
-			w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+			if plan {
+				w.Header().Set("Content-Type", "text/event-stream")
+			} else {
+				w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+			}
 		} else {
 			copyHeaders(w.Header(), resp.Header)
 		}
 		w.WriteHeader(resp.StatusCode)
 		var destination io.Writer = w
-		if strings.HasPrefix(strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream") {
+		if isEventStream(resp.Header.Get("Content-Type")) {
 			// net/http otherwise buffers small chunks until completion, hiding
 			// live CLI activity and delaying cancellation feedback in the UI.
 			destination = flushingWriter{w}
@@ -315,7 +372,12 @@ func NewHandler(resolve SecretResolver, opts *Options) http.Handler {
 		if settle != nil {
 			source = io.TeeReader(resp.Body, collector)
 		}
-		_, copyErr := io.Copy(destination, source)
+		var copyErr error
+		if plan {
+			copyErr = copyPlanStream(destination, source, cfg.SecretValue)
+		} else {
+			_, copyErr = io.Copy(destination, source)
+		}
 		if settle != nil {
 			usage = collector.finish(copyErr == nil && resp.StatusCode >= 200 && resp.StatusCode < 300)
 			if copyErr == nil && (resp.StatusCode >= 400 && resp.StatusCode < 500 || upstreamPath == "/v1/messages/count_tokens" && resp.StatusCode == 200) {
@@ -346,7 +408,7 @@ func parseLLMPath(path string) (provider, upstreamPath string, ok bool) {
 
 func isSupportedProvider(provider string) bool {
 	switch provider {
-	case ProviderAnthropic, ProviderOpenAI, ProviderGoogle, ProviderOpenRouter:
+	case ProviderAnthropic, ProviderOpenAI, ProviderOpenAIPlan, ProviderGoogle, ProviderOpenRouter:
 		return true
 	default:
 		return false
@@ -365,7 +427,7 @@ func injectCredential(ctx context.Context, h http.Header, cfg *SecretConfig, exc
 	case AuthKindAnthropicKey:
 		h.Set("x-api-key", cfg.SecretValue)
 		return nil
-	case AuthKindBearer, AuthKindClaudeOAuth:
+	case AuthKindBearer, AuthKindClaudeOAuth, AuthKindOpenAIPlan:
 		h.Set("Authorization", "Bearer "+cfg.SecretValue)
 		return nil
 	case AuthKindOAuthRefresh:
@@ -453,6 +515,8 @@ func (w flushingWriter) Write(data []byte) (int, error) {
 
 func meteredPath(provider, path string) bool {
 	switch provider {
+	case ProviderOpenAIPlan:
+		return path == "/v1/responses"
 	case ProviderOpenAI:
 		return path == "/v1/responses" || path == "/v1/chat/completions"
 	case ProviderOpenRouter:

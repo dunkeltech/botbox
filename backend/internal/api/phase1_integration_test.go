@@ -16,6 +16,7 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/api"
 	"github.com/dunkeltech/botbox/backend/internal/auth"
 	"github.com/dunkeltech/botbox/backend/internal/authbroker"
+	"github.com/dunkeltech/botbox/backend/internal/codexplan"
 	"github.com/dunkeltech/botbox/backend/internal/compute"
 	apigen "github.com/dunkeltech/botbox/backend/internal/gen/api"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
@@ -76,6 +77,7 @@ type harnessOpts struct {
 	keyRing          *secrets.KeyRing
 	authBroker       authbroker.Client
 	mcpUpstream      *mcpproxy.UpstreamClient
+	codexPlanOAuth   *codexplan.OAuth
 	decorateCompute  func(*compute.MemoryDriver) compute.Driver
 }
 
@@ -175,6 +177,7 @@ func newTestHarness(t *testing.T, existingPool *pgxpool.Pool, opts harnessOpts) 
 		RefreshRateLimiter:    auth.NewRateLimiter(50, time.Minute, clock.Now),
 		PublicBaseURL:         "http://127.0.0.1:3000",
 		MCPUpstream:           opts.mcpUpstream,
+		CodexPlanOAuth:        opts.codexPlanOAuth,
 		Now:                   clock.Now,
 	})
 

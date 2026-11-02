@@ -249,7 +249,7 @@ const updateScreenshotRetention = `-- name: UpdateScreenshotRetention :one
 UPDATE workspaces
 SET screenshot_retention_days = $2
 WHERE id = $1
-RETURNING id, name, slug, default_driver, default_locale, created_at, screenshot_retention_days
+RETURNING id, name, slug, default_driver, default_locale, created_at, screenshot_retention_days, count_subscription_usage
 `
 
 type UpdateScreenshotRetentionParams struct {
@@ -268,6 +268,7 @@ func (q *Queries) UpdateScreenshotRetention(ctx context.Context, arg UpdateScree
 		&i.DefaultLocale,
 		&i.CreatedAt,
 		&i.ScreenshotRetentionDays,
+		&i.CountSubscriptionUsage,
 	)
 	return i, err
 }

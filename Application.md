@@ -170,9 +170,9 @@ Claude CLI bots can use a Pro/Max subscription through an encrypted
 `claude setup-token` outside the bot (or uses `make claude-login`), then stores the
 token through the write-only form. The sandbox receives only an OAuth placeholder
 and no API key; the proxy injects the actual token. Generic API mode ignores this
-credential. Subscription request records keep tokens and null cost with an
-explicit `billing_kind=subscription`; those records do not represent unknown API
-billing and do not require model prices. See
+credential. Subscription records keep tokens with `billing_kind=subscription`.
+The optional workspace policy uses model prices to add an internal budget
+charge while preserving the separate provider cost. See
 [ADR-0011](docs/adr/0011-claude-subscription-outside-sandbox.md).
 
 Typing `claude` in the bot computer uses that same placeholder and metered
@@ -180,10 +180,18 @@ route. The pinned CLI is 2.1.323. Its first-run connectivity check and
 workspace trust prompt are skipped there, because provider CONNECT tunnels stay
 closed and the desktop cannot answer the prompt. The `sonnet` alias is sent to
 the provider as `claude-sonnet-5-5`; a monetary budget needs a price for that
-name, while subscription records stay tokens-only. Desktop calls are metered
-without a chat turn. Pause still blocks them. Holding the desktop stops engine
+name. Desktop calls are metered without a chat turn. Pause still blocks them. Holding the desktop stops engine
 turns and does not block that personal CLI. See
 [ADR-0012](docs/adr/0012-interactive-claude-in-the-sandbox.md).
+
+Interactive Codex uses a ChatGPT plan connection for the bot computer. A bot
+manager completes workstation sign-in with `make codex-login`, then takes
+desktop control and types `codex` in the bot computer. The CLI uses a placeholder
+and the per-bot `/llm/openai-plan/v1/responses` route. The control plane stores and
+renews the OAuth grant. The proxy checks the connection owner, current desktop
+holder, pause, explicit host blocks, and budget. Usage is attributed to the bot
+and workspace outside chat. See [ADR-0030](docs/adr/0030-codex-desktop-chatgpt-plan.md)
+and the [setup guide](docs/guides/codex-desktop-setup.md).
 
 The executable defaults to Docker; simulation requires the explicit development
 setting `BOTBOX_COMPUTE_DRIVER=memory`. Unrecognized driver names fail startup.
@@ -416,10 +424,10 @@ Membership is the only read path, including for workspace admins. See
 
 ### 4.9 Usage & budgets
 
-- **Usage records per turn:** tokens in and out, cache tokens and cost. Sources are CLI `result` events, API responses and proxy metering. The cost comes from an admin-editable `model_prices` table; OpenRouter's reported cost wins when present. Subscription logins record tokens only.
+- **Usage records per turn:** tokens in and out, cache tokens and cost. Sources are CLI `result` events, API responses and proxy metering. The cost comes from an admin-editable `model_prices` table; OpenRouter's reported cost wins when present. Subscription logins record tokens by model and period. **Count subscription usage toward budgets** optionally applies the workspace model prices to new requests and shows the resulting internal charge separately from provider spend.
 - **Budgets:** per workspace (monthly), bot (daily, monthly) and group.
   - **80 %:** warning.
-  - **100 %:** no new turns, the proxy kill switch blocks LLM calls, and an approval request to raise the budget is created.
+  - **100 %:** no new turns, the proxy kill switch blocks LLM calls, and an approval request to raise the budget is created. For Codex plan traffic, an in-flight request can cross the limit because the Responses preview does not accept a per-request output cap. The next request is checked after settlement.
 
 ### 4.10 Real-time events
 

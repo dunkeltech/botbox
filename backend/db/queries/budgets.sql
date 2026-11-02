@@ -1,5 +1,5 @@
 -- name: ListBudgetState :many
-SELECT b.*,COALESCE((SELECT sum(u.cost_micros) FROM usage_records u WHERE u.workspace_id=b.workspace_id AND (b.bot_id IS NULL OR u.bot_id=b.bot_id)
+SELECT b.*,COALESCE((SELECT sum(COALESCE(u.cost_micros, u.internal_charge_micros)) FROM usage_records u WHERE u.workspace_id=b.workspace_id AND (b.bot_id IS NULL OR u.bot_id=b.bot_id)
 AND u.created_at >= date_trunc(b.period,sqlc.arg(as_of)::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'),0)::bigint AS spent_micros,
 COALESCE((SELECT sum(u.reserved_micros) FROM usage_records u WHERE u.workspace_id=b.workspace_id AND (b.bot_id IS NULL OR u.bot_id=b.bot_id)
 AND u.created_at >= date_trunc(b.period,sqlc.arg(as_of)::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'),0)::bigint AS reserved_micros
@@ -16,8 +16,8 @@ ON CONFLICT(workspace_id,budget_id) WHERE status='pending' DO NOTHING
 RETURNING id;
 
 -- name: RecordTurnUsage :exec
-INSERT INTO usage_records(workspace_id,bot_id,turn_id,request_id,source,model,input_tokens,output_tokens,cache_tokens,cost_micros,created_at,billing_kind)
-VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,COALESCE(NULLIF(sqlc.arg(billing_kind)::text,''),'metered')) ON CONFLICT(workspace_id,request_id) DO NOTHING;
+INSERT INTO usage_records(workspace_id,bot_id,turn_id,request_id,source,model,input_tokens,output_tokens,cache_tokens,cost_micros,created_at,billing_kind,subscription_budgeted)
+VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,COALESCE(NULLIF(sqlc.arg(billing_kind)::text,''),'metered'),sqlc.arg(subscription_budgeted)) ON CONFLICT(workspace_id,request_id) DO NOTHING;
 
 -- name: ListModelPrices :many
 SELECT * FROM model_prices WHERE workspace_id=$1 ORDER BY provider ASC, model ASC;
@@ -30,7 +30,7 @@ INSERT INTO model_prices(workspace_id,provider,model,input_micros_per_million,ou
 VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(workspace_id,provider,model) DO UPDATE SET input_micros_per_million=EXCLUDED.input_micros_per_million,output_micros_per_million=EXCLUDED.output_micros_per_million,cache_micros_per_million=EXCLUDED.cache_micros_per_million RETURNING *;
 
 -- name: SpendToday :one
-SELECT COALESCE(sum(cost_micros),0)::bigint FROM usage_records WHERE workspace_id=$1 AND created_at >= date_trunc('day',sqlc.arg(as_of)::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC';
+SELECT COALESCE(sum(cost_micros),0)::bigint FROM usage_records WHERE workspace_id=$1 AND (sqlc.narg(bot_id)::uuid IS NULL OR bot_id=sqlc.narg(bot_id)) AND created_at >= date_trunc('day',sqlc.arg(as_of)::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC';
 
 -- name: LockWorkspaceSpend :exec
 SELECT pg_advisory_lock(hashtextextended(sqlc.arg(lock_key)::text, 1));
@@ -50,11 +50,11 @@ SELECT * FROM approvals WHERE workspace_id=$1 AND status='pending' ORDER BY crea
 -- name: HasUnpricedAPIUsage :one
 SELECT EXISTS(SELECT 1 FROM usage_records u WHERE u.workspace_id=$1
 AND (sqlc.narg(bot_id)::uuid IS NULL OR u.bot_id=sqlc.narg(bot_id)::uuid)
-AND u.source IN ('api_response','proxy_meter') AND u.billing_kind='metered' AND u.cost_micros IS NULL AND u.reserved_micros IS NULL
+AND u.source IN ('api_response','proxy_meter') AND (u.billing_kind='metered' OR u.subscription_budgeted) AND u.cost_micros IS NULL AND u.internal_charge_micros IS NULL AND u.reserved_micros IS NULL
 AND u.created_at >= date_trunc(sqlc.arg(period)::text,sqlc.arg(as_of)::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC');
 
 -- name: SettleProxyUsage :execrows
-UPDATE usage_records SET input_tokens=$3,output_tokens=$4,cache_tokens=$5,cost_micros=$6,reserved_micros=NULL
+UPDATE usage_records SET input_tokens=$3,output_tokens=$4,cache_tokens=$5,cost_micros=$6,internal_charge_micros=$7,usage_known=$8,reserved_micros=NULL
 WHERE workspace_id=$1 AND request_id=$2 AND source='proxy_meter';
 
 -- name: GetRunningBotTurn :one
@@ -68,7 +68,30 @@ UPDATE usage_records SET reserved_micros=$3
 WHERE workspace_id=$1 AND request_id=$2 AND source='proxy_meter' AND cost_micros IS NULL;
 
 -- name: GroupBudgetCommitment :one
-SELECT COALESCE(sum(COALESCE(u.cost_micros,u.reserved_micros)),0)::bigint AS committed_micros,
-count(*) FILTER (WHERE u.cost_micros IS NULL AND u.reserved_micros IS NULL AND u.billing_kind='metered')::bigint AS unknown_rows
+SELECT COALESCE(sum(COALESCE(u.cost_micros,u.internal_charge_micros,u.reserved_micros)),0)::bigint AS committed_micros,
+count(*) FILTER (WHERE u.cost_micros IS NULL AND u.internal_charge_micros IS NULL AND u.reserved_micros IS NULL AND (u.billing_kind='metered' OR u.subscription_budgeted))::bigint AS unknown_rows
 FROM usage_records u JOIN bot_turns t ON t.workspace_id=u.workspace_id AND t.id=u.turn_id
 WHERE u.workspace_id=$1 AND t.conversation_id=$2;
+
+-- name: GetSubscriptionBudgetPolicy :one
+SELECT count_subscription_usage FROM workspaces WHERE id = $1;
+
+-- name: SetSubscriptionBudgetPolicy :execrows
+UPDATE workspaces SET count_subscription_usage = $2 WHERE id = $1;
+
+-- name: ListSubscriptionUsage :many
+WITH periods AS (SELECT 'day'::text AS name UNION ALL SELECT 'month'::text)
+SELECT u.model, period.name AS period,
+       sum(u.input_tokens)::bigint AS input_tokens,
+       sum(u.output_tokens)::bigint AS output_tokens,
+       sum(u.cache_tokens)::bigint AS cache_tokens,
+       COALESCE(sum(u.internal_charge_micros), 0)::bigint AS internal_charge_micros,
+       count(*) FILTER (WHERE u.usage_known IS FALSE OR
+           (u.usage_known IS NULL AND u.input_tokens = 0 AND u.output_tokens = 0))::bigint AS unknown_requests
+FROM usage_records u
+CROSS JOIN periods period
+WHERE u.workspace_id = sqlc.arg(workspace_id)
+  AND (sqlc.narg(bot_id)::uuid IS NULL OR u.bot_id = sqlc.narg(bot_id))
+  AND u.billing_kind = 'subscription'
+  AND u.created_at >= date_trunc(period.name, sqlc.arg(as_of)::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+GROUP BY period.name, u.model ORDER BY period.name, u.model;

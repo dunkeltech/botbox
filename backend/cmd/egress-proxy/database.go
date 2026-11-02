@@ -16,6 +16,7 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/api"
 	"github.com/dunkeltech/botbox/backend/internal/authbroker"
 	"github.com/dunkeltech/botbox/backend/internal/budgets"
+	"github.com/dunkeltech/botbox/backend/internal/codexplan"
 	"github.com/dunkeltech/botbox/backend/internal/events"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
 	"github.com/dunkeltech/botbox/backend/internal/mcpproxy"
@@ -34,6 +35,7 @@ type egressDeps struct {
 	LLM             http.Handler
 	MCP             http.Handler
 	AuthMode        func(context.Context) (string, error)
+	PlanReady       func(context.Context) error
 	Health          func(context.Context) error
 	CACert          []byte
 	Broker          authbroker.Client
@@ -114,7 +116,27 @@ func databaseHandlerWithLifecycle(
 			unsub = subStop
 		}
 	}
-	resolve := secrets.CLIProviderResolver(q, ring, workspace, bot)
+	resolveCLI := secrets.CLIProviderResolver(q, ring, workspace, bot)
+	plan := codexplan.NewService(pool, ring, nil, time.Now)
+	resolve := func(ctx context.Context, botID, provider string) (*llmproxy.SecretConfig, error) {
+		if provider != llmproxy.ProviderOpenAIPlan {
+			return resolveCLI(ctx, botID, provider)
+		}
+		if botID != bot.String() {
+			return nil, llmproxy.ErrSecretNotFound
+		}
+		token, revision, err := plan.Access(ctx, workspace, bot)
+		switch {
+		case errors.Is(err, codexplan.ErrForbidden):
+			return nil, llmproxy.ErrSecretNotFound
+		case errors.Is(err, codexplan.ErrReconnect):
+			return nil, llmproxy.ErrPlanReconnect
+		case err != nil:
+			return nil, err
+		default:
+			return &llmproxy.SecretConfig{UpstreamURL: codexplan.Upstream, PathPrefix: "/v1/responses", AuthKind: llmproxy.AuthKindOpenAIPlan, SecretValue: token, PlanRevision: revision}, nil
+		}
+	}
 	llm, err := llmproxy.NewScopedHandler(workspace.String(), bot.String(), resolve, &llmproxy.Options{Logger: logger, Admit: budgets.ProxyAdmission(pool, workspace, bot, time.Now), Client: &http.Client{Timeout: 10 * time.Minute}})
 	if err != nil {
 		unsub()
@@ -146,6 +168,16 @@ func databaseHandlerWithLifecycle(
 		MCP:     mcpSvc.Handler(workspace, bot),
 		AuthMode: func(ctx context.Context) (string, error) {
 			return llmproxy.AuthMode(ctx, resolve, bot.String(), llmproxy.ProviderAnthropic)
+		},
+		PlanReady: func(ctx context.Context) error {
+			state, err := q.GetBotRuntime(ctx, db.GetBotRuntimeParams{WorkspaceID: wsPG, ID: botPG})
+			if err != nil {
+				return err
+			}
+			if state.Paused {
+				return codexplan.ErrForbidden
+			}
+			return codexplan.CheckDesktop(ctx, q, wsPG, botPG, "")
 		},
 		Health:          pool.Ping,
 		CACert:          ca.CertPEM(),
@@ -202,6 +234,23 @@ func newEgressHandler(deps egressDeps) http.Handler {
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			w.Header().Set("Cache-Control", "no-store")
 			_, _ = io.WriteString(w, mode+"\n")
+			return
+		}
+		if r.Method == http.MethodGet && r.URL.Path == "/llm/openai-plan/ready" {
+			w.Header().Set("Cache-Control", "no-store")
+			if deps.PlanReady == nil {
+				http.Error(w, "connection unavailable", http.StatusServiceUnavailable)
+				return
+			}
+			if err := deps.PlanReady(r.Context()); err != nil {
+				if errors.Is(err, codexplan.ErrForbidden) {
+					http.Error(w, "desktop connection unavailable", http.StatusForbidden)
+				} else {
+					http.Error(w, "connection unavailable", http.StatusServiceUnavailable)
+				}
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/llm/") {

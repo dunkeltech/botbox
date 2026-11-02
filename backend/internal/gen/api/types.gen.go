@@ -273,6 +273,27 @@ func (e ChatTurnStatus) Valid() bool {
 	}
 }
 
+// Defines values for CodexPlanStatusStatus.
+const (
+	Connected    CodexPlanStatusStatus = "connected"
+	Disconnected CodexPlanStatusStatus = "disconnected"
+	Reconnect    CodexPlanStatusStatus = "reconnect"
+)
+
+// Valid indicates whether the value is a known member of the CodexPlanStatusStatus enum.
+func (e CodexPlanStatusStatus) Valid() bool {
+	switch e {
+	case Connected:
+		return true
+	case Disconnected:
+		return true
+	case Reconnect:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreateGroupRequestAnswerPolicy.
 const (
 	CreateGroupRequestAnswerPolicyLeadFirst         CreateGroupRequestAnswerPolicy = "lead_first"
@@ -720,6 +741,24 @@ func (e SetBudgetRequestPeriod) Valid() bool {
 	}
 }
 
+// Defines values for SubscriptionUsagePeriod.
+const (
+	SubscriptionUsagePeriodDay   SubscriptionUsagePeriod = "day"
+	SubscriptionUsagePeriodMonth SubscriptionUsagePeriod = "month"
+)
+
+// Valid indicates whether the value is a known member of the SubscriptionUsagePeriod enum.
+func (e SubscriptionUsagePeriod) Valid() bool {
+	switch e {
+	case SubscriptionUsagePeriodDay:
+		return true
+	case SubscriptionUsagePeriodMonth:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ToolCallPhase.
 const (
 	Call   ToolCallPhase = "call"
@@ -967,8 +1006,10 @@ type BudgetStatePeriod string
 
 // BudgetSummary defines model for BudgetSummary.
 type BudgetSummary struct {
-	Budgets          []BudgetState `json:"budgets"`
-	SpendTodayMicros int64         `json:"spendTodayMicros"`
+	Budgets                []BudgetState        `json:"budgets"`
+	CountSubscriptionUsage *bool                `json:"countSubscriptionUsage,omitempty"`
+	SpendTodayMicros       int64                `json:"spendTodayMicros"`
+	SubscriptionUsage      *[]SubscriptionUsage `json:"subscriptionUsage,omitempty"`
 }
 
 // ChatConversation defines model for ChatConversation.
@@ -1018,6 +1059,35 @@ type ChatTurn struct {
 
 // ChatTurnStatus defines model for ChatTurn.Status.
 type ChatTurnStatus string
+
+// CodexPlanDisconnect defines model for CodexPlanDisconnect.
+type CodexPlanDisconnect struct {
+	RevocationConfirmed bool `json:"revocationConfirmed"`
+}
+
+// CodexPlanPairing defines model for CodexPlanPairing.
+type CodexPlanPairing struct {
+	Code string `json:"code"`
+}
+
+// CodexPlanStatus defines model for CodexPlanStatus.
+type CodexPlanStatus struct {
+	OwnedByYou bool                  `json:"ownedByYou"`
+	Status     CodexPlanStatusStatus `json:"status"`
+}
+
+// CodexPlanStatusStatus defines model for CodexPlanStatus.Status.
+type CodexPlanStatusStatus string
+
+// CompleteCodexPlanRequest defines model for CompleteCodexPlanRequest.
+type CompleteCodexPlanRequest struct {
+	ClientId string `json:"clientId"`
+	Code     string `json:"code"`
+	Nonce    string `json:"nonce"`
+	Pairing  string `json:"pairing"`
+	Redirect string `json:"redirect"`
+	Verifier string `json:"verifier"`
+}
 
 // ControlHolder defines model for ControlHolder.
 type ControlHolder struct {
@@ -1589,6 +1659,25 @@ type StreamTicketResponse struct {
 	WsPath     string    `json:"wsPath"`
 }
 
+// SubscriptionBudgetPolicy defines model for SubscriptionBudgetPolicy.
+type SubscriptionBudgetPolicy struct {
+	Enabled bool `json:"enabled"`
+}
+
+// SubscriptionUsage defines model for SubscriptionUsage.
+type SubscriptionUsage struct {
+	CacheTokens          int64                   `json:"cacheTokens"`
+	InputTokens          int64                   `json:"inputTokens"`
+	InternalChargeMicros int64                   `json:"internalChargeMicros"`
+	Model                string                  `json:"model"`
+	OutputTokens         int64                   `json:"outputTokens"`
+	Period               SubscriptionUsagePeriod `json:"period"`
+	UnknownRequests      int64                   `json:"unknownRequests"`
+}
+
+// SubscriptionUsagePeriod defines model for SubscriptionUsage.Period.
+type SubscriptionUsagePeriod string
+
 // TerminalExecRequest defines model for TerminalExecRequest.
 type TerminalExecRequest struct {
 	Command string  `json:"command"`
@@ -1839,6 +1928,9 @@ type LoginJSONRequestBody = LoginRequest
 // RefreshTokenJSONRequestBody defines body for RefreshToken for application/json ContentType.
 type RefreshTokenJSONRequestBody = RefreshRequest
 
+// CompleteCodexPlanPairingJSONRequestBody defines body for CompleteCodexPlanPairing for application/json ContentType.
+type CompleteCodexPlanPairingJSONRequestBody = CompleteCodexPlanRequest
+
 // AcceptInvitationJSONRequestBody defines body for AcceptInvitation for application/json ContentType.
 type AcceptInvitationJSONRequestBody = AcceptInvitationRequest
 
@@ -1934,3 +2026,6 @@ type CreateWorkspaceSecretJSONRequestBody = CreateSecretRequest
 
 // UpdateWorkspaceSecretJSONRequestBody defines body for UpdateWorkspaceSecret for application/json ContentType.
 type UpdateWorkspaceSecretJSONRequestBody = UpdateSecretRequest
+
+// SetSubscriptionBudgetPolicyJSONRequestBody defines body for SetSubscriptionBudgetPolicy for application/json ContentType.
+type SetSubscriptionBudgetPolicyJSONRequestBody = SubscriptionBudgetPolicy

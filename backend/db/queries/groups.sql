@@ -123,8 +123,8 @@ ORDER BY position ASC;
 
 -- name: GroupSpend :one
 SELECT
-    COALESCE(sum(u.cost_micros) FILTER (WHERE u.cost_micros IS NOT NULL), 0)::bigint AS spent_micros,
-    (CASE WHEN bool_or(u.cost_micros IS NULL AND u.reserved_micros IS NULL AND u.billing_kind = 'metered') THEN 1 ELSE 0 END)::int AS unknown_rows
+    COALESCE(sum(COALESCE(u.cost_micros, u.internal_charge_micros)), 0)::bigint AS spent_micros,
+    (CASE WHEN bool_or(u.cost_micros IS NULL AND u.internal_charge_micros IS NULL AND u.reserved_micros IS NULL AND (u.billing_kind = 'metered' OR u.subscription_budgeted)) THEN 1 ELSE 0 END)::int AS unknown_rows
 FROM usage_records u
 JOIN bot_turns t ON t.workspace_id = u.workspace_id AND t.id = u.turn_id
 WHERE u.workspace_id = $1 AND t.conversation_id = $2 AND u.turn_id IS NOT NULL;

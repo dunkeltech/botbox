@@ -29,6 +29,8 @@ export function BudgetPanel({
     botId ? 'day' : 'month',
   );
   const [saving, setSaving] = useState(false);
+  const [savingPolicy, setSavingPolicy] = useState(false);
+  const [usagePeriod, setUsagePeriod] = useState<'day' | 'month'>('month');
   const [error, setError] = useState(false);
   const base = `/api/workspaces/${workspaceId}`;
   const query = useQuery({
@@ -74,6 +76,30 @@ export function BudgetPanel({
     }
   }
 
+  async function setSubscriptionPolicy(enabled: boolean) {
+    setError(false);
+    setSavingPolicy(true);
+    try {
+      await requestJson(`${base}/subscription-budget-policy`, {
+        method: 'PUT',
+        body: { enabled },
+      });
+      await client.invalidateQueries({ queryKey: ['budget', workspaceId] });
+    } catch {
+      setError(true);
+    } finally {
+      setSavingPolicy(false);
+    }
+  }
+
+  const usage = (query.data?.subscriptionUsage ?? []).filter(
+    (row) => row.period === usagePeriod,
+  );
+  const internalCharge = usage.reduce(
+    (sum, row) => sum + row.internalChargeMicros,
+    0,
+  );
+
   return (
     <Card className="flex flex-col gap-5 p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -101,6 +127,83 @@ export function BudgetPanel({
 
       {error || query.isError ? (
         <Alert tone="warning">{t('error')}</Alert>
+      ) : null}
+
+      {canManage &&
+      !botId &&
+      query.data?.countSubscriptionUsage !== undefined ? (
+        <label className="flex min-h-11 items-start gap-3 rounded-md border border-line p-3 text-[14px] text-ink">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={query.data.countSubscriptionUsage}
+            disabled={savingPolicy}
+            onChange={(event) =>
+              void setSubscriptionPolicy(event.target.checked)
+            }
+          />
+          <span>
+            <span className="block font-bold">{t('subscriptionPolicy')}</span>
+            {t('subscriptionPolicyHelp')}
+          </span>
+        </label>
+      ) : null}
+
+      {query.data?.subscriptionUsage !== undefined ? (
+        <section className="flex flex-col gap-2 border-t border-line pt-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="font-bold text-ink">{t('subscriptionUsage')}</h3>
+            <select
+              aria-label={t('usagePeriod')}
+              className="min-h-[44px] rounded-sm border border-line-strong bg-paper px-3 text-ink"
+              value={usagePeriod}
+              onChange={(event) =>
+                setUsagePeriod(event.target.value as 'day' | 'month')
+              }
+            >
+              <option value="day">{t('daily')}</option>
+              <option value="month">{t('monthly')}</option>
+            </select>
+          </div>
+          {usage.length ? (
+            <>
+              <p className="text-[14px] text-ink-2">
+                {t('internalCharge', {
+                  amount: format.number(internalCharge / 1000000, {
+                    style: 'currency',
+                    currency: 'USD',
+                  }),
+                })}
+              </p>
+              <ul className="flex flex-col gap-2">
+                {usage.map((row) => (
+                  <li
+                    key={row.model}
+                    className="rounded-sm border border-line px-3 py-2 text-[14px] text-ink-2"
+                  >
+                    <span className="block break-all font-bold text-ink">
+                      {row.model}
+                    </span>
+                    <span>
+                      {t('tokenTotals', {
+                        input: row.inputTokens,
+                        output: row.outputTokens,
+                        cache: row.cacheTokens,
+                      })}
+                    </span>
+                    {row.unknownRequests > 0 ? (
+                      <span className="block text-ink-2">
+                        {t('usageUnknown', { count: row.unknownRequests })}
+                      </span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <p className="text-[14px] text-ink-2">{t('usageEmpty')}</p>
+          )}
+        </section>
       ) : null}
 
       {query.data && query.data.budgets.length > 0 ? (

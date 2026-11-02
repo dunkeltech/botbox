@@ -39,7 +39,7 @@ binary path fails the image build and the launcher.
 Desktop requests still pass pause, budget, provider, and auth-mode checks.
 Holding the desktop stops new engine turns; it does not block the person's own
 CLI, because that is when they can type. Usage is recorded with a null
-`turn_id` when no chat turn is running. Subscription rows stay tokens-only.
+`turn_id` when no chat turn is running. Subscription rows record tokens. [ADR 0030](0030-codex-desktop-chatgpt-plan.md) adds an optional internal budget charge.
 
 ## Consequences
 

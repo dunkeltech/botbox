@@ -158,6 +158,27 @@ type Budget struct {
 	LimitMicros int64       `json:"limit_micros"`
 }
 
+type CodexPlanConnection struct {
+	WorkspaceID     pgtype.UUID `json:"workspace_id"`
+	BotID           pgtype.UUID `json:"bot_id"`
+	OwnerUserID     pgtype.UUID `json:"owner_user_id"`
+	ClientID        string      `json:"client_id"`
+	Subject         string      `json:"subject"`
+	Revision        pgtype.UUID `json:"revision"`
+	KekID           pgtype.Text `json:"kek_id"`
+	WrappedDek      []byte      `json:"wrapped_dek"`
+	EncryptedTokens []byte      `json:"encrypted_tokens"`
+}
+
+type CodexPlanPairing struct {
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	BotID       pgtype.UUID        `json:"bot_id"`
+	OwnerUserID pgtype.UUID        `json:"owner_user_id"`
+	CodeHash    []byte             `json:"code_hash"`
+	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
+	Claimed     bool               `json:"claimed"`
+}
+
 type Conversation struct {
 	ID                pgtype.UUID        `json:"id"`
 	WorkspaceID       pgtype.UUID        `json:"workspace_id"`
@@ -475,20 +496,23 @@ type SystemInfo struct {
 }
 
 type UsageRecord struct {
-	ID             pgtype.UUID        `json:"id"`
-	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
-	BotID          pgtype.UUID        `json:"bot_id"`
-	TurnID         pgtype.UUID        `json:"turn_id"`
-	RequestID      pgtype.UUID        `json:"request_id"`
-	Source         string             `json:"source"`
-	Model          string             `json:"model"`
-	InputTokens    int64              `json:"input_tokens"`
-	OutputTokens   int64              `json:"output_tokens"`
-	CacheTokens    int64              `json:"cache_tokens"`
-	CostMicros     pgtype.Int8        `json:"cost_micros"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	BillingKind    string             `json:"billing_kind"`
-	ReservedMicros pgtype.Int8        `json:"reserved_micros"`
+	ID                   pgtype.UUID        `json:"id"`
+	WorkspaceID          pgtype.UUID        `json:"workspace_id"`
+	BotID                pgtype.UUID        `json:"bot_id"`
+	TurnID               pgtype.UUID        `json:"turn_id"`
+	RequestID            pgtype.UUID        `json:"request_id"`
+	Source               string             `json:"source"`
+	Model                string             `json:"model"`
+	InputTokens          int64              `json:"input_tokens"`
+	OutputTokens         int64              `json:"output_tokens"`
+	CacheTokens          int64              `json:"cache_tokens"`
+	CostMicros           pgtype.Int8        `json:"cost_micros"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	BillingKind          string             `json:"billing_kind"`
+	ReservedMicros       pgtype.Int8        `json:"reserved_micros"`
+	SubscriptionBudgeted bool               `json:"subscription_budgeted"`
+	InternalChargeMicros pgtype.Int8        `json:"internal_charge_micros"`
+	UsageKnown           pgtype.Bool        `json:"usage_known"`
 }
 
 type User struct {
@@ -509,6 +533,7 @@ type Workspace struct {
 	DefaultLocale           string             `json:"default_locale"`
 	CreatedAt               pgtype.Timestamptz `json:"created_at"`
 	ScreenshotRetentionDays int32              `json:"screenshot_retention_days"`
+	CountSubscriptionUsage  bool               `json:"count_subscription_usage"`
 }
 
 type WorkspaceMember struct {

@@ -84,9 +84,20 @@ func (q *Queries) GetRunningBotTurn(ctx context.Context, arg GetRunningBotTurnPa
 	return i, err
 }
 
+const getSubscriptionBudgetPolicy = `-- name: GetSubscriptionBudgetPolicy :one
+SELECT count_subscription_usage FROM workspaces WHERE id = $1
+`
+
+func (q *Queries) GetSubscriptionBudgetPolicy(ctx context.Context, id pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, getSubscriptionBudgetPolicy, id)
+	var count_subscription_usage bool
+	err := row.Scan(&count_subscription_usage)
+	return count_subscription_usage, err
+}
+
 const groupBudgetCommitment = `-- name: GroupBudgetCommitment :one
-SELECT COALESCE(sum(COALESCE(u.cost_micros,u.reserved_micros)),0)::bigint AS committed_micros,
-count(*) FILTER (WHERE u.cost_micros IS NULL AND u.reserved_micros IS NULL AND u.billing_kind='metered')::bigint AS unknown_rows
+SELECT COALESCE(sum(COALESCE(u.cost_micros,u.internal_charge_micros,u.reserved_micros)),0)::bigint AS committed_micros,
+count(*) FILTER (WHERE u.cost_micros IS NULL AND u.internal_charge_micros IS NULL AND u.reserved_micros IS NULL AND (u.billing_kind='metered' OR u.subscription_budgeted))::bigint AS unknown_rows
 FROM usage_records u JOIN bot_turns t ON t.workspace_id=u.workspace_id AND t.id=u.turn_id
 WHERE u.workspace_id=$1 AND t.conversation_id=$2
 `
@@ -127,7 +138,7 @@ func (q *Queries) HasProxyTurnUsage(ctx context.Context, arg HasProxyTurnUsagePa
 const hasUnpricedAPIUsage = `-- name: HasUnpricedAPIUsage :one
 SELECT EXISTS(SELECT 1 FROM usage_records u WHERE u.workspace_id=$1
 AND ($2::uuid IS NULL OR u.bot_id=$2::uuid)
-AND u.source IN ('api_response','proxy_meter') AND u.billing_kind='metered' AND u.cost_micros IS NULL AND u.reserved_micros IS NULL
+AND u.source IN ('api_response','proxy_meter') AND (u.billing_kind='metered' OR u.subscription_budgeted) AND u.cost_micros IS NULL AND u.internal_charge_micros IS NULL AND u.reserved_micros IS NULL
 AND u.created_at >= date_trunc($3::text,$4::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')
 `
 
@@ -188,7 +199,7 @@ func (q *Queries) ListBudgetApprovals(ctx context.Context, workspaceID pgtype.UU
 }
 
 const listBudgetState = `-- name: ListBudgetState :many
-SELECT b.id, b.workspace_id, b.bot_id, b.period, b.limit_micros,COALESCE((SELECT sum(u.cost_micros) FROM usage_records u WHERE u.workspace_id=b.workspace_id AND (b.bot_id IS NULL OR u.bot_id=b.bot_id)
+SELECT b.id, b.workspace_id, b.bot_id, b.period, b.limit_micros,COALESCE((SELECT sum(COALESCE(u.cost_micros, u.internal_charge_micros)) FROM usage_records u WHERE u.workspace_id=b.workspace_id AND (b.bot_id IS NULL OR u.bot_id=b.bot_id)
 AND u.created_at >= date_trunc(b.period,$2::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'),0)::bigint AS spent_micros,
 COALESCE((SELECT sum(u.reserved_micros) FROM usage_records u WHERE u.workspace_id=b.workspace_id AND (b.bot_id IS NULL OR u.bot_id=b.bot_id)
 AND u.created_at >= date_trunc(b.period,$2::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'),0)::bigint AS reserved_micros
@@ -270,6 +281,68 @@ func (q *Queries) ListModelPrices(ctx context.Context, workspaceID pgtype.UUID) 
 	return items, nil
 }
 
+const listSubscriptionUsage = `-- name: ListSubscriptionUsage :many
+WITH periods AS (SELECT 'day'::text AS name UNION ALL SELECT 'month'::text)
+SELECT u.model, period.name AS period,
+       sum(u.input_tokens)::bigint AS input_tokens,
+       sum(u.output_tokens)::bigint AS output_tokens,
+       sum(u.cache_tokens)::bigint AS cache_tokens,
+       COALESCE(sum(u.internal_charge_micros), 0)::bigint AS internal_charge_micros,
+       count(*) FILTER (WHERE u.usage_known IS FALSE OR
+           (u.usage_known IS NULL AND u.input_tokens = 0 AND u.output_tokens = 0))::bigint AS unknown_requests
+FROM usage_records u
+CROSS JOIN periods period
+WHERE u.workspace_id = $1
+  AND ($2::uuid IS NULL OR u.bot_id = $2)
+  AND u.billing_kind = 'subscription'
+  AND u.created_at >= date_trunc(period.name, $3::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+GROUP BY period.name, u.model ORDER BY period.name, u.model
+`
+
+type ListSubscriptionUsageParams struct {
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	BotID       pgtype.UUID        `json:"bot_id"`
+	AsOf        pgtype.Timestamptz `json:"as_of"`
+}
+
+type ListSubscriptionUsageRow struct {
+	Model                string `json:"model"`
+	Period               string `json:"period"`
+	InputTokens          int64  `json:"input_tokens"`
+	OutputTokens         int64  `json:"output_tokens"`
+	CacheTokens          int64  `json:"cache_tokens"`
+	InternalChargeMicros int64  `json:"internal_charge_micros"`
+	UnknownRequests      int64  `json:"unknown_requests"`
+}
+
+func (q *Queries) ListSubscriptionUsage(ctx context.Context, arg ListSubscriptionUsageParams) ([]ListSubscriptionUsageRow, error) {
+	rows, err := q.db.Query(ctx, listSubscriptionUsage, arg.WorkspaceID, arg.BotID, arg.AsOf)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSubscriptionUsageRow
+	for rows.Next() {
+		var i ListSubscriptionUsageRow
+		if err := rows.Scan(
+			&i.Model,
+			&i.Period,
+			&i.InputTokens,
+			&i.OutputTokens,
+			&i.CacheTokens,
+			&i.InternalChargeMicros,
+			&i.UnknownRequests,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockWorkspaceBudgetCheck = `-- name: LockWorkspaceBudgetCheck :exec
 SELECT pg_advisory_xact_lock(hashtextextended($1::text, 1))
 `
@@ -289,23 +362,24 @@ func (q *Queries) LockWorkspaceSpend(ctx context.Context, lockKey string) error 
 }
 
 const recordTurnUsage = `-- name: RecordTurnUsage :exec
-INSERT INTO usage_records(workspace_id,bot_id,turn_id,request_id,source,model,input_tokens,output_tokens,cache_tokens,cost_micros,created_at,billing_kind)
-VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,COALESCE(NULLIF($12::text,''),'metered')) ON CONFLICT(workspace_id,request_id) DO NOTHING
+INSERT INTO usage_records(workspace_id,bot_id,turn_id,request_id,source,model,input_tokens,output_tokens,cache_tokens,cost_micros,created_at,billing_kind,subscription_budgeted)
+VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,COALESCE(NULLIF($12::text,''),'metered'),$13) ON CONFLICT(workspace_id,request_id) DO NOTHING
 `
 
 type RecordTurnUsageParams struct {
-	WorkspaceID  pgtype.UUID        `json:"workspace_id"`
-	BotID        pgtype.UUID        `json:"bot_id"`
-	TurnID       pgtype.UUID        `json:"turn_id"`
-	RequestID    pgtype.UUID        `json:"request_id"`
-	Source       string             `json:"source"`
-	Model        string             `json:"model"`
-	InputTokens  int64              `json:"input_tokens"`
-	OutputTokens int64              `json:"output_tokens"`
-	CacheTokens  int64              `json:"cache_tokens"`
-	CostMicros   pgtype.Int8        `json:"cost_micros"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	BillingKind  string             `json:"billing_kind"`
+	WorkspaceID          pgtype.UUID        `json:"workspace_id"`
+	BotID                pgtype.UUID        `json:"bot_id"`
+	TurnID               pgtype.UUID        `json:"turn_id"`
+	RequestID            pgtype.UUID        `json:"request_id"`
+	Source               string             `json:"source"`
+	Model                string             `json:"model"`
+	InputTokens          int64              `json:"input_tokens"`
+	OutputTokens         int64              `json:"output_tokens"`
+	CacheTokens          int64              `json:"cache_tokens"`
+	CostMicros           pgtype.Int8        `json:"cost_micros"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	BillingKind          string             `json:"billing_kind"`
+	SubscriptionBudgeted bool               `json:"subscription_budgeted"`
 }
 
 func (q *Queries) RecordTurnUsage(ctx context.Context, arg RecordTurnUsageParams) error {
@@ -322,6 +396,7 @@ func (q *Queries) RecordTurnUsage(ctx context.Context, arg RecordTurnUsageParams
 		arg.CostMicros,
 		arg.CreatedAt,
 		arg.BillingKind,
+		arg.SubscriptionBudgeted,
 	)
 	return err
 }
@@ -425,18 +500,37 @@ func (q *Queries) SetModelPrice(ctx context.Context, arg SetModelPriceParams) (M
 	return i, err
 }
 
+const setSubscriptionBudgetPolicy = `-- name: SetSubscriptionBudgetPolicy :execrows
+UPDATE workspaces SET count_subscription_usage = $2 WHERE id = $1
+`
+
+type SetSubscriptionBudgetPolicyParams struct {
+	ID                     pgtype.UUID `json:"id"`
+	CountSubscriptionUsage bool        `json:"count_subscription_usage"`
+}
+
+func (q *Queries) SetSubscriptionBudgetPolicy(ctx context.Context, arg SetSubscriptionBudgetPolicyParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setSubscriptionBudgetPolicy, arg.ID, arg.CountSubscriptionUsage)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const settleProxyUsage = `-- name: SettleProxyUsage :execrows
-UPDATE usage_records SET input_tokens=$3,output_tokens=$4,cache_tokens=$5,cost_micros=$6,reserved_micros=NULL
+UPDATE usage_records SET input_tokens=$3,output_tokens=$4,cache_tokens=$5,cost_micros=$6,internal_charge_micros=$7,usage_known=$8,reserved_micros=NULL
 WHERE workspace_id=$1 AND request_id=$2 AND source='proxy_meter'
 `
 
 type SettleProxyUsageParams struct {
-	WorkspaceID  pgtype.UUID `json:"workspace_id"`
-	RequestID    pgtype.UUID `json:"request_id"`
-	InputTokens  int64       `json:"input_tokens"`
-	OutputTokens int64       `json:"output_tokens"`
-	CacheTokens  int64       `json:"cache_tokens"`
-	CostMicros   pgtype.Int8 `json:"cost_micros"`
+	WorkspaceID          pgtype.UUID `json:"workspace_id"`
+	RequestID            pgtype.UUID `json:"request_id"`
+	InputTokens          int64       `json:"input_tokens"`
+	OutputTokens         int64       `json:"output_tokens"`
+	CacheTokens          int64       `json:"cache_tokens"`
+	CostMicros           pgtype.Int8 `json:"cost_micros"`
+	InternalChargeMicros pgtype.Int8 `json:"internal_charge_micros"`
+	UsageKnown           pgtype.Bool `json:"usage_known"`
 }
 
 func (q *Queries) SettleProxyUsage(ctx context.Context, arg SettleProxyUsageParams) (int64, error) {
@@ -447,6 +541,8 @@ func (q *Queries) SettleProxyUsage(ctx context.Context, arg SettleProxyUsagePara
 		arg.OutputTokens,
 		arg.CacheTokens,
 		arg.CostMicros,
+		arg.InternalChargeMicros,
+		arg.UsageKnown,
 	)
 	if err != nil {
 		return 0, err
@@ -455,16 +551,17 @@ func (q *Queries) SettleProxyUsage(ctx context.Context, arg SettleProxyUsagePara
 }
 
 const spendToday = `-- name: SpendToday :one
-SELECT COALESCE(sum(cost_micros),0)::bigint FROM usage_records WHERE workspace_id=$1 AND created_at >= date_trunc('day',$2::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+SELECT COALESCE(sum(cost_micros),0)::bigint FROM usage_records WHERE workspace_id=$1 AND ($2::uuid IS NULL OR bot_id=$2) AND created_at >= date_trunc('day',$3::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
 `
 
 type SpendTodayParams struct {
 	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	BotID       pgtype.UUID        `json:"bot_id"`
 	AsOf        pgtype.Timestamptz `json:"as_of"`
 }
 
 func (q *Queries) SpendToday(ctx context.Context, arg SpendTodayParams) (int64, error) {
-	row := q.db.QueryRow(ctx, spendToday, arg.WorkspaceID, arg.AsOf)
+	row := q.db.QueryRow(ctx, spendToday, arg.WorkspaceID, arg.BotID, arg.AsOf)
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
