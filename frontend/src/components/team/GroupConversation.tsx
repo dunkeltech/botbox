@@ -1,14 +1,7 @@
 'use client';
 
-import { ArrowLeftRight, Paperclip, Send } from 'lucide-react';
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type FormEvent,
-  type KeyboardEvent,
-} from 'react';
+import { ArrowLeftRight } from 'lucide-react';
+import { useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { ChatTurnToolChip } from '@/components/chat/ChatTurnToolChip';
@@ -28,6 +21,7 @@ import { useChatScroll } from '@/components/chat/useChatScroll';
 import { turnFailureKey } from '@/components/chat/turnFailure';
 import { activeBotTurns, failedBotTurns } from '@/components/team/activity';
 import { ApprovalCard } from '@/components/team/ApprovalCard';
+import { GroupMessageComposer } from '@/components/team/GroupMessageComposer';
 import {
   approvalForMessage,
   canDecideApproval,
@@ -36,18 +30,12 @@ import {
   useApprovalDecision,
   useApprovalList,
 } from '@/components/team/useApprovals';
-import { Alert, BotAvatar, Button } from '@/components/ui';
+import { Alert, BotAvatar } from '@/components/ui';
 import { connectConversation } from '@/lib/conversation-events';
 import { getAccessToken, requestJson } from '@/lib/api-client';
 import type { WorkspaceRole } from '@/types/api';
 import type { components } from '@/types/openapi.gen';
-import {
-  activeMention,
-  filterByQuery,
-  initials,
-  insertMention,
-  type MentionTarget,
-} from '@/components/team/text';
+import { initials, type MentionTarget } from '@/components/team/text';
 
 type Group = components['schemas']['Group'];
 type History = components['schemas']['ChatHistory'];
@@ -59,13 +47,13 @@ function formatTime(iso: string): string {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-function targets(group: Group): MentionTarget[] {
-  const members: MentionTarget[] = group.members.flatMap((member) => {
+function targets(members: Group['members']): MentionTarget[] {
+  const named: MentionTarget[] = members.flatMap((member) => {
     const name = member.name?.trim();
     if (!name) return [];
     return [{ id: member.id, name, kind: member.type }];
   });
-  return [...members, { id: 'all', name: 'all', kind: 'all' }];
+  return [...named, { id: 'all', name: 'all', kind: 'all' }];
 }
 
 function speaker(
@@ -119,12 +107,6 @@ export function GroupConversation({
   const t = useTranslations('team');
   const tChat = useTranslations('chat');
   const client = useQueryClient();
-  const field = useRef<HTMLTextAreaElement>(null);
-  const [draft, setDraft] = useState('');
-  const [caret, setCaret] = useState(0);
-  const [picked, setPicked] = useState(0);
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState(false);
   const base = `/api/workspaces/${workspaceId}`;
   const history = useQuery({
     queryKey: ['group-messages', workspaceId, group.id],
@@ -173,9 +155,6 @@ export function GroupConversation({
     );
   }, [client, group.id, workspaceId]);
 
-  const mention = activeMention(draft, caret);
-  const choices = mention ? filterByQuery(targets(group), mention.query) : [];
-  const selected = choices[Math.min(picked, Math.max(choices.length - 1, 0))];
   const needle = query.trim().toLowerCase();
   const trace = useMemo(
     () =>
@@ -211,9 +190,10 @@ export function GroupConversation({
       ),
     [trace.chatMessages, needle],
   );
-  const names = useMemo(
-    () => targets(group).map((target) => target.name),
-    [group],
+  const mentionTargets = useMemo(() => targets(group.members), [group.members]);
+  const mentionNames = useMemo(
+    () => mentionTargets.map((target) => target.name),
+    [mentionTargets],
   );
   const { logRef, onScroll, onMediaLoad, scrollToBottom } = useChatScroll({
     conversationKey: group.id,
@@ -270,84 +250,6 @@ export function GroupConversation({
         </div>
       );
     });
-  }
-
-  function rememberCaret(value: string, nextCaret: number) {
-    setDraft(value);
-    setCaret(nextCaret);
-    setPicked(0);
-  }
-
-  function apply(name: string) {
-    if (!mention) return;
-    const next = insertMention(draft, mention.start, caret, name);
-    rememberCaret(next.value, next.caret);
-    requestAnimationFrame(() => {
-      field.current?.focus();
-      field.current?.setSelectionRange(next.caret, next.caret);
-    });
-  }
-
-  function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (mention && choices.length > 0) {
-      if (event.key === 'ArrowDown') {
-        event.preventDefault();
-        setPicked((index) => (index + 1) % choices.length);
-        return;
-      }
-      if (event.key === 'ArrowUp') {
-        event.preventDefault();
-        setPicked((index) => (index - 1 + choices.length) % choices.length);
-        return;
-      }
-      if (event.key === 'Escape') {
-        // Move the caret onto the @ so the query stops without deleting the draft.
-        event.preventDefault();
-        const pos = mention.start;
-        setCaret(pos);
-        requestAnimationFrame(() => {
-          field.current?.setSelectionRange(pos, pos);
-        });
-        return;
-      }
-      if ((event.key === 'Enter' || event.key === 'Tab') && selected) {
-        event.preventDefault();
-        apply(selected.name);
-        return;
-      }
-    }
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
-      void submitDraft();
-    }
-  }
-
-  async function submitDraft() {
-    if (!canPost || !draft.trim() || sending) return;
-    setSending(true);
-    setError(false);
-    try {
-      await requestJson(`${base}/groups/${group.id}/messages`, {
-        method: 'POST',
-        body: { id: crypto.randomUUID(), content: draft },
-      });
-      setDraft('');
-      setCaret(0);
-      scrollToBottom();
-      await client.invalidateQueries({
-        queryKey: ['group-messages', workspaceId, group.id],
-      });
-      await client.invalidateQueries({ queryKey: ['groups', workspaceId] });
-    } catch {
-      setError(true);
-    } finally {
-      setSending(false);
-    }
-  }
-
-  async function send(event: FormEvent) {
-    event.preventDefault();
-    await submitDraft();
   }
 
   return (
@@ -505,7 +407,7 @@ export function GroupConversation({
                   </p>
                   <MarkdownMessage
                     content={message.content}
-                    mentionNames={names}
+                    mentionNames={mentionNames}
                     className="mt-0.5 text-[15px] leading-[1.55] text-ink"
                   />
                   {message.inputRequest ? (
@@ -608,113 +510,23 @@ export function GroupConversation({
           );
         })}
       </div>
-      {canPost ? (
-        <form onSubmit={(event) => void send(event)} className="px-5 pb-4 pt-1">
-          {mention && choices.length > 0 ? (
-            <div
-              id="group-mentions"
-              role="listbox"
-              aria-label={t('mentionList')}
-              className="mb-2 overflow-hidden rounded-md border-[1.5px] border-mint-line bg-paper shadow-card"
-            >
-              <p className="bg-paper-2 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-muted">
-                {t('mentionHint')}
-              </p>
-              {choices.map((choice, index) => (
-                <button
-                  key={choice.id}
-                  type="button"
-                  role="option"
-                  aria-selected={choice.id === selected?.id}
-                  className={`flex min-h-[44px] w-full items-center gap-2 border-t border-line px-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${index === picked ? 'bg-mint-soft' : 'bg-paper'}`}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => apply(choice.name)}
-                >
-                  <span className="font-black">@{choice.name}</span>
-                  <span className="rounded-xs bg-blue-tint px-1.5 text-[11px] font-black uppercase text-blue">
-                    {choice.kind === 'all'
-                      ? t('allMembers')
-                      : choice.kind === 'bot'
-                        ? t('botBadge')
-                        : t('humanBadge')}
-                  </span>
-                </button>
-              ))}
-            </div>
-          ) : null}
-          <div className="overflow-hidden rounded-md border-[1.5px] border-line-strong bg-paper focus-within:border-green-600">
-            <label htmlFor="group-composer" className="sr-only">
-              {t('composer')}
-            </label>
-            <textarea
-              id="group-composer"
-              ref={field}
-              rows={2}
-              maxLength={8192}
-              value={draft}
-              placeholder={t('composer')}
-              aria-expanded={Boolean(mention && choices.length > 0)}
-              aria-controls={
-                mention && choices.length > 0 ? 'group-mentions' : undefined
-              }
-              className="block w-full resize-none border-0 bg-transparent px-3.5 py-3 text-[15px] text-ink outline-none placeholder:text-muted"
-              onChange={(event) =>
-                rememberCaret(event.target.value, event.target.selectionStart)
-              }
-              onKeyDown={onKeyDown}
-              onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
-            />
-            <div className="flex items-center gap-2 px-2 pb-2">
-              <button
-                type="button"
-                aria-label={t('mention')}
-                className="grid h-11 w-11 place-items-center rounded-sm text-[18px] font-black text-ink-2 hover:bg-paper-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
-                onClick={() => {
-                  const pos = caret;
-                  const next = `${draft.slice(0, pos)}@${draft.slice(pos)}`;
-                  rememberCaret(next, pos + 1);
-                  requestAnimationFrame(() => {
-                    field.current?.focus();
-                    field.current?.setSelectionRange(pos + 1, pos + 1);
-                  });
-                }}
-              >
-                @
-              </button>
-              <span
-                aria-hidden="true"
-                className="grid h-9 w-9 place-items-center text-muted"
-              >
-                <Paperclip className="h-4 w-4" />
-              </span>
-              <span className="hidden flex-1 truncate text-[12px] text-muted sm:inline">
-                {t('groupPrivacyHint')}
-              </span>
-              <span className="flex-1 sm:hidden" />
-              <Button
-                type="submit"
-                aria-label={sending ? t('sending') : t('send')}
-                disabled={sending || !draft.trim()}
-                className="min-h-[40px] px-3.5"
-              >
-                <Send className="h-4 w-4" aria-hidden="true" />
-                <span className="sr-only">
-                  {sending ? t('sending') : t('send')}
-                </span>
-              </Button>
-            </div>
-          </div>
-          {error ? (
-            <div className="mt-2">
-              <Alert tone="warning">{t('sendFailed')}</Alert>
-            </div>
-          ) : null}
-        </form>
-      ) : (
-        <p className="border-t border-line bg-paper-2 px-5 py-3 text-[14px] text-ink-2">
-          {t('viewerRead')}
-        </p>
-      )}
+      <GroupMessageComposer
+        canPost={canPost}
+        targets={mentionTargets}
+        postMessage={(content) =>
+          requestJson(`${base}/groups/${group.id}/messages`, {
+            method: 'POST',
+            body: { id: crypto.randomUUID(), content },
+          })
+        }
+        onSent={async () => {
+          scrollToBottom();
+          await client.invalidateQueries({
+            queryKey: ['group-messages', workspaceId, group.id],
+          });
+          await client.invalidateQueries({ queryKey: ['groups', workspaceId] });
+        }}
+      />
 
       <SecretRequestModal
         workspaceId={workspaceId}

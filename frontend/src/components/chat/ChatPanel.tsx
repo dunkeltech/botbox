@@ -3,16 +3,9 @@
 import { turnFailureKey } from '@/components/chat/turnFailure';
 import { connectConversation } from '@/lib/conversation-events';
 
-import { Send, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import Link from 'next/link';
-import {
-  useEffect,
-  useId,
-  useMemo,
-  useState,
-  type FormEvent,
-  type KeyboardEvent,
-} from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { Alert, BotAvatar, Button } from '@/components/ui';
@@ -27,6 +20,7 @@ import {
   type ToolTraceTurn,
 } from '@/components/chat/toolTrace';
 import { ChatTurnToolChip } from '@/components/chat/ChatTurnToolChip';
+import { DirectMessageComposer } from '@/components/chat/DirectMessageComposer';
 import { LiveToolStatusBar } from '@/components/chat/LiveToolStatusBar';
 import { StopTurnButton } from '@/components/chat/StopTurnButton';
 import { ToolCallsSidebar } from '@/components/chat/ToolCallsSidebar';
@@ -145,9 +139,6 @@ export function ChatPanel({
   const t = useTranslations('chat');
   const tTeam = useTranslations('team');
   const client = useQueryClient();
-  const inputId = useId();
-  const [content, setContent] = useState('');
-  const [sending, setSending] = useState(false);
   const [error, setError] = useState(false);
   const [live, setLive] = useState('');
   const [older, setOlder] = useState<History['messages']>([]);
@@ -235,39 +226,6 @@ export function ChatPanel({
       },
     );
   }, [conversationId, workspaceId, userId, client]);
-
-  async function submitMessage() {
-    if (!conversationId || !content.trim() || sending) return;
-    setSending(true);
-    setError(false);
-    try {
-      await requestJson(`${base}/conversations/${conversationId}/messages`, {
-        method: 'POST',
-        body: { id: crypto.randomUUID(), content },
-      });
-      setContent('');
-      scrollToBottom();
-      await client.invalidateQueries({
-        queryKey: ['chat', workspaceId, userId, conversationId],
-      });
-    } catch {
-      setError(true);
-    } finally {
-      setSending(false);
-    }
-  }
-
-  async function send(event: FormEvent) {
-    event.preventDefault();
-    await submitMessage();
-  }
-
-  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
-      void submitMessage();
-    }
-  }
 
   async function loadOlder() {
     const first = older[0] ?? history.data?.messages[0];
@@ -648,41 +606,30 @@ export function ChatPanel({
         </Alert>
       ) : null}
 
-      <form
-        onSubmit={(event) => void send(event)}
-        className="overflow-hidden rounded-md border-[1.5px] border-line-strong bg-paper focus-within:border-green-600"
-      >
-        <label htmlFor={inputId} className="sr-only">
-          {t('message')}
-        </label>
-        <textarea
-          id={inputId}
-          rows={2}
-          maxLength={8192}
-          value={content}
-          disabled={!canChat || sending}
-          placeholder={t('messagePlaceholder', { name })}
-          onChange={(event) => setContent(event.target.value)}
-          onKeyDown={handleKeyDown}
-          className="block w-full resize-none border-0 bg-transparent px-3.5 pt-3 text-[15px] text-ink outline-none placeholder:text-muted disabled:cursor-not-allowed disabled:bg-paper-2"
-        />
-        <div className="flex items-center justify-between gap-2 px-3 pb-2 pt-1">
-          <span className="text-[12px] text-muted">
-            {isSlack ? tTeam('dmPrivacyHint', { name }) : ''}
-          </span>
-          <Button
-            type="submit"
-            aria-label={sending ? t('sending') : t('send')}
-            disabled={!canChat || sending || !conversationId || !content.trim()}
-            className="min-h-[40px] px-3.5"
-          >
-            <Send className="h-4 w-4" aria-hidden="true" />
-            <span className="sr-only">
-              {sending ? t('sending') : t('send')}
-            </span>
-          </Button>
-        </div>
-      </form>
+      <DirectMessageComposer
+        name={name}
+        canChat={canChat}
+        showPrivacyHint={isSlack}
+        postMessage={
+          conversationId
+            ? (content) =>
+                requestJson(
+                  `${base}/conversations/${conversationId}/messages`,
+                  {
+                    method: 'POST',
+                    body: { id: crypto.randomUUID(), content },
+                  },
+                )
+            : undefined
+        }
+        onSent={() => {
+          scrollToBottom();
+          return client.invalidateQueries({
+            queryKey: ['chat', workspaceId, userId, conversationId],
+          });
+        }}
+        onSendError={setError}
+      />
 
       <SecretRequestModal
         workspaceId={workspaceId}

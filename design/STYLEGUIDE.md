@@ -200,7 +200,7 @@ The fleet shows known spend today. Budget meters follow the Stitch project `1359
 - **Group turn failures:** show an amber warning above the composer, with the affected bot's name and translated recovery copy. Show only the latest failure per bot; later queued, running, or completed work replaces it. Never show raw provider output or internal error details. Keep the warning area scrollable at 160 px so the composer remains reachable.
 
 
-- **Composer:** 1.5 px `line-strong` border, radius 12. Toolbar: mention (@), attach and a hint text, with the send button on the right (`green-600`, 44 × 40).
+- **Composer:** 1.5 px `line-strong` border, radius 12. Toolbar: mention (@), attach and a hint text, with the send button on the right (`green-600`, 44 × 40). Keep typing and mention navigation responsive with long transcripts by keeping draft state local to the composer.
 
 ### Navigation
 - **App header nav:** full-width `terminal` (`#14201a`) top bar; items are 44 px tall, weight 700, `on-dark`. The current item is white (`#ffffff`) with a 2 px `green-light` (`#5eab60`) inset underline.
