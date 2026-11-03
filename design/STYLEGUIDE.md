@@ -135,8 +135,9 @@ The fleet shows known spend today. Budget meters follow the Stitch project `1359
 |---|---|
 | App header | Full-width `terminal` (`#14201a`) top bar (~54 px tall) across all authenticated views; current nav item white with a 2 px `green-light` (`#5eab60`) underline; workspace switcher pill `<workspace> · <role>`, approvals bell and account menu on the right |
 | Workspace settings | Two-column layout under the standard header: `256 px` sticky left sub-navigation (`Workspace`, `Spend & billing`, `Security & integrations`) + dark `terminal` tenant-isolation card on desktop (horizontal wrap pills on narrow viewports), paired with `14 px`-radius main content cards; active nav item uses `mint-soft` fill, `green-600` bold text, and a `3 px` `green` left accent; Owner-only Danger zone uses dashed `amber-line` / `amber-tint` (zero red) |
+| Bot settings | Same two-column settings shell (`BotSettingsShell`) with `256 px` sticky left sub-navigation (`Bot`, `Spend & usage`, `Security & integrations`) + dark `terminal` bot-isolation card across `/bots/:id/settings` (`General & runtime`), `/bots/:id/settings/budgets` (`Budgets & usage`), `/bots/:id/settings/integrations` (`MCP & GitLab`), and `/bots/:id/secrets` (`Secrets & egress`) |
 | Team chat | Same full-width `terminal` top bar with integrated search input, sidebar 264 px (`dark-2`), main pane flexible, right `paper-2` inspector aside 320–340 px (`Details` \| `Tool calls` segmented switch; slide-over sheet on narrow viewports) |
-| Bot workspace | Chat column 380–460 px, computer column flexible, 16:10 desktop viewport |
+| Bot workspace | Compact identity header (`// BOT WORKSPACE`), `400 px` internally scrolling chat column, flexible computer column with 16:10 desktop viewport, docked 4-cell telemetry bar, and `Fullscreen` overlay mode (`terminal` backdrop, `dark-2` pinned control bar, slide-over chat drawer, `Esc` to exit) |
 | Phone shell (390 px) | 16 px side gutters, ≥ 44 × 44 px header and noVNC touch controls (`Tap / Pan`), sticky bottom composer, and a slide-over `dark-2` team sidebar drawer with `overlay` scrim |
 
 ## 6. Shape and elevation
@@ -317,6 +318,10 @@ theme: {
 
 - Port the avatar as a React component (`<BotAvatar seed mood size tile />`) from [`source/Avatar.dc.html`](source/Avatar.dc.html), and write a Go test that checks the hash and part selection against the same fixtures.
 - The `.dc.html` files in [`source/`](source/) are reference markup from the design canvas, with exact inline styles. They need the canvas runtime and are not meant to run in the app.
+
+### Bot workspace loading & fullscreen desktop
+- **Workspace loading state:** `/bots/:id` renders a structural zero-layout-shift skeleton matching the split chat + computer layout, paired with a centered `dark-2` loading card inside the 16:10 `terminal` (`#14201a`) viewport showing the `bot.Box` hexagon-robot emblem, accessible `role="status"` text, and progress indicator (static under `prefers-reduced-motion: reduce`).
+- **Desktop fullscreen overlay:** Expanding the live computer opens a full-viewport `terminal` (`#14201a`) overlay while keeping the active noVNC RFB session mounted (no socket reconnect when toggling). The pinned `dark-2` (`#1f2d1f`) toolbar exposes status, `Take control` / hand-back note + `Hand back`, a toggleable slide-over `Chat` drawer, optional browser `requestFullscreen()`, and `Exit fullscreen` (`Esc`), all with ≥ 44 px touch targets and `whitespace-nowrap` labels.
 
 ### Bot stop and pause controls
 

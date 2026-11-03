@@ -22,6 +22,12 @@ The interactive canvas (clickable prototype with live avatars) lives in Claude: 
 | Workspace settings: shared workspace secrets | [`workspace-settings-secrets.png`](screens/workspace-settings-secrets.png) | Phase 3 |
 | Workspace settings: MCP servers & self-hosted GitLab | [`workspace-settings-integrations.png`](screens/workspace-settings-integrations.png) | #18, ADR-0029 |
 | Bot workspace: chat + live computer + action timeline | [`bot-workspace.png`](screens/bot-workspace.png) | Phase 2, 4, 5 |
+| Bot workspace: desktop fullscreen overlay | [`bot-workspace-fullscreen.png`](screens/bot-workspace-fullscreen.png) | Phase 2, 5 |
+| Bot workspace: loading skeleton & branded indicator | [`bot-workspace-loading.png`](screens/bot-workspace-loading.png) | Phase 2 |
+| Bot settings: general, runtime & danger zone | [`bot-settings-general.png`](screens/bot-settings-general.png) | Phase 1, 2 |
+| Bot settings: budgets & usage | [`bot-settings-budgets.png`](screens/bot-settings-budgets.png) | Phase 4 |
+| Bot settings: MCP & GitLab integrations | [`bot-settings-integrations.png`](screens/bot-settings-integrations.png) | ADR-0029 |
+| Bot settings: secrets & egress | [`bot-settings-secrets.png`](screens/bot-settings-secrets.png) | Phase 3, #31 |
 | New bot | [`new-bot.png`](screens/new-bot.png) | Phase 1, 4, 7 |
 | Secrets, egress proxy & bot budgets | [`secrets-egress.png`](screens/secrets-egress.png) | Phase 3, 4 |
 | Egress activity domain triage & blocklist | [`secrets-egress-triage.png`](screens/secrets-egress-triage.png) | #31 |
@@ -71,9 +77,33 @@ Reorganized into a two-column workspace settings shell (`256 px` grouped left su
 ![Workspace settings — MCP servers and self-hosted GitLab](screens/workspace-settings-integrations.png)
 
 ### Bot workspace
-Chat with the bot on the left and its live XFCE desktop over noVNC on the right, with tabs for Desktop, Actions (`desktop_actions` timeline with 7-day screenshot retention note and amber `409` click-conflict state), Terminal and Files, human watcher indicator, "You have control" takeover hand-back bar with note field, and resource meters.
+Viewport-filling split workspace (`projects/13598702750338265050`, screen `d1911041525e4599b16c7bcdb21737cd`) with a compact bot identity header (`// BOT WORKSPACE`), internally scrolling session chat on the left (`400 px`), and a live XFCE desktop over noVNC on the right with unified toolbar tabs (`Desktop`, `Actions`, `Terminal`, `Files`, `Tool calls`), `Take control` / hand-back bar, **Fullscreen** toggle, and a docked 4-cell resource telemetry strip (`Image`, `CPU`, `Memory`, `Home volume`).
 
 ![Bot workspace](screens/bot-workspace.png)
+
+### Bot desktop fullscreen & loading state
+- **Desktop fullscreen overlay** (`projects/13598702750338265050`, screen `ce23159708034299b16c7bcdb21737cd`): full-viewport `terminal` (`#14201a`) stage maximizing the 16:10 XFCE viewport beneath a pinned `dark-2` (`#1f2d1f`) control bar (`Take control` / `Hand back`, toggleable slide-over `Chat` drawer, browser fullscreen toggle, and `Exit fullscreen` with `Esc`).
+- **Workspace loading state** (`projects/13598702750338265050`, screen `66cac315501a4b92b6f81b6dc25f9109`): zero-layout-shift workspace skeleton matching the split layout with a centered `bot.Box` hexagon-robot loading indicator inside the `terminal` viewport.
+
+![Bot desktop fullscreen overlay](screens/bot-workspace-fullscreen.png)
+
+![Bot workspace loading state](screens/bot-workspace-loading.png)
+
+### Bot settings (general, budgets, integrations & secrets)
+Reorganized into a two-column bot settings shell matching Workspace settings (`256 px` sticky left sub-navigation + dark `terminal` isolation card + `14 px`-radius content cards, Stitch project `13598702750338265050`):
+
+- **General & runtime** (`screens/3099ef0d6ba34e8eb368d453c8d1112c`): runtime pause/resume control, identity & global role, deterministic avatar seed + mood preview, model brain & sandbox driver, and dashed amber **Danger zone** deletion.
+- **Budgets & usage** (`screens/8102d2afcc7241098e928036ef5e01b3` / `70ca340e5c754e348624d46ad3c35bd2`): daily/monthly spend caps with 80 % amber warning and `429 BudgetExceeded` hard-stop banner, limit form, and per-model subscription/token ledger.
+- **MCP & GitLab** (`screens/23dcd676db654655a2d4e7bd22b94a39`): workspace-registered GitLab origins with instant revocation warning, per-bot MCP server switches, three-way command policies (`Allow` / `Ask approval` / `Block`), and dark `terminal` MCP audit log.
+- **Secrets & egress** (`screens/921383c3acd7489c99d629e2068dd8a1`): CLI subscription setup, write-only proxy secrets, `Allowlist` / `Open internet` policy, allowed & dashed-amber blocked hosts, and dark `terminal` egress triage log.
+
+![Bot settings — general and runtime](screens/bot-settings-general.png)
+
+![Bot settings — budgets and usage](screens/bot-settings-budgets.png)
+
+![Bot settings — MCP and GitLab](screens/bot-settings-integrations.png)
+
+![Bot settings — secrets and egress](screens/bot-settings-secrets.png)
 
 ### New bot
 Sections: Identity with a seeded avatar and reroll, Brain (agent CLI in the sandbox or a model API), Computer (Docker or Kubernetes, image, resources, persistent home), and Secrets & network. A live preview shows what gets created.
