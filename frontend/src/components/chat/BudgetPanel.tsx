@@ -92,6 +92,10 @@ export function BudgetPanel({
     }
   }
 
+  const budgets = query.data?.budgets ?? [];
+  const anyExceeded = budgets.some((b) => b.exceeded);
+  const anyWarning = !anyExceeded && budgets.some((b) => b.warning);
+
   const usage = (query.data?.subscriptionUsage ?? []).filter(
     (row) => row.period === usagePeriod,
   );
@@ -118,10 +122,24 @@ export function BudgetPanel({
             </p>
           ) : null}
         </div>
-        {botId ? (
-          <span className="rounded-pill border border-amber-line bg-amber-tint px-2.5 py-0.5 font-mono text-[12px] font-bold text-amber">
-            {t('hardCapCode')}
-          </span>
+        {botId && query.data ? (
+          anyExceeded ? (
+            <span className="rounded-pill border border-amber-line bg-amber-tint px-2.5 py-0.5 font-mono text-[12px] font-bold text-amber">
+              {t('hardCapCode')}
+            </span>
+          ) : anyWarning ? (
+            <span className="rounded-pill border border-amber-line bg-amber-tint px-2.5 py-0.5 font-mono text-[12px] font-bold text-amber">
+              {t('warningBadge')}
+            </span>
+          ) : budgets.length > 0 ? (
+            <span className="rounded-pill border border-mint-line bg-mint-soft px-2.5 py-0.5 text-[12px] font-bold text-green-600">
+              {t('withinBudget')}
+            </span>
+          ) : (
+            <span className="rounded-pill border border-line bg-paper-2 px-2.5 py-0.5 text-[12px] font-bold text-muted">
+              {t('noLimitSet')}
+            </span>
+          )
         ) : null}
       </div>
 
@@ -272,15 +290,21 @@ export function BudgetPanel({
       ) : null}
 
       {botId ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-dashed border-amber-line bg-amber-tint px-4 py-3 text-[13px] text-amber">
-          <div>
-            <p className="font-bold">{t('hardCapTitle')}</p>
-            <p className="text-ink-2">{t('hardCap')}</p>
+        anyExceeded ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-dashed border-amber-line bg-amber-tint px-4 py-3 text-[13px] text-amber">
+            <div>
+              <p className="font-bold">{t('hardCapTitle')}</p>
+              <p className="text-ink-2">{t('hardCap')}</p>
+            </div>
+            <span className="rounded-xs border border-amber-line bg-paper px-2 py-0.5 font-mono text-[12px] font-bold text-amber">
+              {t('hardCapCode')}
+            </span>
           </div>
-          <span className="rounded-xs border border-amber-line bg-paper px-2 py-0.5 font-mono text-[12px] font-bold text-amber">
-            {t('hardCapCode')}
-          </span>
-        </div>
+        ) : (
+          <p className="rounded-sm border border-line bg-paper-2 px-3.5 py-2.5 text-[13px] text-ink-2">
+            {t('hardCap')}
+          </p>
+        )
       ) : null}
 
       {canManage ? (

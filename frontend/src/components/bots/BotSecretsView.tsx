@@ -13,6 +13,7 @@ import {
   Plus,
   RefreshCw,
   RotateCcw,
+  Search,
   ShieldAlert,
   ShieldCheck,
   Trash2,
@@ -26,13 +27,12 @@ import {
   useCallback,
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
 } from 'react';
 
-import { BotMCPProxyPanel } from '@/components/bots/BotMCPProxyPanel';
 import { CodexPlanPanel } from '@/components/bots/CodexPlanPanel';
-import { BudgetPanel } from '@/components/chat/BudgetPanel';
 
 import {
   Alert,
@@ -83,9 +83,15 @@ import type {
 export interface BotSecretsViewProps {
   workspace: WorkspaceSummary;
   bot: Bot;
+  /** Omit standalone page header & horizontal tabs when embedded inside BotSettingsShell. */
+  embedded?: boolean;
 }
 
 type LogFilter = 'all' | EgressLogAction;
+type CliToolTab = 'claude' | 'codex';
+
+const EGRESS_LOG_FETCH_LIMIT = 200;
+const EGRESS_LOG_PAGE_SIZE = 10;
 
 const HOW_IT_WORKS_STEPS = [
   {
@@ -189,7 +195,11 @@ function isUncertainWriteError(err: unknown): boolean {
  * Per-bot Secrets & Outbound Egress Network manager backed by workspace/bot
  * secrets endpoints, egress allowlist controls, and sanitized MITM audit logs.
  */
-export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
+export function BotSecretsView({
+  workspace,
+  bot,
+  embedded = false,
+}: BotSecretsViewProps) {
   const t = useTranslations('secrets');
   const tTabs = useTranslations('builder.tabs');
   const tActions = useTranslations('actions');
@@ -200,6 +210,19 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
   const canEditWorkspaceSecrets = canManageMembers(workspace.role);
 
   const subdomainsCheckboxId = useId();
+  const cliTabClaudeId = useId();
+  const cliTabCodexId = useId();
+  const cliPanelClaudeId = useId();
+  const cliPanelCodexId = useId();
+  const egressSearchInputId = useId();
+
+  const isClaudeCliBot =
+    bot.llmMode === 'cli' && ['anthropic', 'claude'].includes(bot.llmProvider);
+  const isCodexCliBot =
+    bot.llmMode === 'cli' && ['openai', 'codex'].includes(bot.llmProvider);
+  const [activeCliTab, setActiveCliTab] = useState<CliToolTab>(
+    isClaudeCliBot ? 'claude' : 'codex',
+  );
 
   const [secrets, setSecrets] = useState<SecretMetadata[]>([]);
   const [policy, setPolicy] = useState<EgressPolicyResponse | null>(null);
@@ -271,8 +294,12 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
   const mutatingPolicyRef = useRef(false);
   const blockedSectionRef = useRef<HTMLDivElement | null>(null);
 
-  // Egress audit log filter state.
+  // Egress audit log filter, search, and pagination state.
   const [logFilter, setLogFilter] = useState<LogFilter>('all');
+  const [logSearch, setLogSearch] = useState('');
+  const [logPage, setLogPage] = useState(1);
+  const [hasMoreLogs, setHasMoreLogs] = useState(false);
+  const [loadingMoreLogs, setLoadingMoreLogs] = useState(false);
   const [refreshingLogs, setRefreshingLogs] = useState(false);
   const [logsErrorKey, setLogsErrorKey] = useState<ErrorTranslationKey | null>(
     null,
@@ -350,11 +377,15 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
       const [secretsResp, policyResp, logsResp] = await Promise.all([
         listBotSecrets(workspace.id, bot.id),
         getBotEgressPolicy(workspace.id, bot.id),
-        listBotEgressLogs(workspace.id, bot.id, { limit: 50 }),
+        listBotEgressLogs(workspace.id, bot.id, {
+          limit: EGRESS_LOG_FETCH_LIMIT,
+        }),
       ]);
       setSecrets(secretsResp.secrets);
       applyAuthoritativePolicy(policyResp, { preserveDraftIfDirty: false });
       setLogs(logsResp.logs);
+      setHasMoreLogs(logsResp.logs.length >= EGRESS_LOG_FETCH_LIMIT);
+      setLogPage(1);
     } catch (err) {
       setLoadErrorKey(resolveErrorKey(err));
     } finally {
@@ -405,9 +436,11 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
       try {
         const resp = await listBotEgressLogs(workspace.id, bot.id, {
           action: filter === 'all' ? undefined : filter,
-          limit: 50,
+          limit: EGRESS_LOG_FETCH_LIMIT,
         });
         setLogs(resp.logs);
+        setHasMoreLogs(resp.logs.length >= EGRESS_LOG_FETCH_LIMIT);
+        setLogPage(1);
       } catch (err) {
         setLogsErrorKey(resolveErrorKey(err));
       } finally {
@@ -416,6 +449,36 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
     },
     [bot.id, workspace.id],
   );
+
+  async function handleLoadOlderLogs() {
+    if (loadingMoreLogs || refreshingLogs) {
+      return;
+    }
+    setLoadingMoreLogs(true);
+    setLogsErrorKey(null);
+    try {
+      const resp = await listBotEgressLogs(workspace.id, bot.id, {
+        action: logFilter === 'all' ? undefined : logFilter,
+        limit: EGRESS_LOG_FETCH_LIMIT,
+        offset: logs.length,
+      });
+      setLogs((prev) => {
+        const seen = new Set(prev.map((item) => item.id));
+        const next = [...prev];
+        for (const item of resp.logs) {
+          if (!seen.has(item.id)) {
+            next.push(item);
+          }
+        }
+        return next;
+      });
+      setHasMoreLogs(resp.logs.length >= EGRESS_LOG_FETCH_LIMIT);
+    } catch (err) {
+      setLogsErrorKey(resolveErrorKey(err));
+    } finally {
+      setLoadingMoreLogs(false);
+    }
+  }
 
   function prepareClaudeSubscription() {
     const existing = secrets.find(
@@ -933,8 +996,54 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
 
   function handleSelectLogFilter(nextFilter: LogFilter) {
     setLogFilter(nextFilter);
+    setLogPage(1);
     void fetchFilteredLogs(nextFilter);
   }
+
+  const normalizedLogSearch = logSearch.trim().toLowerCase();
+  const filteredLogs = useMemo(() => {
+    if (!normalizedLogSearch) {
+      return logs;
+    }
+    return logs.filter((entry) => {
+      const normHost = normalizeHostPattern(entry.host);
+      const evalHost = policy ? evaluateHostInPolicy(policy, normHost) : null;
+      const badgeLabel = t(LOG_BADGE_STYLES[entry.action].labelKey);
+      const searchable = [
+        entry.method,
+        entry.host,
+        entry.port,
+        entry.path,
+        String(entry.statusCode),
+        entry.secretName,
+        entry.secretScope,
+        entry.action,
+        badgeLabel,
+        evalHost?.matchedAllow ?? '',
+        evalHost?.matchedBlock ?? '',
+      ]
+        .join(' ')
+        .toLowerCase();
+      return searchable.includes(normalizedLogSearch);
+    });
+  }, [logs, normalizedLogSearch, policy, t]);
+
+  const totalFilteredLogs = filteredLogs.length;
+  const totalLogPages = Math.max(
+    1,
+    Math.ceil(totalFilteredLogs / EGRESS_LOG_PAGE_SIZE),
+  );
+  const safeLogPage = Math.min(logPage, totalLogPages);
+  const pagedLogs = useMemo(() => {
+    const start = (safeLogPage - 1) * EGRESS_LOG_PAGE_SIZE;
+    return filteredLogs.slice(start, start + EGRESS_LOG_PAGE_SIZE);
+  }, [filteredLogs, safeLogPage]);
+  const pageRangeStart =
+    totalFilteredLogs === 0 ? 0 : (safeLogPage - 1) * EGRESS_LOG_PAGE_SIZE + 1;
+  const pageRangeEnd = Math.min(
+    safeLogPage * EGRESS_LOG_PAGE_SIZE,
+    totalFilteredLogs,
+  );
 
   function renderInjectionLabel(secret: SecretMetadata): string {
     if (secret.authScheme === 'header') {
@@ -958,87 +1067,189 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
   const effectiveSecretHosts = policy?.effectiveSecretHosts ?? [];
 
   return (
-    <div className="flex flex-col gap-8">
-      <div className="flex flex-col gap-3">
-        <Link
-          href={`/bots/${bot.id}`}
-          className="inline-flex min-h-[44px] w-fit items-center gap-2 rounded-sm px-2 text-[14px] font-bold text-green-600 transition duration-150 hover:bg-mint-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-          <span>{t('backToWorkspace')}</span>
-        </Link>
-
-        <Eyebrow>{t('eyebrow')}</Eyebrow>
-        <h1 className="text-[34px] font-black leading-[1.15] tracking-[-0.01em] text-ink sm:text-[42px]">
-          {t('title', { name: bot.name })}
-        </h1>
-        <p className="max-w-3xl text-[16px] leading-[1.6] text-ink-2">
-          {t('lead')}
-        </p>
-        <p className="max-w-3xl text-[16px] leading-[1.6] text-ink-2">
-          {t('protectedPushNote')}
-        </p>
-
-        <nav
-          aria-label={tTabs('ariaLabel')}
-          className="mt-1 flex flex-wrap gap-1 border-b border-line"
-        >
-          <Link
-            href={`/bots/${bot.id}/settings`}
-            className="inline-flex min-h-[44px] items-center px-3.5 text-[14px] font-bold text-ink-2 transition duration-150 hover:text-green-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
-          >
-            {tTabs('general')}
-          </Link>
-          <Link
-            href={`/bots/${bot.id}/secrets`}
-            aria-current="page"
-            className="inline-flex min-h-[44px] items-center px-3.5 text-[14px] font-bold text-green-600 shadow-[inset_0_-2px_0_#3f9147] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
-          >
-            {tTabs('secrets')}
-          </Link>
-        </nav>
-      </div>
-
-      {canEditBotSecrets ? (
-        <CodexPlanPanel
-          key={bot.id}
-          workspaceId={workspace.id}
-          botId={bot.id}
-        />
-      ) : null}
-
-      {bot.llmMode === 'cli' &&
-      ['anthropic', 'claude'].includes(bot.llmProvider) ? (
-        <Card className="flex flex-col gap-3 p-6">
-          <h2 className="text-[20px] font-black text-ink">
-            {t('claudeSubscriptionTitle')}
+    <div className="flex flex-col gap-6">
+      {embedded ? (
+        <Card className="flex flex-col gap-2 p-6">
+          <Eyebrow>{t('eyebrow')}</Eyebrow>
+          <h2 className="text-[22px] font-black leading-[1.2] tracking-[-0.01em] text-ink">
+            {t('title', { name: bot.name })}
           </h2>
-          <p className="text-[14px] text-ink-2">
-            {t('claudeSubscriptionSetup')}
+          <p className="text-[14px] leading-[1.6] text-ink-2">{t('lead')}</p>
+          <p className="text-[14px] leading-[1.6] text-ink-2">
+            {t('protectedPushNote')}
           </p>
-          <code className="w-fit rounded-xs bg-paper-2 px-3 py-2 text-[13px] text-ink">
-            {t('claudeSubscriptionCommand')}
-          </code>
-          <p className="text-[14px] text-ink-2">
-            {t('claudeSubscriptionDockerSetup')}
-          </p>
-          <code className="w-fit rounded-xs bg-paper-2 px-3 py-2 text-[13px] text-ink">
-            {t('claudeSubscriptionDockerCommand')}
-          </code>
-          <p className="text-[14px] text-ink-2">
-            {t('claudeSubscriptionPrivacy')}
-          </p>
-          {canEditBotSecrets ? (
-            <Button
-              variant="secondary"
-              disabled={loading || savingSecret}
-              onClick={prepareClaudeSubscription}
-            >
-              {t('claudeSubscriptionConfigure')}
-            </Button>
-          ) : null}
         </Card>
-      ) : null}
+      ) : (
+        <div className="flex flex-col gap-3">
+          <Link
+            href={`/bots/${bot.id}`}
+            className="inline-flex min-h-[44px] w-fit items-center gap-2 rounded-sm px-2 text-[14px] font-bold text-green-600 transition duration-150 hover:bg-mint-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            <span>{t('backToWorkspace')}</span>
+          </Link>
+
+          <Eyebrow>{t('eyebrow')}</Eyebrow>
+          <h1 className="text-[34px] font-black leading-[1.15] tracking-[-0.01em] text-ink sm:text-[42px]">
+            {t('title', { name: bot.name })}
+          </h1>
+          <p className="max-w-3xl text-[16px] leading-[1.6] text-ink-2">
+            {t('lead')}
+          </p>
+          <p className="max-w-3xl text-[16px] leading-[1.6] text-ink-2">
+            {t('protectedPushNote')}
+          </p>
+
+          <nav
+            aria-label={tTabs('ariaLabel')}
+            className="mt-1 flex flex-wrap gap-1 border-b border-line"
+          >
+            <Link
+              href={`/bots/${bot.id}/settings`}
+              className="inline-flex min-h-[44px] items-center px-3.5 text-[14px] font-bold text-ink-2 transition duration-150 hover:text-green-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+            >
+              {tTabs('general')}
+            </Link>
+            <Link
+              href={`/bots/${bot.id}/secrets`}
+              aria-current="page"
+              className="inline-flex min-h-[44px] items-center px-3.5 text-[14px] font-bold text-green-600 shadow-[inset_0_-2px_0_#3f9147] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+            >
+              {tTabs('secrets')}
+            </Link>
+          </nav>
+        </div>
+      )}
+
+      <section
+        aria-labelledby="cli-tools-heading"
+        className="flex min-w-0 flex-col gap-4"
+      >
+        <div className="flex flex-col gap-1">
+          <Eyebrow>{t('cliToolsEyebrow')}</Eyebrow>
+          <h2
+            id="cli-tools-heading"
+            className="text-[22px] font-black tracking-[-0.01em] text-ink"
+          >
+            {t('cliToolsTitle')}
+          </h2>
+          <p className="text-[15px] leading-[1.55] text-ink-2">
+            {t('cliToolsLead')}
+          </p>
+        </div>
+
+        <Card className="flex flex-col gap-4 p-6">
+          <div
+            role="tablist"
+            aria-label={t('cliToolsTabListAria')}
+            className="flex flex-wrap gap-1 border-b border-line"
+          >
+            <button
+              type="button"
+              role="tab"
+              id={cliTabClaudeId}
+              aria-selected={activeCliTab === 'claude'}
+              aria-controls={cliPanelClaudeId}
+              onClick={() => setActiveCliTab('claude')}
+              className={`inline-flex min-h-[44px] items-center px-4 text-[14px] font-bold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${
+                activeCliTab === 'claude'
+                  ? 'text-green-600 shadow-[inset_0_-2px_0_#3f9147]'
+                  : 'text-ink-2 hover:text-green-600'
+              }`}
+            >
+              {t('cliToolsTabClaude')}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id={cliTabCodexId}
+              aria-selected={activeCliTab === 'codex'}
+              aria-controls={cliPanelCodexId}
+              onClick={() => setActiveCliTab('codex')}
+              className={`inline-flex min-h-[44px] items-center px-4 text-[14px] font-bold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${
+                activeCliTab === 'codex'
+                  ? 'text-green-600 shadow-[inset_0_-2px_0_#3f9147]'
+                  : 'text-ink-2 hover:text-green-600'
+              }`}
+            >
+              {t('cliToolsTabCodex')}
+            </button>
+          </div>
+
+          {activeCliTab === 'claude' ? (
+            <div
+              role="tabpanel"
+              id={cliPanelClaudeId}
+              aria-labelledby={cliTabClaudeId}
+              className="flex flex-col gap-3"
+            >
+              <h3 className="text-[18px] font-black text-ink">
+                {t('claudeSubscriptionTitle')}
+              </h3>
+              {!isClaudeCliBot ? (
+                <p className="text-[13px] font-bold text-muted">
+                  {t('cliToolsInactiveNote', {
+                    provider: bot.llmProvider,
+                    mode: bot.llmMode,
+                  })}
+                </p>
+              ) : null}
+              <p className="text-[14px] text-ink-2">
+                {t('claudeSubscriptionSetup')}
+              </p>
+              <code className="w-fit rounded-xs bg-paper-2 px-3 py-2 text-[13px] text-ink">
+                {t('claudeSubscriptionCommand')}
+              </code>
+              <p className="text-[14px] text-ink-2">
+                {t('claudeSubscriptionDockerSetup')}
+              </p>
+              <code className="w-fit rounded-xs bg-paper-2 px-3 py-2 text-[13px] text-ink">
+                {t('claudeSubscriptionDockerCommand')}
+              </code>
+              <p className="text-[14px] text-ink-2">
+                {t('claudeSubscriptionPrivacy')}
+              </p>
+              {canEditBotSecrets ? (
+                <Button
+                  variant="secondary"
+                  disabled={loading || savingSecret}
+                  onClick={prepareClaudeSubscription}
+                >
+                  {t('claudeSubscriptionConfigure')}
+                </Button>
+              ) : (
+                <Alert tone="info">{t('cliToolsReadOnly')}</Alert>
+              )}
+            </div>
+          ) : (
+            <div
+              role="tabpanel"
+              id={cliPanelCodexId}
+              aria-labelledby={cliTabCodexId}
+              className="flex flex-col gap-3"
+            >
+              {!isCodexCliBot ? (
+                <p className="text-[13px] font-bold text-muted">
+                  {t('cliToolsInactiveNote', {
+                    provider: bot.llmProvider,
+                    mode: bot.llmMode,
+                  })}
+                </p>
+              ) : null}
+              {canEditBotSecrets ? (
+                <CodexPlanPanel
+                  key={bot.id}
+                  workspaceId={workspace.id}
+                  botId={bot.id}
+                  embedded
+                />
+              ) : (
+                <Alert tone="info">{t('cliToolsReadOnly')}</Alert>
+              )}
+            </div>
+          )}
+        </Card>
+      </section>
 
       {!canEditBotSecrets ? (
         <Alert tone="info">{t('readOnlyNotice')}</Alert>
@@ -1143,389 +1354,404 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
             </ol>
           </section>
 
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
-            <section
-              aria-labelledby="configured-secrets-heading"
-              className="flex min-w-0 flex-col gap-4"
-            >
-              <div className="flex flex-col gap-1">
-                <h2
-                  id="configured-secrets-heading"
-                  className="text-[22px] font-black tracking-[-0.01em] text-ink"
-                >
-                  {t('sectionTitle')}
-                </h2>
-                <p className="text-[15px] leading-[1.55] text-ink-2">
-                  {t('sectionLead')}
-                </p>
+          <section
+            aria-labelledby="configured-secrets-heading"
+            className="flex min-w-0 flex-col gap-4 border-t border-line pt-6"
+          >
+            <div className="flex flex-col gap-1">
+              <h2
+                id="configured-secrets-heading"
+                className="text-[22px] font-black tracking-[-0.01em] text-ink"
+              >
+                {t('sectionTitle')}
+              </h2>
+              <p className="text-[15px] leading-[1.55] text-ink-2">
+                {t('sectionLead')}
+              </p>
+            </div>
+
+            {secretBannerKey ? (
+              <div role="status">
+                <Alert tone="success">{t(secretBannerKey)}</Alert>
               </div>
+            ) : null}
 
-              {secretBannerKey ? (
-                <div role="status">
-                  <Alert tone="success">{t(secretBannerKey)}</Alert>
-                </div>
-              ) : null}
+            {secretErrorKey ? (
+              <Alert tone="warning">{tErrors(secretErrorKey)}</Alert>
+            ) : null}
 
-              {secretErrorKey ? (
-                <Alert tone="warning">{tErrors(secretErrorKey)}</Alert>
-              ) : null}
-
-              <Card className="overflow-hidden p-0">
-                {secrets.length === 0 ? (
-                  <p className="p-6 text-[15px] text-ink-2">
-                    {t('emptySecrets')}
-                  </p>
-                ) : (
-                  <div
-                    tabIndex={0}
-                    role="region"
-                    aria-labelledby="configured-secrets-heading"
-                    className="overflow-x-auto"
-                  >
-                    <table
-                      aria-label={t('tableAria')}
-                      className="w-full min-w-[720px] border-collapse text-left text-[14px]"
-                    >
-                      <thead className="border-b border-line bg-paper-2 text-[12px] font-bold uppercase tracking-[0.04em] text-muted">
-                        <tr>
-                          <th scope="col" className="px-4 py-3">
-                            {t('colName')}
-                          </th>
-                          <th scope="col" className="px-4 py-3">
-                            {t('colDestination')}
-                          </th>
-                          <th scope="col" className="px-4 py-3">
-                            {t('colInjection')}
-                          </th>
-                          <th scope="col" className="px-4 py-3">
-                            {t('colPreview')}
-                          </th>
-                          <th scope="col" className="px-4 py-3">
-                            {t('colUsage')}
-                          </th>
-                          <th scope="col" className="px-4 py-3 text-right">
-                            {t('colActions')}
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-line">
-                        {secrets.map((secret) => {
-                          const editable = canMutateSecret(secret);
-                          const isConfirmingDelete =
-                            confirmDeleteId === secret.id;
-                          const deleteLabel = isConfirmingDelete
-                            ? t('deleteConfirmAction')
-                            : t('deleteAction');
-                          return (
-                            <tr
-                              key={secret.id}
-                              className="bg-paper transition-colors hover:bg-paper-2/50"
-                            >
-                              <th scope="row" className="px-4 py-3 align-top">
-                                <div className="flex flex-col items-start gap-1">
-                                  <span className="font-mono text-[13px] font-bold text-ink">
-                                    {secret.name}
-                                  </span>
-                                  <span
-                                    className={`rounded-xs border px-2 py-0.5 text-[11px] font-bold ${
-                                      secret.scope === 'workspace'
-                                        ? 'border-blue-line bg-blue-tint text-blue'
-                                        : 'border-mint-line bg-mint-soft text-green-600'
-                                    }`}
-                                  >
-                                    {secret.scope === 'workspace'
-                                      ? t('scopeWorkspaceBadge')
-                                      : t('scopeBotBadge')}
-                                  </span>
-                                </div>
-                              </th>
-                              <td className="px-4 py-3 align-top">
-                                <div className="flex flex-col items-start gap-1">
-                                  <span className="font-mono text-[13px] text-ink">
-                                    {formatDestinationTarget(secret)}
-                                  </span>
-                                  <div className="flex flex-wrap gap-1.5">
-                                    {!secret.pathPrefix ? (
-                                      <span className="rounded-xs border border-line bg-paper-2 px-1.5 py-0.5 text-[11px] text-ink-2">
-                                        {t('allPaths')}
-                                      </span>
-                                    ) : null}
-                                    {secret.matchSubdomains ? (
-                                      <span className="rounded-xs border border-line bg-paper-2 px-1.5 py-0.5 font-mono text-[11px] text-ink-2">
-                                        {t('subdomainsTag')}
-                                      </span>
-                                    ) : null}
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="px-4 py-3 align-top font-mono text-[13px] text-ink-2">
-                                {renderInjectionLabel(secret)}
-                              </td>
-                              <td className="px-4 py-3 align-top font-mono text-[13px] text-ink-2">
-                                {secret.maskedPreview}
-                              </td>
-                              <td className="px-4 py-3 align-top text-[13px] text-ink-2">
-                                {secret.usedCount === 0
-                                  ? t('neverUsed')
-                                  : t('usageCountLabel', {
-                                      count: secret.usedCount,
-                                    })}
-                              </td>
-                              <td className="px-4 py-3 align-top">
-                                <div className="flex justify-end gap-2">
-                                  <Button
-                                    type="button"
-                                    variant="secondary"
-                                    disabled={!editable || savingSecret}
-                                    aria-label={`${t('editAction')} ${secret.name}`}
-                                    className="px-3 text-[13px]"
-                                    onClick={() => startEditSecret(secret)}
-                                  >
-                                    <Pencil
-                                      className="h-3.5 w-3.5"
-                                      aria-hidden="true"
-                                    />
-                                    <span>{t('editAction')}</span>
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    variant="secondary"
-                                    disabled={
-                                      !editable ||
-                                      deletingSecretId === secret.id
-                                    }
-                                    aria-label={`${deleteLabel} ${secret.name}`}
-                                    className={`px-3 text-[13px] ${
-                                      isConfirmingDelete
-                                        ? 'border-dashed border-amber-line bg-amber-tint text-amber hover:border-amber-line hover:bg-amber-tint'
-                                        : ''
-                                    }`.trim()}
-                                    onClick={() =>
-                                      void handleDeleteSecret(secret)
-                                    }
-                                  >
-                                    <Trash2
-                                      className="h-3.5 w-3.5"
-                                      aria-hidden="true"
-                                    />
-                                    <span>{deleteLabel}</span>
-                                  </Button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </Card>
-
-              <Card className="p-6">
-                <form
-                  id="secret-form"
-                  aria-labelledby="secret-form-heading"
-                  onSubmit={(event) => void handleSecretSubmit(event)}
-                  className="flex flex-col gap-5"
+            <Card className="overflow-hidden p-0">
+              {secrets.length === 0 ? (
+                <p className="p-6 text-[15px] text-ink-2">
+                  {t('emptySecrets')}
+                </p>
+              ) : (
+                <div
+                  tabIndex={0}
+                  role="region"
+                  aria-labelledby="configured-secrets-heading"
+                  className="overflow-x-auto"
                 >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h3
-                      id="secret-form-heading"
-                      className="text-[18px] font-black text-ink"
+                  <table
+                    aria-label={t('tableAria')}
+                    className="w-full min-w-[720px] border-collapse text-left text-[14px]"
+                  >
+                    <thead className="border-b border-line bg-paper-2 text-[12px] font-bold uppercase tracking-[0.04em] text-muted">
+                      <tr>
+                        <th scope="col" className="px-4 py-3">
+                          {t('colName')}
+                        </th>
+                        <th scope="col" className="px-4 py-3">
+                          {t('colDestination')}
+                        </th>
+                        <th scope="col" className="px-4 py-3">
+                          {t('colInjection')}
+                        </th>
+                        <th scope="col" className="px-4 py-3">
+                          {t('colPreview')}
+                        </th>
+                        <th scope="col" className="px-4 py-3">
+                          {t('colUsage')}
+                        </th>
+                        <th scope="col" className="px-4 py-3 text-right">
+                          {t('colActions')}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-line">
+                      {secrets.map((secret) => {
+                        const editable = canMutateSecret(secret);
+                        const isConfirmingDelete =
+                          confirmDeleteId === secret.id;
+                        const deleteLabel = isConfirmingDelete
+                          ? t('deleteConfirmAction')
+                          : t('deleteAction');
+                        return (
+                          <tr
+                            key={secret.id}
+                            className="bg-paper transition-colors hover:bg-paper-2/50"
+                          >
+                            <th scope="row" className="px-4 py-3 align-top">
+                              <div className="flex flex-col items-start gap-1">
+                                <span className="font-mono text-[13px] font-bold text-ink">
+                                  {secret.name}
+                                </span>
+                                <span
+                                  className={`rounded-xs border px-2 py-0.5 text-[11px] font-bold ${
+                                    secret.scope === 'workspace'
+                                      ? 'border-blue-line bg-blue-tint text-blue'
+                                      : 'border-mint-line bg-mint-soft text-green-600'
+                                  }`}
+                                >
+                                  {secret.scope === 'workspace'
+                                    ? t('scopeWorkspaceBadge')
+                                    : t('scopeBotBadge')}
+                                </span>
+                              </div>
+                            </th>
+                            <td className="px-4 py-3 align-top">
+                              <div className="flex flex-col items-start gap-1">
+                                <span className="font-mono text-[13px] text-ink">
+                                  {formatDestinationTarget(secret)}
+                                </span>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {!secret.pathPrefix ? (
+                                    <span className="rounded-xs border border-line bg-paper-2 px-1.5 py-0.5 text-[11px] text-ink-2">
+                                      {t('allPaths')}
+                                    </span>
+                                  ) : null}
+                                  {secret.matchSubdomains ? (
+                                    <span className="rounded-xs border border-line bg-paper-2 px-1.5 py-0.5 font-mono text-[11px] text-ink-2">
+                                      {t('subdomainsTag')}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 align-top font-mono text-[13px] text-ink-2">
+                              {renderInjectionLabel(secret)}
+                            </td>
+                            <td className="px-4 py-3 align-top font-mono text-[13px] text-ink-2">
+                              {secret.maskedPreview}
+                            </td>
+                            <td className="px-4 py-3 align-top text-[13px] text-ink-2">
+                              {secret.usedCount === 0
+                                ? t('neverUsed')
+                                : t('usageCountLabel', {
+                                    count: secret.usedCount,
+                                  })}
+                            </td>
+                            <td className="px-4 py-3 align-top">
+                              <div className="flex justify-end gap-2">
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  disabled={!editable || savingSecret}
+                                  aria-label={`${t('editAction')} ${secret.name}`}
+                                  className="px-3 text-[13px]"
+                                  onClick={() => startEditSecret(secret)}
+                                >
+                                  <Pencil
+                                    className="h-3.5 w-3.5"
+                                    aria-hidden="true"
+                                  />
+                                  <span>{t('editAction')}</span>
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  disabled={
+                                    !editable || deletingSecretId === secret.id
+                                  }
+                                  aria-label={`${deleteLabel} ${secret.name}`}
+                                  className={`px-3 text-[13px] ${
+                                    isConfirmingDelete
+                                      ? 'border-dashed border-amber-line bg-amber-tint text-amber hover:border-amber-line hover:bg-amber-tint'
+                                      : ''
+                                  }`.trim()}
+                                  onClick={() =>
+                                    void handleDeleteSecret(secret)
+                                  }
+                                >
+                                  <Trash2
+                                    className="h-3.5 w-3.5"
+                                    aria-hidden="true"
+                                  />
+                                  <span>{deleteLabel}</span>
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+
+            <Card className="p-6">
+              <form
+                id="secret-form"
+                aria-labelledby="secret-form-heading"
+                onSubmit={(event) => void handleSecretSubmit(event)}
+                className="flex flex-col gap-5"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3
+                    id="secret-form-heading"
+                    className="text-[18px] font-black text-ink"
+                  >
+                    {editingSecret
+                      ? t('editFormTitle', { name: editingSecret.name })
+                      : t('addFormTitle')}
+                  </h3>
+                  {editingSecret ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={resetSecretForm}
                     >
-                      {editingSecret
-                        ? t('editFormTitle', { name: editingSecret.name })
-                        : t('addFormTitle')}
-                    </h3>
-                    {editingSecret ? (
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        onClick={resetSecretForm}
-                      >
-                        {t('cancelEdit')}
-                      </Button>
-                    ) : null}
-                  </div>
+                      {t('cancelEdit')}
+                    </Button>
+                  ) : null}
+                </div>
 
-                  <RadioCardGroup<SecretScope>
-                    legend={t('scopeLabel')}
-                    name="secret-scope"
-                    value={effectiveScope}
-                    onChange={setScope}
-                    disabled={!canEditBotSecrets || editingSecret !== null}
-                    options={[
-                      { value: 'bot', title: t('scopeBot') },
-                      {
-                        value: 'workspace',
-                        title: t('scopeWorkspace'),
-                        description: !canEditWorkspaceSecrets
-                          ? t('workspaceScopeAdminOnly')
-                          : undefined,
-                        disabled: !canEditWorkspaceSecrets,
-                      },
-                    ]}
-                  />
+                <RadioCardGroup<SecretScope>
+                  legend={t('scopeLabel')}
+                  name="secret-scope"
+                  value={effectiveScope}
+                  onChange={setScope}
+                  disabled={!canEditBotSecrets || editingSecret !== null}
+                  options={[
+                    { value: 'bot', title: t('scopeBot') },
+                    {
+                      value: 'workspace',
+                      title: t('scopeWorkspace'),
+                      description: !canEditWorkspaceSecrets
+                        ? t('workspaceScopeAdminOnly')
+                        : undefined,
+                      disabled: !canEditWorkspaceSecrets,
+                    },
+                  ]}
+                />
 
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Input
-                      name="secretName"
-                      label={t('nameLabel')}
-                      placeholder={t('namePlaceholder')}
-                      mono
-                      autoCorrect="off"
-                      autoCapitalize="none"
-                      spellCheck={false}
-                      value={secretName}
-                      disabled={!formEditable || savingSecret}
-                      required
-                      onChange={(event) => setSecretName(event.target.value)}
-                    />
-                    <Input
-                      name="domainMatch"
-                      label={t('domainLabel')}
-                      placeholder={t('domainPlaceholder')}
-                      mono
-                      autoCorrect="off"
-                      autoCapitalize="none"
-                      spellCheck={false}
-                      value={domainMatch}
-                      disabled={!formEditable || savingSecret}
-                      required
-                      onChange={(event) => setDomainMatch(event.target.value)}
-                    />
-                  </div>
-
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Input
-                      name="pathPrefix"
-                      label={t('pathPrefixLabel')}
-                      placeholder={t('pathPrefixPlaceholder')}
-                      mono
-                      autoCorrect="off"
-                      autoCapitalize="none"
-                      spellCheck={false}
-                      value={pathPrefix}
-                      disabled={!formEditable || savingSecret}
-                      onChange={(event) => setPathPrefix(event.target.value)}
-                    />
-                    <div className="flex items-end">
-                      <div className="flex min-h-[44px] w-full items-center gap-3 rounded-sm border border-line bg-paper-2 px-3.5 py-2">
-                        <input
-                          id={subdomainsCheckboxId}
-                          name="matchSubdomains"
-                          type="checkbox"
-                          checked={matchSubdomains}
-                          disabled={!formEditable || savingSecret}
-                          onChange={(event) =>
-                            setMatchSubdomains(event.target.checked)
-                          }
-                          className="h-4 w-4 shrink-0 accent-green-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
-                        />
-                        <label
-                          htmlFor={subdomainsCheckboxId}
-                          className="cursor-pointer text-[14px] font-bold text-ink"
-                        >
-                          {t('subdomainsLabel')}
-                        </label>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Select
-                      name="authScheme"
-                      label={t('schemeLabel')}
-                      value={authScheme}
-                      disabled={!formEditable || savingSecret}
-                      onChange={(event) =>
-                        setAuthScheme(event.target.value as SecretAuthScheme)
-                      }
-                    >
-                      <option value="bearer">{t('schemeBearer')}</option>
-                      <option value="header">{t('schemeHeader')}</option>
-                      <option value="basic">{t('schemeBasic')}</option>
-                    </Select>
-
-                    {authScheme === 'header' ? (
-                      <Input
-                        name="headerName"
-                        label={t('headerNameLabel')}
-                        placeholder={t('headerNamePlaceholder')}
-                        mono
-                        autoCorrect="off"
-                        autoCapitalize="none"
-                        spellCheck={false}
-                        value={headerName}
-                        disabled={!formEditable || savingSecret}
-                        required
-                        onChange={(event) => setHeaderName(event.target.value)}
-                      />
-                    ) : null}
-
-                    {authScheme === 'basic' ? (
-                      <Input
-                        name="username"
-                        label={t('usernameLabel')}
-                        placeholder={t('usernamePlaceholder')}
-                        mono
-                        autoCorrect="off"
-                        autoCapitalize="none"
-                        spellCheck={false}
-                        value={username}
-                        disabled={!formEditable || savingSecret}
-                        onChange={(event) => setUsername(event.target.value)}
-                      />
-                    ) : null}
-                  </div>
-
+                <div className="grid gap-4 sm:grid-cols-2">
                   <Input
-                    name="secretValue"
-                    type="password"
-                    autoComplete="new-password"
+                    name="secretName"
+                    label={t('nameLabel')}
+                    placeholder={t('namePlaceholder')}
+                    mono
                     autoCorrect="off"
                     autoCapitalize="none"
                     spellCheck={false}
-                    label={
-                      editingSecret
-                        ? t('valueReplaceLabel')
-                        : t('valueCreateLabel')
-                    }
-                    placeholder={t('valuePlaceholder')}
-                    mono
-                    value={secretValue}
+                    value={secretName}
                     disabled={!formEditable || savingSecret}
-                    required={editingSecret === null}
-                    onChange={(event) => setSecretValue(event.target.value)}
+                    required
+                    onChange={(event) => setSecretName(event.target.value)}
                   />
+                  <Input
+                    name="domainMatch"
+                    label={t('domainLabel')}
+                    placeholder={t('domainPlaceholder')}
+                    mono
+                    autoCorrect="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    value={domainMatch}
+                    disabled={!formEditable || savingSecret}
+                    required
+                    onChange={(event) => setDomainMatch(event.target.value)}
+                  />
+                </div>
 
-                  {formEditable ? (
-                    <div className="flex justify-end border-t border-line pt-4">
-                      <Button type="submit" arrow disabled={savingSecret}>
-                        {savingSecret
-                          ? t('savingSecret')
-                          : editingSecret
-                            ? t('updateSubmit')
-                            : t('createSubmit')}
-                      </Button>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Input
+                    name="pathPrefix"
+                    label={t('pathPrefixLabel')}
+                    placeholder={t('pathPrefixPlaceholder')}
+                    mono
+                    autoCorrect="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    value={pathPrefix}
+                    disabled={!formEditable || savingSecret}
+                    onChange={(event) => setPathPrefix(event.target.value)}
+                  />
+                  <div className="flex items-end">
+                    <div className="flex min-h-[44px] w-full items-center gap-3 rounded-sm border border-line bg-paper-2 px-3.5 py-2">
+                      <input
+                        id={subdomainsCheckboxId}
+                        name="matchSubdomains"
+                        type="checkbox"
+                        checked={matchSubdomains}
+                        disabled={!formEditable || savingSecret}
+                        onChange={(event) =>
+                          setMatchSubdomains(event.target.checked)
+                        }
+                        className="h-4 w-4 shrink-0 accent-green-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+                      />
+                      <label
+                        htmlFor={subdomainsCheckboxId}
+                        className="cursor-pointer text-[14px] font-bold text-ink"
+                      >
+                        {t('subdomainsLabel')}
+                      </label>
                     </div>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Select
+                    name="authScheme"
+                    label={t('schemeLabel')}
+                    value={authScheme}
+                    disabled={!formEditable || savingSecret}
+                    onChange={(event) =>
+                      setAuthScheme(event.target.value as SecretAuthScheme)
+                    }
+                  >
+                    <option value="bearer">{t('schemeBearer')}</option>
+                    <option value="header">{t('schemeHeader')}</option>
+                    <option value="basic">{t('schemeBasic')}</option>
+                  </Select>
+
+                  {authScheme === 'header' ? (
+                    <Input
+                      name="headerName"
+                      label={t('headerNameLabel')}
+                      placeholder={t('headerNamePlaceholder')}
+                      mono
+                      autoCorrect="off"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      value={headerName}
+                      disabled={!formEditable || savingSecret}
+                      required
+                      onChange={(event) => setHeaderName(event.target.value)}
+                    />
                   ) : null}
-                </form>
-              </Card>
-            </section>
+
+                  {authScheme === 'basic' ? (
+                    <Input
+                      name="username"
+                      label={t('usernameLabel')}
+                      placeholder={t('usernamePlaceholder')}
+                      mono
+                      autoCorrect="off"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      value={username}
+                      disabled={!formEditable || savingSecret}
+                      onChange={(event) => setUsername(event.target.value)}
+                    />
+                  ) : null}
+                </div>
+
+                <Input
+                  name="secretValue"
+                  type="password"
+                  autoComplete="new-password"
+                  autoCorrect="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  label={
+                    editingSecret
+                      ? t('valueReplaceLabel')
+                      : t('valueCreateLabel')
+                  }
+                  placeholder={t('valuePlaceholder')}
+                  mono
+                  value={secretValue}
+                  disabled={!formEditable || savingSecret}
+                  required={editingSecret === null}
+                  onChange={(event) => setSecretValue(event.target.value)}
+                />
+
+                {formEditable ? (
+                  <div className="flex justify-end border-t border-line pt-4">
+                    <Button type="submit" arrow disabled={savingSecret}>
+                      {savingSecret
+                        ? t('savingSecret')
+                        : editingSecret
+                          ? t('updateSubmit')
+                          : t('createSubmit')}
+                    </Button>
+                  </div>
+                ) : null}
+              </form>
+            </Card>
+          </section>
+
+          <section
+            aria-labelledby="network-section-heading"
+            className="flex min-w-0 flex-col gap-6 border-t border-line pt-6"
+          >
+            <div className="flex flex-col gap-1">
+              <Eyebrow>{t('networkEyebrow')}</Eyebrow>
+              <h2
+                id="network-section-heading"
+                className="text-[22px] font-black tracking-[-0.01em] text-ink"
+              >
+                {t('networkTitle')}
+              </h2>
+              <p className="text-[15px] leading-[1.55] text-ink-2">
+                {t('networkLead')}
+              </p>
+            </div>
 
             <section
               aria-labelledby="outbound-policy-heading"
-              className="flex flex-col gap-4"
+              className="flex min-w-0 flex-col gap-4"
             >
               <div className="flex flex-col gap-1">
-                <h2
+                <h3
                   id="outbound-policy-heading"
-                  className="text-[22px] font-black tracking-[-0.01em] text-ink"
+                  className="text-[18px] font-black tracking-[-0.01em] text-ink"
                 >
                   {t('policyTitle')}
-                </h2>
-                <p className="text-[15px] leading-[1.55] text-ink-2">
+                </h3>
+                <p className="text-[14px] leading-[1.55] text-ink-2">
                   {t('policyLead')}
                 </p>
               </div>
@@ -1655,9 +1881,9 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
                   />
 
                   <div className="flex flex-col gap-3">
-                    <h3 className="text-[15px] font-bold text-ink">
+                    <h4 className="text-[15px] font-bold text-ink">
                       {t('allowedHostsTitle')}
-                    </h3>
+                    </h4>
 
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
                       <div className="flex-1">
@@ -1732,9 +1958,9 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
                     className="flex flex-col gap-3 border-t border-line pt-4"
                   >
                     <div className="flex flex-col gap-1">
-                      <h3 className="text-[15px] font-bold text-ink">
+                      <h4 className="text-[15px] font-bold text-ink">
                         {t('blockedHostsTitle')}
-                      </h3>
+                      </h4>
                       <p className="text-[13px] leading-[1.45] text-muted">
                         {t('blockedHostsDesc')}
                       </p>
@@ -1812,9 +2038,9 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
                   </div>
 
                   <div className="flex flex-col gap-2 border-t border-line pt-4">
-                    <h3 className="text-[14px] font-bold text-ink">
+                    <h4 className="text-[14px] font-bold text-ink">
                       {t('effectiveSecretHostsTitle')}
-                    </h3>
+                    </h4>
                     {effectiveSecretHosts.length === 0 ? (
                       <p className="text-[14px] text-muted">
                         {t('effectiveSecretHostsEmpty')}
@@ -1853,369 +2079,464 @@ export function BotSecretsView({ workspace, bot }: BotSecretsViewProps) {
                 </form>
               </Card>
             </section>
-          </div>
 
-          <section
-            aria-labelledby="egress-activity-heading"
-            className="flex flex-col gap-4"
-          >
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="flex flex-col gap-1">
-                <h2
-                  id="egress-activity-heading"
-                  className="text-[22px] font-black tracking-[-0.01em] text-ink"
-                >
-                  {t('egressTitle')}
-                </h2>
-                <p className="text-[15px] leading-[1.55] text-ink-2">
-                  {t('egressLead')}
-                </p>
-                <p className="text-[13px] font-bold text-green-600">
-                  {t('triageSyncNote')}
-                </p>
-              </div>
+            <section
+              aria-labelledby="egress-activity-heading"
+              className="flex min-w-0 flex-col gap-4"
+            >
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div className="flex flex-col gap-1">
+                    <h3
+                      id="egress-activity-heading"
+                      className="text-[18px] font-black tracking-[-0.01em] text-ink"
+                    >
+                      {t('egressTitle')}
+                    </h3>
+                    <p className="text-[14px] leading-[1.55] text-ink-2">
+                      {t('egressLead')}
+                    </p>
+                    <p className="text-[13px] font-bold text-green-600">
+                      {t('triageSyncNote')}
+                    </p>
+                  </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <div
-                  role="group"
-                  aria-label={t('filterAria')}
-                  className="flex flex-wrap gap-1.5"
-                >
-                  {LOG_FILTER_OPTIONS.map((opt) => {
-                    const active = logFilter === opt.value;
-                    return (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        aria-pressed={active}
-                        onClick={() => handleSelectLogFilter(opt.value)}
-                        className={`inline-flex min-h-[44px] items-center rounded-sm border px-3.5 text-[13px] font-bold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${
-                          active
-                            ? 'border-dark bg-dark text-paper'
-                            : 'border-line bg-paper text-ink-2 hover:border-green-light hover:bg-mint-soft hover:text-green-600'
-                        }`}
-                      >
-                        {t(opt.labelKey)}
-                      </button>
-                    );
-                  })}
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={refreshingLogs || loadingMoreLogs}
+                    onClick={() => void fetchFilteredLogs(logFilter)}
+                  >
+                    <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                    <span>{t('refreshLogs')}</span>
+                  </Button>
                 </div>
 
-                <Button
-                  type="button"
-                  variant="secondary"
-                  disabled={refreshingLogs}
-                  onClick={() => void fetchFilteredLogs(logFilter)}
-                >
-                  <RefreshCw className="h-4 w-4" aria-hidden="true" />
-                  <span>{t('refreshLogs')}</span>
-                </Button>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div
+                    role="group"
+                    aria-label={t('filterAria')}
+                    className="flex flex-wrap gap-1.5"
+                  >
+                    {LOG_FILTER_OPTIONS.map((opt) => {
+                      const active = logFilter === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          aria-pressed={active}
+                          onClick={() => handleSelectLogFilter(opt.value)}
+                          className={`inline-flex min-h-[44px] items-center rounded-sm border px-3.5 text-[13px] font-bold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${
+                            active
+                              ? 'border-dark bg-dark text-paper'
+                              : 'border-line bg-paper text-ink-2 hover:border-green-light hover:bg-mint-soft hover:text-green-600'
+                          }`}
+                        >
+                          {t(opt.labelKey)}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="relative min-w-[240px] flex-1 sm:max-w-xs">
+                    <label htmlFor={egressSearchInputId} className="sr-only">
+                      {t('egressSearchLabel')}
+                    </label>
+                    <Search
+                      className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted"
+                      aria-hidden="true"
+                    />
+                    <input
+                      id={egressSearchInputId}
+                      type="search"
+                      value={logSearch}
+                      placeholder={t('egressSearchPlaceholder')}
+                      onChange={(event) => {
+                        setLogSearch(event.target.value);
+                        setLogPage(1);
+                      }}
+                      className="min-h-[44px] w-full rounded-sm border border-line bg-paper py-2 pl-9 pr-11 text-[13px] text-ink placeholder:text-muted focus:border-green focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+                    />
+                    {logSearch ? (
+                      <button
+                        type="button"
+                        aria-label={t('egressSearchClear')}
+                        onClick={() => {
+                          setLogSearch('');
+                          setLogPage(1);
+                        }}
+                        className="absolute right-0.5 top-1/2 inline-flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-xs text-muted transition hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+                      >
+                        <X className="h-4 w-4" aria-hidden="true" />
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
               </div>
-            </div>
 
-            {triageAnnouncement ? (
-              <div role="status" aria-live="polite" className="sr-only">
-                {triageAnnouncement}
-              </div>
-            ) : null}
+              {triageAnnouncement ? (
+                <div role="status" aria-live="polite" className="sr-only">
+                  {triageAnnouncement}
+                </div>
+              ) : null}
 
-            {logsErrorKey ? (
-              <Alert tone="warning">{tErrors(logsErrorKey)}</Alert>
-            ) : null}
+              {logsErrorKey ? (
+                <Alert tone="warning">{tErrors(logsErrorKey)}</Alert>
+              ) : null}
 
-            <div className="rounded-lg border border-dark-2 bg-terminal p-4 text-on-dark shadow-card">
-              {logs.length === 0 ? (
-                <p className="py-6 text-center font-mono text-[13px] text-on-dark-muted">
-                  {t('emptyLogs')}
-                </p>
-              ) : (
-                <div
-                  tabIndex={0}
-                  role="region"
-                  aria-labelledby="egress-activity-heading"
-                  className="overflow-x-auto"
-                >
-                  <table className="w-full min-w-[840px] border-collapse text-left text-[13px]">
-                    <thead className="border-b border-on-dark-faint/20 text-[12px] font-bold uppercase tracking-[0.04em] text-on-dark-muted">
-                      <tr>
-                        <th scope="col" className="px-3 py-2.5">
-                          {t('logColOutcome')}
-                        </th>
-                        <th scope="col" className="px-3 py-2.5">
-                          {t('logColDestination')}
-                        </th>
-                        <th scope="col" className="px-3 py-2.5">
-                          {t('logColSecret')}
-                        </th>
-                        <th scope="col" className="px-3 py-2.5">
-                          {t('logColMetrics')}
-                        </th>
-                        <th scope="col" className="px-3 py-2.5 text-right">
-                          {t('logColTime')}
-                        </th>
-                        <th scope="col" className="px-3 py-2.5 text-right">
-                          {t('logColAction')}
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-on-dark-faint/15 font-mono">
-                      {logs.map((entry) => {
-                        const badge = LOG_BADGE_STYLES[entry.action];
-                        const BadgeIcon =
-                          entry.action === 'blocked_host'
-                            ? ShieldAlert
-                            : entry.action === 'mitm_token_added'
-                              ? CheckCircle2
-                              : Globe;
-                        const normHost = normalizeHostPattern(entry.host);
-                        const evalHost = policy
-                          ? evaluateHostInPolicy(policy, normHost)
-                          : null;
-                        const feedback = triageFeedbackByHost[normHost];
-                        const rowPending = triagePendingHost === normHost;
-                        const controlsDisabled =
-                          !canEditBotSecrets ||
-                          policyMutationInFlight ||
-                          policyStateUnknown ||
-                          !policy;
-
-                        return (
-                          <tr key={entry.id}>
-                            <th
-                              scope="row"
-                              className="whitespace-nowrap px-3 py-2.5 font-sans"
-                            >
-                              <span
-                                className={`inline-flex items-center gap-1.5 rounded-xs border px-2 py-0.5 text-[12px] font-bold ${badge.className}`}
-                              >
-                                <BadgeIcon
-                                  className="h-3.5 w-3.5 shrink-0"
-                                  aria-hidden="true"
-                                />
-                                <span>{t(badge.labelKey)}</span>
-                              </span>
+              <div className="rounded-lg border border-dark-2 bg-terminal p-4 text-on-dark shadow-card">
+                {logs.length === 0 ? (
+                  <p className="py-6 text-center font-mono text-[13px] text-on-dark-muted">
+                    {t('emptyLogs')}
+                  </p>
+                ) : filteredLogs.length === 0 ? (
+                  <div className="flex flex-col items-center gap-3 py-6 text-center">
+                    <p className="font-mono text-[13px] text-on-dark-muted">
+                      {t('emptyFilteredLogs')}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLogSearch('');
+                        setLogPage(1);
+                      }}
+                      className="inline-flex min-h-[44px] items-center rounded-sm border border-on-dark-faint/40 bg-dark px-3.5 text-[13px] font-bold text-paper transition hover:border-green-light hover:text-mint focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+                    >
+                      {t('egressSearchClear')}
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div
+                      tabIndex={0}
+                      role="region"
+                      aria-labelledby="egress-activity-heading"
+                      className="overflow-x-auto"
+                    >
+                      <table
+                        aria-label={t('egressTableAria')}
+                        className="w-full border-collapse text-left text-[13px]"
+                      >
+                        <thead className="border-b border-on-dark-faint/20 text-[12px] font-bold uppercase tracking-[0.04em] text-on-dark-muted">
+                          <tr>
+                            <th scope="col" className="px-2.5 py-2.5">
+                              {t('logColOutcome')}
                             </th>
-                            <td className="px-3 py-2.5 text-on-dark">
-                              <div className="flex flex-col gap-0.5">
-                                <span>{formatLogTarget(entry)}</span>
-                                <span className="text-[11px] text-on-dark-muted">
-                                  {t('logStatusCode', {
-                                    code: entry.statusCode,
-                                  })}
-                                </span>
-                              </div>
-                            </td>
-                            <td className="px-3 py-2.5 text-on-dark-muted">
-                              {entry.secretName
-                                ? t('logSecretLabel', {
-                                    scope: entry.secretScope,
-                                    name: entry.secretName,
-                                  })
-                                : t('logNoSecret')}
-                            </td>
-                            <td className="whitespace-nowrap px-3 py-2.5 text-on-dark-muted">
-                              {t('logMetaLatency', {
-                                ms: entry.latencyMs,
-                                bytes: entry.bytesTransferred,
-                              })}
-                            </td>
-                            <td className="whitespace-nowrap px-3 py-2.5 text-right text-on-dark-muted">
-                              {formatTimestamp(entry.createdAt)}
-                            </td>
-                            <td className="whitespace-nowrap px-3 py-2.5 text-right font-sans">
-                              <div className="inline-flex flex-wrap items-center justify-end gap-2">
-                                {entry.action === 'mitm_token_added' ? (
+                            <th scope="col" className="px-2.5 py-2.5">
+                              {t('logColDestination')}
+                            </th>
+                            <th scope="col" className="px-2.5 py-2.5">
+                              {t('logColSecret')}
+                            </th>
+                            <th scope="col" className="px-2.5 py-2.5">
+                              {t('logColTime')}
+                            </th>
+                            <th
+                              scope="col"
+                              className="px-2.5 py-2.5 text-right"
+                            >
+                              {t('logColAction')}
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-on-dark-faint/15 font-mono">
+                          {pagedLogs.map((entry) => {
+                            const badge = LOG_BADGE_STYLES[entry.action];
+                            const BadgeIcon =
+                              entry.action === 'blocked_host'
+                                ? ShieldAlert
+                                : entry.action === 'mitm_token_added'
+                                  ? CheckCircle2
+                                  : Globe;
+                            const normHost = normalizeHostPattern(entry.host);
+                            const evalHost = policy
+                              ? evaluateHostInPolicy(policy, normHost)
+                              : null;
+                            const feedback = triageFeedbackByHost[normHost];
+                            const rowPending = triagePendingHost === normHost;
+                            const controlsDisabled =
+                              !canEditBotSecrets ||
+                              policyMutationInFlight ||
+                              policyStateUnknown ||
+                              !policy;
+
+                            return (
+                              <tr key={entry.id}>
+                                <th
+                                  scope="row"
+                                  className="whitespace-nowrap px-2.5 py-2.5 align-top font-sans"
+                                >
                                   <span
-                                    className={`inline-flex min-h-[44px] items-center gap-1.5 rounded-sm border px-3 text-[12px] font-bold ${
-                                      evalHost?.matchedBlock
-                                        ? 'border-dashed border-amber-line bg-dark-2 text-amber-on-dark'
-                                        : 'border-on-dark-faint/30 bg-dark-2 text-on-dark-muted'
-                                    }`}
+                                    className={`inline-flex items-center gap-1.5 rounded-xs border px-2 py-0.5 text-[12px] font-bold ${badge.className}`}
                                   >
-                                    <Lock
+                                    <BadgeIcon
                                       className="h-3.5 w-3.5 shrink-0"
                                       aria-hidden="true"
                                     />
+                                    <span>{t(badge.labelKey)}</span>
+                                  </span>
+                                </th>
+                                <td className="min-w-0 max-w-[260px] px-2.5 py-2.5 align-top text-on-dark">
+                                  <div className="flex flex-col gap-0.5">
+                                    <span className="break-all">
+                                      {formatLogTarget(entry)}
+                                    </span>
+                                    <span className="text-[11px] text-on-dark-muted">
+                                      {t('logStatusCode', {
+                                        code: entry.statusCode,
+                                      })}
+                                    </span>
+                                  </div>
+                                </td>
+                                <td className="max-w-[140px] break-words px-2.5 py-2.5 align-top text-on-dark-muted">
+                                  {entry.secretName
+                                    ? t('logSecretLabel', {
+                                        scope: entry.secretScope,
+                                        name: entry.secretName,
+                                      })
+                                    : t('logNoSecret')}
+                                </td>
+                                <td className="whitespace-nowrap px-2.5 py-2.5 align-top text-on-dark-muted">
+                                  <div className="flex flex-col gap-0.5">
                                     <span>
-                                      {evalHost?.matchedBlock
-                                        ? t('triageViaSecretBlocked')
-                                        : t('triageViaSecret')}
+                                      {formatTimestamp(entry.createdAt)}
                                     </span>
-                                  </span>
-                                ) : rowPending ? (
-                                  <span className="inline-flex min-h-[44px] items-center rounded-sm border border-on-dark-faint/30 bg-dark-2 px-3 text-[12px] font-bold text-on-dark-muted">
-                                    {t('triageSaving')}
-                                  </span>
-                                ) : feedback ? (
-                                  <div className="inline-flex flex-wrap items-center justify-end gap-2">
-                                    <span
-                                      className={`inline-flex min-h-[44px] items-center gap-1.5 rounded-sm border px-3 text-[12px] font-bold ${
-                                        feedback.status === 'pending' ||
-                                        feedback.op === 'block'
-                                          ? 'border-dashed border-amber-line bg-dark-2 text-amber-on-dark'
-                                          : 'border-mint-line/40 bg-mint-soft text-green-600'
-                                      }`}
-                                    >
-                                      {feedback.status === 'pending'
-                                        ? t('triagePendingEnforcement')
-                                        : feedback.op === 'allow'
-                                          ? t('triageAllowedFeedback')
-                                          : t('triageBlockedFeedback')}
+                                    <span className="text-[11px]">
+                                      {t('logMetaLatency', {
+                                        ms: entry.latencyMs,
+                                        bytes: entry.bytesTransferred,
+                                      })}
                                     </span>
-                                    {canEditBotSecrets ? (
-                                      <button
-                                        type="button"
-                                        aria-label={t('triageUndoAria', {
-                                          host: normHost,
-                                        })}
-                                        disabled={controlsDisabled}
-                                        onClick={() =>
-                                          void handleUndoTriage(normHost)
-                                        }
-                                        className="inline-flex min-h-[44px] items-center gap-1.5 rounded-sm border border-on-dark-faint/40 bg-dark px-3 text-[12px] font-bold text-paper transition hover:border-green-light hover:text-mint focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green disabled:cursor-not-allowed disabled:opacity-50"
-                                      >
-                                        <RotateCcw
-                                          className="h-3.5 w-3.5 shrink-0"
-                                          aria-hidden="true"
-                                        />
-                                        <span>{t('triageUndoAction')}</span>
-                                      </button>
-                                    ) : null}
                                   </div>
-                                ) : evalHost?.isBlockedWildcard &&
-                                  evalHost.matchedBlock ? (
-                                  <div className="inline-flex flex-wrap items-center justify-end gap-2">
-                                    <span className="inline-flex min-h-[44px] items-center gap-1.5 rounded-sm border border-dashed border-amber-line bg-dark-2 px-3 font-mono text-[12px] font-bold text-amber-on-dark">
-                                      <Ban
-                                        className="h-3.5 w-3.5 shrink-0"
-                                        aria-hidden="true"
-                                      />
-                                      <span>
-                                        {t('triageWildcardBlocked', {
-                                          pattern: evalHost.matchedBlock,
-                                        })}
+                                </td>
+                                <td className="px-2.5 py-2.5 text-right align-top font-sans">
+                                  <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
+                                    {entry.action === 'mitm_token_added' ? (
+                                      <span
+                                        className={`inline-flex min-h-[44px] items-center gap-1.5 rounded-sm border px-3 text-[12px] font-bold ${
+                                          evalHost?.matchedBlock
+                                            ? 'border-dashed border-amber-line bg-dark-2 text-amber-on-dark'
+                                            : 'border-on-dark-faint/30 bg-dark-2 text-on-dark-muted'
+                                        }`}
+                                      >
+                                        <Lock
+                                          className="h-3.5 w-3.5 shrink-0"
+                                          aria-hidden="true"
+                                        />
+                                        <span>
+                                          {evalHost?.matchedBlock
+                                            ? t('triageViaSecretBlocked')
+                                            : t('triageViaSecret')}
+                                        </span>
                                       </span>
-                                    </span>
-                                    {canEditBotSecrets ? (
-                                      <button
-                                        type="button"
-                                        onClick={handleJumpToBlockedRule}
-                                        className="inline-flex min-h-[44px] items-center gap-1.5 rounded-sm border border-amber-line bg-dark px-3 text-[12px] font-bold text-amber-on-dark transition hover:bg-dark-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
-                                      >
-                                        <Pencil
-                                          className="h-3.5 w-3.5 shrink-0"
-                                          aria-hidden="true"
-                                        />
-                                        <span>{t('triageEditRuleAction')}</span>
-                                      </button>
-                                    ) : null}
-                                  </div>
-                                ) : evalHost ? (
-                                  <>
-                                    {evalHost.isBlockedExact ? (
-                                      <span className="inline-flex min-h-[44px] items-center rounded-sm border border-dashed border-amber-line bg-dark-2 px-3 text-[12px] font-bold text-amber-on-dark">
-                                        {t('triageBlockedStatus')}
-                                      </span>
-                                    ) : null}
-                                    {!evalHost.isAllowed &&
-                                    canEditBotSecrets ? (
-                                      <button
-                                        type="button"
-                                        aria-label={t('triageAllowAria', {
-                                          host: normHost,
-                                        })}
-                                        disabled={controlsDisabled}
-                                        onClick={() =>
-                                          void handleTriageHost(
-                                            normHost,
-                                            'allow',
-                                          )
-                                        }
-                                        className="inline-flex min-h-[44px] items-center gap-1.5 rounded-sm border border-mint-line/40 bg-mint-soft px-3 text-[12px] font-bold text-green-600 transition hover:bg-mint focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green disabled:cursor-not-allowed disabled:opacity-50"
-                                      >
-                                        <Check
-                                          className="h-3.5 w-3.5 shrink-0"
-                                          aria-hidden="true"
-                                        />
-                                        <span>{t('triageAllowAction')}</span>
-                                      </button>
-                                    ) : null}
-                                    {(evalHost.isAllowed ||
-                                      !evalHost.isBlockedExact) &&
-                                    canEditBotSecrets ? (
-                                      <button
-                                        type="button"
-                                        aria-label={t('triageBlockAria', {
-                                          host: normHost,
-                                        })}
-                                        disabled={controlsDisabled}
-                                        onClick={() =>
-                                          void handleTriageHost(
-                                            normHost,
-                                            'block',
-                                          )
-                                        }
-                                        className="inline-flex min-h-[44px] items-center gap-1.5 rounded-sm border border-amber-line bg-dark-2 px-3 text-[12px] font-bold text-amber-on-dark transition hover:bg-dark focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green disabled:cursor-not-allowed disabled:opacity-50"
-                                      >
-                                        <Ban
-                                          className="h-3.5 w-3.5 shrink-0"
-                                          aria-hidden="true"
-                                        />
-                                        <span>{t('triageBlockAction')}</span>
-                                      </button>
-                                    ) : null}
-                                    {!canEditBotSecrets &&
-                                    !evalHost.isBlockedExact ? (
+                                    ) : rowPending ? (
                                       <span className="inline-flex min-h-[44px] items-center rounded-sm border border-on-dark-faint/30 bg-dark-2 px-3 text-[12px] font-bold text-on-dark-muted">
-                                        {evalHost.isAllowed
-                                          ? t('triageAllowedStatus')
-                                          : t('triageBlockedStatus')}
+                                        {t('triageSaving')}
                                       </span>
+                                    ) : feedback ? (
+                                      <div className="inline-flex flex-wrap items-center justify-end gap-2">
+                                        <span
+                                          className={`inline-flex min-h-[44px] items-center gap-1.5 rounded-sm border px-3 text-[12px] font-bold ${
+                                            feedback.status === 'pending' ||
+                                            feedback.op === 'block'
+                                              ? 'border-dashed border-amber-line bg-dark-2 text-amber-on-dark'
+                                              : 'border-mint-line/40 bg-mint-soft text-green-600'
+                                          }`}
+                                        >
+                                          {feedback.status === 'pending'
+                                            ? t('triagePendingEnforcement')
+                                            : feedback.op === 'allow'
+                                              ? t('triageAllowedFeedback')
+                                              : t('triageBlockedFeedback')}
+                                        </span>
+                                        {canEditBotSecrets ? (
+                                          <button
+                                            type="button"
+                                            aria-label={t('triageUndoAria', {
+                                              host: normHost,
+                                            })}
+                                            disabled={controlsDisabled}
+                                            onClick={() =>
+                                              void handleUndoTriage(normHost)
+                                            }
+                                            className="inline-flex min-h-[44px] items-center gap-1.5 rounded-sm border border-on-dark-faint/40 bg-dark px-3 text-[12px] font-bold text-paper transition hover:border-green-light hover:text-mint focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green disabled:cursor-not-allowed disabled:opacity-50"
+                                          >
+                                            <RotateCcw
+                                              className="h-3.5 w-3.5 shrink-0"
+                                              aria-hidden="true"
+                                            />
+                                            <span>{t('triageUndoAction')}</span>
+                                          </button>
+                                        ) : null}
+                                      </div>
+                                    ) : evalHost?.isBlockedWildcard &&
+                                      evalHost.matchedBlock ? (
+                                      <div className="inline-flex flex-wrap items-center justify-end gap-2">
+                                        <span className="inline-flex min-h-[44px] items-center gap-1.5 rounded-sm border border-dashed border-amber-line bg-dark-2 px-3 font-mono text-[12px] font-bold text-amber-on-dark">
+                                          <Ban
+                                            className="h-3.5 w-3.5 shrink-0"
+                                            aria-hidden="true"
+                                          />
+                                          <span>
+                                            {t('triageWildcardBlocked', {
+                                              pattern: evalHost.matchedBlock,
+                                            })}
+                                          </span>
+                                        </span>
+                                        {canEditBotSecrets ? (
+                                          <button
+                                            type="button"
+                                            onClick={handleJumpToBlockedRule}
+                                            className="inline-flex min-h-[44px] items-center gap-1.5 rounded-sm border border-amber-line bg-dark px-3 text-[12px] font-bold text-amber-on-dark transition hover:bg-dark-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+                                          >
+                                            <Pencil
+                                              className="h-3.5 w-3.5 shrink-0"
+                                              aria-hidden="true"
+                                            />
+                                            <span>
+                                              {t('triageEditRuleAction')}
+                                            </span>
+                                          </button>
+                                        ) : null}
+                                      </div>
+                                    ) : evalHost ? (
+                                      <>
+                                        {evalHost.isBlockedExact ? (
+                                          <span className="inline-flex min-h-[44px] items-center rounded-sm border border-dashed border-amber-line bg-dark-2 px-3 text-[12px] font-bold text-amber-on-dark">
+                                            {t('triageBlockedStatus')}
+                                          </span>
+                                        ) : null}
+                                        {!evalHost.isAllowed &&
+                                        canEditBotSecrets ? (
+                                          <button
+                                            type="button"
+                                            aria-label={t('triageAllowAria', {
+                                              host: normHost,
+                                            })}
+                                            disabled={controlsDisabled}
+                                            onClick={() =>
+                                              void handleTriageHost(
+                                                normHost,
+                                                'allow',
+                                              )
+                                            }
+                                            className="inline-flex min-h-[44px] items-center gap-1.5 rounded-sm border border-mint-line/40 bg-mint-soft px-3 text-[12px] font-bold text-green-600 transition hover:bg-mint focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green disabled:cursor-not-allowed disabled:opacity-50"
+                                          >
+                                            <Check
+                                              className="h-3.5 w-3.5 shrink-0"
+                                              aria-hidden="true"
+                                            />
+                                            <span>
+                                              {t('triageAllowAction')}
+                                            </span>
+                                          </button>
+                                        ) : null}
+                                        {(evalHost.isAllowed ||
+                                          !evalHost.isBlockedExact) &&
+                                        canEditBotSecrets ? (
+                                          <button
+                                            type="button"
+                                            aria-label={t('triageBlockAria', {
+                                              host: normHost,
+                                            })}
+                                            disabled={controlsDisabled}
+                                            onClick={() =>
+                                              void handleTriageHost(
+                                                normHost,
+                                                'block',
+                                              )
+                                            }
+                                            className="inline-flex min-h-[44px] items-center gap-1.5 rounded-sm border border-amber-line bg-dark-2 px-3 text-[12px] font-bold text-amber-on-dark transition hover:bg-dark focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green disabled:cursor-not-allowed disabled:opacity-50"
+                                          >
+                                            <Ban
+                                              className="h-3.5 w-3.5 shrink-0"
+                                              aria-hidden="true"
+                                            />
+                                            <span>
+                                              {t('triageBlockAction')}
+                                            </span>
+                                          </button>
+                                        ) : null}
+                                        {!canEditBotSecrets &&
+                                        !evalHost.isBlockedExact ? (
+                                          <span className="inline-flex min-h-[44px] items-center rounded-sm border border-on-dark-faint/30 bg-dark-2 px-3 text-[12px] font-bold text-on-dark-muted">
+                                            {evalHost.isAllowed
+                                              ? t('triageAllowedStatus')
+                                              : t('triageBlockedStatus')}
+                                          </span>
+                                        ) : null}
+                                      </>
                                     ) : null}
-                                  </>
-                                ) : null}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </section>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    <nav
+                      aria-label={t('egressPaginationAria')}
+                      className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-on-dark-faint/20 pt-3 font-sans text-[13px] text-on-dark-muted"
+                    >
+                      <span>
+                        {t('egressPageSummary', {
+                          start: pageRangeStart,
+                          end: pageRangeEnd,
+                          total: totalFilteredLogs,
+                        })}
+                      </span>
 
-          <BotMCPProxyPanel
-            workspaceId={workspace.id}
-            botId={bot.id}
-            botName={bot.name}
-            canManage={canEditBotSecrets}
-            ignoreMissing
-          />
+                      <div className="flex flex-wrap items-center gap-2">
+                        {hasMoreLogs ? (
+                          <button
+                            type="button"
+                            disabled={loadingMoreLogs || refreshingLogs}
+                            onClick={() => void handleLoadOlderLogs()}
+                            className="inline-flex min-h-[44px] items-center rounded-sm border border-on-dark-faint/40 bg-dark px-3 text-[13px] font-bold text-paper transition hover:border-green-light hover:text-mint focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {loadingMoreLogs
+                              ? t('egressLoadingOlder')
+                              : t('egressLoadOlder')}
+                          </button>
+                        ) : null}
 
-          <section className="flex flex-col gap-4">
-            <div className="flex flex-wrap items-end justify-between gap-3">
-              <div>
-                <Eyebrow>{t('budgetsEyebrow')}</Eyebrow>
-                <h2 className="mt-1 text-[22px] font-black tracking-[-0.01em] text-ink">
-                  {t('budgetsTitle')}
-                </h2>
+                        <button
+                          type="button"
+                          disabled={safeLogPage <= 1}
+                          onClick={() =>
+                            setLogPage((prev) => Math.max(1, prev - 1))
+                          }
+                          className="inline-flex min-h-[44px] items-center rounded-sm border border-on-dark-faint/40 bg-dark px-3 text-[13px] font-bold text-paper transition hover:border-green-light hover:text-mint focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {t('egressPrevPage')}
+                        </button>
+
+                        <span className="px-1 font-mono text-[12px] text-on-dark">
+                          {t('egressPageNumber', {
+                            page: safeLogPage,
+                            totalPages: totalLogPages,
+                          })}
+                        </span>
+
+                        <button
+                          type="button"
+                          disabled={safeLogPage >= totalLogPages}
+                          onClick={() =>
+                            setLogPage((prev) =>
+                              Math.min(totalLogPages, prev + 1),
+                            )
+                          }
+                          className="inline-flex min-h-[44px] items-center rounded-sm border border-on-dark-faint/40 bg-dark px-3 text-[13px] font-bold text-paper transition hover:border-green-light hover:text-mint focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {t('egressNextPage')}
+                        </button>
+                      </div>
+                    </nav>
+                  </>
+                )}
               </div>
-              <Link
-                href="/settings/budgets"
-                className="inline-flex min-h-[44px] items-center gap-1.5 rounded-sm border-[1.5px] border-line bg-paper px-4 text-[14px] font-bold text-green-600 transition duration-150 hover:border-green-light hover:bg-mint-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
-              >
-                <span>{t('workspaceBudgetsLink')}</span>
-                <ArrowRight className="h-4 w-4" aria-hidden="true" />
-              </Link>
-            </div>
-            <BudgetPanel
-              workspaceId={workspace.id}
-              botId={bot.id}
-              canManage={canManageMembers(workspace.role)}
-              ignoreMissing
-            />
+            </section>
           </section>
         </>
       )}

@@ -12,9 +12,12 @@ import type { components } from '@/types/openapi.gen';
 export function CodexPlanPanel({
   workspaceId,
   botId,
+  embedded = false,
 }: {
   workspaceId: string;
   botId: string;
+  /** Omit the outer Card wrapper when hosted inside the unified CLI tools card. */
+  embedded?: boolean;
 }) {
   const t = useTranslations('codexPlan');
   const client = useQueryClient();
@@ -51,9 +54,13 @@ export function CodexPlanPanel({
   });
   const value = status.data;
   const pending = start.isPending || disconnect.isPending;
-  return (
-    <Card className="flex flex-col gap-3 p-6">
-      <h2 className="text-[20px] font-black text-ink">{t('title')}</h2>
+  const HeadingTag = embedded ? 'h3' : 'h2';
+  const headingClassName = embedded
+    ? 'text-[18px] font-black text-ink'
+    : 'text-[20px] font-black text-ink';
+  const body = (
+    <div className="flex flex-col gap-3">
+      <HeadingTag className={headingClassName}>{t('title')}</HeadingTag>
       <p className="text-[14px] text-ink-2">{t('description')}</p>
       {value ? (
         <p className="text-[14px] font-bold text-ink" role="status">
@@ -121,6 +128,12 @@ export function CodexPlanPanel({
           ) : null}
         </div>
       ) : null}
-    </Card>
+    </div>
   );
+
+  if (embedded) {
+    return body;
+  }
+
+  return <Card className="p-6">{body}</Card>;
 }

@@ -798,4 +798,146 @@ describe('BotSecretsView egress activity triage', () => {
       screen.queryByText('Added to allowed hosts'),
     ).not.toBeInTheDocument();
   });
+
+  it('paginates egress activity logs (10 per page), filters live by search query, and loads older entries via offset', async () => {
+    const workspace = makeWorkspace('owner');
+    const bot = makeBot();
+    const policy = makePolicy({
+      policy: 'allowlist',
+      allowedHosts: ['pypi.org'],
+      blockedHosts: [],
+      revision: 1,
+    });
+
+    const firstBatch: EgressLogEntry[] = Array.from({ length: 200 }, (_, i) =>
+      makeLog({
+        id: `log-${i + 1}`,
+        host: `service-${String(i + 1).padStart(3, '0')}.example`,
+        action: i % 2 === 0 ? 'blocked_host' : 'tunnel_passthrough',
+        statusCode: i % 2 === 0 ? 403 : 200,
+        createdAt: `2026-11-18T12:${String(Math.floor(i / 60)).padStart(2, '0')}:${String(i % 60).padStart(2, '0')}Z`,
+      }),
+    );
+    const olderBatch: EgressLogEntry[] = [
+      makeLog({
+        id: 'log-201',
+        host: 'legacy-archive.example',
+        action: 'blocked_host',
+        statusCode: 403,
+        createdAt: '2026-11-17T08:00:00Z',
+      }),
+    ];
+
+    const requestedUrls: string[] = [];
+    let failOlder = true;
+
+    installFetchMock((url, method) => {
+      if (url === '/api/auth/refresh') {
+        return jsonResponse(makeSession('owner'), 200);
+      }
+      if (url === '/api/workspaces/ws-1/bots/bot-1/secrets') {
+        return jsonResponse({ secrets: [] }, 200);
+      }
+      if (
+        url === '/api/workspaces/ws-1/bots/bot-1/egress' &&
+        method === 'GET'
+      ) {
+        return jsonResponse(policy, 200);
+      }
+      if (url.startsWith('/api/workspaces/ws-1/bots/bot-1/egress/logs')) {
+        requestedUrls.push(url);
+        if (url.includes('offset=200')) {
+          if (failOlder) {
+            return jsonResponse(
+              { error: { code: 'internal_error', message: 'db unavailable' } },
+              503,
+            );
+          }
+          return jsonResponse({ logs: olderBatch }, 200);
+        }
+        return jsonResponse({ logs: firstBatch }, 200);
+      }
+      return jsonResponse({}, 404);
+    });
+
+    renderWithProviders(<BotSecretsView workspace={workspace} bot={bot} />);
+
+    // Page 1 shows entries 1..10 of 200, without forcing min-w-[840px] clipping.
+    expect(await screen.findByText('Showing 1–10 of 200')).toBeInTheDocument();
+    expect(screen.getByText('Page 1 of 20')).toBeInTheDocument();
+    const table = screen.getByRole('table', {
+      name: 'Recent egress activity table',
+    });
+    expect(table).not.toHaveClass('min-w-[840px]');
+    expect(
+      screen.getByRole('button', { name: 'Allow service-001.example' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/service-011\.example/)).not.toBeInTheDocument();
+
+    const prevButton = screen.getByRole('button', { name: 'Previous' });
+    const nextButton = screen.getByRole('button', { name: 'Next' });
+    expect(prevButton).toBeDisabled();
+    expect(nextButton).toBeEnabled();
+
+    // Navigate to page 2 -> entries 11..20 appear and Previous is enabled.
+    fireEvent.click(nextButton);
+    expect(screen.getByText('Showing 11–20 of 200')).toBeInTheDocument();
+    expect(screen.getByText('Page 2 of 20')).toBeInTheDocument();
+    expect(prevButton).toBeEnabled();
+    expect(
+      screen.getByRole('button', { name: 'Allow service-011.example' }),
+    ).toBeInTheDocument();
+
+    // Live search resets back to page 1 and filters by host substring.
+    const searchInput = screen.getByLabelText('Search egress activity');
+    fireEvent.change(searchInput, { target: { value: 'service-04' } });
+    expect(screen.getByText('Showing 1–10 of 10')).toBeInTheDocument();
+    expect(screen.getByText('Page 1 of 1')).toBeInTheDocument();
+    expect(screen.getByText(/service-040\.example/)).toBeInTheDocument();
+    expect(nextButton).toBeDisabled();
+
+    // Unmatched search shows empty filtered state with clear button.
+    fireEvent.change(searchInput, {
+      target: { value: 'nonexistent-domain.invalid' },
+    });
+    expect(
+      screen.getByText('No egress entries match your search filter.'),
+    ).toBeInTheDocument();
+
+    // Clear search restores paginated 200-item view.
+    fireEvent.click(
+      screen.getAllByRole('button', { name: 'Clear search' })[0]!,
+    );
+    expect(screen.getByText('Showing 1–10 of 200')).toBeInTheDocument();
+
+    // Loading older entries handles server errors gracefully, then succeeds via offset=200.
+    const loadOlderBtn = screen.getByRole('button', {
+      name: 'Load older entries',
+    });
+    fireEvent.click(loadOlderBtn);
+    expect(
+      await screen.findByText(
+        'Something went wrong talking to the server. Please try again.',
+      ),
+    ).toBeInTheDocument();
+
+    failOlder = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Load older entries' }));
+    expect(await screen.findByText('Showing 1–10 of 201')).toBeInTheDocument();
+    expect(requestedUrls).toContain(
+      '/api/workspaces/ws-1/bots/bot-1/egress/logs?limit=200&offset=200',
+    );
+    expect(
+      screen.queryByRole('button', { name: 'Load older entries' }),
+    ).not.toBeInTheDocument();
+
+    // Search finds the newly loaded older entry from page 21.
+    fireEvent.change(screen.getByLabelText('Search egress activity'), {
+      target: { value: 'legacy-archive' },
+    });
+    expect(screen.getByText('Showing 1–1 of 1')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Allow legacy-archive.example' }),
+    ).toBeInTheDocument();
+  });
 });

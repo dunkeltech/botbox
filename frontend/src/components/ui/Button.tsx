@@ -1,4 +1,4 @@
-import { type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { type ButtonHTMLAttributes, type ReactNode, type Ref } from 'react';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'onDark' | 'icon';
 
@@ -6,6 +6,7 @@ type BaseButtonProps = Omit<
   ButtonHTMLAttributes<HTMLButtonElement>,
   'children' | 'type'
 > & {
+  ref?: Ref<HTMLButtonElement>;
   type?: 'button' | 'submit' | 'reset';
   arrow?: boolean;
 };
@@ -38,6 +39,7 @@ const TRAILING_ARROW = '→';
  * visible focus outline, and non-red disabled styling.
  */
 export function Button({
+  ref,
   variant = 'primary',
   type = 'button',
   arrow = false,
@@ -50,6 +52,7 @@ export function Button({
 
   return (
     <button
+      ref={ref}
       type={type}
       disabled={disabled}
       className={`group inline-flex min-h-[44px] items-center justify-center gap-2 rounded-sm font-bold text-[15px] transition duration-150 ease-out focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green disabled:cursor-not-allowed disabled:border-transparent disabled:bg-on-dark-muted disabled:text-paper disabled:hover:translate-y-0 ${paddingClass} ${VARIANT_CLASSES[variant]} ${className}`.trim()}

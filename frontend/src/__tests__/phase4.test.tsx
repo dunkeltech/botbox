@@ -279,6 +279,88 @@ describe('Phase 4 chat and budgets', () => {
       ),
     );
   });
+
+  it.each([
+    {
+      name: 'within budget (< 80%)',
+      budgets: [
+        {
+          id: 'b-ok',
+          period: 'day' as const,
+          limitMicros: 5_000_000,
+          spentMicros: 170_000,
+          warning: false,
+          exceeded: false,
+        },
+      ],
+      expectedBadge: messages.budgets.withinBudget,
+      expectExceededAlert: false,
+    },
+    {
+      name: 'warning threshold (>= 80%)',
+      budgets: [
+        {
+          id: 'b-warn',
+          period: 'day' as const,
+          limitMicros: 5_000_000,
+          spentMicros: 4_200_000,
+          warning: true,
+          exceeded: false,
+        },
+      ],
+      expectedBadge: messages.budgets.warningBadge,
+      expectExceededAlert: false,
+    },
+    {
+      name: 'exhausted (100%)',
+      budgets: [
+        {
+          id: 'b-max',
+          period: 'day' as const,
+          limitMicros: 5_000_000,
+          spentMicros: 5_000_000,
+          warning: true,
+          exceeded: true,
+        },
+      ],
+      expectedBadge: messages.budgets.hardCapCode,
+      expectExceededAlert: true,
+    },
+    {
+      name: 'no caps configured',
+      budgets: [],
+      expectedBadge: messages.budgets.noLimitSet,
+      expectExceededAlert: false,
+    },
+  ])(
+    'shows accurate bot budget status badge when $name',
+    async ({ budgets, expectedBadge, expectExceededAlert }) => {
+      request.mockResolvedValue({
+        spendTodayMicros: 170_000,
+        budgets,
+      });
+      show(<BudgetPanel workspaceId="ws-1" botId="bot-1" canManage />);
+
+      expect(
+        (await screen.findAllByText(expectedBadge)).length,
+      ).toBeGreaterThanOrEqual(1);
+      if (expectExceededAlert) {
+        expect(screen.getAllByText(messages.budgets.hardCapCode)).toHaveLength(
+          2,
+        );
+        expect(
+          screen.getByText(messages.budgets.hardCapTitle),
+        ).toBeInTheDocument();
+      } else {
+        expect(
+          screen.queryByText(messages.budgets.hardCapCode),
+        ).not.toBeInTheDocument();
+        expect(
+          screen.queryByText(messages.budgets.hardCapTitle),
+        ).not.toBeInTheDocument();
+      }
+    },
+  );
 });
 
 describe('tool lines in chat', () => {

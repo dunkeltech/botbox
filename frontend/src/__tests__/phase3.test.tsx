@@ -803,7 +803,7 @@ describe('Phase 3 Secrets & Outbound Egress UI', () => {
         calls.some(
           (c) =>
             c.url ===
-            '/api/workspaces/ws-1/bots/bot-1/egress/logs?action=blocked_host&limit=50',
+            '/api/workspaces/ws-1/bots/bot-1/egress/logs?action=blocked_host&limit=200',
         ),
       ).toBe(true);
     });
@@ -871,12 +871,18 @@ describe('Phase 3 Secrets & Outbound Egress UI', () => {
       name: 'Bot configuration sections',
     });
     expect(tabsNav).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'General' })).toHaveAttribute(
+    expect(
+      screen.getByRole('link', { name: 'General & runtime' }),
+    ).toHaveAttribute('href', '/bots/bot-1/settings');
+    expect(
+      screen.getByRole('link', { name: 'Budgets & usage' }),
+    ).toHaveAttribute('href', '/bots/bot-1/settings/budgets');
+    expect(screen.getByRole('link', { name: 'MCP & GitLab' })).toHaveAttribute(
       'href',
-      '/bots/bot-1/settings',
+      '/bots/bot-1/settings/integrations',
     );
     expect(
-      screen.getByRole('link', { name: 'Secrets & network' }),
+      screen.getByRole('link', { name: 'Secrets & egress' }),
     ).toHaveAttribute('href', '/bots/bot-1/secrets');
   });
 });

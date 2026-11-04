@@ -4,6 +4,9 @@ import {
   ArrowLeft,
   Folder,
   FileText,
+  Maximize2,
+  MessageSquare,
+  Minimize2,
   Play,
   RefreshCw,
   RotateCcw,
@@ -14,6 +17,7 @@ import {
   Monitor,
   ListChecks,
   Wrench,
+  X,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
@@ -38,6 +42,7 @@ import {
   Textarea,
 } from '@/components/ui';
 import { ActionTimeline } from '@/components/workspace/ActionTimeline';
+import { BotWorkspaceSkeleton } from '@/components/workspace/BotWorkspaceSkeleton';
 import { VncViewport } from '@/components/workspace/VncViewport';
 import { RunnerControl } from '@/components/chat/RunnerControl';
 import { ChatPanel } from '@/components/chat/ChatPanel';
@@ -173,6 +178,12 @@ export function BotWorkspaceView() {
 
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('desktop');
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
+  const [desktopFullscreen, setDesktopFullscreen] = useState(false);
+  const [fullscreenChatOpen, setFullscreenChatOpen] = useState(false);
+  const [browserFullscreen, setBrowserFullscreen] = useState(false);
+  const computerPanelRef = useRef<HTMLDivElement | null>(null);
+  const fullscreenTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const wasFullscreenRef = useRef(false);
   const [toolTrace, setToolTrace] = useState<ToolTraceSummary | null>(null);
   const [selectedToolTurnKey, setSelectedToolTurnKey] = useState<string | null>(
     null,
@@ -383,18 +394,78 @@ export function BotWorkspaceView() {
     };
   }, [activeWorkspace, bot, envStatus, activeTab, controlHolderId]);
 
+  const isFullscreen =
+    desktopFullscreen && envStatus === 'running' && activeTab === 'desktop';
+
+  useEffect(() => {
+    if (
+      desktopFullscreen &&
+      (envStatus !== 'running' || activeTab !== 'desktop')
+    ) {
+      setDesktopFullscreen(false);
+      setFullscreenChatOpen(false);
+    }
+  }, [desktopFullscreen, envStatus, activeTab]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') {
+      return;
+    }
+    const handleFullscreenChange = () => {
+      setBrowserFullscreen(
+        Boolean(
+          document.fullscreenElement &&
+          document.fullscreenElement === computerPanelRef.current,
+        ),
+      );
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isFullscreen) {
+      if (wasFullscreenRef.current) {
+        wasFullscreenRef.current = false;
+        fullscreenTriggerRef.current?.focus();
+      }
+      return;
+    }
+
+    wasFullscreenRef.current = true;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') {
+        return;
+      }
+      if (document.querySelector('dialog[open]')) {
+        return;
+      }
+      event.preventDefault();
+      if (document.fullscreenElement) {
+        void document.exitFullscreen?.().catch(() => {});
+      }
+      setFullscreenChatOpen(false);
+      setDesktopFullscreen(false);
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isFullscreen]);
+
   if (!activeWorkspace) {
     return null;
   }
 
   if (loading) {
-    return (
-      <Card className="p-8 text-center">
-        <p role="status" className="text-[15px] font-bold text-ink-2">
-          {t('loadingBot')}
-        </p>
-      </Card>
-    );
+    return <BotWorkspaceSkeleton />;
   }
 
   if (loadErrorKey || !bot) {
@@ -600,23 +671,147 @@ export function BotWorkspaceView() {
 
   const wsUrl = ticket ? buildVncWsUrl(ticket.wsPath) : '';
 
+  function exitDesktopFullscreen() {
+    if (typeof document !== 'undefined' && document.fullscreenElement) {
+      void document.exitFullscreen?.().catch(() => {});
+    }
+    setFullscreenChatOpen(false);
+    setDesktopFullscreen(false);
+  }
+
+  function toggleBrowserFullscreen() {
+    if (typeof document === 'undefined') {
+      return;
+    }
+    if (document.fullscreenElement) {
+      void document.exitFullscreen?.().catch(() => {});
+      return;
+    }
+    void computerPanelRef.current?.requestFullscreen?.().catch(() => {});
+  }
+
+  const vncStatusChip = !ticket
+    ? { status: 'stopped' as const, label: t('vnc.disconnected') }
+    : !vncConnected
+      ? { status: 'thinking' as const, label: t('vnc.connecting') }
+      : userHoldsControl
+        ? {
+            status: 'budgetWarning' as const,
+            label: t('vnc.connectedInControl'),
+          }
+        : { status: 'working' as const, label: t('vnc.connectedViewOnly') };
+
+  const sessionStateLabel =
+    envStatus === 'running'
+      ? t('session.stateRunning')
+      : envStatus === 'creating'
+        ? t('session.stateCreating')
+        : envStatus === 'error'
+          ? t('session.stateError')
+          : t('session.stateStopped');
+
+  const sessionPanelContent = (
+    <>
+      <div className="flex items-center justify-between gap-2 border-b border-line pb-3">
+        <div className="min-w-0">
+          <h2 className="text-[18px] font-black leading-[1.25] text-ink">
+            {t('session.title')}
+          </h2>
+          <p className="text-[12px] text-muted">{sessionStateLabel}</p>
+        </div>
+        {isFullscreen ? (
+          <button
+            type="button"
+            aria-label={t('computer.fullscreenChatClose')}
+            onClick={() => setFullscreenChatOpen(false)}
+            className="grid h-11 w-11 shrink-0 place-items-center rounded-sm border border-line bg-paper text-ink transition duration-150 hover:border-green-light hover:bg-mint-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        ) : null}
+      </div>
+
+      <div
+        className={`rounded-sm border px-3 py-2 text-[13px] leading-[1.45] ${
+          lockedByOther
+            ? 'border-dashed border-amber-line bg-amber-tint text-amber'
+            : userHoldsControl
+              ? 'border-mint-line bg-mint-soft text-green-600'
+              : 'border-line bg-paper-2 text-ink-2'
+        }`}
+      >
+        {lockedByOther && controlHolder
+          ? t('session.controlOther', {
+              holder: controlHolder.displayName,
+              email: controlHolder.email,
+            })
+          : userHoldsControl
+            ? t('session.controlYours')
+            : t('session.controlIdle', { name: bot.name })}
+      </div>
+
+      {env?.controlNote ? (
+        <div className="rounded-sm border border-mint-line bg-mint-soft px-3 py-2.5">
+          <Eyebrow>{t('session.handbackNoteEyebrow')}</Eyebrow>
+          <p className="mt-1 text-[13px] font-bold text-ink">
+            {env.controlNote}
+          </p>
+        </div>
+      ) : null}
+
+      <ChatPanel
+        key={`${workspaceId}/${user?.id}/${bot.id}`}
+        workspaceId={workspaceId}
+        userId={user?.id ?? ''}
+        botId={bot.id}
+        name={bot.name}
+        avatarSeed={bot.avatarSeed}
+        canChat={activeWorkspace.role !== 'viewer'}
+        role={activeWorkspace.role}
+        variant="session"
+        hideHeader
+        selectedToolTurnKey={selectedToolTurnKey}
+        onToolTraceChange={setToolTrace}
+        scrollRequest={scrollRequest}
+        onInspectToolTurn={(turnKey) => {
+          setSelectedToolTurnKey(turnKey);
+          setActiveTab('toolCalls');
+          setMobileChatOpen(false);
+          if (isFullscreen) {
+            exitDesktopFullscreen();
+          }
+        }}
+      />
+
+      <p className="border-t border-line pt-2.5 text-[12px] text-muted">
+        {t('session.footerHint')}
+      </p>
+    </>
+  );
+
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-3">
-        <Link
-          href="/"
-          className="inline-flex min-h-[44px] w-fit items-center gap-2 rounded-sm px-1 text-[14px] font-bold text-green-600 transition duration-150 hover:bg-mint-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-          <span>{t('backToFleet')}</span>
-        </Link>
+        <div className="flex flex-wrap items-center gap-3">
+          <Link
+            href="/"
+            className="inline-flex min-h-[44px] w-fit items-center gap-2 rounded-sm px-1 text-[14px] font-bold text-green-600 transition duration-150 hover:bg-mint-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            <span>{t('backToFleet')}</span>
+          </Link>
+          <span aria-hidden="true" className="text-line-strong">
+            /
+          </span>
+          <Eyebrow>{t('eyebrow')}</Eyebrow>
+        </div>
 
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex min-w-0 flex-1 items-center gap-4">
             <BotAvatar
               seed={bot.avatarSeed}
               mood={mapEnvMood(envStatus, bot.mood)}
-              size={64}
+              size={56}
               tile
               decorative
             />
@@ -737,260 +932,321 @@ export function BotWorkspaceView() {
         <Alert tone="warning">{tErrors(actionErrorKey)}</Alert>
       ) : null}
 
-      <div className="flex gap-1 rounded-md border border-line bg-paper p-1 lg:hidden">
-        <button
-          type="button"
-          aria-pressed={mobileChatOpen}
-          onClick={() => setMobileChatOpen(true)}
-          className={`inline-flex min-h-[44px] flex-1 items-center justify-center rounded-sm px-3 text-[14px] font-bold ${
-            mobileChatOpen ? 'bg-dark text-paper' : 'text-ink-2'
-          }`}
-        >
-          {t('computer.tabs.chat')}
-        </button>
-        <button
-          type="button"
-          aria-pressed={!mobileChatOpen}
-          onClick={() => setMobileChatOpen(false)}
-          className={`inline-flex min-h-[44px] flex-1 items-center justify-center rounded-sm px-3 text-[14px] font-bold ${
-            !mobileChatOpen ? 'bg-dark text-paper' : 'text-ink-2'
-          }`}
-        >
-          {t('computer.tabs.computer')}
-        </button>
-      </div>
-
-      <div className="grid gap-5 lg:grid-cols-[400px_minmax(0,1fr)] lg:items-start">
-        <Card
-          className={`flex flex-col gap-3 p-5 ${
-            mobileChatOpen ? 'flex' : 'hidden lg:flex'
-          }`}
-        >
-          <div className="flex items-center justify-between gap-2 border-b border-line pb-3">
-            <div>
-              <h2 className="text-[18px] font-black leading-[1.25] text-ink">
-                {t('session.title')}
-              </h2>
-              <p className="text-[12px] text-muted">
-                {envStatus === 'running'
-                  ? t('session.stateRunning')
-                  : envStatus === 'creating'
-                    ? t('session.stateCreating')
-                    : envStatus === 'error'
-                      ? t('session.stateError')
-                      : t('session.stateStopped')}
-              </p>
-            </div>
-          </div>
-
-          <div
-            className={`rounded-sm border px-3 py-2 text-[13px] leading-[1.45] ${
-              lockedByOther
-                ? 'border-dashed border-amber-line bg-amber-tint text-amber'
-                : userHoldsControl
-                  ? 'border-mint-line bg-mint-soft text-green-600'
-                  : 'border-line bg-paper-2 text-ink-2'
+      {!isFullscreen ? (
+        <div className="flex gap-1 rounded-md border border-line bg-paper p-1 lg:hidden">
+          <button
+            type="button"
+            aria-pressed={mobileChatOpen}
+            onClick={() => setMobileChatOpen(true)}
+            className={`inline-flex min-h-[44px] flex-1 items-center justify-center rounded-sm px-3 text-[14px] font-bold ${
+              mobileChatOpen ? 'bg-dark text-paper' : 'text-ink-2'
             }`}
           >
-            {lockedByOther && controlHolder
-              ? t('session.controlOther', {
-                  holder: controlHolder.displayName,
-                  email: controlHolder.email,
-                })
-              : userHoldsControl
-                ? t('session.controlYours')
-                : t('session.controlIdle', { name: bot.name })}
-          </div>
+            {t('computer.tabs.chat')}
+          </button>
+          <button
+            type="button"
+            aria-pressed={!mobileChatOpen}
+            onClick={() => setMobileChatOpen(false)}
+            className={`inline-flex min-h-[44px] flex-1 items-center justify-center rounded-sm px-3 text-[14px] font-bold ${
+              !mobileChatOpen ? 'bg-dark text-paper' : 'text-ink-2'
+            }`}
+          >
+            {t('computer.tabs.computer')}
+          </button>
+        </div>
+      ) : null}
 
-          {env?.controlNote ? (
-            <div className="rounded-sm border border-mint-line bg-mint-soft px-3 py-2.5">
-              <Eyebrow>{t('session.handbackNoteEyebrow')}</Eyebrow>
-              <p className="mt-1 text-[13px] font-bold text-ink">
-                {env.controlNote}
-              </p>
-            </div>
-          ) : null}
-
-          <ChatPanel
-            key={`${workspaceId}/${user?.id}/${bot.id}`}
-            workspaceId={workspaceId}
-            userId={user?.id ?? ''}
-            botId={bot.id}
-            name={bot.name}
-            avatarSeed={bot.avatarSeed}
-            canChat={activeWorkspace.role !== 'viewer'}
-            role={activeWorkspace.role}
-            variant="session"
-            hideHeader
-            selectedToolTurnKey={selectedToolTurnKey}
-            onToolTraceChange={setToolTrace}
-            scrollRequest={scrollRequest}
-            onInspectToolTurn={(turnKey) => {
-              setSelectedToolTurnKey(turnKey);
-              setActiveTab('toolCalls');
-              setMobileChatOpen(false);
-            }}
-          />
-
-          <p className="border-t border-line pt-2.5 text-[12px] text-muted">
-            {t('session.footerHint')}
-          </p>
-        </Card>
+      <div className="grid gap-5 lg:min-h-[600px] lg:grid-cols-[400px_minmax(0,1fr)] lg:items-stretch">
+        {!isFullscreen ? (
+          <Card
+            className={`min-h-0 flex-col gap-3 p-4 lg:max-h-[780px] ${
+              mobileChatOpen ? 'flex' : 'hidden lg:flex'
+            }`}
+          >
+            {sessionPanelContent}
+          </Card>
+        ) : null}
 
         <section
           aria-label={t('computer.regionLabel', { name: bot.name })}
           className={`min-w-0 flex-col gap-4 ${
-            mobileChatOpen ? 'hidden lg:flex' : 'flex'
+            isFullscreen ? 'flex' : mobileChatOpen ? 'hidden lg:flex' : 'flex'
           }`}
         >
-          <Card className="overflow-hidden p-0">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3">
-              <div
-                role="group"
-                aria-label={t('computer.tabsLabel')}
-                className="flex flex-wrap gap-1 rounded-md bg-paper-2 p-1"
-              >
-                <button
-                  type="button"
-                  aria-pressed={activeTab === 'desktop'}
-                  onClick={() => setActiveTab('desktop')}
-                  className={`inline-flex min-h-[40px] items-center gap-2 rounded-sm px-3.5 text-[14px] font-bold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${
-                    activeTab === 'desktop'
-                      ? 'bg-dark text-paper'
-                      : 'text-ink-2 hover:bg-paper hover:text-ink'
-                  }`}
-                >
-                  <Monitor className="h-4 w-4" aria-hidden="true" />
-                  <span>{t('computer.tabs.desktop')}</span>
-                </button>
-                <button
-                  type="button"
-                  aria-label={t('computer.tabs.actions')}
-                  aria-pressed={activeTab === 'actions'}
-                  onClick={() => setActiveTab('actions')}
-                  className={`inline-flex min-h-[40px] items-center gap-2 rounded-sm px-3.5 text-[14px] font-bold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${
-                    activeTab === 'actions'
-                      ? 'bg-dark text-paper'
-                      : 'text-ink-2 hover:bg-paper hover:text-ink'
-                  }`}
-                >
-                  <ListChecks className="h-4 w-4" aria-hidden="true" />
-                  <span>{t('computer.tabs.actions')}</span>
-                  {desktopActions.length > 0 ? (
-                    <span
-                      aria-hidden="true"
-                      className={`text-[12px] ${
-                        activeTab === 'actions' ? 'text-on-dark' : 'text-muted'
-                      }`}
-                    >
-                      {desktopActions.length}
-                    </span>
-                  ) : null}
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={activeTab === 'terminal'}
-                  onClick={() => setActiveTab('terminal')}
-                  className={`inline-flex min-h-[40px] items-center gap-2 rounded-sm px-3.5 text-[14px] font-bold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${
-                    activeTab === 'terminal'
-                      ? 'bg-dark text-paper'
-                      : 'text-ink-2 hover:bg-paper hover:text-ink'
-                  }`}
-                >
-                  <TerminalIcon className="h-4 w-4" aria-hidden="true" />
-                  <span>{t('computer.tabs.terminal')}</span>
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={activeTab === 'files'}
-                  onClick={() => setActiveTab('files')}
-                  className={`inline-flex min-h-[40px] items-center gap-2 rounded-sm px-3.5 text-[14px] font-bold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${
-                    activeTab === 'files'
-                      ? 'bg-dark text-paper'
-                      : 'text-ink-2 hover:bg-paper hover:text-ink'
-                  }`}
-                >
-                  <Folder className="h-4 w-4" aria-hidden="true" />
-                  <span>{t('computer.tabs.files')}</span>
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={activeTab === 'toolCalls'}
-                  onClick={() => setActiveTab('toolCalls')}
-                  className={`inline-flex min-h-[40px] items-center gap-2 rounded-sm px-3.5 text-[14px] font-bold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${
-                    activeTab === 'toolCalls'
-                      ? 'bg-dark text-paper'
-                      : 'text-ink-2 hover:bg-paper hover:text-ink'
-                  }`}
-                >
-                  <Wrench className="h-4 w-4" aria-hidden="true" />
-                  <span>{t('computer.tabs.toolCalls')}</span>
-                  {toolTrace && toolTrace.totalSteps > 0 ? (
-                    <span
-                      aria-hidden="true"
-                      className={`text-[12px] ${
-                        activeTab === 'toolCalls'
-                          ? 'text-on-dark'
-                          : 'text-muted'
-                      }`}
-                    >
-                      {toolTrace.totalSteps}
-                    </span>
-                  ) : null}
-                </button>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                {activeTab === 'desktop' && envStatus === 'running' ? (
-                  <StatusChip
-                    status={
-                      !ticket
-                        ? 'stopped'
-                        : !vncConnected
-                          ? 'thinking'
-                          : userHoldsControl
-                            ? 'budgetWarning'
-                            : 'working'
-                    }
-                    label={
-                      !ticket
-                        ? t('vnc.disconnected')
-                        : !vncConnected
-                          ? t('vnc.connecting')
-                          : userHoldsControl
-                            ? t('vnc.connectedInControl')
-                            : t('vnc.connectedViewOnly')
-                    }
+          <div
+            ref={computerPanelRef}
+            role={isFullscreen ? 'dialog' : undefined}
+            aria-modal={isFullscreen ? true : undefined}
+            aria-label={
+              isFullscreen
+                ? t('computer.fullscreenRegionLabel', { name: bot.name })
+                : undefined
+            }
+            className={
+              isFullscreen
+                ? 'fixed inset-0 z-50 flex flex-col overflow-hidden bg-terminal text-on-dark'
+                : 'flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-line bg-paper shadow-card'
+            }
+          >
+            {isFullscreen ? (
+              <div className="flex min-h-[56px] flex-wrap items-center justify-between gap-3 border-b border-dark bg-dark-2 px-4 py-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-3">
+                  <BotAvatar
+                    seed={bot.avatarSeed}
+                    mood={mapEnvMood(envStatus, bot.mood)}
+                    size={30}
+                    tile
+                    decorative
                   />
-                ) : null}
+                  <span className="whitespace-nowrap text-[16px] font-black text-paper">
+                    {bot.name}
+                  </span>
+                  <StatusChip
+                    status={vncStatusChip.status}
+                    label={vncStatusChip.label}
+                  />
+                  <span className="hidden whitespace-nowrap font-mono text-[12px] text-on-dark-muted sm:inline">
+                    {t('vnc.resolution')}
+                  </span>
+                  <span className="hidden whitespace-nowrap rounded-xs border border-dark bg-terminal px-2.5 py-1 font-mono text-[12px] text-on-dark md:inline-flex">
+                    {t('computer.fullscreenTelemetry', {
+                      cpu: cpuPercentRounded,
+                      memUsed: stats.memoryUsedMiB,
+                      memLimit: stats.memoryLimitMiB,
+                    })}
+                  </span>
+                </div>
 
-                {userHoldsControl ? (
-                  <Button
-                    variant="primary"
-                    aria-pressed={true}
-                    disabled={controlBusy}
-                    onClick={() => void handleReleaseControl()}
+                <div className="flex flex-wrap items-center gap-2">
+                  {userHoldsControl ? (
+                    <Button
+                      variant="primary"
+                      aria-pressed={true}
+                      disabled={controlBusy}
+                      className="whitespace-nowrap"
+                      onClick={() => void handleReleaseControl()}
+                    >
+                      {t('computer.releaseControl')}
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="onDark"
+                      aria-pressed={false}
+                      disabled={!canToggleControl}
+                      onClick={() => void handleTakeControl()}
+                      className="whitespace-nowrap"
+                    >
+                      {!canControl
+                        ? t('computer.viewerReadonlyControl')
+                        : lockedByOther && controlHolder
+                          ? t('computer.lockedByOther', {
+                              holder: controlHolder.displayName,
+                            })
+                          : t('computer.takeControl')}
+                    </Button>
+                  )}
+
+                  <button
+                    type="button"
+                    aria-expanded={fullscreenChatOpen}
+                    onClick={() => setFullscreenChatOpen((open) => !open)}
+                    className={`inline-flex min-h-[44px] items-center gap-2 whitespace-nowrap rounded-sm border px-3.5 text-[14px] font-bold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-light ${
+                      fullscreenChatOpen
+                        ? 'border-green-light bg-green-600 text-paper'
+                        : 'border-dark bg-terminal text-paper hover:border-green-light'
+                    }`}
                   >
-                    {t('computer.releaseControl')}
-                  </Button>
-                ) : (
-                  <Button
-                    variant="secondary"
-                    aria-pressed={false}
-                    disabled={!canToggleControl}
-                    onClick={() => void handleTakeControl()}
+                    <MessageSquare className="h-4 w-4" aria-hidden="true" />
+                    <span>
+                      {fullscreenChatOpen
+                        ? t('computer.fullscreenChatClose')
+                        : t('computer.fullscreenChatToggle')}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    aria-label={
+                      browserFullscreen
+                        ? t('computer.exitBrowserFullscreen')
+                        : t('computer.browserFullscreen')
+                    }
+                    aria-pressed={browserFullscreen}
+                    onClick={toggleBrowserFullscreen}
+                    className="grid h-11 w-11 shrink-0 place-items-center rounded-sm border border-dark bg-terminal text-on-dark transition duration-150 hover:border-green-light hover:text-paper focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-light"
                   >
-                    {!canControl
-                      ? t('computer.viewerReadonlyControl')
-                      : lockedByOther && controlHolder
-                        ? t('computer.lockedByOther', {
-                            holder: controlHolder.displayName,
-                          })
-                        : t('computer.takeControl')}
-                  </Button>
-                )}
+                    {browserFullscreen ? (
+                      <Minimize2 className="h-4 w-4" aria-hidden="true" />
+                    ) : (
+                      <Maximize2 className="h-4 w-4" aria-hidden="true" />
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={exitDesktopFullscreen}
+                    className="inline-flex min-h-[44px] items-center gap-2 whitespace-nowrap rounded-sm border border-line-strong/40 bg-transparent px-3.5 text-[14px] font-bold text-paper transition duration-150 hover:border-green-light hover:bg-dark focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-light"
+                  >
+                    <Minimize2 className="h-4 w-4" aria-hidden="true" />
+                    <span>{t('computer.exitFullscreen')}</span>
+                    <kbd className="rounded-xs border border-line-strong/40 bg-terminal px-1.5 py-0.5 font-mono text-[11px] text-on-dark-muted">
+                      {t('computer.exitFullscreenHint')}
+                    </kbd>
+                  </button>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3">
+                <div
+                  role="group"
+                  aria-label={t('computer.tabsLabel')}
+                  className="flex flex-wrap gap-1 rounded-md bg-paper-2 p-1"
+                >
+                  <button
+                    type="button"
+                    aria-pressed={activeTab === 'desktop'}
+                    onClick={() => setActiveTab('desktop')}
+                    className={`inline-flex min-h-[40px] items-center gap-2 rounded-sm px-3.5 text-[14px] font-bold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${
+                      activeTab === 'desktop'
+                        ? 'bg-dark text-paper'
+                        : 'text-ink-2 hover:bg-paper hover:text-ink'
+                    }`}
+                  >
+                    <Monitor className="h-4 w-4" aria-hidden="true" />
+                    <span>{t('computer.tabs.desktop')}</span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={t('computer.tabs.actions')}
+                    aria-pressed={activeTab === 'actions'}
+                    onClick={() => setActiveTab('actions')}
+                    className={`inline-flex min-h-[40px] items-center gap-2 rounded-sm px-3.5 text-[14px] font-bold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${
+                      activeTab === 'actions'
+                        ? 'bg-dark text-paper'
+                        : 'text-ink-2 hover:bg-paper hover:text-ink'
+                    }`}
+                  >
+                    <ListChecks className="h-4 w-4" aria-hidden="true" />
+                    <span>{t('computer.tabs.actions')}</span>
+                    {desktopActions.length > 0 ? (
+                      <span
+                        aria-hidden="true"
+                        className={`text-[12px] ${
+                          activeTab === 'actions'
+                            ? 'text-on-dark'
+                            : 'text-muted'
+                        }`}
+                      >
+                        {desktopActions.length}
+                      </span>
+                    ) : null}
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={activeTab === 'terminal'}
+                    onClick={() => setActiveTab('terminal')}
+                    className={`inline-flex min-h-[40px] items-center gap-2 rounded-sm px-3.5 text-[14px] font-bold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${
+                      activeTab === 'terminal'
+                        ? 'bg-dark text-paper'
+                        : 'text-ink-2 hover:bg-paper hover:text-ink'
+                    }`}
+                  >
+                    <TerminalIcon className="h-4 w-4" aria-hidden="true" />
+                    <span>{t('computer.tabs.terminal')}</span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={activeTab === 'files'}
+                    onClick={() => setActiveTab('files')}
+                    className={`inline-flex min-h-[40px] items-center gap-2 rounded-sm px-3.5 text-[14px] font-bold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${
+                      activeTab === 'files'
+                        ? 'bg-dark text-paper'
+                        : 'text-ink-2 hover:bg-paper hover:text-ink'
+                    }`}
+                  >
+                    <Folder className="h-4 w-4" aria-hidden="true" />
+                    <span>{t('computer.tabs.files')}</span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={activeTab === 'toolCalls'}
+                    onClick={() => setActiveTab('toolCalls')}
+                    className={`inline-flex min-h-[40px] items-center gap-2 rounded-sm px-3.5 text-[14px] font-bold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green ${
+                      activeTab === 'toolCalls'
+                        ? 'bg-dark text-paper'
+                        : 'text-ink-2 hover:bg-paper hover:text-ink'
+                    }`}
+                  >
+                    <Wrench className="h-4 w-4" aria-hidden="true" />
+                    <span>{t('computer.tabs.toolCalls')}</span>
+                    {toolTrace && toolTrace.totalSteps > 0 ? (
+                      <span
+                        aria-hidden="true"
+                        className={`text-[12px] ${
+                          activeTab === 'toolCalls'
+                            ? 'text-on-dark'
+                            : 'text-muted'
+                        }`}
+                      >
+                        {toolTrace.totalSteps}
+                      </span>
+                    ) : null}
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {activeTab === 'desktop' && envStatus === 'running' ? (
+                    <StatusChip
+                      status={vncStatusChip.status}
+                      label={vncStatusChip.label}
+                    />
+                  ) : null}
+
+                  {userHoldsControl ? (
+                    <Button
+                      variant="primary"
+                      aria-pressed={true}
+                      disabled={controlBusy}
+                      onClick={() => void handleReleaseControl()}
+                    >
+                      {t('computer.releaseControl')}
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="secondary"
+                      aria-pressed={false}
+                      disabled={!canToggleControl}
+                      onClick={() => void handleTakeControl()}
+                    >
+                      {!canControl
+                        ? t('computer.viewerReadonlyControl')
+                        : lockedByOther && controlHolder
+                          ? t('computer.lockedByOther', {
+                              holder: controlHolder.displayName,
+                            })
+                          : t('computer.takeControl')}
+                    </Button>
+                  )}
+
+                  {activeTab === 'desktop' ? (
+                    <Button
+                      ref={fullscreenTriggerRef}
+                      variant="secondary"
+                      aria-label={t('computer.fullscreenAria', {
+                        name: bot.name,
+                      })}
+                      disabled={envStatus !== 'running'}
+                      onClick={() => setDesktopFullscreen(true)}
+                      className="whitespace-nowrap"
+                    >
+                      <Maximize2 className="h-4 w-4" aria-hidden="true" />
+                      <span>{t('computer.fullscreen')}</span>
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            )}
 
             {userHoldsControl ? (
               <div
@@ -998,7 +1254,7 @@ export function BotWorkspaceView() {
                 aria-label={t('computer.takeoverBannerTitle', {
                   name: bot.name,
                 })}
-                className="flex flex-wrap items-center gap-3 border-b border-mint-line bg-mint-soft px-4 py-3"
+                className="flex flex-wrap items-center gap-3 border-b border-mint-line bg-mint-soft px-4 py-3 text-ink"
               >
                 <p className="flex-1 text-[13px] font-bold text-ink">
                   {t('computer.takeoverBannerTitle', { name: bot.name })}
@@ -1029,7 +1285,7 @@ export function BotWorkspaceView() {
             ) : null}
 
             {activeTab === 'toolCalls' ? (
-              <div className="max-h-[560px] overflow-y-auto p-4">
+              <div className="max-h-[560px] flex-1 overflow-y-auto p-4">
                 <ToolCallsSidebar
                   trace={
                     toolTrace ?? {
@@ -1054,7 +1310,7 @@ export function BotWorkspaceView() {
                 />
               </div>
             ) : envStatus !== 'running' ? (
-              <div className="flex min-h-[320px] flex-col items-start justify-center gap-3 bg-paper-2 p-8">
+              <div className="flex min-h-[320px] flex-1 flex-col items-start justify-center gap-3 bg-paper-2 p-8">
                 <h2 className="text-[22px] font-black text-ink">
                   {t('computer.stoppedTitle')}
                 </h2>
@@ -1066,30 +1322,50 @@ export function BotWorkspaceView() {
                 ) : null}
               </div>
             ) : activeTab === 'desktop' ? (
-              <VncViewport
-                hideHeader
-                wsUrl={wsUrl}
-                ticket={ticket?.ticket ?? ''}
-                inControl={userHoldsControl}
-                canTakeControl={canToggleControl}
-                controlBusy={controlBusy}
-                onConnectionChange={setVncConnected}
-                onConnectFailed={handleConnectFailed}
-                showCursor={
-                  !userHoldsControl &&
-                  cursorPoint?.coordX != null &&
-                  cursorPoint.coordY != null
+              <div
+                className={
+                  isFullscreen
+                    ? 'flex min-h-0 flex-1 items-center justify-center overflow-auto bg-terminal p-3 sm:p-5'
+                    : ''
                 }
-                cursor={
-                  cursorPoint?.coordX != null && cursorPoint.coordY != null
-                    ? {
-                        x: cursorPoint.coordX,
-                        y: cursorPoint.coordY,
-                        label: bot.name,
-                      }
-                    : null
-                }
-              />
+              >
+                <VncViewport
+                  hideHeader
+                  wsUrl={wsUrl}
+                  ticket={ticket?.ticket ?? ''}
+                  inControl={userHoldsControl}
+                  canTakeControl={canToggleControl}
+                  controlBusy={controlBusy}
+                  stageContainerClassName={
+                    isFullscreen
+                      ? userHoldsControl
+                        ? 'max-w-[calc((100vh-184px)*1.6)]'
+                        : 'max-w-[calc((100vh-116px)*1.6)]'
+                      : ''
+                  }
+                  stageClassName={
+                    isFullscreen
+                      ? 'rounded-md border border-dark shadow-card-hover'
+                      : ''
+                  }
+                  onConnectionChange={setVncConnected}
+                  onConnectFailed={handleConnectFailed}
+                  showCursor={
+                    !userHoldsControl &&
+                    cursorPoint?.coordX != null &&
+                    cursorPoint.coordY != null
+                  }
+                  cursor={
+                    cursorPoint?.coordX != null && cursorPoint.coordY != null
+                      ? {
+                          x: cursorPoint.coordX,
+                          y: cursorPoint.coordY,
+                          label: bot.name,
+                        }
+                      : null
+                  }
+                />
+              </div>
             ) : activeTab === 'terminal' ? (
               <div className="flex flex-col">
                 <div className="min-h-[320px] max-h-[420px] overflow-auto bg-terminal p-4 font-mono text-[13px] leading-[1.7] text-on-dark">
@@ -1316,63 +1592,89 @@ export function BotWorkspaceView() {
                 </div>
               </div>
             )}
-          </Card>
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <Card className="p-3.5">
-              <Eyebrow>{t('meters.imageLabel')}</Eyebrow>
-              <p className="mt-1 break-all font-mono text-[13px] text-ink">
-                {env?.image ?? bot.driverType}
-              </p>
-            </Card>
+            {isFullscreen ? (
+              fullscreenChatOpen ? (
+                <aside
+                  aria-label={t('session.title')}
+                  className="fixed inset-y-0 right-0 top-[56px] z-20 flex w-full max-w-[400px] flex-col gap-3 border-l border-line bg-paper p-4 text-ink shadow-card-hover"
+                >
+                  {sessionPanelContent}
+                </aside>
+              ) : null
+            ) : (
+              <div className="grid gap-4 border-t border-line bg-paper px-4 py-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="flex min-w-0 flex-col justify-between gap-1">
+                  <Eyebrow>{t('meters.imageLabel')}</Eyebrow>
+                  <p className="break-all font-mono text-[13px] font-bold text-ink">
+                    {env?.image ?? bot.driverType}
+                  </p>
+                </div>
 
-            <Card className="p-3.5">
-              <Eyebrow>{t('meters.cpuLabel')}</Eyebrow>
-              <p className="mt-1 text-[16px] font-black text-ink">
-                {t('meters.cpuValue', { percent: cpuPercentRounded })}{' '}
-                <span className="text-[13px] font-normal text-muted">
-                  {t('meters.cpuDetail', { vcpus: cpuVcpus })}
-                </span>
-              </p>
-              <div className="mt-2 h-1.5 overflow-hidden rounded-pill bg-line">
-                <div
-                  className="h-full bg-green"
-                  style={{ width: `${cpuPercentRounded}%` }}
-                />
+                {[
+                  {
+                    key: 'cpu',
+                    label: t('meters.cpuLabel'),
+                    value: t('meters.cpuValue', { percent: cpuPercentRounded }),
+                    detail: t('meters.cpuDetail', { vcpus: cpuVcpus }),
+                    percent: cpuPercentRounded,
+                    barClass: 'bg-green',
+                  },
+                  {
+                    key: 'memory',
+                    label: t('meters.memoryLabel'),
+                    value: t('meters.memoryValue', {
+                      used: stats.memoryUsedMiB,
+                    }),
+                    detail: t('meters.memoryDetail', {
+                      limit: stats.memoryLimitMiB,
+                    }),
+                    percent: memPercent,
+                    barClass: 'bg-blue',
+                  },
+                  {
+                    key: 'volume',
+                    label: t('meters.volumeLabel'),
+                    value: t('meters.volumeValue', {
+                      used: stats.volumeUsedMiB,
+                    }),
+                    detail: t('meters.volumeDetail', {
+                      limit: stats.volumeLimitMiB,
+                    }),
+                    percent: volPercent,
+                    barClass: 'bg-dark',
+                  },
+                ].map((meter) => (
+                  <div
+                    key={meter.key}
+                    className="flex min-w-0 flex-col justify-between gap-1.5"
+                  >
+                    <div className="flex items-baseline justify-between gap-2">
+                      <Eyebrow>{meter.label}</Eyebrow>
+                      <p className="text-[13px] font-black text-ink">
+                        {meter.value}{' '}
+                        <span className="font-normal text-muted">
+                          {meter.detail}
+                        </span>
+                      </p>
+                    </div>
+                    <div
+                      role="progressbar"
+                      aria-label={meter.label}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={meter.percent}
+                      className="h-1.5 overflow-hidden rounded-pill bg-line"
+                    >
+                      <div
+                        className={`h-full ${meter.barClass}`}
+                        style={{ width: `${meter.percent}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
               </div>
-            </Card>
-
-            <Card className="p-3.5">
-              <Eyebrow>{t('meters.memoryLabel')}</Eyebrow>
-              <p className="mt-1 text-[16px] font-black text-ink">
-                {t('meters.memoryValue', { used: stats.memoryUsedMiB })}{' '}
-                <span className="text-[13px] font-normal text-muted">
-                  {t('meters.memoryDetail', { limit: stats.memoryLimitMiB })}
-                </span>
-              </p>
-              <div className="mt-2 h-1.5 overflow-hidden rounded-pill bg-line">
-                <div
-                  className="h-full bg-blue"
-                  style={{ width: `${memPercent}%` }}
-                />
-              </div>
-            </Card>
-
-            <Card className="p-3.5">
-              <Eyebrow>{t('meters.volumeLabel')}</Eyebrow>
-              <p className="mt-1 text-[16px] font-black text-ink">
-                {t('meters.volumeValue', { used: stats.volumeUsedMiB })}{' '}
-                <span className="text-[13px] font-normal text-muted">
-                  {t('meters.volumeDetail', { limit: stats.volumeLimitMiB })}
-                </span>
-              </p>
-              <div className="mt-2 h-1.5 overflow-hidden rounded-pill bg-line">
-                <div
-                  className="h-full bg-dark"
-                  style={{ width: `${volPercent}%` }}
-                />
-              </div>
-            </Card>
+            )}
           </div>
         </section>
       </div>

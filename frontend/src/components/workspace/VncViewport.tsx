@@ -74,6 +74,10 @@ export interface VncViewportProps {
   controlBusy?: boolean;
   /** Hide the standalone header when embedded inside the tabbed workspace panel. */
   hideHeader?: boolean;
+  /** Optional class names for the relative 16:10 stage wrapper (e.g., fullscreen sizing). */
+  stageContainerClassName?: string;
+  /** Optional class names for the noVNC stage canvas container. */
+  stageClassName?: string;
   /** Optional custom RFB connector for deterministic unit tests. */
   connectRFB?: RFBConnector;
   onControlChange?: (inControl: boolean) => void;
@@ -127,6 +131,8 @@ export function VncViewport({
   canTakeControl = true,
   controlBusy = false,
   hideHeader = false,
+  stageContainerClassName = '',
+  stageClassName = '',
   connectRFB = defaultConnectRFB,
   onControlChange,
   onConnectionChange,
@@ -273,12 +279,12 @@ export function VncViewport({
         </p>
       ) : null}
 
-      <div className="relative">
+      <div className={`relative w-full ${stageContainerClassName}`.trim()}>
         <div
           ref={stageRef}
           data-testid="vnc-stage"
           aria-label={t('resolution')}
-          className={`aspect-[16/10] w-full overflow-hidden bg-terminal ${hideHeader ? '' : 'rounded-md border border-line'}`.trim()}
+          className={`aspect-[16/10] w-full overflow-hidden bg-terminal ${hideHeader ? '' : 'rounded-md border border-line'} ${stageClassName}`.trim()}
         />
         {showCursor && cursor ? (
           <div
@@ -305,7 +311,7 @@ export function VncViewport({
   );
 
   if (hideHeader) {
-    return <div className="flex flex-col">{body}</div>;
+    return <div className="flex w-full flex-col items-center">{body}</div>;
   }
 
   return (
