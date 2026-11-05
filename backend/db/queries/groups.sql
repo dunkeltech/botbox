@@ -116,9 +116,9 @@ ORDER BY position DESC
 LIMIT 4;
 
 -- name: ListGroupTranscript :many
-SELECT sender_type, sender_user_id, sender_bot_id, content
+SELECT sender_type, sender_user_id, sender_bot_id, content, kind
 FROM messages
-WHERE workspace_id = $1 AND conversation_id = $2 AND kind = 'text'
+WHERE workspace_id = $1 AND conversation_id = $2 AND kind IN ('text', 'progress')
 ORDER BY position ASC;
 
 -- name: GroupSpend :one

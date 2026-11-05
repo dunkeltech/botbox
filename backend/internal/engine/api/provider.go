@@ -44,6 +44,8 @@ type Provider struct {
 	Computer string
 	// ExtraTools appends dynamic function definitions such as policy-filtered MCP commands.
 	ExtraTools []map[string]any
+	// ExtraToolsOnly omits sandbox tools for callers without an isolated desktop.
+	ExtraToolsOnly bool
 }
 
 type toolCall struct {
@@ -87,7 +89,7 @@ func (p *Provider) Run(ctx context.Context, messages []Message, emit func(engine
 			}
 		}
 		tools := []any{}
-		if p.Tools != nil {
+		if p.Tools != nil && !p.ExtraToolsOnly {
 			for name, properties := range map[string]map[string]any{
 				"exec":       {"command": map[string]string{"type": "string"}},
 				"read_file":  {"path": map[string]string{"type": "string"}},
@@ -186,6 +188,8 @@ func (p *Provider) Run(ctx context.Context, messages []Message, emit func(engine
 					},
 				)
 			}
+		}
+		if p.Tools != nil {
 			for _, extra := range p.ExtraTools {
 				tools = append(tools, extra)
 			}

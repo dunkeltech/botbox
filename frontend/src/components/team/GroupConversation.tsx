@@ -397,7 +397,17 @@ export function GroupConversation({
                           : 'bg-blue-tint text-blue'
                       }`}
                     >
-                      {who.kind === 'bot' ? t('botBadge') : t('humanBadge')}
+                      {message.kind === 'progress'
+                        ? t(
+                            message.progressBlocker
+                              ? 'blockerBadge'
+                              : 'progressBadge',
+                          )
+                        : message.kind === 'team_status'
+                          ? t('statusCheckBadge')
+                          : who.kind === 'bot'
+                            ? t('botBadge')
+                            : t('humanBadge')}
                     </span>
                     {timeLabel ? (
                       <span className="text-[12px] text-muted">
@@ -405,11 +415,15 @@ export function GroupConversation({
                       </span>
                     ) : null}
                   </p>
-                  <MarkdownMessage
-                    content={message.content}
-                    mentionNames={mentionNames}
-                    className="mt-0.5 text-[15px] leading-[1.55] text-ink"
-                  />
+                  {message.kind === 'team_status' && message.teamStatus ? (
+                    <TeamStatusUpdate status={message.teamStatus} />
+                  ) : (
+                    <MarkdownMessage
+                      content={message.content}
+                      mentionNames={mentionNames}
+                      className="mt-0.5 text-[15px] leading-[1.55] text-ink"
+                    />
+                  )}
                   {message.inputRequest ? (
                     <InputRequestProgress request={message.inputRequest} />
                   ) : null}
@@ -554,6 +568,40 @@ export function GroupConversation({
           });
         }}
       />
+    </div>
+  );
+}
+
+function TeamStatusUpdate({
+  status,
+}: {
+  status: components['schemas']['TeamBotStatus'];
+}) {
+  const t = useTranslations('team');
+  const workingSince = status.workingSince
+    ? formatTime(status.workingSince)
+    : null;
+  const progressAt = status.progressAt ? formatTime(status.progressAt) : null;
+  return (
+    <div className="mt-0.5 text-[15px] leading-[1.55] text-ink">
+      <p>
+        {t(`teamStatusStates.${status.state}`, { name: status.name })}
+        {status.state === 'working' && workingSince ? (
+          <span className="ml-2 text-[12px] text-muted">
+            {t('workingSince', { time: workingSince })}
+          </span>
+        ) : null}
+      </p>
+      {status.progress ? (
+        <p className="whitespace-pre-wrap break-words border-l border-line pl-2 text-[13px] text-muted">
+          <span className="font-bold">
+            {progressAt
+              ? t('lastProgressAt', { time: progressAt })
+              : t('lastProgress')}{' '}
+          </span>
+          {status.progress}
+        </p>
+      ) : null}
     </div>
   );
 }

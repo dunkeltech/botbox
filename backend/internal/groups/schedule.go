@@ -418,7 +418,7 @@ func summaryFor(ctx context.Context, q *db.Queries, workspaceID, conversationID 
 	if err != nil {
 		return "", err
 	}
-	// The live window is the last 50 text messages. Older lines are copied, not
+	// The live window is the last 50 conversation messages. Older lines are copied, not
 	// summarized by a model, and the column stops at 8 KiB (ADR-0015).
 	if len(rows) <= 50 {
 		return current, nil
@@ -440,6 +440,9 @@ func speakerName(roster []orchestrator.Member, row db.ListGroupTranscriptRow) st
 	}
 	for _, member := range roster {
 		if member.Kind == kind && member.ID == id && member.Name != "" {
+			if row.Kind == "progress" {
+				return member.Name + " (progress update)"
+			}
 			return member.Name
 		}
 	}

@@ -468,9 +468,9 @@ func (q *Queries) ListGroupMemberRows(ctx context.Context, arg ListGroupMemberRo
 }
 
 const listGroupTranscript = `-- name: ListGroupTranscript :many
-SELECT sender_type, sender_user_id, sender_bot_id, content
+SELECT sender_type, sender_user_id, sender_bot_id, content, kind
 FROM messages
-WHERE workspace_id = $1 AND conversation_id = $2 AND kind = 'text'
+WHERE workspace_id = $1 AND conversation_id = $2 AND kind IN ('text', 'progress')
 ORDER BY position ASC
 `
 
@@ -484,6 +484,7 @@ type ListGroupTranscriptRow struct {
 	SenderUserID pgtype.UUID `json:"sender_user_id"`
 	SenderBotID  pgtype.UUID `json:"sender_bot_id"`
 	Content      string      `json:"content"`
+	Kind         string      `json:"kind"`
 }
 
 func (q *Queries) ListGroupTranscript(ctx context.Context, arg ListGroupTranscriptParams) ([]ListGroupTranscriptRow, error) {
@@ -500,6 +501,7 @@ func (q *Queries) ListGroupTranscript(ctx context.Context, arg ListGroupTranscri
 			&i.SenderUserID,
 			&i.SenderBotID,
 			&i.Content,
+			&i.Kind,
 		); err != nil {
 			return nil, err
 		}

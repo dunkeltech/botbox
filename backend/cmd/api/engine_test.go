@@ -2,13 +2,17 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/dunkeltech/botbox/backend/internal/compute"
 	"github.com/dunkeltech/botbox/backend/internal/engine"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
+	"github.com/dunkeltech/botbox/backend/internal/groups"
 	"github.com/dunkeltech/botbox/backend/internal/orchestrator"
+	"github.com/google/uuid"
 )
 
 func TestLargeGroupPromptFitsAgentInputLimit(t *testing.T) {
@@ -22,7 +26,8 @@ func TestLargeGroupPromptFitsAgentInputLimit(t *testing.T) {
 	}
 	current := "@Yoda my answer: " + strings.Repeat("ä", 4000)
 	recent = append(recent, orchestrator.ContextMessage{Speaker: "Human", Body: current})
-	session := engine.Session{Bot: db.Bot{Name: "Yoda", Description: strings.Repeat("role ", 740), ReplyLanguage: "de"}, Messages: []db.Message{{Content: current}}, Preface: orchestrator.BuildContext(orchestrator.ContextInput{Members: members, Recent: recent})}
+	session := engine.Session{Bot: db.Bot{Name: "Yoda", Description: strings.Repeat("role ", 740), ReplyLanguage: "de"}, Messages: []db.Message{{Content: current}}, Preface: orchestrator.BuildContext(orchestrator.ContextInput{Members: members, Recent: recent}), TurnID: uuid.New()}
+	session.TeamTool = func(context.Context, string, json.RawMessage) (string, error) { return "", nil }
 	for _, external := range []string{"", "saved-session"} {
 		prompt := cliTurnPrompt(session, external, engine.DesktopGuidanceFor(true))
 		if len(prompt) > 65536 {
@@ -30,6 +35,9 @@ func TestLargeGroupPromptFitsAgentInputLimit(t *testing.T) {
 		}
 		if !strings.HasSuffix(prompt, current) {
 			t.Fatal("current human message was truncated")
+		}
+		if !strings.Contains(prompt, groups.TeamStatusTool) || !strings.Contains(prompt, "turn_id "+session.TurnID.String()) {
+			t.Fatal("CLI prompt omits team tools or active turn ID")
 		}
 	}
 }
@@ -77,6 +85,24 @@ func TestModelToolsRejectHostBackedMemoryDriver(t *testing.T) {
 	tools := &sandboxTools{driver: driver}
 	if _, err = tools.Call(context.Background(), "exec", []byte(`{"command":"must never run"}`)); err == nil {
 		t.Fatal("model tool reached host-backed compute")
+	}
+}
+
+func TestModelTeamToolsUseTurnBinding(t *testing.T) {
+	ctx := context.Background()
+	var tools sandboxTools
+	args := json.RawMessage(`{"text":"Tests passed"}`)
+	if _, err := tools.Call(ctx, groups.TeamProgressTool, args); !errors.Is(err, groups.ErrTeamToolUnavailable) {
+		t.Fatalf("unbound tool: %v", err)
+	}
+	tools.team = func(_ context.Context, name string, input json.RawMessage) (string, error) {
+		if name != groups.TeamProgressTool || string(input) != string(args) {
+			t.Fatalf("unexpected team tool call %q %s", name, input)
+		}
+		return `{"posted":true}`, nil
+	}
+	if result, err := tools.Call(ctx, groups.TeamProgressTool, args); err != nil || result != `{"posted":true}` {
+		t.Fatalf("bound team tool: %q %v", result, err)
 	}
 }
 

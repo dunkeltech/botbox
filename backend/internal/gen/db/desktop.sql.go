@@ -110,7 +110,7 @@ func (q *Queries) InsertDesktopAction(ctx context.Context, arg InsertDesktopActi
 }
 
 const latestBotTurn = `-- name: LatestBotTurn :one
-SELECT id, position, workspace_id, bot_id, conversation_id, message_id, status, error_code, created_at, updated_at, continuation_prompt, stop_requested FROM bot_turns
+SELECT id, position, workspace_id, bot_id, conversation_id, message_id, status, error_code, created_at, updated_at, continuation_prompt, stop_requested, heartbeat_at FROM bot_turns
 WHERE workspace_id = $1 AND bot_id = $2
 ORDER BY position DESC
 LIMIT 1
@@ -137,6 +137,7 @@ func (q *Queries) LatestBotTurn(ctx context.Context, arg LatestBotTurnParams) (B
 		&i.UpdatedAt,
 		&i.ContinuationPrompt,
 		&i.StopRequested,
+		&i.HeartbeatAt,
 	)
 	return i, err
 }

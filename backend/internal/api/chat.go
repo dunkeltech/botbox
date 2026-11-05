@@ -140,6 +140,20 @@ func chatMessage(m db.Message) apigen.ChatMessage {
 	if m.Kind == "tool" && len(m.Metadata) > 0 {
 		out.Tool = parseToolCallMeta(m.Metadata)
 	}
+	if m.Kind == "progress" || m.Kind == "team_status" {
+		var update struct {
+			Blocker bool                  `json:"blocker"`
+			Status  *apigen.TeamBotStatus `json:"status"`
+		}
+		if json.Unmarshal(m.Metadata, &update) == nil {
+			if m.Kind == "progress" && update.Blocker {
+				out.ProgressBlocker = &update.Blocker
+			}
+			if m.Kind == "team_status" && update.Status != nil && update.Status.BotId != uuid.Nil && update.Status.State.Valid() {
+				out.TeamStatus = update.Status
+			}
+		}
+	}
 	return out
 }
 

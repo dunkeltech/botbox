@@ -40,6 +40,8 @@ type Session struct {
 	Messages                                   []db.Message
 	Preface                                    string
 	ContinuationPrompt                         string
+	// TeamTool is bound to the active group turn. Direct messages leave it nil.
+	TeamTool func(context.Context, string, json.RawMessage) (string, error)
 }
 
 // ExecuteTurn runs one bounded turn and propagates event sink failures.
@@ -150,7 +152,7 @@ func (w *Worker) Process(ctx context.Context, job events.TurnNotification) error
 	}
 	// Commit the running marker before any external side effect. The partial
 	// unique index prevents another worker from claiming a second turn per bot.
-	if err = q.UpdateBotTurn(ctx, db.UpdateBotTurnParams{WorkspaceID: turn.WorkspaceID, ID: turn.ID, Status: "running"}); err != nil {
+	if err = q.StartBotTurn(ctx, db.StartBotTurnParams{WorkspaceID: turn.WorkspaceID, ID: turn.ID, AsOf: pgtype.Timestamptz{Time: w.now(), Valid: true}}); err != nil {
 		return err
 	}
 	return w.executeClaimed(ctx, tx, turn, config, inputReply)
@@ -207,6 +209,13 @@ func (w *Worker) executeClaimed(ctx context.Context, tx pgx.Tx, turn db.BotTurn,
 		Preface:            preface,
 		ContinuationPrompt: turn.ContinuationPrompt,
 	}
+	if preface != "" {
+		tools := groups.TeamTools{Pool: w.Pool, Now: w.now, Signal: w.Signal}
+		scope := groups.TeamToolScope{WorkspaceID: session.WorkspaceID, BotID: session.BotID, TurnID: session.TurnID}
+		session.TeamTool = func(ctx context.Context, name string, args json.RawMessage) (string, error) {
+			return tools.Call(ctx, scope, name, args)
+		}
+	}
 	stop, err := groups.ScreenBudget(ctx, w.Pool, turn.WorkspaceID, turn.ConversationID, turn.BotID, turn.MessageID, w.Signal)
 	if err != nil {
 		return err
@@ -223,6 +232,7 @@ func (w *Worker) executeClaimed(ctx context.Context, tx pgx.Tx, turn db.BotTurn,
 	var text replyText
 	var waitingSecret bool
 	savedCredentialTried := make(map[string]bool)
+	teamToolCalls := make(map[string]bool)
 	var savedCredentialPrompt string
 	useSavedCredential := errors.New("continue with saved GitLab credential")
 	runCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
@@ -240,6 +250,16 @@ func (w *Worker) executeClaimed(ctx context.Context, tx pgx.Tx, turn db.BotTurn,
 				return err
 			}
 		case EventKindToolCall, EventKindToolResult:
+			// Team tools persist their own bounded, scoped messages. In particular,
+			// rejected progress text must never reach chat through tool traces.
+			if ev.Kind == EventKindToolCall && session.TeamTool != nil && isTeamTool(ev.ToolName, bot.LlmMode) {
+				teamToolCalls[ev.ToolID] = true
+				return nil
+			}
+			if ev.Kind == EventKindToolResult && teamToolCalls[ev.ToolID] {
+				delete(teamToolCalls, ev.ToolID)
+				return nil
+			}
 			if ev.Kind == EventKindToolCall && IsRequestSecretTool(ev.ToolName) {
 				var reqArgs struct {
 					Kind               string `json:"kind"`
@@ -416,7 +436,7 @@ func (w *Worker) executeClaimed(ctx context.Context, tx pgx.Tx, turn db.BotTurn,
 		case requested:
 			runErr = context.Canceled
 		default:
-			go watchTurnStop(runCtx, q, stop, cancel)
+			go w.watchTurn(runCtx, q, stop, cancel, session.TeamTool != nil)
 			runErr = runWithLifecycle(runCtx, w.Execute, session, input, emit)
 		}
 		// Return only the placeholder through the same continuation path used
@@ -429,6 +449,7 @@ func (w *Worker) executeClaimed(ctx context.Context, tx pgx.Tx, turn db.BotTurn,
 			runErr = runCtx.Err()
 		}
 	}
+	cancel()
 	status, code := "completed", ""
 	if waitingSecret || errors.Is(runErr, ErrTurnWaitingSecret) {
 		status = "waiting_secret"
@@ -489,15 +510,35 @@ func (w *Worker) executeClaimed(ctx context.Context, tx pgx.Tx, turn db.BotTurn,
 	return nil
 }
 
-func watchTurnStop(ctx context.Context, q *db.Queries, turn db.IsBotTurnStopRequestedParams, cancel context.CancelFunc) {
+func isTeamTool(name, llmMode string) bool {
+	if llmMode != "api" {
+		name = strings.ReplaceAll(name, "-", "_")
+		for _, prefix := range []string{"mcp__botbox_team__", "botbox_team."} {
+			name = strings.TrimPrefix(name, prefix)
+		}
+	}
+	return name == groups.TeamStatusTool || name == groups.TeamProgressTool
+}
+
+func (w *Worker) watchTurn(ctx context.Context, q *db.Queries, turn db.IsBotTurnStopRequestedParams, cancel context.CancelFunc, group bool) {
 	// The request is durable. A missed check or a temporary DB failure can
 	// be retried without depending on a transient queue notification.
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
+	var heartbeat <-chan time.Time
+	if group {
+		lease := time.NewTicker(10 * time.Second)
+		defer lease.Stop()
+		heartbeat = lease.C
+	}
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-heartbeat:
+			_ = q.TouchBotTurnHeartbeat(ctx, db.TouchBotTurnHeartbeatParams{
+				WorkspaceID: turn.WorkspaceID, ID: turn.ID, AsOf: pgtype.Timestamptz{Time: w.now(), Valid: true},
+			})
 		case <-ticker.C:
 			requested, err := q.IsBotTurnStopRequested(ctx, turn)
 			if err == nil && requested {

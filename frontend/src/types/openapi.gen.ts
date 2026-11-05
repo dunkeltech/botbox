@@ -1394,13 +1394,47 @@ export interface components {
       /** Format: uuid */
       senderBotId?: string;
       /** @enum {string} */
-      kind: 'text' | 'tool' | 'system' | 'card' | 'approval' | 'secret_request';
+      kind:
+        | 'text'
+        | 'tool'
+        | 'system'
+        | 'card'
+        | 'approval'
+        | 'secret_request'
+        | 'progress'
+        | 'team_status';
       content: string;
       secretRequest?: components['schemas']['SecretRequestSummary'];
       tool?: components['schemas']['ToolCallMeta'];
       inputRequest?: components['schemas']['GroupInputRequest'];
+      progressBlocker?: boolean;
+      teamStatus?: components['schemas']['TeamBotStatus'];
       /** Format: date-time */
       createdAt: string;
+    };
+    /** @enum {string} */
+    TeamBotStatusState:
+      | 'working'
+      | 'queued'
+      | 'waiting_approval'
+      | 'waiting_secret'
+      | 'completed'
+      | 'interrupted'
+      | 'failed'
+      | 'budget_exceeded'
+      | 'stopping'
+      | 'idle'
+      | 'unknown';
+    TeamBotStatus: {
+      /** Format: uuid */
+      botId: string;
+      name: string;
+      state: components['schemas']['TeamBotStatusState'];
+      /** Format: date-time */
+      workingSince?: string;
+      progress?: string;
+      /** Format: date-time */
+      progressAt?: string;
     };
     GroupInputRequest: {
       /** @enum {string} */

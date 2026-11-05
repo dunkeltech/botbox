@@ -127,6 +127,7 @@ type BotTurn struct {
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 	ContinuationPrompt string             `json:"continuation_prompt"`
 	StopRequested      bool               `json:"stop_requested"`
+	HeartbeatAt        pgtype.Timestamptz `json:"heartbeat_at"`
 }
 
 type BrokerSession struct {

@@ -14,6 +14,9 @@ const DesktopMCPURL = "http://127.0.0.1:9091/mcp"
 // EgressMCPBaseURL is the control-plane egress proxy MCP base URL reachable from sandboxes.
 const EgressMCPBaseURL = "http://egress:8081/mcp"
 
+// TeamMCPURL is the bot-scoped coordination endpoint on the same private proxy.
+const TeamMCPURL = "http://egress:8081/team-mcp"
+
 // InstallDesktopMCP registers the desktop MCP server for one CLI.
 // A failed write must not fail the turn: the CLI can still answer without the desktop.
 // claude receives the config path for --mcp-config. The other CLIs read their home config.
@@ -21,7 +24,7 @@ func InstallDesktopMCP(cli, home string) (string, error) {
 	return InstallBotMCPServers(cli, home, nil)
 }
 
-// InstallBotMCPServers registers the desktop MCP server plus any assigned proxy MCP server
+// InstallBotMCPServers registers the desktop and team MCP servers plus any assigned proxy MCP server
 // slugs (pointing to http://egress:8081/mcp/<slug>) for one CLI without placing secrets in the sandbox.
 func InstallBotMCPServers(cli, home string, slugs []string) (string, error) {
 	if home == "" {
@@ -36,6 +39,7 @@ func InstallBotMCPServers(cli, home string, slugs []string) (string, error) {
 		path := filepath.Join(dir, "desktop-mcp.json")
 		servers := map[string]any{
 			"botbox-desktop": map[string]string{"type": "http", "url": DesktopMCPURL},
+			"botbox-team":    map[string]string{"type": "http", "url": TeamMCPURL},
 		}
 		for _, slug := range slugs {
 			if s := strings.TrimSpace(slug); s != "" {
@@ -73,32 +77,27 @@ func writeCodexMCP(path string, slugs []string) error {
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	const header = "[mcp_servers.botbox_desktop]"
-	block := header + "\nurl = \"" + DesktopMCPURL + "\"\n"
 	text := string(existing)
-	if strings.Contains(text, header) {
-		text = replaceTOMLSection(text, header, block)
-	} else {
+	setServer := func(name, url string) {
+		header := "[mcp_servers." + name + "]"
+		block := header + "\nurl = \"" + url + "\"\n"
+		if strings.Contains(text, header) {
+			text = replaceTOMLSection(text, header, block)
+			return
+		}
 		if text != "" && !strings.HasSuffix(text, "\n") {
 			text += "\n"
 		}
 		text += block
 	}
+	setServer("botbox_desktop", DesktopMCPURL)
+	setServer("botbox_team", TeamMCPURL)
 	for _, slug := range slugs {
 		s := strings.TrimSpace(slug)
 		if s == "" {
 			continue
 		}
-		secHeader := "[mcp_servers.mcp_" + strings.ReplaceAll(s, "-", "_") + "]"
-		secBlock := secHeader + "\nurl = \"" + EgressMCPBaseURL + "/" + s + "\"\n"
-		if strings.Contains(text, secHeader) {
-			text = replaceTOMLSection(text, secHeader, secBlock)
-		} else {
-			if text != "" && !strings.HasSuffix(text, "\n") {
-				text += "\n"
-			}
-			text += secBlock
-		}
+		setServer("mcp_"+strings.ReplaceAll(s, "-", "_"), EgressMCPBaseURL+"/"+s)
 	}
 	return os.WriteFile(path, []byte(text), 0o600) // #nosec G703 -- same sandbox-home Codex config path
 }
@@ -137,6 +136,7 @@ func writeAgyMCP(path string, slugs []string) error {
 		}
 	}
 	servers["botbox-desktop"] = map[string]string{"url": DesktopMCPURL}
+	servers["botbox-team"] = map[string]string{"url": TeamMCPURL}
 	for _, slug := range slugs {
 		if s := strings.TrimSpace(slug); s != "" {
 			servers["mcp-"+s] = map[string]string{"url": EgressMCPBaseURL + "/" + s}

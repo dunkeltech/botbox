@@ -62,7 +62,7 @@ SELECT * FROM group_input_requests
 WHERE workspace_id = $1 AND conversation_id = $2 AND message_id = $3 AND state = 'waiting';
 
 -- name: ListGroupInputResults :many
-SELECT p.bot_name, COALESCE(t.status, '')::text AS turn_status,
+SELECT p.bot_id, p.bot_name, COALESCE(t.status, '')::text AS turn_status,
        COALESCE(right(m.content, 1200), '')::text AS reply
 FROM group_input_recipients p
 LEFT JOIN bot_turns t ON t.workspace_id = p.workspace_id AND t.conversation_id = p.conversation_id AND t.id = p.turn_id

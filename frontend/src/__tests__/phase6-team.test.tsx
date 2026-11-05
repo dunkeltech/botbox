@@ -214,6 +214,86 @@ afterEach(() => {
 });
 
 describe('Phase 6 team chat', () => {
+  it('shows progress and a peer status snapshot alongside a running turn', async () => {
+    groupRows = [
+      {
+        ...group,
+        members: [
+          ...group.members,
+          { type: 'bot', id: 'bot-2', roleText: '', name: 'Babu Frik' },
+        ],
+      },
+    ];
+    const at = '2026-11-16T12:05:00Z';
+    request.mockImplementation((path, opts) => {
+      if (path.endsWith('/messages')) {
+        return Promise.resolve({
+          messages: [
+            ...history,
+            {
+              id: 'milestone',
+              position: 3,
+              senderType: 'bot',
+              senderBotId: 'bot-2',
+              kind: 'progress',
+              content: 'The game loop is in place.',
+              createdAt: at,
+            },
+            {
+              id: 'blocker',
+              position: 4,
+              senderType: 'bot',
+              senderBotId: 'bot-2',
+              kind: 'progress',
+              progressBlocker: true,
+              content: 'I need a test fixture.',
+              createdAt: at,
+            },
+            {
+              id: 'status-check',
+              position: 5,
+              senderType: 'bot',
+              senderBotId: 'bot-1',
+              kind: 'team_status',
+              content: 'Babu Frik: working',
+              createdAt: at,
+              teamStatus: {
+                botId: 'bot-2',
+                name: 'Babu Frik',
+                state: 'working',
+                workingSince: '2026-11-16T12:00:00Z',
+                progress: 'I need a test fixture.',
+                progressAt: at,
+              },
+            },
+          ] satisfies ChatMessage[],
+          turns: [
+            {
+              id: 'work-turn',
+              botId: 'bot-2',
+              status: 'running',
+              createdAt: at,
+              updatedAt: at,
+            },
+          ],
+        });
+      }
+      return handler(path, opts);
+    });
+    show();
+    const progress = await screen.findByText('The game loop is in place.');
+    expect(
+      within(progress.closest('article')!).getByText('Progress'),
+    ).toBeVisible();
+    expect(screen.getByText('Blocker')).toBeVisible();
+    expect(screen.getByText('Status check')).toBeVisible();
+    expect(
+      screen.getByText('Babu Frik is working in this chat.'),
+    ).toBeVisible();
+    expect(screen.getByText(/^Last update at/)).toBeVisible();
+    expect(screen.getByText('Babu Frik is thinking…')).toBeVisible();
+  });
+
   it('names the requesting bot in both group secret dialogs', async () => {
     groupRows = [
       {

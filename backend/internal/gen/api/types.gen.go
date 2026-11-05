@@ -193,8 +193,10 @@ func (e BudgetStatePeriod) Valid() bool {
 const (
 	ChatMessageKindApproval      ChatMessageKind = "approval"
 	ChatMessageKindCard          ChatMessageKind = "card"
+	ChatMessageKindProgress      ChatMessageKind = "progress"
 	ChatMessageKindSecretRequest ChatMessageKind = "secret_request"
 	ChatMessageKindSystem        ChatMessageKind = "system"
+	ChatMessageKindTeamStatus    ChatMessageKind = "team_status"
 	ChatMessageKindText          ChatMessageKind = "text"
 	ChatMessageKindTool          ChatMessageKind = "tool"
 )
@@ -206,9 +208,13 @@ func (e ChatMessageKind) Valid() bool {
 		return true
 	case ChatMessageKindCard:
 		return true
+	case ChatMessageKindProgress:
+		return true
 	case ChatMessageKindSecretRequest:
 		return true
 	case ChatMessageKindSystem:
+		return true
+	case ChatMessageKindTeamStatus:
 		return true
 	case ChatMessageKindText:
 		return true
@@ -759,6 +765,51 @@ func (e SubscriptionUsagePeriod) Valid() bool {
 	}
 }
 
+// Defines values for TeamBotStatusState.
+const (
+	TeamBotStatusStateBudgetExceeded  TeamBotStatusState = "budget_exceeded"
+	TeamBotStatusStateCompleted       TeamBotStatusState = "completed"
+	TeamBotStatusStateFailed          TeamBotStatusState = "failed"
+	TeamBotStatusStateIdle            TeamBotStatusState = "idle"
+	TeamBotStatusStateInterrupted     TeamBotStatusState = "interrupted"
+	TeamBotStatusStateQueued          TeamBotStatusState = "queued"
+	TeamBotStatusStateStopping        TeamBotStatusState = "stopping"
+	TeamBotStatusStateUnknown         TeamBotStatusState = "unknown"
+	TeamBotStatusStateWaitingApproval TeamBotStatusState = "waiting_approval"
+	TeamBotStatusStateWaitingSecret   TeamBotStatusState = "waiting_secret"
+	TeamBotStatusStateWorking         TeamBotStatusState = "working"
+)
+
+// Valid indicates whether the value is a known member of the TeamBotStatusState enum.
+func (e TeamBotStatusState) Valid() bool {
+	switch e {
+	case TeamBotStatusStateBudgetExceeded:
+		return true
+	case TeamBotStatusStateCompleted:
+		return true
+	case TeamBotStatusStateFailed:
+		return true
+	case TeamBotStatusStateIdle:
+		return true
+	case TeamBotStatusStateInterrupted:
+		return true
+	case TeamBotStatusStateQueued:
+		return true
+	case TeamBotStatusStateStopping:
+		return true
+	case TeamBotStatusStateUnknown:
+		return true
+	case TeamBotStatusStateWaitingApproval:
+		return true
+	case TeamBotStatusStateWaitingSecret:
+		return true
+	case TeamBotStatusStateWorking:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ToolCallPhase.
 const (
 	Call   ToolCallPhase = "call"
@@ -1026,17 +1077,19 @@ type ChatHistory struct {
 
 // ChatMessage defines model for ChatMessage.
 type ChatMessage struct {
-	Content       string                `json:"content"`
-	CreatedAt     time.Time             `json:"createdAt"`
-	Id            openapi_types.UUID    `json:"id"`
-	InputRequest  *GroupInputRequest    `json:"inputRequest,omitempty"`
-	Kind          ChatMessageKind       `json:"kind"`
-	Position      int64                 `json:"position"`
-	SecretRequest *SecretRequestSummary `json:"secretRequest,omitempty"`
-	SenderBotId   *openapi_types.UUID   `json:"senderBotId,omitempty"`
-	SenderType    ChatMessageSenderType `json:"senderType"`
-	SenderUserId  *openapi_types.UUID   `json:"senderUserId,omitempty"`
-	Tool          *ToolCallMeta         `json:"tool,omitempty"`
+	Content         string                `json:"content"`
+	CreatedAt       time.Time             `json:"createdAt"`
+	Id              openapi_types.UUID    `json:"id"`
+	InputRequest    *GroupInputRequest    `json:"inputRequest,omitempty"`
+	Kind            ChatMessageKind       `json:"kind"`
+	Position        int64                 `json:"position"`
+	ProgressBlocker *bool                 `json:"progressBlocker,omitempty"`
+	SecretRequest   *SecretRequestSummary `json:"secretRequest,omitempty"`
+	SenderBotId     *openapi_types.UUID   `json:"senderBotId,omitempty"`
+	SenderType      ChatMessageSenderType `json:"senderType"`
+	SenderUserId    *openapi_types.UUID   `json:"senderUserId,omitempty"`
+	TeamStatus      *TeamBotStatus        `json:"teamStatus,omitempty"`
+	Tool            *ToolCallMeta         `json:"tool,omitempty"`
 }
 
 // ChatMessageKind defines model for ChatMessage.Kind.
@@ -1677,6 +1730,19 @@ type SubscriptionUsage struct {
 
 // SubscriptionUsagePeriod defines model for SubscriptionUsage.Period.
 type SubscriptionUsagePeriod string
+
+// TeamBotStatus defines model for TeamBotStatus.
+type TeamBotStatus struct {
+	BotId        openapi_types.UUID `json:"botId"`
+	Name         string             `json:"name"`
+	Progress     *string            `json:"progress,omitempty"`
+	ProgressAt   *time.Time         `json:"progressAt,omitempty"`
+	State        TeamBotStatusState `json:"state"`
+	WorkingSince *time.Time         `json:"workingSince,omitempty"`
+}
+
+// TeamBotStatusState defines model for TeamBotStatusState.
+type TeamBotStatusState string
 
 // TerminalExecRequest defines model for TerminalExecRequest.
 type TerminalExecRequest struct {

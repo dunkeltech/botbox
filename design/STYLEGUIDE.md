@@ -186,6 +186,8 @@ The fleet shows known spend today. Budget meters follow the Stitch project `1359
 - **Unread counter:** a 20 px pill, `green-light` background, `terminal` text, weight 900.
 
 ### Chat
+
+- Progress updates use the bot's usual avatar, name, and time with a `Progress` or `Blocker` label. Status checks use a separate `Status check` label and show the colleague's state in text. Show the start time for current work and the timestamp of the latest update when available. These entries stay visible in the transcript after reload.
 - The workspace and Team DM panels share private history, streamed text, queue positions and explicit desktop-visibility disclosure (ADR-0008). A soft-denied tool must appear as an explicit error notice even when the CLI exits successfully. Budget admission errors use the existing warning treatment and translated copy; never show raw dependency errors.
 - **Message row (Slack style):** a 36 px avatar, then the name (weight 900), a BOT badge for bots (or role tag for human teammates with initials avatar and presence dot), and the time in 12 px `muted`. The body is 15/1.55. Consecutive messages from the same sender may later be grouped.
 - **Markdown in messages:** Human, bot and streamed chat messages render CommonMark and GFM (headings, lists, blockquotes, scrollable tables, inline code, `terminal` code blocks with a 44 px copy button, and `http`/`https`/`mailto` links). Raw HTML is never interpreted, and Markdown images render as links instead of loading external `<img>` tags.

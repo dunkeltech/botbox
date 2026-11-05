@@ -41,21 +41,21 @@ func TestInstallDesktopMCPMergesWithoutDroppingExistingConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	claude, err := os.ReadFile(path) // #nosec G304 -- path is the config InstallDesktopMCP wrote inside t.TempDir
-	if err != nil || !strings.Contains(string(claude), agent.DesktopMCPURL) {
+	if err != nil || !strings.Contains(string(claude), agent.DesktopMCPURL) || !strings.Contains(string(claude), agent.TeamMCPURL) {
 		t.Fatalf("claude config %s %v", claude, err)
 	}
 	if _, err = agent.InstallDesktopMCP("codex", home); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := os.ReadFile(filepath.Join(codex, "config.toml")) // #nosec G304 -- config written inside t.TempDir
-	if err != nil || !strings.Contains(string(raw), "model = \"fixture\"") || !strings.Contains(string(raw), agent.DesktopMCPURL) {
+	if err != nil || !strings.Contains(string(raw), "model = \"fixture\"") || !strings.Contains(string(raw), agent.DesktopMCPURL) || !strings.Contains(string(raw), agent.TeamMCPURL) {
 		t.Fatalf("codex %s", raw)
 	}
 	if _, err = agent.InstallDesktopMCP("agy", home); err != nil {
 		t.Fatal(err)
 	}
 	raw, err = os.ReadFile(filepath.Join(agy, "mcp_config.json")) // #nosec G304 -- config written inside t.TempDir
-	if err != nil || !strings.Contains(string(raw), "other") || !strings.Contains(string(raw), "botbox-desktop") {
+	if err != nil || !strings.Contains(string(raw), "other") || !strings.Contains(string(raw), "botbox-desktop") || !strings.Contains(string(raw), agent.TeamMCPURL) {
 		t.Fatalf("agy %s", raw)
 	}
 	if _, err = agent.InstallDesktopMCP("claude", ""); err == nil {

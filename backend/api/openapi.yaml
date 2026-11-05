@@ -2830,12 +2830,27 @@ components:
         # A group transcript has several speakers. The ids are omitted for system rows.
         senderUserId: {type: string, format: uuid}
         senderBotId: {type: string, format: uuid}
-        kind: {type: string, enum: [text, tool, system, card, approval, secret_request]}
+        kind: {type: string, enum: [text, tool, system, card, approval, secret_request, progress, team_status]}
         content: {type: string}
         secretRequest: {$ref: '#/components/schemas/SecretRequestSummary'}
         tool: {$ref: '#/components/schemas/ToolCallMeta'}
         inputRequest: {$ref: '#/components/schemas/GroupInputRequest'}
+        progressBlocker: {type: boolean}
+        teamStatus: {$ref: '#/components/schemas/TeamBotStatus'}
         createdAt: {type: string, format: date-time}
+    TeamBotStatusState:
+      type: string
+      enum: [working, queued, waiting_approval, waiting_secret, completed, interrupted, failed, budget_exceeded, stopping, idle, unknown]
+    TeamBotStatus:
+      type: object
+      required: [botId, name, state]
+      properties:
+        botId: {type: string, format: uuid}
+        name: {type: string}
+        state: {$ref: '#/components/schemas/TeamBotStatusState'}
+        workingSince: {type: string, format: date-time}
+        progress: {type: string}
+        progressAt: {type: string, format: date-time}
     GroupInputRequest:
       type: object
       required: [state, deadline, required, recipients]

@@ -19,6 +19,7 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/codexplan"
 	"github.com/dunkeltech/botbox/backend/internal/events"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
+	"github.com/dunkeltech/botbox/backend/internal/groups"
 	"github.com/dunkeltech/botbox/backend/internal/mcpproxy"
 	"github.com/dunkeltech/botbox/backend/internal/notify"
 	"github.com/dunkeltech/botbox/backend/internal/secrets"
@@ -34,6 +35,7 @@ type egressDeps struct {
 	Connect         http.Handler
 	LLM             http.Handler
 	MCP             http.Handler
+	TeamMCP         http.Handler
 	AuthMode        func(context.Context) (string, error)
 	PlanReady       func(context.Context) error
 	Health          func(context.Context) error
@@ -166,6 +168,7 @@ func databaseHandlerWithLifecycle(
 		Connect: connect,
 		LLM:     llm,
 		MCP:     mcpSvc.Handler(workspace, bot),
+		TeamMCP: mcpproxy.TeamHandler(groups.TeamTools{Pool: pool, Signal: signal}, workspace, bot),
 		AuthMode: func(ctx context.Context) (string, error) {
 			return llmproxy.AuthMode(ctx, resolve, bot.String(), llmproxy.ProviderAnthropic)
 		},
@@ -263,6 +266,10 @@ func newEgressHandler(deps egressDeps) http.Handler {
 		}
 		if strings.HasPrefix(r.URL.Path, "/broker/") {
 			serveBrokerBridge(w, r, deps)
+			return
+		}
+		if r.URL.Path == "/team-mcp" && deps.TeamMCP != nil {
+			deps.TeamMCP.ServeHTTP(w, r)
 			return
 		}
 		if r.URL.Path == "/mcp" || strings.HasPrefix(r.URL.Path, "/mcp/") {

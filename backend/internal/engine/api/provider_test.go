@@ -131,10 +131,11 @@ func TestAnthropicAdapterPreservesExtraToolDescriptions(t *testing.T) {
 	defer server.Close()
 
 	p := &modelapi.Provider{
-		Client: modelapi.AnthropicClient(server.Client()),
-		URL:    server.URL + "/v1/chat/completions",
-		Model:  "fixture",
-		Tools:  &fakeTools{},
+		Client:         modelapi.AnthropicClient(server.Client()),
+		URL:            server.URL + "/v1/chat/completions",
+		Model:          "fixture",
+		Tools:          &fakeTools{},
+		ExtraToolsOnly: true,
 		ExtraTools: []map[string]any{{
 			"type": "function",
 			"function": map[string]any{
@@ -149,5 +150,8 @@ func TestAnthropicAdapterPreservesExtraToolDescriptions(t *testing.T) {
 	}
 	if !strings.Contains(seenBody, "Get details of a GitLab CI job") {
 		t.Fatalf("expected tool description in Anthropic request, got %s", seenBody)
+	}
+	if strings.Contains(seenBody, `"name":"exec"`) {
+		t.Fatal("sandbox tools were advertised without an isolated desktop")
 	}
 }

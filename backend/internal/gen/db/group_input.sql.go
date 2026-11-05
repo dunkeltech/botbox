@@ -93,7 +93,7 @@ func (q *Queries) CreateGroupInputRequest(ctx context.Context, arg CreateGroupIn
 
 const createGroupInputTurn = `-- name: CreateGroupInputTurn :one
 INSERT INTO bot_turns (workspace_id, bot_id, conversation_id, message_id, continuation_prompt)
-VALUES ($1, $2, $3, $4, $5) RETURNING id, position, workspace_id, bot_id, conversation_id, message_id, status, error_code, created_at, updated_at, continuation_prompt, stop_requested
+VALUES ($1, $2, $3, $4, $5) RETURNING id, position, workspace_id, bot_id, conversation_id, message_id, status, error_code, created_at, updated_at, continuation_prompt, stop_requested, heartbeat_at
 `
 
 type CreateGroupInputTurnParams struct {
@@ -126,6 +126,7 @@ func (q *Queries) CreateGroupInputTurn(ctx context.Context, arg CreateGroupInput
 		&i.UpdatedAt,
 		&i.ContinuationPrompt,
 		&i.StopRequested,
+		&i.HeartbeatAt,
 	)
 	return i, err
 }
@@ -289,7 +290,7 @@ func (q *Queries) ListGroupInputProgress(ctx context.Context, arg ListGroupInput
 }
 
 const listGroupInputResults = `-- name: ListGroupInputResults :many
-SELECT p.bot_name, COALESCE(t.status, '')::text AS turn_status,
+SELECT p.bot_id, p.bot_name, COALESCE(t.status, '')::text AS turn_status,
        COALESCE(right(m.content, 1200), '')::text AS reply
 FROM group_input_recipients p
 LEFT JOIN bot_turns t ON t.workspace_id = p.workspace_id AND t.conversation_id = p.conversation_id AND t.id = p.turn_id
@@ -305,9 +306,10 @@ type ListGroupInputResultsParams struct {
 }
 
 type ListGroupInputResultsRow struct {
-	BotName    string `json:"bot_name"`
-	TurnStatus string `json:"turn_status"`
-	Reply      string `json:"reply"`
+	BotID      pgtype.UUID `json:"bot_id"`
+	BotName    string      `json:"bot_name"`
+	TurnStatus string      `json:"turn_status"`
+	Reply      string      `json:"reply"`
 }
 
 func (q *Queries) ListGroupInputResults(ctx context.Context, arg ListGroupInputResultsParams) ([]ListGroupInputResultsRow, error) {
@@ -319,7 +321,12 @@ func (q *Queries) ListGroupInputResults(ctx context.Context, arg ListGroupInputR
 	var items []ListGroupInputResultsRow
 	for rows.Next() {
 		var i ListGroupInputResultsRow
-		if err := rows.Scan(&i.BotName, &i.TurnStatus, &i.Reply); err != nil {
+		if err := rows.Scan(
+			&i.BotID,
+			&i.BotName,
+			&i.TurnStatus,
+			&i.Reply,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

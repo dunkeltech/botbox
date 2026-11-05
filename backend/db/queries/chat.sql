@@ -52,6 +52,14 @@ ORDER BY t.position LIMIT 1 FOR UPDATE OF t SKIP LOCKED;
 -- name: UpdateBotTurn :exec
 UPDATE bot_turns SET status=$3,error_code=$4,updated_at=now() WHERE workspace_id=$1 AND id=$2;
 
+-- name: StartBotTurn :exec
+UPDATE bot_turns SET status='running', error_code='', updated_at=sqlc.arg(as_of), heartbeat_at=sqlc.arg(as_of)
+WHERE workspace_id=$1 AND id=$2 AND status='queued';
+
+-- name: TouchBotTurnHeartbeat :exec
+UPDATE bot_turns SET heartbeat_at=sqlc.arg(as_of)
+WHERE workspace_id=$1 AND id=$2 AND status='running' AND NOT stop_requested;
+
 -- name: SetBotTurnWaitingSecret :execrows
 UPDATE bot_turns
 SET status='waiting_secret', error_code='', updated_at=now()
