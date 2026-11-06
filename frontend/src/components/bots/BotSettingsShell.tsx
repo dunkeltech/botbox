@@ -5,7 +5,6 @@ import {
   Coins,
   KeyRound,
   Plug,
-  ShieldCheck,
   SlidersHorizontal,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -48,7 +47,7 @@ export interface BotSettingsRouteContext {
 
 /**
  * Shared 2-column Bot Settings shell providing the breadcrumb header, bot status pill,
- * grouped 256 px left sub-navigation, and dark terminal isolation callout.
+ * and grouped 256 px left sub-navigation.
  */
 export function BotSettingsShell({
   bot,
@@ -157,7 +156,7 @@ export function BotSettingsShell({
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[256px_minmax(0,1fr)] lg:items-start">
-        <aside className="flex flex-col gap-4 lg:sticky lg:top-6">
+        <aside className="lg:sticky lg:top-6">
           <Card className="p-4">
             <nav
               aria-label={tBuilder('tabs.ariaLabel')}
@@ -196,21 +195,6 @@ export function BotSettingsShell({
               ))}
             </nav>
           </Card>
-
-          <div className="rounded-lg bg-terminal p-4 text-on-dark shadow-card">
-            <div className="flex items-center gap-2">
-              <ShieldCheck
-                className="h-4 w-4 shrink-0 text-green-light"
-                aria-hidden="true"
-              />
-              <h2 className="text-[13px] font-black text-paper">
-                {t('isolationTitle')}
-              </h2>
-            </div>
-            <p className="mt-1.5 font-mono text-[12px] leading-[1.55] text-on-dark-muted">
-              {t('isolationBody')}
-            </p>
-          </div>
         </aside>
 
         <div className="flex min-w-0 flex-col gap-6">{children}</div>

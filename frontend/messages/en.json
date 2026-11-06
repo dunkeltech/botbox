@@ -356,8 +356,7 @@
   "secrets": {
     "eyebrow": "Secrets & egress network",
     "title": "{name} · Secrets & network",
-    "lead": "Secrets stay encrypted outside the sandbox. The outbound proxy selectively intercepts configured domains to inject credentials after stripping placeholders.",
-    "protectedPushNote": "A protected push asks before it is treated as allowed. bot.Box does not run git push and stores no git credential on the card. The git host and the token's rights still decide whether that branch can be updated.",
+    "lead": "Manage the credentials your bot can use and control which services it can connect to. Credentials are encrypted and stored outside the bot's environment.",
     "backToWorkspace": "Back to workspace",
     "readOnlyNotice": "You have read-only access for this bot's secrets and egress rules.",
     "howTitle": "How a secret leaves the sandbox",
@@ -620,9 +619,7 @@
       "budgets": "Budgets & usage",
       "integrations": "MCP & GitLab",
       "secrets": "Secrets & egress"
-    },
-    "isolationTitle": "Bot isolation · strict",
-    "isolationBody": "Partition key: workspace_id + bot_id. Secrets stay on the egress proxy and cross-workspace access returns 404."
+    }
   },
   "workspaceSettings": {
     "eyebrow": "Workspace · {workspaceName}",

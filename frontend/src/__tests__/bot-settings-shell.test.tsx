@@ -248,8 +248,8 @@ describe('BotSettingsShell and all four bot settings sub-pages', () => {
       screen.getByLabelText(enMessages.builder.descriptionLabel),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(enMessages.botSettings.isolationTitle),
-    ).toBeInTheDocument();
+      screen.queryByRole('heading', { name: /bot isolation/i }),
+    ).not.toBeInTheDocument();
 
     // Uncluttered separation: other sub-pages must not appear inline here.
     expect(
@@ -314,6 +314,14 @@ describe('BotSettingsShell and all four bot settings sub-pages', () => {
     expect(
       await screen.findByText('Atlas · Secrets & network'),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /manage the credentials your bot can use and control which services it can connect to/i,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/a protected push asks/i),
+    ).not.toBeInTheDocument();
 
     // Dedicated sub-sections are visible across the full content column.
     expect(

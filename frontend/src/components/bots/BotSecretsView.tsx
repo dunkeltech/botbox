@@ -1075,9 +1075,6 @@ export function BotSecretsView({
             {t('title', { name: bot.name })}
           </h2>
           <p className="text-[14px] leading-[1.6] text-ink-2">{t('lead')}</p>
-          <p className="text-[14px] leading-[1.6] text-ink-2">
-            {t('protectedPushNote')}
-          </p>
         </Card>
       ) : (
         <div className="flex flex-col gap-3">
@@ -1095,9 +1092,6 @@ export function BotSecretsView({
           </h1>
           <p className="max-w-3xl text-[16px] leading-[1.6] text-ink-2">
             {t('lead')}
-          </p>
-          <p className="max-w-3xl text-[16px] leading-[1.6] text-ink-2">
-            {t('protectedPushNote')}
           </p>
 
           <nav

@@ -318,6 +318,8 @@ type ComputeDriver interface {
 
 ### 4.5 Secrets management & egress security proxy
 
+The **Secrets & egress** section of bot settings opens with a short overview of credentials and network access.
+
 **Principle:** credentials such as Git tokens and API keys **never** enter the LLM prompt, the bot's environment or its files.
 
 **How the proxy works (one per bot):**
