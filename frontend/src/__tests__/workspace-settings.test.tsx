@@ -235,6 +235,9 @@ describe('Workspace Settings IA & routes', () => {
         name: enMessages.workspaceSettings.nav.secrets,
       }),
     ).toHaveAttribute('href', '/settings/secrets');
+    expect(
+      screen.queryByRole('heading', { name: /tenant isolation: strict/i }),
+    ).not.toBeInTheDocument();
 
     const nameInput = await screen.findByLabelText(
       enMessages.workspaceSettings.general.nameLabel,

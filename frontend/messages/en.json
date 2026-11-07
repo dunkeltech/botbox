@@ -639,8 +639,6 @@
       "secrets": "Workspace secrets",
       "integrations": "MCP servers & GitLab"
     },
-    "isolationTitle": "Tenant isolation: strict",
-    "isolationBody": "Partition key: workspace_id. Requests across workspaces return 404 Not Found.",
     "general": {
       "profileEyebrow": "Identity",
       "profileTitle": "Workspace profile",
