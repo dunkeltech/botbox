@@ -210,6 +210,7 @@ func (s *server) mountRoutes(r chi.Router) {
 
 			r.Get("/budgets", s.handleBudgetSummary)
 			r.Put("/budgets", s.handleSetBudget)
+			r.Delete("/budgets", s.handleDeleteBudget)
 			r.Put("/subscription-budget-policy", s.handleSetSubscriptionBudgetPolicy)
 			r.Get("/model-prices", s.handleListModelPrices)
 			r.Put("/model-prices", s.handleSetModelPrice)

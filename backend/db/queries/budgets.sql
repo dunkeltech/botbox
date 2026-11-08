@@ -1,13 +1,24 @@
 -- name: ListBudgetState :many
 SELECT b.*,COALESCE((SELECT sum(COALESCE(u.cost_micros, u.internal_charge_micros)) FROM usage_records u WHERE u.workspace_id=b.workspace_id AND (b.bot_id IS NULL OR u.bot_id=b.bot_id)
-AND u.created_at >= date_trunc(b.period,sqlc.arg(as_of)::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'),0)::bigint AS spent_micros,
+AND u.created_at >= CASE
+    WHEN b.period = '5h' THEN sqlc.arg(as_of)::timestamptz - interval '5 hours'
+    ELSE date_trunc(b.period,sqlc.arg(as_of)::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+END),0)::bigint AS spent_micros,
 COALESCE((SELECT sum(u.reserved_micros) FROM usage_records u WHERE u.workspace_id=b.workspace_id AND (b.bot_id IS NULL OR u.bot_id=b.bot_id)
-AND u.created_at >= date_trunc(b.period,sqlc.arg(as_of)::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'),0)::bigint AS reserved_micros
+AND u.created_at >= CASE
+    WHEN b.period = '5h' THEN sqlc.arg(as_of)::timestamptz - interval '5 hours'
+    ELSE date_trunc(b.period,sqlc.arg(as_of)::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+END),0)::bigint AS reserved_micros
 FROM budgets b WHERE b.workspace_id=$1 AND (b.bot_id IS NULL OR b.bot_id=sqlc.arg(bot_id)::uuid);
 
 -- name: SetBudget :one
 INSERT INTO budgets(workspace_id,bot_id,period,limit_micros) VALUES($1,$2,$3,$4)
 ON CONFLICT(workspace_id,bot_id,period) DO UPDATE SET limit_micros=EXCLUDED.limit_micros RETURNING *;
+
+-- name: DeleteBotBudget :one
+DELETE FROM budgets
+WHERE workspace_id = $1 AND bot_id = $2 AND period = $3
+RETURNING id;
 
 -- name: CreateBudgetApproval :one
 -- RETURNING nothing on conflict so a later turn does not notify again for the same pending card.
@@ -51,7 +62,10 @@ SELECT * FROM approvals WHERE workspace_id=$1 AND status='pending' ORDER BY crea
 SELECT EXISTS(SELECT 1 FROM usage_records u WHERE u.workspace_id=$1
 AND (sqlc.narg(bot_id)::uuid IS NULL OR u.bot_id=sqlc.narg(bot_id)::uuid)
 AND u.source IN ('api_response','proxy_meter') AND (u.billing_kind='metered' OR u.subscription_budgeted) AND u.cost_micros IS NULL AND u.internal_charge_micros IS NULL AND u.reserved_micros IS NULL
-AND u.created_at >= date_trunc(sqlc.arg(period)::text,sqlc.arg(as_of)::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC');
+AND u.created_at >= CASE
+    WHEN sqlc.arg(period)::text = '5h' THEN sqlc.arg(as_of)::timestamptz - interval '5 hours'
+    ELSE date_trunc(sqlc.arg(period)::text,sqlc.arg(as_of)::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+END);
 
 -- name: SettleProxyUsage :execrows
 UPDATE usage_records SET input_tokens=$3,output_tokens=$4,cache_tokens=$5,cost_micros=$6,internal_charge_micros=$7,usage_known=$8,reserved_micros=NULL
@@ -80,7 +94,12 @@ SELECT count_subscription_usage FROM workspaces WHERE id = $1;
 UPDATE workspaces SET count_subscription_usage = $2 WHERE id = $1;
 
 -- name: ListSubscriptionUsage :many
-WITH periods AS (SELECT 'day'::text AS name UNION ALL SELECT 'month'::text)
+WITH periods AS (
+    SELECT '5h'::text AS name
+    UNION ALL SELECT 'day'::text
+    UNION ALL SELECT 'week'::text
+    UNION ALL SELECT 'month'::text
+)
 SELECT u.model, period.name AS period,
        sum(u.input_tokens)::bigint AS input_tokens,
        sum(u.output_tokens)::bigint AS output_tokens,
@@ -93,5 +112,8 @@ CROSS JOIN periods period
 WHERE u.workspace_id = sqlc.arg(workspace_id)
   AND (sqlc.narg(bot_id)::uuid IS NULL OR u.bot_id = sqlc.narg(bot_id))
   AND u.billing_kind = 'subscription'
-  AND u.created_at >= date_trunc(period.name, sqlc.arg(as_of)::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+  AND u.created_at >= CASE
+      WHEN period.name = '5h' THEN sqlc.arg(as_of)::timestamptz - interval '5 hours'
+      ELSE date_trunc(period.name, sqlc.arg(as_of)::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+  END
 GROUP BY period.name, u.model ORDER BY period.name, u.model;

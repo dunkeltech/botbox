@@ -4,8 +4,8 @@ import { BotSettingsRoute } from '@/components/bots/BotSettingsShell';
 import { BudgetPanel } from '@/components/chat/BudgetPanel';
 
 /**
- * Per-bot Budgets & usage settings section showing daily/monthly caps,
- * 429 BudgetExceeded enforcement, and subscription token usage.
+ * Per-bot Budgets & usage settings section showing 5-hour rolling, daily, weekly,
+ * and monthly caps, 429 BudgetExceeded enforcement, and subscription token usage.
  */
 export default function BotBudgetsSettingsPage() {
   return (

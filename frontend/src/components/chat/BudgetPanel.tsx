@@ -8,6 +8,58 @@ import { ApiClientError, requestJson } from '@/lib/api-client';
 import type { components } from '@/types/openapi.gen';
 
 type Summary = components['schemas']['BudgetSummary'];
+type BudgetState = components['schemas']['BudgetState'];
+type BudgetPeriod = BudgetState['period'];
+
+const BOT_PERIODS: readonly BudgetPeriod[] = ['5h', 'day', 'week', 'month'];
+
+const PERIOD_META: Record<
+  BudgetPeriod,
+  {
+    capLabelKey:
+      | 'fiveHourCapLabel'
+      | 'dailyCapLabel'
+      | 'weeklyCapLabel'
+      | 'monthlyCapLabel';
+    inputLabelKey:
+      'fiveHourLimit' | 'dailyLimit' | 'weeklyLimit' | 'monthlyLimit';
+    cadenceKey:
+      'fiveHourCadence' | 'dailyCadence' | 'weeklyCadence' | 'monthlyCadence';
+    filterLabelKey: 'fiveHour' | 'daily' | 'weekly' | 'monthly';
+  }
+> = {
+  '5h': {
+    capLabelKey: 'fiveHourCapLabel',
+    inputLabelKey: 'fiveHourLimit',
+    cadenceKey: 'fiveHourCadence',
+    filterLabelKey: 'fiveHour',
+  },
+  day: {
+    capLabelKey: 'dailyCapLabel',
+    inputLabelKey: 'dailyLimit',
+    cadenceKey: 'dailyCadence',
+    filterLabelKey: 'daily',
+  },
+  week: {
+    capLabelKey: 'weeklyCapLabel',
+    inputLabelKey: 'weeklyLimit',
+    cadenceKey: 'weeklyCadence',
+    filterLabelKey: 'weekly',
+  },
+  month: {
+    capLabelKey: 'monthlyCapLabel',
+    inputLabelKey: 'monthlyLimit',
+    cadenceKey: 'monthlyCadence',
+    filterLabelKey: 'monthly',
+  },
+};
+
+function formatMicrosInput(limitMicros: number): string {
+  const usd = limitMicros / 1_000_000;
+  return Number.isInteger(usd)
+    ? String(usd)
+    : usd.toFixed(6).replace(/0+$/, '').replace(/\.$/, '');
+}
 
 /** Shows metered workspace or bot spend with 80%/100% threshold markers and lets administrators set limits. */
 export function BudgetPanel({
@@ -25,12 +77,12 @@ export function BudgetPanel({
   const format = useFormatter();
   const client = useQueryClient();
   const [limit, setLimit] = useState('');
-  const [period, setPeriod] = useState<'day' | 'month'>(
-    botId ? 'day' : 'month',
+  const [drafts, setDrafts] = useState<Partial<Record<BudgetPeriod, string>>>(
+    {},
   );
   const [saving, setSaving] = useState(false);
   const [savingPolicy, setSavingPolicy] = useState(false);
-  const [usagePeriod, setUsagePeriod] = useState<'day' | 'month'>('month');
+  const [usagePeriod, setUsagePeriod] = useState<BudgetPeriod>('month');
   const [error, setError] = useState(false);
   const base = `/api/workspaces/${workspaceId}`;
   const query = useQuery({
@@ -54,7 +106,41 @@ export function BudgetPanel({
     },
   });
 
-  async function save(event: FormEvent) {
+  const budgets = query.data?.budgets ?? [];
+  // ListBudgetState returns workspace-wide monthly caps alongside bot-specific caps.
+  const workspaceCap = botId
+    ? budgets.find((b) => !b.botId && b.period === 'month')
+    : undefined;
+  const displayedBudgets = (
+    botId ? budgets.filter((b) => b !== workspaceCap) : budgets
+  )
+    .slice()
+    .sort(
+      (a, b) => BOT_PERIODS.indexOf(a.period) - BOT_PERIODS.indexOf(b.period),
+    );
+
+  const botBudgetByPeriod = new Map<BudgetPeriod, BudgetState>();
+  for (const b of displayedBudgets) {
+    botBudgetByPeriod.set(b.period, b);
+  }
+
+  function serverValueFor(period: BudgetPeriod): string {
+    const existing = botBudgetByPeriod.get(period);
+    return existing ? formatMicrosInput(existing.limitMicros) : '';
+  }
+
+  function inputValueFor(period: BudgetPeriod): string {
+    return drafts[period] !== undefined
+      ? drafts[period]
+      : serverValueFor(period);
+  }
+
+  const isBotFormDirty = BOT_PERIODS.some((period) => {
+    const draft = drafts[period];
+    return draft !== undefined && draft.trim() !== serverValueFor(period);
+  });
+
+  async function saveWorkspaceBudget(event: FormEvent) {
     event.preventDefault();
     setError(false);
     setSaving(true);
@@ -62,13 +148,62 @@ export function BudgetPanel({
       await requestJson(`${base}/budgets`, {
         method: 'PUT',
         body: {
-          botId,
-          period,
-          limitMicros: Math.round(Number(limit) * 1000000),
+          period: 'month',
+          limitMicros: Math.round(Number(limit) * 1_000_000),
         },
       });
       await client.invalidateQueries({ queryKey: ['budget', workspaceId] });
       setLimit('');
+    } catch {
+      setError(true);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveBotLimits(event: FormEvent) {
+    event.preventDefault();
+    if (!botId) {
+      return;
+    }
+    setError(false);
+    setSaving(true);
+    try {
+      for (const period of BOT_PERIODS) {
+        const existing = botBudgetByPeriod.get(period);
+        const raw = inputValueFor(period).trim();
+        if (raw === serverValueFor(period)) {
+          continue;
+        }
+        if (raw === '') {
+          if (existing) {
+            await requestJson(
+              `${base}/budgets?botId=${encodeURIComponent(botId)}&period=${encodeURIComponent(period)}`,
+              { method: 'DELETE' },
+            );
+          }
+          continue;
+        }
+        const limitMicros = Math.round(Number(raw) * 1_000_000);
+        if (
+          !Number.isFinite(limitMicros) ||
+          limitMicros < 1 ||
+          limitMicros > 1e12
+        ) {
+          setError(true);
+          return;
+        }
+        await requestJson(`${base}/budgets`, {
+          method: 'PUT',
+          body: {
+            botId,
+            period,
+            limitMicros,
+          },
+        });
+      }
+      setDrafts({});
+      await client.invalidateQueries({ queryKey: ['budget', workspaceId] });
     } catch {
       setError(true);
     } finally {
@@ -92,7 +227,6 @@ export function BudgetPanel({
     }
   }
 
-  const budgets = query.data?.budgets ?? [];
   const anyExceeded = budgets.some((b) => b.exceeded);
   const anyWarning = !anyExceeded && budgets.some((b) => b.warning);
 
@@ -114,7 +248,7 @@ export function BudgetPanel({
           {query.data ? (
             <p className="mt-0.5 text-[14px] text-ink-2">
               {t('today', {
-                amount: format.number(query.data.spendTodayMicros / 1000000, {
+                amount: format.number(query.data.spendTodayMicros / 1_000_000, {
                   style: 'currency',
                   currency: 'USD',
                 }),
@@ -131,7 +265,7 @@ export function BudgetPanel({
             <span className="rounded-pill border border-amber-line bg-amber-tint px-2.5 py-0.5 font-mono text-[12px] font-bold text-amber">
               {t('warningBadge')}
             </span>
-          ) : budgets.length > 0 ? (
+          ) : displayedBudgets.length > 0 ? (
             <span className="rounded-pill border border-mint-line bg-mint-soft px-2.5 py-0.5 text-[12px] font-bold text-green-600">
               {t('withinBudget')}
             </span>
@@ -145,6 +279,38 @@ export function BudgetPanel({
 
       {error || query.isError ? (
         <Alert tone="warning">{t('error')}</Alert>
+      ) : null}
+
+      {workspaceCap ? (
+        <div
+          className={`flex flex-wrap items-center justify-between gap-2 rounded-sm border px-3.5 py-2 text-[13px] ${
+            workspaceCap.exceeded
+              ? 'border-dashed border-amber-line bg-amber-tint text-amber'
+              : workspaceCap.warning
+                ? 'border-amber-line bg-amber-tint/70 text-amber'
+                : 'border-line bg-paper-2 text-ink-2'
+          }`}
+        >
+          <span className="font-mono font-bold">
+            {t('workspaceCapContext', {
+              spent: format.number(workspaceCap.spentMicros / 1_000_000, {
+                style: 'currency',
+                currency: 'USD',
+              }),
+              limit: format.number(workspaceCap.limitMicros / 1_000_000, {
+                style: 'currency',
+                currency: 'USD',
+              }),
+              percent:
+                workspaceCap.limitMicros > 0
+                  ? Math.round(
+                      (workspaceCap.spentMicros / workspaceCap.limitMicros) *
+                        100,
+                    )
+                  : 0,
+            })}
+          </span>
+        </div>
       ) : null}
 
       {canManage &&
@@ -176,18 +342,21 @@ export function BudgetPanel({
               className="min-h-[44px] rounded-sm border border-line-strong bg-paper px-3 text-ink"
               value={usagePeriod}
               onChange={(event) =>
-                setUsagePeriod(event.target.value as 'day' | 'month')
+                setUsagePeriod(event.target.value as BudgetPeriod)
               }
             >
-              <option value="day">{t('daily')}</option>
-              <option value="month">{t('monthly')}</option>
+              {BOT_PERIODS.map((p) => (
+                <option key={p} value={p}>
+                  {t(PERIOD_META[p].filterLabelKey)}
+                </option>
+              ))}
             </select>
           </div>
           {usage.length ? (
             <>
               <p className="text-[14px] text-ink-2">
                 {t('internalCharge', {
-                  amount: format.number(internalCharge / 1000000, {
+                  amount: format.number(internalCharge / 1_000_000, {
                     style: 'currency',
                     currency: 'USD',
                   }),
@@ -224,14 +393,14 @@ export function BudgetPanel({
         </section>
       ) : null}
 
-      {query.data && query.data.budgets.length > 0 ? (
+      {query.data && displayedBudgets.length > 0 ? (
         <div className="grid gap-4 md:grid-cols-2">
-          {query.data.budgets.map((b) => {
-            const spentText = format.number(b.spentMicros / 1000000, {
+          {displayedBudgets.map((b) => {
+            const spentText = format.number(b.spentMicros / 1_000_000, {
               style: 'currency',
               currency: 'USD',
             });
-            const limitText = format.number(b.limitMicros / 1000000, {
+            const limitText = format.number(b.limitMicros / 1_000_000, {
               style: 'currency',
               currency: 'USD',
             });
@@ -239,6 +408,7 @@ export function BudgetPanel({
               b.limitMicros > 0
                 ? Math.round((b.spentMicros / b.limitMicros) * 100)
                 : 0;
+            const meta = PERIOD_META[b.period];
             const label = t(b.period, {
               spent: spentText,
               limit: limitText,
@@ -256,9 +426,7 @@ export function BudgetPanel({
               >
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <span className="text-[12px] font-bold uppercase tracking-[0.06em] text-muted">
-                    {b.period === 'day'
-                      ? t('dailyCapLabel')
-                      : t('monthlyCapLabel')}
+                    {t(meta.capLabelKey)}
                   </span>
                   <span className="font-mono text-[14px] font-black text-ink">
                     {t('ofLimit', { spent: spentText, limit: limitText })}
@@ -274,6 +442,7 @@ export function BudgetPanel({
                   leftCaption={t('used', { percent })}
                   rightCaption={t('threshold')}
                 />
+                <p className="text-[12px] text-muted">{t(meta.cadenceKey)}</p>
                 {b.exceeded ? (
                   <p className="text-[13px] font-bold text-amber">
                     {t('exceeded')}
@@ -308,44 +477,90 @@ export function BudgetPanel({
       ) : null}
 
       {canManage ? (
-        <form
-          onSubmit={(event) => void save(event)}
-          className="grid items-end gap-3 border-t border-line pt-4 sm:grid-cols-[1fr_180px_auto]"
-        >
-          <Input
-            label={t('limit')}
-            type="number"
-            min="0.000001"
-            max="1000000"
-            step="0.000001"
-            mono
-            value={limit}
-            required
-            onChange={(event) => setLimit(event.target.value)}
-          />
-          <div className="flex flex-col gap-1.5">
-            <label
-              htmlFor={`budget-period-${botId ?? 'workspace'}`}
-              className="text-[14px] font-bold text-ink"
-            >
-              {t('period')}
-            </label>
-            <select
-              id={`budget-period-${botId ?? 'workspace'}`}
-              className="min-h-[44px] rounded-sm border-[1.5px] border-line-strong bg-paper px-3 py-2 text-[15px] text-ink focus:border-green-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
-              value={period}
-              onChange={(event) =>
-                setPeriod(event.target.value as 'day' | 'month')
-              }
-            >
-              {botId ? <option value="day">{t('daily')}</option> : null}
-              <option value="month">{t('monthly')}</option>
-            </select>
-          </div>
-          <Button type="submit" disabled={saving || !limit}>
-            {t('save')}
-          </Button>
-        </form>
+        botId ? (
+          <form
+            onSubmit={(event) => void saveBotLimits(event)}
+            className="flex flex-col gap-4 rounded-md border border-line bg-paper-2 p-4"
+          >
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {BOT_PERIODS.map((p) => {
+                const meta = PERIOD_META[p];
+                return (
+                  <Input
+                    key={p}
+                    label={t(meta.inputLabelKey)}
+                    helperText={t(meta.cadenceKey)}
+                    type="number"
+                    min="0.000001"
+                    max="1000000"
+                    step="0.000001"
+                    mono
+                    placeholder={t('unlimitedPlaceholder')}
+                    value={inputValueFor(p)}
+                    onChange={(event) =>
+                      setDrafts((prev) => ({
+                        ...prev,
+                        [p]: event.target.value,
+                      }))
+                    }
+                  />
+                );
+              })}
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3">
+              <p className="text-[13px] text-muted">{t('botLimitsHint')}</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={saving || !isBotFormDirty}
+                  onClick={() => setDrafts({})}
+                >
+                  {t('resetChanges')}
+                </Button>
+                <Button type="submit" disabled={saving || !isBotFormDirty}>
+                  {t('saveBotLimits')}
+                </Button>
+              </div>
+            </div>
+          </form>
+        ) : (
+          <form
+            onSubmit={(event) => void saveWorkspaceBudget(event)}
+            className="grid items-end gap-3 border-t border-line pt-4 sm:grid-cols-[1fr_180px_auto]"
+          >
+            <Input
+              label={t('limit')}
+              type="number"
+              min="0.000001"
+              max="1000000"
+              step="0.000001"
+              mono
+              value={limit}
+              required
+              onChange={(event) => setLimit(event.target.value)}
+            />
+            <div className="flex flex-col gap-1.5">
+              <label
+                htmlFor="budget-period-workspace"
+                className="text-[14px] font-bold text-ink"
+              >
+                {t('period')}
+              </label>
+              <select
+                id="budget-period-workspace"
+                className="min-h-[44px] rounded-sm border-[1.5px] border-line-strong bg-paper px-3 py-2 text-[15px] text-ink focus:border-green-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+                value="month"
+                disabled
+              >
+                <option value="month">{t('monthly')}</option>
+              </select>
+            </div>
+            <Button type="submit" disabled={saving || !limit}>
+              {t('save')}
+            </Button>
+          </form>
+        )
       ) : null}
     </Card>
   );

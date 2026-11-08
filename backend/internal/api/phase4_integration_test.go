@@ -324,3 +324,164 @@ func TestPhase4MessageRateLimit(t *testing.T) {
 		t.Fatalf("queue cap status=%d jobs=%d", r.status, len(queue.jobs))
 	}
 }
+
+func TestPhase4BotFiveHourAndWeeklyBudgets(t *testing.T) {
+	queue := &fakeTurnQueue{}
+	h := newTestHarness(t, nil, harnessOpts{turnQueue: queue})
+	owner, _ := h.completeSetup("owner@example.com", "CorrectHorse123!", "Owner", "Workspace", "workspace")
+	ws := owner.ActiveWorkspace.Id
+	base := "/api/workspaces/" + ws.String()
+
+	r := h.request(http.MethodPost, base+"/bots", map[string]any{
+		"name": "Atlas", "avatarSeed": "atlas-seed", "llmMode": "api", "llmProvider": "openrouter", "llmModel": "fixture",
+	}, owner.AccessToken, nil, true)
+	var bot apigen.Bot
+	r.decode(t, &bot)
+
+	r = h.request(http.MethodPost, "/api/workspaces", map[string]any{"name": "OtherWS", "slug": "other-ws"}, owner.AccessToken, nil, true)
+	if r.status != 201 {
+		t.Fatalf("create other workspace=%d %s", r.status, r.body)
+	}
+	var otherWS apigen.WorkspaceSummary
+	r.decode(t, &otherWS)
+	otherOwner, _ := h.inviteAndAcceptNewUser(owner.AccessToken, otherWS.Id, "other@example.com", "owner", "Other", "CorrectHorse123!")
+	otherBase := "/api/workspaces/" + otherWS.Id.String()
+
+	member, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "member@example.com", "member", "Member", "CorrectHorse123!")
+	viewer, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "viewer@example.com", "viewer", "Viewer", "CorrectHorse123!")
+
+	// Negative validation: workspace-level 5h/week and unknown period must be rejected.
+	for _, body := range []any{
+		map[string]any{"period": "5h", "limitMicros": 100},
+		map[string]any{"period": "week", "limitMicros": 100},
+		map[string]any{"botId": bot.Id, "period": "year", "limitMicros": 100},
+		map[string]any{"botId": bot.Id, "period": "5h", "limitMicros": 0},
+		map[string]any{"botId": bot.Id, "period": "week", "limitMicros": 1000000000001},
+	} {
+		if res := h.request(http.MethodPut, base+"/budgets", body, owner.AccessToken, nil, true); res.status != 400 {
+			t.Fatalf("invalid budget %v=%d", body, res.status)
+		}
+	}
+
+	// Cross-workspace access must return 404 across GET, PUT, and DELETE.
+	if res := h.request(http.MethodGet, otherBase+"/budgets?botId="+bot.Id.String(), nil, otherOwner.AccessToken, nil, false); res.status != 404 {
+		t.Fatalf("cross-workspace GET status=%d", res.status)
+	}
+	if res := h.request(http.MethodPut, otherBase+"/budgets", map[string]any{"botId": bot.Id, "period": "5h", "limitMicros": 100}, otherOwner.AccessToken, nil, true); res.status != 404 {
+		t.Fatalf("cross-workspace PUT status=%d", res.status)
+	}
+	if res := h.request(http.MethodDelete, otherBase+"/budgets?botId="+bot.Id.String()+"&period=5h", nil, otherOwner.AccessToken, nil, true); res.status != 404 {
+		t.Fatalf("cross-workspace DELETE status=%d", res.status)
+	}
+
+	// RBAC for setting 5h and week bot budgets.
+	fiveHourBudget := map[string]any{"botId": bot.Id, "period": "5h", "limitMicros": 100}
+	for _, tc := range []struct {
+		token  string
+		status int
+	}{{"", 401}, {member.AccessToken, 403}, {viewer.AccessToken, 403}, {owner.AccessToken, 200}} {
+		if res := h.request(http.MethodPut, base+"/budgets", fiveHourBudget, tc.token, nil, true); res.status != tc.status {
+			t.Fatalf("PUT 5h token status=%d want=%d %s", res.status, tc.status, res.body)
+		}
+	}
+	if res := h.request(http.MethodPut, base+"/budgets", map[string]any{"botId": bot.Id, "period": "week", "limitMicros": 100}, owner.AccessToken, nil, true); res.status != 200 {
+		t.Fatalf("PUT week=%d %s", res.status, res.body)
+	}
+	if res := h.request(http.MethodPut, base+"/model-prices", map[string]any{
+		"provider": "openrouter", "model": "fixture", "inputMicrosPerMillion": 1000000, "outputMicrosPerMillion": 1000000, "cacheMicrosPerMillion": 1000000,
+	}, owner.AccessToken, nil, true); res.status != 200 {
+		t.Fatalf("PUT model-prices=%d", res.status)
+	}
+
+	// Record 100 micros of spend on Sunday 2026-11-15 12:00 UTC.
+	r = h.request(http.MethodPost, base+"/bots/"+bot.Id.String()+"/dm", nil, owner.AccessToken, nil, true)
+	var conversation apigen.ChatConversation
+	r.decode(t, &conversation)
+	r = h.request(http.MethodPost, base+"/conversations/"+conversation.Id.String()+"/messages", map[string]any{"id": uuid.New(), "content": "Spend 100 micros"}, owner.AccessToken, nil, true)
+	if r.status != 202 {
+		t.Fatalf("send chat=%d %s", r.status, r.body)
+	}
+	worker := &engine.Worker{Pool: h.pool, Now: h.clock.Now, Execute: func(ctx context.Context, s engine.Session, emit func(engine.Event) error) error {
+		return emit(engine.Event{Kind: engine.EventKindUsage, InputTokens: 100})
+	}}
+	if err := worker.Process(context.Background(), queue.jobs[0]); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := budgets.Check(context.Background(), h.queries, ws, bot.Id, h.clock.Now()); !errors.Is(err, llmproxy.ErrBudgetExceeded) {
+		t.Fatalf("expected budget exceeded on Sunday 12:00 UTC, got %v", err)
+	}
+
+	login := func(email string) string {
+		res := h.request(http.MethodPost, "/api/auth/login", map[string]any{
+			"email": email, "password": "CorrectHorse123!",
+		}, "", nil, true)
+		if res.status != 200 {
+			t.Fatalf("login %s=%d %s", email, res.status, res.body)
+		}
+		out := owner
+		res.decode(t, &out)
+		return out.AccessToken
+	}
+
+	// Advance 5h + 1s (Sunday 17:00:01 UTC): 5h rolling window expires, week cap still holds.
+	h.clock.Advance(5*time.Hour + time.Second)
+	viewerToken := login("viewer@example.com")
+	r = h.request(http.MethodGet, base+"/budgets?botId="+bot.Id.String(), nil, viewerToken, nil, false)
+	if r.status != 200 {
+		t.Fatalf("GET budgets=%d %s", r.status, r.body)
+	}
+	var summary apigen.BudgetSummary
+	r.decode(t, &summary)
+	byPeriod := map[apigen.BudgetStatePeriod]apigen.BudgetState{}
+	for _, b := range summary.Budgets {
+		byPeriod[b.Period] = b
+	}
+	if got := byPeriod[apigen.BudgetStatePeriodN5h]; got.SpentMicros != 0 || got.Exceeded {
+		t.Fatalf("5h window should have decayed after 5h+1s: %+v", got)
+	}
+	if got := byPeriod[apigen.BudgetStatePeriodWeek]; got.SpentMicros != 100 || !got.Exceeded {
+		t.Fatalf("week window should still be exhausted on Sunday evening: %+v", got)
+	}
+	if err := budgets.Check(context.Background(), h.queries, ws, bot.Id, h.clock.Now()); !errors.Is(err, llmproxy.ErrBudgetExceeded) {
+		t.Fatalf("week cap should still block on Sunday evening, got %v", err)
+	}
+
+	// Advance past Monday 2026-11-16 00:00 UTC: week cap resets.
+	h.clock.Advance(7 * time.Hour)
+	if err := budgets.Check(context.Background(), h.queries, ws, bot.Id, h.clock.Now()); err != nil {
+		t.Fatalf("week cap should reset on Monday UTC, got %v", err)
+	}
+
+	ownerToken := login("owner@example.com")
+	memberToken := login("member@example.com")
+	viewerToken = login("viewer@example.com")
+
+	// Delete negative/RBAC tests and valid deletion.
+	for _, path := range []string{
+		base + "/budgets?period=5h",
+		base + "/budgets?botId=not-a-uuid&period=5h",
+		base + "/budgets?botId=" + bot.Id.String() + "&period=year",
+	} {
+		if res := h.request(http.MethodDelete, path, nil, ownerToken, nil, true); res.status != 400 {
+			t.Fatalf("DELETE invalid %s=%d", path, res.status)
+		}
+	}
+	for _, tc := range []struct {
+		token  string
+		status int
+	}{{"", 401}, {memberToken, 403}, {viewerToken, 403}, {ownerToken, 204}, {ownerToken, 204}} {
+		if res := h.request(http.MethodDelete, base+"/budgets?botId="+bot.Id.String()+"&period=5h", nil, tc.token, nil, true); res.status != tc.status {
+			t.Fatalf("DELETE 5h status=%d want=%d %s", res.status, tc.status, res.body)
+		}
+	}
+	r = h.request(http.MethodGet, base+"/budgets?botId="+bot.Id.String(), nil, ownerToken, nil, false)
+	if r.status != 200 {
+		t.Fatalf("GET budgets after delete=%d %s", r.status, r.body)
+	}
+	summary = apigen.BudgetSummary{}
+	r.decode(t, &summary)
+	if len(summary.Budgets) != 1 || summary.Budgets[0].Period != apigen.BudgetStatePeriodWeek {
+		t.Fatalf("expected only week budget after deleting 5h, got %+v", summary.Budgets)
+	}
+}

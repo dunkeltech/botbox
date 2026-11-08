@@ -96,7 +96,7 @@ func (s *server) handleSetBudget(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, s.logger, &req) {
 		return
 	}
-	if req.LimitMicros < 1 || req.LimitMicros > 1e12 || (req.Period != "day" && req.Period != "month") || (req.BotId == nil && req.Period != "month") {
+	if req.LimitMicros < 1 || req.LimitMicros > 1e12 || !req.Period.Valid() || (req.BotId == nil && req.Period != apigen.SetBudgetRequestPeriodMonth) {
 		writeError(w, s.logger, 400, "validation_error", "invalid budget")
 		return
 	}
@@ -139,6 +139,58 @@ func (s *server) handleSetBudget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, s.logger, 200, map[string]bool{"saved": true})
+}
+
+func (s *server) handleDeleteBudget(w http.ResponseWriter, r *http.Request) {
+	ws, claims, _, ok := s.loadWorkspaceMembership(w, r, workspaces.ActionManageMembers)
+	if !ok {
+		return
+	}
+	botID, err := uuid.Parse(r.URL.Query().Get("botId"))
+	if err != nil || botID == uuid.Nil {
+		writeError(w, s.logger, 400, "validation_error", "invalid bot id")
+		return
+	}
+	period := apigen.BudgetStatePeriod(r.URL.Query().Get("period"))
+	if !period.Valid() {
+		writeError(w, s.logger, 400, "validation_error", "invalid budget period")
+		return
+	}
+	bot, ok := s.budgetBot(w, r, ws.ID, &botID)
+	if !ok {
+		return
+	}
+	tx, err := s.pool.Begin(r.Context())
+	if err != nil {
+		s.chatFailure(w)
+		return
+	}
+	defer func(ctx context.Context) { _ = tx.Rollback(ctx) }(r.Context())
+	q := s.queries.WithTx(tx)
+	deletedID, err := q.DeleteBotBudget(r.Context(), db.DeleteBotBudgetParams{
+		WorkspaceID: ws.ID,
+		BotID:       bot,
+		Period:      string(period),
+	})
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		s.chatFailure(w)
+		return
+	}
+	if err == nil {
+		wsID, actor, id := fromPGUUID(ws.ID), claims.Subject, fromPGUUID(deletedID)
+		if err = recordAudit(r.Context(), q, &wsID, &actor, "budget.deleted", "budget", &id, map[string]any{
+			"botId":  botID.String(),
+			"period": string(period),
+		}); err != nil {
+			s.chatFailure(w)
+			return
+		}
+	}
+	if err = tx.Commit(r.Context()); err != nil {
+		s.chatFailure(w)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 func (s *server) handleListModelPrices(w http.ResponseWriter, r *http.Request) {
 	ws, _, _, ok := s.loadWorkspaceMembership(w, r, workspaces.ActionViewWorkspace)

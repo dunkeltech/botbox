@@ -31,6 +31,25 @@ func (q *Queries) CreateBudgetApproval(ctx context.Context, arg CreateBudgetAppr
 	return id, err
 }
 
+const deleteBotBudget = `-- name: DeleteBotBudget :one
+DELETE FROM budgets
+WHERE workspace_id = $1 AND bot_id = $2 AND period = $3
+RETURNING id
+`
+
+type DeleteBotBudgetParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	BotID       pgtype.UUID `json:"bot_id"`
+	Period      string      `json:"period"`
+}
+
+func (q *Queries) DeleteBotBudget(ctx context.Context, arg DeleteBotBudgetParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, deleteBotBudget, arg.WorkspaceID, arg.BotID, arg.Period)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const getModelPrice = `-- name: GetModelPrice :one
 SELECT workspace_id, provider, model, input_micros_per_million, output_micros_per_million, cache_micros_per_million FROM model_prices WHERE workspace_id=$1 AND provider=$2 AND model=$3
 `
@@ -140,7 +159,10 @@ const hasUnpricedAPIUsage = `-- name: HasUnpricedAPIUsage :one
 SELECT EXISTS(SELECT 1 FROM usage_records u WHERE u.workspace_id=$1
 AND ($2::uuid IS NULL OR u.bot_id=$2::uuid)
 AND u.source IN ('api_response','proxy_meter') AND (u.billing_kind='metered' OR u.subscription_budgeted) AND u.cost_micros IS NULL AND u.internal_charge_micros IS NULL AND u.reserved_micros IS NULL
-AND u.created_at >= date_trunc($3::text,$4::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')
+AND u.created_at >= CASE
+    WHEN $3::text = '5h' THEN $4::timestamptz - interval '5 hours'
+    ELSE date_trunc($3::text,$4::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+END)
 `
 
 type HasUnpricedAPIUsageParams struct {
@@ -201,9 +223,15 @@ func (q *Queries) ListBudgetApprovals(ctx context.Context, workspaceID pgtype.UU
 
 const listBudgetState = `-- name: ListBudgetState :many
 SELECT b.id, b.workspace_id, b.bot_id, b.period, b.limit_micros,COALESCE((SELECT sum(COALESCE(u.cost_micros, u.internal_charge_micros)) FROM usage_records u WHERE u.workspace_id=b.workspace_id AND (b.bot_id IS NULL OR u.bot_id=b.bot_id)
-AND u.created_at >= date_trunc(b.period,$2::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'),0)::bigint AS spent_micros,
+AND u.created_at >= CASE
+    WHEN b.period = '5h' THEN $2::timestamptz - interval '5 hours'
+    ELSE date_trunc(b.period,$2::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+END),0)::bigint AS spent_micros,
 COALESCE((SELECT sum(u.reserved_micros) FROM usage_records u WHERE u.workspace_id=b.workspace_id AND (b.bot_id IS NULL OR u.bot_id=b.bot_id)
-AND u.created_at >= date_trunc(b.period,$2::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'),0)::bigint AS reserved_micros
+AND u.created_at >= CASE
+    WHEN b.period = '5h' THEN $2::timestamptz - interval '5 hours'
+    ELSE date_trunc(b.period,$2::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+END),0)::bigint AS reserved_micros
 FROM budgets b WHERE b.workspace_id=$1 AND (b.bot_id IS NULL OR b.bot_id=$3::uuid)
 `
 
@@ -283,7 +311,12 @@ func (q *Queries) ListModelPrices(ctx context.Context, workspaceID pgtype.UUID) 
 }
 
 const listSubscriptionUsage = `-- name: ListSubscriptionUsage :many
-WITH periods AS (SELECT 'day'::text AS name UNION ALL SELECT 'month'::text)
+WITH periods AS (
+    SELECT '5h'::text AS name
+    UNION ALL SELECT 'day'::text
+    UNION ALL SELECT 'week'::text
+    UNION ALL SELECT 'month'::text
+)
 SELECT u.model, period.name AS period,
        sum(u.input_tokens)::bigint AS input_tokens,
        sum(u.output_tokens)::bigint AS output_tokens,
@@ -296,7 +329,10 @@ CROSS JOIN periods period
 WHERE u.workspace_id = $1
   AND ($2::uuid IS NULL OR u.bot_id = $2)
   AND u.billing_kind = 'subscription'
-  AND u.created_at >= date_trunc(period.name, $3::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+  AND u.created_at >= CASE
+      WHEN period.name = '5h' THEN $3::timestamptz - interval '5 hours'
+      ELSE date_trunc(period.name, $3::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+  END
 GROUP BY period.name, u.model ORDER BY period.name, u.model
 `
 

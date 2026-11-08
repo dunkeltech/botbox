@@ -429,7 +429,7 @@ Membership is the only read path, including for workspace admins. See
 ### 4.9 Usage & budgets
 
 - **Usage records per turn:** tokens in and out, cache tokens and cost. Sources are CLI `result` events, API responses and proxy metering. The cost comes from an admin-editable `model_prices` table; OpenRouter's reported cost wins when present. Subscription logins record tokens by model and period. **Count subscription usage toward budgets** optionally applies the workspace model prices to new requests and shows the resulting internal charge separately from provider spend.
-- **Budgets:** per workspace (monthly), bot (daily, monthly) and group.
+- **Budgets:** per workspace (monthly), bot (5-hour rolling window, daily UTC, weekly Mon–Sun UTC, monthly UTC) and group. Individual bot window caps can be updated via `PUT /api/workspaces/{workspaceID}/budgets` and removed via `DELETE /api/workspaces/{workspaceID}/budgets`.
   - **80 %:** warning.
   - **100 %:** no new turns, the proxy kill switch blocks LLM calls, and an approval request to raise the budget is created. For Codex plan traffic, an in-flight request can cross the limit because the Responses preview does not accept a per-request output cap. The next request is checked after settlement.
 
@@ -626,7 +626,7 @@ CREATE TABLE budgets (
     workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
     scope VARCHAR(15) NOT NULL CHECK (scope IN ('workspace','bot','conversation')),
     scope_id UUID,
-    period VARCHAR(10) NOT NULL CHECK (period IN ('day','month','run')),
+    period VARCHAR(10) NOT NULL CHECK (period IN ('5h','day','week','month','run')),
     limit_micros BIGINT NOT NULL
 );
 

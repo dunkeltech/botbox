@@ -175,6 +175,8 @@ func (e BrokerTakeoverInputBodyKind) Valid() bool {
 const (
 	BudgetStatePeriodDay   BudgetStatePeriod = "day"
 	BudgetStatePeriodMonth BudgetStatePeriod = "month"
+	BudgetStatePeriodN5h   BudgetStatePeriod = "5h"
+	BudgetStatePeriodWeek  BudgetStatePeriod = "week"
 )
 
 // Valid indicates whether the value is a known member of the BudgetStatePeriod enum.
@@ -183,6 +185,10 @@ func (e BudgetStatePeriod) Valid() bool {
 	case BudgetStatePeriodDay:
 		return true
 	case BudgetStatePeriodMonth:
+		return true
+	case BudgetStatePeriodN5h:
+		return true
+	case BudgetStatePeriodWeek:
 		return true
 	default:
 		return false
@@ -733,6 +739,8 @@ func (e SecretScope) Valid() bool {
 const (
 	SetBudgetRequestPeriodDay   SetBudgetRequestPeriod = "day"
 	SetBudgetRequestPeriodMonth SetBudgetRequestPeriod = "month"
+	SetBudgetRequestPeriodN5h   SetBudgetRequestPeriod = "5h"
+	SetBudgetRequestPeriodWeek  SetBudgetRequestPeriod = "week"
 )
 
 // Valid indicates whether the value is a known member of the SetBudgetRequestPeriod enum.
@@ -741,6 +749,10 @@ func (e SetBudgetRequestPeriod) Valid() bool {
 	case SetBudgetRequestPeriodDay:
 		return true
 	case SetBudgetRequestPeriodMonth:
+		return true
+	case SetBudgetRequestPeriodN5h:
+		return true
+	case SetBudgetRequestPeriodWeek:
 		return true
 	default:
 		return false
@@ -751,6 +763,8 @@ func (e SetBudgetRequestPeriod) Valid() bool {
 const (
 	SubscriptionUsagePeriodDay   SubscriptionUsagePeriod = "day"
 	SubscriptionUsagePeriodMonth SubscriptionUsagePeriod = "month"
+	SubscriptionUsagePeriodN5h   SubscriptionUsagePeriod = "5h"
+	SubscriptionUsagePeriodWeek  SubscriptionUsagePeriod = "week"
 )
 
 // Valid indicates whether the value is a known member of the SubscriptionUsagePeriod enum.
@@ -759,6 +773,10 @@ func (e SubscriptionUsagePeriod) Valid() bool {
 	case SubscriptionUsagePeriodDay:
 		return true
 	case SubscriptionUsagePeriodMonth:
+		return true
+	case SubscriptionUsagePeriodN5h:
+		return true
+	case SubscriptionUsagePeriodWeek:
 		return true
 	default:
 		return false
@@ -888,6 +906,30 @@ func (e ListApprovalsParamsStatus) Valid() bool {
 	case ListApprovalsParamsStatusDenied:
 		return true
 	case ListApprovalsParamsStatusPending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DeleteBotBudgetParamsPeriod.
+const (
+	DeleteBotBudgetParamsPeriodDay   DeleteBotBudgetParamsPeriod = "day"
+	DeleteBotBudgetParamsPeriodMonth DeleteBotBudgetParamsPeriod = "month"
+	DeleteBotBudgetParamsPeriodN5h   DeleteBotBudgetParamsPeriod = "5h"
+	DeleteBotBudgetParamsPeriodWeek  DeleteBotBudgetParamsPeriod = "week"
+)
+
+// Valid indicates whether the value is a known member of the DeleteBotBudgetParamsPeriod enum.
+func (e DeleteBotBudgetParamsPeriod) Valid() bool {
+	switch e {
+	case DeleteBotBudgetParamsPeriodDay:
+		return true
+	case DeleteBotBudgetParamsPeriodMonth:
+		return true
+	case DeleteBotBudgetParamsPeriodN5h:
+		return true
+	case DeleteBotBudgetParamsPeriodWeek:
 		return true
 	default:
 		return false
@@ -1961,6 +2003,15 @@ type ListBotMCPLogsParams struct {
 type SetBotRuntimeJSONBody struct {
 	Paused *bool `json:"paused,omitempty"`
 }
+
+// DeleteBotBudgetParams defines parameters for DeleteBotBudget.
+type DeleteBotBudgetParams struct {
+	BotId  openapi_types.UUID          `form:"botId" json:"botId"`
+	Period DeleteBotBudgetParamsPeriod `form:"period" json:"period"`
+}
+
+// DeleteBotBudgetParamsPeriod defines parameters for DeleteBotBudget.
+type DeleteBotBudgetParamsPeriod string
 
 // GetBudgetSummaryParams defines parameters for GetBudgetSummary.
 type GetBudgetSummaryParams struct {

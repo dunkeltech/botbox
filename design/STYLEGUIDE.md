@@ -94,11 +94,11 @@ The status label is always written out next to the dot. Colour is never the only
 
 ### Semantic: budget thresholds
 
-The fleet shows known spend today. Budget meters follow the Stitch project `13598702750338265050`, screen `382c2e3cc2854be796ffa8ff42c03345`: show the percentage and 80%/100% thresholds, use amber above the warning threshold, and a dashed border for exhaustion. Meters expose their value through an accessible progressbar role. Bot settings expose daily and monthly USD limits to workspace owners and admins. Warning and exhausted states use text labels with the existing amber tokens. Money amounts never replace unknown costs with a fabricated estimate.
+The fleet shows known spend today. Budget meters follow the Stitch project `13598702750338265050`, screen `382c2e3cc2854be796ffa8ff42c03345` and bot budget screen `b27c594b488d455b831d378383a6c8c4`: show the percentage and 80%/100% thresholds, use amber above the warning threshold, and a dashed border for exhaustion. Meters expose their value through an accessible progressbar role. Bot settings expose 5-hour rolling, daily, weekly, and monthly USD limits to workspace owners and admins (with blank fields clearing a window cap). Warning and exhausted states use text labels with the existing amber tokens. Money amounts never replace unknown costs with a fabricated estimate.
 
 | Threshold | Track fill | Banner / badge bg | Text | Border | Meaning |
 |---|---|---|---|---|---|
-| 0–79 % (`ok`) | `green` | `mint-soft` | `green-600` | `mint-line` | Normal spend within daily or monthly cap |
+| 0–79 % (`ok`) | `green` | `mint-soft` | `green-600` | `mint-line` | Normal spend within the configured budget window |
 | 80–99 % (`warning`) | `amber` | `amber-tint` | `amber` | `amber-line` | Warning threshold reached; alert surfaced |
 | 100 % (`exceeded`) | `amber` | `amber-tint` | `amber` | Dashed `amber-line` | Hard stop (`429 BudgetExceeded`); `amber-on-dark` in terminal logs |
 

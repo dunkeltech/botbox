@@ -275,7 +275,7 @@ describe('BotSettingsShell and all four bot settings sub-pages', () => {
       await screen.findByRole('heading', { name: enMessages.budgets.botTitle }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: enMessages.budgets.save }),
+      screen.getByRole('button', { name: enMessages.budgets.saveBotLimits }),
     ).toBeInTheDocument();
   });
 
@@ -406,7 +406,7 @@ describe('BotSettingsShell and all four bot settings sub-pages', () => {
       await screen.findByText(enMessages.botSettings.readOnly),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole('button', { name: enMessages.budgets.save }),
+      screen.queryByRole('button', { name: enMessages.budgets.saveBotLimits }),
     ).not.toBeInTheDocument();
     unmount();
 

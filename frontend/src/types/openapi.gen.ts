@@ -144,7 +144,7 @@ export interface paths {
     get: operations['getBudgetSummary'];
     put: operations['setBudget'];
     post?: never;
-    delete?: never;
+    delete: operations['deleteBotBudget'];
     options?: never;
     head?: never;
     patch?: never;
@@ -1284,7 +1284,7 @@ export interface components {
     SubscriptionUsage: {
       model: string;
       /** @enum {string} */
-      period: 'day' | 'month';
+      period: '5h' | 'day' | 'week' | 'month';
       /** Format: int64 */
       inputTokens: number;
       /** Format: int64 */
@@ -1328,7 +1328,7 @@ export interface components {
       /** Format: uuid */
       botId?: string;
       /** @enum {string} */
-      period: 'day' | 'month';
+      period: '5h' | 'day' | 'week' | 'month';
       /** Format: int64 */
       limitMicros: number;
       /** Format: int64 */
@@ -1340,7 +1340,7 @@ export interface components {
       /** Format: uuid */
       botId?: string;
       /** @enum {string} */
-      period: 'day' | 'month';
+      period: '5h' | 'day' | 'week' | 'month';
       /** Format: int64 */
       limitMicros: number;
     };
@@ -2883,6 +2883,57 @@ export interface operations {
         content?: never;
       };
       /** @description Invalid budget */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Owner or admin required */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Workspace or bot not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  deleteBotBudget: {
+    parameters: {
+      query: {
+        botId: string;
+        period: '5h' | 'day' | 'week' | 'month';
+      };
+      header?: never;
+      path: {
+        workspaceID: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Bot budget cap removed */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Invalid bot id or period */
       400: {
         headers: {
           [name: string]: unknown;

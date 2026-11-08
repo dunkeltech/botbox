@@ -250,7 +250,7 @@ describe('Phase 4 chat and budgets', () => {
     expect(await screen.findByText(messages.chat.error)).toBeInTheDocument();
     expect(screen.queryByText('private dependency detail')).toBeNull();
   });
-  it('restricts budget editing to administrators', async () => {
+  it('restricts budget editing to administrators and saves/clears 5h and weekly bot caps', async () => {
     const view = show(<BudgetPanel workspaceId="ws-1" />);
     expect(
       await screen.findByText(/Provider spend today:/),
@@ -262,22 +262,140 @@ describe('Phase 4 chat and budgets', () => {
     expect(screen.getByText('80% used')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Save budget' })).toBeNull();
     view.unmount();
+
+    request.mockResolvedValue({
+      spendTodayMicros: 170_000,
+      budgets: [
+        {
+          id: 'ws-month',
+          period: 'month',
+          limitMicros: 50_000_000,
+          spentMicros: 10_000_000,
+          warning: false,
+          exceeded: false,
+        },
+        {
+          id: 'bot-day',
+          botId: 'bot-1',
+          period: 'day',
+          limitMicros: 5_000_000,
+          spentMicros: 1_000_000,
+          warning: false,
+          exceeded: false,
+        },
+      ],
+    });
+
     show(<BudgetPanel workspaceId="ws-1" botId="bot-1" canManage />);
-    fireEvent.change(screen.getByLabelText('Limit (USD)'), {
-      target: { value: '2' },
+    expect(
+      await screen.findByText(
+        'Workspace monthly cap: $10.00 / $50.00 (20% used)',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(messages.budgets.dailyLimit)).toHaveValue(5);
+
+    fireEvent.change(screen.getByLabelText(messages.budgets.fiveHourLimit), {
+      target: { value: '2.5' },
+    });
+    fireEvent.change(screen.getByLabelText(messages.budgets.dailyLimit), {
+      target: { value: '' },
+    });
+    fireEvent.change(screen.getByLabelText(messages.budgets.weeklyLimit), {
+      target: { value: '15' },
     });
     fireEvent.submit(
-      screen.getByRole('button', { name: 'Save budget' }).closest('form')!,
+      screen
+        .getByRole('button', { name: messages.budgets.saveBotLimits })
+        .closest('form')!,
     );
-    await waitFor(() =>
+    await waitFor(() => {
       expect(request).toHaveBeenCalledWith(
         '/api/workspaces/ws-1/budgets',
         expect.objectContaining({
           method: 'PUT',
-          body: { botId: 'bot-1', period: 'day', limitMicros: 2000000 },
+          body: { botId: 'bot-1', period: '5h', limitMicros: 2_500_000 },
         }),
-      ),
-    );
+      );
+      expect(request).toHaveBeenCalledWith(
+        '/api/workspaces/ws-1/budgets?botId=bot-1&period=day',
+        expect.objectContaining({ method: 'DELETE' }),
+      );
+      expect(request).toHaveBeenCalledWith(
+        '/api/workspaces/ws-1/budgets',
+        expect.objectContaining({
+          method: 'PUT',
+          body: { botId: 'bot-1', period: 'week', limitMicros: 15_000_000 },
+        }),
+      );
+    });
+  });
+
+  it('renders 5-hour and weekly bot caps and filters subscription usage by 5h/week', async () => {
+    request.mockResolvedValue({
+      spendTodayMicros: 3_050_000,
+      budgets: [
+        {
+          id: 'b-week',
+          botId: 'bot-1',
+          period: 'week',
+          limitMicros: 20_000_000,
+          spentMicros: 16_800_000,
+          warning: true,
+          exceeded: false,
+        },
+        {
+          id: 'b-5h',
+          botId: 'bot-1',
+          period: '5h',
+          limitMicros: 2_500_000,
+          spentMicros: 1_800_000,
+          warning: false,
+          exceeded: false,
+        },
+      ],
+      subscriptionUsage: [
+        {
+          model: 'claude-opus-5-5',
+          period: '5h',
+          inputTokens: 1200,
+          outputTokens: 300,
+          cacheTokens: 400,
+          internalChargeMicros: 110_000,
+          unknownRequests: 0,
+        },
+        {
+          model: 'gpt-5.2-codex',
+          period: 'week',
+          inputTokens: 9000,
+          outputTokens: 1500,
+          cacheTokens: 2000,
+          internalChargeMicros: 450_000,
+          unknownRequests: 0,
+        },
+      ],
+    });
+    show(<BudgetPanel workspaceId="ws-1" botId="bot-1" />);
+
+    expect(
+      await screen.findByText(messages.budgets.fiveHourCapLabel),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(messages.budgets.weeklyCapLabel),
+    ).toBeInTheDocument();
+    expect(screen.getByText('$1.80 / $2.50')).toBeInTheDocument();
+    expect(screen.getByText('$16.80 / $20.00')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(messages.budgets.usagePeriod), {
+      target: { value: '5h' },
+    });
+    expect(screen.getByText('claude-opus-5-5')).toBeInTheDocument();
+    expect(screen.queryByText('gpt-5.2-codex')).toBeNull();
+
+    fireEvent.change(screen.getByLabelText(messages.budgets.usagePeriod), {
+      target: { value: 'week' },
+    });
+    expect(screen.getByText('gpt-5.2-codex')).toBeInTheDocument();
+    expect(screen.queryByText('claude-opus-5-5')).toBeNull();
   });
 
   it.each([

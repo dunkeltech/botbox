@@ -93,7 +93,7 @@ Viewport-filling split workspace (`projects/13598702750338265050`, screen `d1911
 Reorganized into a two-column bot settings shell matching Workspace settings (`256 px` sticky left sub-navigation + dark `terminal` isolation card + `14 px`-radius content cards, Stitch project `13598702750338265050`):
 
 - **General & runtime** (`screens/3099ef0d6ba34e8eb368d453c8d1112c`): runtime pause/resume control, identity & global role, deterministic avatar seed + mood preview, model brain & sandbox driver, and dashed amber **Danger zone** deletion.
-- **Budgets & usage** (`screens/8102d2afcc7241098e928036ef5e01b3` / `70ca340e5c754e348624d46ad3c35bd2`): daily/monthly spend caps with 80 % amber warning and `429 BudgetExceeded` hard-stop banner, limit form, and per-model subscription/token ledger.
+- **Budgets & usage** (`screens/b27c594b488d455b831d378383a6c8c4`, previously `8102d2afcc7241098e928036ef5e01b3` / `70ca340e5c754e348624d46ad3c35bd2`): 5-hour rolling, daily, weekly, and monthly spend caps per bot in a 2×2 meter grid (plus workspace monthly cap context), 80 % amber warning and `429 BudgetExceeded` hard-stop banner, 4-column limit form (blank clears a cap), and per-model subscription/token ledger across all four windows.
 - **MCP & GitLab** (`screens/23dcd676db654655a2d4e7bd22b94a39`): workspace-registered GitLab origins with instant revocation warning, per-bot MCP server switches, three-way command policies (`Allow` / `Ask approval` / `Block`), and dark `terminal` MCP audit log.
 - **Secrets & egress** (`screens/921383c3acd7489c99d629e2068dd8a1`): CLI subscription setup, write-only proxy secrets, `Allowlist` / `Open internet` policy, allowed & dashed-amber blocked hosts, and dark `terminal` egress triage log.
 
