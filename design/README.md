@@ -45,7 +45,7 @@ The interactive canvas (clickable prototype with live avatars) lives in Claude: 
 | Robot avatar system | [`avatar-system.png`](screens/avatar-system.png) | Phase 1 |
 
 ### Fleet dashboard
-Bots as cards with live robot avatars, status, current activity, brain and computer. Includes the workspace switcher pill, a "Spend today" overview tile (€ 18.40 of € 30.00, 61 %, token and subscription CLI counts), activity feed and driver health.
+Bots as cards with live robot avatars, status, current activity, brain and computer. Includes the workspace switcher pill, a "Spend" overview tile (daily and weekly combined spend alongside the optional workspace monthly cap meter), activity feed and driver health.
 
 ![Fleet dashboard](screens/fleet-dashboard.png)
 

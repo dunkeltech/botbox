@@ -54,7 +54,7 @@ func (s *server) handleBudgetSummary(w http.ResponseWriter, r *http.Request) {
 		s.chatFailure(w)
 		return
 	}
-	spent, err := s.queries.SpendToday(r.Context(), db.SpendTodayParams{WorkspaceID: ws.ID, BotID: bot, AsOf: asOf})
+	totals, err := s.queries.SpendTotals(r.Context(), db.SpendTotalsParams{WorkspaceID: ws.ID, BotID: bot, AsOf: asOf})
 	if err != nil {
 		s.chatFailure(w)
 		return
@@ -64,19 +64,26 @@ func (s *server) handleBudgetSummary(w http.ResponseWriter, r *http.Request) {
 		s.chatFailure(w)
 		return
 	}
-	totals, err := s.queries.ListSubscriptionUsage(r.Context(), db.ListSubscriptionUsageParams{WorkspaceID: ws.ID, BotID: bot, AsOf: asOf})
+	subTotals, err := s.queries.ListSubscriptionUsage(r.Context(), db.ListSubscriptionUsageParams{WorkspaceID: ws.ID, BotID: bot, AsOf: asOf})
 	if err != nil {
 		s.chatFailure(w)
 		return
 	}
-	usage := make([]apigen.SubscriptionUsage, 0, len(totals))
-	for _, total := range totals {
+	usage := make([]apigen.SubscriptionUsage, 0, len(subTotals))
+	for _, total := range subTotals {
 		usage = append(usage, apigen.SubscriptionUsage{Model: total.Model, Period: apigen.SubscriptionUsagePeriod(total.Period),
 			InputTokens: total.InputTokens, OutputTokens: total.OutputTokens, CacheTokens: total.CacheTokens,
 			InternalChargeMicros: total.InternalChargeMicros, UnknownRequests: total.UnknownRequests})
 	}
-	out := apigen.BudgetSummary{SpendTodayMicros: spent, Budgets: make([]apigen.BudgetState, 0, len(rows)),
-		CountSubscriptionUsage: &policy, SubscriptionUsage: &usage}
+	out := apigen.BudgetSummary{
+		SpendTodayMicros:         totals.ProviderTodayMicros,
+		SpendThisWeekMicros:      totals.ProviderWeekMicros,
+		TotalSpendTodayMicros:    totals.TotalTodayMicros,
+		TotalSpendThisWeekMicros: totals.TotalWeekMicros,
+		Budgets:                  make([]apigen.BudgetState, 0, len(rows)),
+		CountSubscriptionUsage:   &policy,
+		SubscriptionUsage:        &usage,
+	}
 	for _, b := range rows {
 		row := apigen.BudgetState{Id: fromPGUUID(b.ID), Period: apigen.BudgetStatePeriod(b.Period), LimitMicros: b.LimitMicros, SpentMicros: b.SpentMicros, Warning: b.SpentMicros >= b.LimitMicros-b.LimitMicros/5, Exceeded: b.SpentMicros >= b.LimitMicros}
 		if b.BotID.Valid {

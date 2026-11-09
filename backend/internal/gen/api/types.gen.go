@@ -1181,10 +1181,13 @@ type BudgetStatePeriod string
 
 // BudgetSummary defines model for BudgetSummary.
 type BudgetSummary struct {
-	Budgets                []BudgetState        `json:"budgets"`
-	CountSubscriptionUsage *bool                `json:"countSubscriptionUsage,omitempty"`
-	SpendTodayMicros       int64                `json:"spendTodayMicros"`
-	SubscriptionUsage      *[]SubscriptionUsage `json:"subscriptionUsage,omitempty"`
+	Budgets                  []BudgetState        `json:"budgets"`
+	CountSubscriptionUsage   *bool                `json:"countSubscriptionUsage,omitempty"`
+	SpendThisWeekMicros      int64                `json:"spendThisWeekMicros"`
+	SpendTodayMicros         int64                `json:"spendTodayMicros"`
+	SubscriptionUsage        *[]SubscriptionUsage `json:"subscriptionUsage,omitempty"`
+	TotalSpendThisWeekMicros int64                `json:"totalSpendThisWeekMicros"`
+	TotalSpendTodayMicros    int64                `json:"totalSpendTodayMicros"`
 }
 
 // ChatConversation defines model for ChatConversation.

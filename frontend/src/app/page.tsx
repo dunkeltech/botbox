@@ -186,13 +186,28 @@ function FleetContent() {
   const canCreate =
     activeWorkspace !== null && canCreateBot(activeWorkspace.role);
 
-  const dailyBudget = budget?.budgets.find((b) => b.period === 'day') ?? null;
-  const spendTodayText = format.number(
-    (budget?.spendTodayMicros ?? 0) / 1000000,
-    { style: 'currency', currency: 'USD' },
-  );
-  const dailyLimitText = dailyBudget
-    ? format.number(dailyBudget.limitMicros / 1000000, {
+  const monthlyBudget =
+    budget?.budgets.find((b) => b.period === 'month') ?? null;
+  const spendTodayMicros =
+    budget?.totalSpendTodayMicros ?? budget?.spendTodayMicros ?? 0;
+  const spendThisWeekMicros =
+    budget?.totalSpendThisWeekMicros ?? budget?.spendThisWeekMicros ?? 0;
+  const spendTodayText = format.number(spendTodayMicros / 1_000_000, {
+    style: 'currency',
+    currency: 'USD',
+  });
+  const spendWeekText = format.number(spendThisWeekMicros / 1_000_000, {
+    style: 'currency',
+    currency: 'USD',
+  });
+  const monthlySpentText = monthlyBudget
+    ? format.number(monthlyBudget.spentMicros / 1_000_000, {
+        style: 'currency',
+        currency: 'USD',
+      })
+    : null;
+  const monthlyLimitText = monthlyBudget
+    ? format.number(monthlyBudget.limitMicros / 1_000_000, {
         style: 'currency',
         currency: 'USD',
       })
@@ -287,36 +302,55 @@ function FleetContent() {
 
         <Card
           className={`flex flex-col justify-between p-4 ${
-            dailyBudget?.exceeded
+            monthlyBudget?.exceeded
               ? 'border-dashed border-amber-line bg-amber-tint/50'
-              : dailyBudget?.warning
+              : monthlyBudget?.warning
                 ? 'border-amber-line bg-amber-tint/30'
                 : ''
           }`}
         >
           <p className="text-[12px] font-bold uppercase tracking-[0.06em] text-muted">
-            {t('statSpendToday')}
+            {t('statSpend')}
           </p>
-          <p className="mt-1 text-[28px] font-black leading-[1.2] text-ink">
-            {spendTodayText}{' '}
-            {dailyLimitText ? (
-              <span className="text-[15px] font-bold text-muted">
-                {t('statSpendOfLimit', { limit: dailyLimitText })}
-              </span>
-            ) : null}
-          </p>
-          {dailyBudget ? (
+          <div className="mt-1.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-[0.05em] text-muted">
+                {t('statSpendTodayLabel')}
+              </p>
+              <p className="text-[24px] font-black leading-[1.2] text-ink">
+                {spendTodayText}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-[11px] font-bold uppercase tracking-[0.05em] text-muted">
+                {t('statSpendWeekLabel')}
+              </p>
+              <p className="text-[20px] font-black leading-[1.2] text-ink-2">
+                {spendWeekText}
+              </p>
+            </div>
+          </div>
+          {monthlyBudget && monthlySpentText && monthlyLimitText ? (
             <div className="mt-2.5">
               <BudgetMeter
-                ariaLabel={t('statSpendToday')}
-                spentMicros={dailyBudget.spentMicros}
-                limitMicros={dailyBudget.limitMicros}
-                warning={dailyBudget.warning}
-                exceeded={dailyBudget.exceeded}
+                ariaLabel={t('statSpendMonthlyOfLimit', {
+                  spent: monthlySpentText,
+                  limit: monthlyLimitText,
+                })}
+                spentMicros={monthlyBudget.spentMicros}
+                limitMicros={monthlyBudget.limitMicros}
+                warning={monthlyBudget.warning}
+                exceeded={monthlyBudget.exceeded}
+                leftCaption={t('statSpendMonthlyOfLimit', {
+                  spent: monthlySpentText,
+                  limit: monthlyLimitText,
+                })}
               />
             </div>
           ) : (
-            <p className="mt-2 text-[13px] text-muted">{t('statSpendNoCap')}</p>
+            <p className="mt-2 text-[13px] text-muted">
+              {t('statSpendNoMonthlyCap')}
+            </p>
           )}
           <div className="mt-2">
             <Link

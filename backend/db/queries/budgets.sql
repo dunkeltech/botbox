@@ -40,8 +40,16 @@ SELECT * FROM model_prices WHERE workspace_id=$1 AND provider=$2 AND model=$3;
 INSERT INTO model_prices(workspace_id,provider,model,input_micros_per_million,output_micros_per_million,cache_micros_per_million)
 VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(workspace_id,provider,model) DO UPDATE SET input_micros_per_million=EXCLUDED.input_micros_per_million,output_micros_per_million=EXCLUDED.output_micros_per_million,cache_micros_per_million=EXCLUDED.cache_micros_per_million RETURNING *;
 
--- name: SpendToday :one
-SELECT COALESCE(sum(cost_micros),0)::bigint FROM usage_records WHERE workspace_id=$1 AND (sqlc.narg(bot_id)::uuid IS NULL OR bot_id=sqlc.narg(bot_id)) AND created_at >= date_trunc('day',sqlc.arg(as_of)::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC';
+-- name: SpendTotals :one
+SELECT
+    COALESCE(sum(cost_micros) FILTER (WHERE created_at >= date_trunc('day', sqlc.arg(as_of)::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'), 0)::bigint AS provider_today_micros,
+    COALESCE(sum(cost_micros), 0)::bigint AS provider_week_micros,
+    COALESCE(sum(COALESCE(cost_micros, internal_charge_micros)) FILTER (WHERE created_at >= date_trunc('day', sqlc.arg(as_of)::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'), 0)::bigint AS total_today_micros,
+    COALESCE(sum(COALESCE(cost_micros, internal_charge_micros)), 0)::bigint AS total_week_micros
+FROM usage_records
+WHERE workspace_id = $1
+  AND (sqlc.narg(bot_id)::uuid IS NULL OR bot_id = sqlc.narg(bot_id))
+  AND created_at >= date_trunc('week', sqlc.arg(as_of)::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC';
 
 -- name: LockWorkspaceSpend :exec
 SELECT pg_advisory_lock(hashtextextended(sqlc.arg(lock_key)::text, 1));

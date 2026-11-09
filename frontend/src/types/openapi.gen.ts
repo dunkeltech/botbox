@@ -1376,6 +1376,12 @@ export interface components {
     BudgetSummary: {
       /** Format: int64 */
       spendTodayMicros: number;
+      /** Format: int64 */
+      spendThisWeekMicros: number;
+      /** Format: int64 */
+      totalSpendTodayMicros: number;
+      /** Format: int64 */
+      totalSpendThisWeekMicros: number;
       budgets: components['schemas']['BudgetState'][];
       countSubscriptionUsage?: boolean;
       subscriptionUsage?: components['schemas']['SubscriptionUsage'][];

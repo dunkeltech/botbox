@@ -329,6 +329,117 @@ describe('Horizontal top navigation shell and Fleet dashboard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Stopped 1' }));
     expect(screen.getByText('Zink')).toBeInTheDocument();
     expect(screen.queryByText('Atlas')).not.toBeInTheDocument();
+    expect(
+      screen.getByText(enMessages.fleet.statSpendNoMonthlyCap),
+    ).toBeInTheDocument();
+  });
+
+  it('shows combined daily and weekly spend with workspace monthly budget meter on Fleet', async () => {
+    const session = makeSession();
+    installFetchMock((url, method) => {
+      if (url === '/api/setup/status') {
+        return jsonResponse(
+          { error: { code: 'setup.already_completed', message: 'done' } },
+          404,
+        );
+      }
+      if (url === '/api/auth/refresh') {
+        return jsonResponse(session, 200);
+      }
+      if (url === '/api/workspaces/ws-1/bots' && method === 'GET') {
+        return jsonResponse({ bots: [makeBot()] }, 200);
+      }
+      if (url === '/api/workspaces/ws-1/budgets' && method === 'GET') {
+        return jsonResponse(
+          {
+            spendTodayMicros: 0,
+            spendThisWeekMicros: 0,
+            totalSpendTodayMicros: 4250000,
+            totalSpendThisWeekMicros: 12750000,
+            budgets: [
+              {
+                id: 'b-month',
+                period: 'month',
+                limitMicros: 50000000,
+                spentMicros: 42000000,
+                warning: true,
+                exceeded: false,
+              },
+            ],
+          },
+          200,
+        );
+      }
+      if (url === '/api/workspaces/ws-1/approvals') {
+        return jsonResponse({ approvals: [] }, 200);
+      }
+      if (url === '/api/workspaces/ws-1/notifications') {
+        return jsonResponse({ notifications: [] }, 200);
+      }
+      return jsonResponse({}, 404);
+    });
+
+    renderWithProviders(<FleetPage />);
+
+    expect(await screen.findByText('$4.25')).toBeInTheDocument();
+    expect(screen.getByText('$12.75')).toBeInTheDocument();
+    expect(screen.getByText(enMessages.fleet.statSpend)).toBeInTheDocument();
+    expect(
+      screen.getByText(enMessages.fleet.statSpendTodayLabel),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(enMessages.fleet.statSpendWeekLabel),
+    ).toBeInTheDocument();
+    expect(screen.getByText('$42.00 of $50.00 / mo')).toBeInTheDocument();
+    const meter = screen.getByRole('progressbar', {
+      name: '$42.00 of $50.00 / mo',
+    });
+    expect(meter).toHaveAttribute('aria-valuenow', '84');
+  });
+
+  it('shows zero daily and weekly spend with no monthly cap fallback when workspace has no limits', async () => {
+    const session = makeSession();
+    installFetchMock((url, method) => {
+      if (url === '/api/setup/status') {
+        return jsonResponse(
+          { error: { code: 'setup.already_completed', message: 'done' } },
+          404,
+        );
+      }
+      if (url === '/api/auth/refresh') {
+        return jsonResponse(session, 200);
+      }
+      if (url === '/api/workspaces/ws-1/bots' && method === 'GET') {
+        return jsonResponse({ bots: [] }, 200);
+      }
+      if (url === '/api/workspaces/ws-1/budgets' && method === 'GET') {
+        return jsonResponse(
+          {
+            spendTodayMicros: 0,
+            spendThisWeekMicros: 0,
+            totalSpendTodayMicros: 0,
+            totalSpendThisWeekMicros: 0,
+            budgets: [],
+          },
+          200,
+        );
+      }
+      if (url === '/api/workspaces/ws-1/approvals') {
+        return jsonResponse({ approvals: [] }, 200);
+      }
+      if (url === '/api/workspaces/ws-1/notifications') {
+        return jsonResponse({ notifications: [] }, 200);
+      }
+      return jsonResponse({}, 404);
+    });
+
+    renderWithProviders(<FleetPage />);
+
+    expect(
+      await screen.findByText(enMessages.fleet.statSpendNoMonthlyCap),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText('$0.00')).toHaveLength(2);
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
   });
 
   it('opens and closes the Team sidebar slide-over drawer inside AppShell variant="team"', async () => {

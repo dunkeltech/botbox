@@ -246,9 +246,17 @@ FROM usage_records WHERE workspace_id=$1 AND bot_id=$2 AND turn_id IS NULL AND c
 	}
 	var summary apigen.BudgetSummary
 	do("GET", base+"/budgets?botId="+url.QueryEscape(bot.Id.String()), nil, token, 200).decode(t, &summary)
-	if summary.SpendTodayMicros != 0 || summary.SubscriptionUsage == nil || len(*summary.SubscriptionUsage) != 4 ||
+	if summary.SpendTodayMicros != 0 || summary.SpendThisWeekMicros != 0 ||
+		summary.TotalSpendTodayMicros != 23 || summary.TotalSpendThisWeekMicros != 23 ||
+		summary.SubscriptionUsage == nil || len(*summary.SubscriptionUsage) != 4 ||
 		len(summary.Budgets) != 1 || summary.Budgets[0].SpentMicros != 23 || !summary.Budgets[0].Exceeded {
 		t.Fatalf("summary %+v", summary)
+	}
+	var wsSummary apigen.BudgetSummary
+	do("GET", base+"/budgets", nil, token, 200).decode(t, &wsSummary)
+	if wsSummary.SpendTodayMicros != 0 || wsSummary.SpendThisWeekMicros != 0 ||
+		wsSummary.TotalSpendTodayMicros != 23 || wsSummary.TotalSpendThisWeekMicros != 23 {
+		t.Fatalf("workspace summary %+v", wsSummary)
 	}
 	do("POST", botPath+"/control/release", nil, token, 200)
 	infer(403, "forbidden")

@@ -485,3 +485,114 @@ func TestPhase4BotFiveHourAndWeeklyBudgets(t *testing.T) {
 		t.Fatalf("expected only week budget after deleting 5h, got %+v", summary.Budgets)
 	}
 }
+
+func TestPhase4WorkspaceSpendTotalsCombinedAndBoundaries(t *testing.T) {
+	h := newTestHarness(t, nil, harnessOpts{})
+	owner, _ := h.completeSetup("owner@example.com", "CorrectHorse123!", "Owner", "Workspace", "workspace")
+	ws := owner.ActiveWorkspace.Id
+	base := "/api/workspaces/" + ws.String()
+
+	r := h.request(http.MethodPost, base+"/bots", map[string]any{
+		"name": "Atlas", "avatarSeed": "atlas-seed", "llmMode": "cli", "llmProvider": "anthropic", "llmModel": "claude-sonnet-4-6",
+	}, owner.AccessToken, nil, true)
+	if r.status != 201 {
+		t.Fatalf("create bot=%d %s", r.status, r.body)
+	}
+	var bot apigen.Bot
+	r.decode(t, &bot)
+
+	r = h.request(http.MethodPost, "/api/workspaces", map[string]any{"name": "OtherWS", "slug": "other-ws-spend"}, owner.AccessToken, nil, true)
+	if r.status != 201 {
+		t.Fatalf("create other workspace=%d %s", r.status, r.body)
+	}
+	var otherWS apigen.WorkspaceSummary
+	r.decode(t, &otherWS)
+	otherOwner, _ := h.inviteAndAcceptNewUser(owner.AccessToken, otherWS.Id, "other-spend@example.com", "owner", "Other", "CorrectHorse123!")
+	otherBase := "/api/workspaces/" + otherWS.Id.String()
+
+	// Auth and validation negative checks on GET /budgets.
+	if res := h.request(http.MethodGet, base+"/budgets", nil, "", nil, false); res.status != 401 {
+		t.Fatalf("unauthenticated GET budgets=%d", res.status)
+	}
+	if res := h.request(http.MethodGet, base+"/budgets?botId=not-a-uuid", nil, owner.AccessToken, nil, false); res.status != 400 {
+		t.Fatalf("invalid botId GET budgets=%d", res.status)
+	}
+	if res := h.request(http.MethodGet, otherBase+"/budgets?botId="+bot.Id.String(), nil, otherOwner.AccessToken, nil, false); res.status != 404 {
+		t.Fatalf("cross-workspace bot GET budgets=%d", res.status)
+	}
+
+	// Harness clock starts on Sunday 2026-11-15 12:00 UTC. Insert:
+	// - metered spend on Saturday 2026-11-14 23:00 UTC (same Mon-Sun week, prior day): 100 micros
+	// - unbudgeted subscription usage on Sunday 2026-11-15 10:00 UTC: NULL cost & internal charge
+	// - budgeted subscription internal charge on Sunday 2026-11-15 11:00 UTC: 250 micros
+	// - metered spend from prior week (Sunday 2026-11-08 23:00 UTC): 999 micros (must be excluded)
+	ctx := context.Background()
+	saturday := h.clock.Now().Add(-13 * time.Hour)
+	sundayMorning := h.clock.Now().Add(-2 * time.Hour)
+	sundayLater := h.clock.Now().Add(-1 * time.Hour)
+	priorWeek := h.clock.Now().Add(-7 * 24 * time.Hour)
+	for _, rec := range []struct {
+		at             time.Time
+		billingKind    string
+		subBudgeted    bool
+		cost           *int64
+		internalCharge *int64
+	}{
+		{at: priorWeek, billingKind: "metered", cost: ptrInt64(999)},
+		{at: saturday, billingKind: "metered", cost: ptrInt64(100)},
+		{at: sundayMorning, billingKind: "subscription"},
+		{at: sundayLater, billingKind: "subscription", subBudgeted: true, internalCharge: ptrInt64(250)},
+	} {
+		_, err := h.pool.Exec(ctx, `INSERT INTO usage_records (workspace_id, bot_id, request_id, source, model, input_tokens, output_tokens, cache_tokens, billing_kind, subscription_budgeted, cost_micros, internal_charge_micros, created_at)
+			VALUES ($1, $2, $3, 'proxy_meter', 'claude-sonnet-4-6', 10, 5, 0, $4, $5, $6, $7, $8)`,
+			ws, bot.Id, uuid.New(), rec.billingKind, rec.subBudgeted, rec.cost, rec.internalCharge, rec.at)
+		if err != nil {
+			t.Fatalf("insert usage record: %v", err)
+		}
+	}
+
+	var summary apigen.BudgetSummary
+	res := h.request(http.MethodGet, base+"/budgets", nil, owner.AccessToken, nil, false)
+	if res.status != 200 {
+		t.Fatalf("GET workspace budgets=%d %s", res.status, res.body)
+	}
+	res.decode(t, &summary)
+	if summary.SpendTodayMicros != 0 || summary.SpendThisWeekMicros != 100 ||
+		summary.TotalSpendTodayMicros != 250 || summary.TotalSpendThisWeekMicros != 350 {
+		t.Fatalf("unexpected Sunday totals: %+v", summary)
+	}
+
+	// Cross-workspace workspace summary must stay isolated at zero.
+	var otherSummary apigen.BudgetSummary
+	res = h.request(http.MethodGet, otherBase+"/budgets", nil, otherOwner.AccessToken, nil, false)
+	if res.status != 200 {
+		t.Fatalf("GET other workspace budgets=%d %s", res.status, res.body)
+	}
+	res.decode(t, &otherSummary)
+	if otherSummary.TotalSpendTodayMicros != 0 || otherSummary.TotalSpendThisWeekMicros != 0 {
+		t.Fatalf("cross-workspace spend leaked: %+v", otherSummary)
+	}
+
+	// Advance past Monday 2026-11-16 00:00 UTC: weekly and daily totals both reset.
+	h.clock.Advance(13 * time.Hour)
+	loginRes := h.request(http.MethodPost, "/api/auth/login", map[string]any{
+		"email": "owner@example.com", "password": "CorrectHorse123!",
+	}, "", nil, true)
+	if loginRes.status != 200 {
+		t.Fatalf("re-login=%d %s", loginRes.status, loginRes.body)
+	}
+	var refreshedOwner apigen.AuthSessionResponse
+	loginRes.decode(t, &refreshedOwner)
+	summary = apigen.BudgetSummary{}
+	res = h.request(http.MethodGet, base+"/budgets", nil, refreshedOwner.AccessToken, nil, false)
+	if res.status != 200 {
+		t.Fatalf("GET Monday budgets=%d %s", res.status, res.body)
+	}
+	res.decode(t, &summary)
+	if summary.SpendTodayMicros != 0 || summary.SpendThisWeekMicros != 0 ||
+		summary.TotalSpendTodayMicros != 0 || summary.TotalSpendThisWeekMicros != 0 {
+		t.Fatalf("expected Monday UTC reset to zero, got %+v", summary)
+	}
+}
+
+func ptrInt64(v int64) *int64 { return &v }

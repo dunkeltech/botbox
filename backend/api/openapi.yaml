@@ -2902,9 +2902,12 @@ components:
         redirect: {type: string, maxLength: 100}
     BudgetSummary:
       type: object
-      required: [spendTodayMicros, budgets]
+      required: [spendTodayMicros, spendThisWeekMicros, totalSpendTodayMicros, totalSpendThisWeekMicros, budgets]
       properties:
         spendTodayMicros: {type: integer, format: int64}
+        spendThisWeekMicros: {type: integer, format: int64}
+        totalSpendTodayMicros: {type: integer, format: int64}
+        totalSpendThisWeekMicros: {type: integer, format: int64}
         budgets: {type: array, items: {$ref: '#/components/schemas/BudgetState'}}
         countSubscriptionUsage: {type: boolean}
         subscriptionUsage: {type: array, items: {$ref: '#/components/schemas/SubscriptionUsage'}}

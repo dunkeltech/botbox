@@ -587,21 +587,41 @@ func (q *Queries) SettleProxyUsage(ctx context.Context, arg SettleProxyUsagePara
 	return result.RowsAffected(), nil
 }
 
-const spendToday = `-- name: SpendToday :one
-SELECT COALESCE(sum(cost_micros),0)::bigint FROM usage_records WHERE workspace_id=$1 AND ($2::uuid IS NULL OR bot_id=$2) AND created_at >= date_trunc('day',$3::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+const spendTotals = `-- name: SpendTotals :one
+SELECT
+    COALESCE(sum(cost_micros) FILTER (WHERE created_at >= date_trunc('day', $2::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'), 0)::bigint AS provider_today_micros,
+    COALESCE(sum(cost_micros), 0)::bigint AS provider_week_micros,
+    COALESCE(sum(COALESCE(cost_micros, internal_charge_micros)) FILTER (WHERE created_at >= date_trunc('day', $2::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'), 0)::bigint AS total_today_micros,
+    COALESCE(sum(COALESCE(cost_micros, internal_charge_micros)), 0)::bigint AS total_week_micros
+FROM usage_records
+WHERE workspace_id = $1
+  AND ($3::uuid IS NULL OR bot_id = $3)
+  AND created_at >= date_trunc('week', $2::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
 `
 
-type SpendTodayParams struct {
+type SpendTotalsParams struct {
 	WorkspaceID pgtype.UUID        `json:"workspace_id"`
-	BotID       pgtype.UUID        `json:"bot_id"`
 	AsOf        pgtype.Timestamptz `json:"as_of"`
+	BotID       pgtype.UUID        `json:"bot_id"`
 }
 
-func (q *Queries) SpendToday(ctx context.Context, arg SpendTodayParams) (int64, error) {
-	row := q.db.QueryRow(ctx, spendToday, arg.WorkspaceID, arg.BotID, arg.AsOf)
-	var column_1 int64
-	err := row.Scan(&column_1)
-	return column_1, err
+type SpendTotalsRow struct {
+	ProviderTodayMicros int64 `json:"provider_today_micros"`
+	ProviderWeekMicros  int64 `json:"provider_week_micros"`
+	TotalTodayMicros    int64 `json:"total_today_micros"`
+	TotalWeekMicros     int64 `json:"total_week_micros"`
+}
+
+func (q *Queries) SpendTotals(ctx context.Context, arg SpendTotalsParams) (SpendTotalsRow, error) {
+	row := q.db.QueryRow(ctx, spendTotals, arg.WorkspaceID, arg.AsOf, arg.BotID)
+	var i SpendTotalsRow
+	err := row.Scan(
+		&i.ProviderTodayMicros,
+		&i.ProviderWeekMicros,
+		&i.TotalTodayMicros,
+		&i.TotalWeekMicros,
+	)
+	return i, err
 }
 
 const unlockWorkspaceSpend = `-- name: UnlockWorkspaceSpend :exec

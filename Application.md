@@ -433,6 +433,7 @@ Membership is the only read path, including for workspace admins. See
 - **Budgets:** per workspace (monthly), bot (5-hour rolling window, daily UTC, weekly Mon–Sun UTC, monthly UTC) and group. Individual bot window caps can be updated via `PUT /api/workspaces/{workspaceID}/budgets` and removed via `DELETE /api/workspaces/{workspaceID}/budgets`.
   - **80 %:** warning.
   - **100 %:** no new turns, the proxy kill switch blocks LLM calls, and an approval request to raise the budget is created. For Codex plan traffic, an in-flight request can cross the limit because the Responses preview does not accept a per-request output cap. The next request is checked after settlement.
+  - **Fleet dashboard:** the workspace **Spend** card shows combined daily (UTC) and weekly (Mon–Sun UTC) spend (provider spend plus internal subscription charges when enabled) alongside the optional workspace monthly cap meter.
 
 ### 4.10 Real-time events
 
