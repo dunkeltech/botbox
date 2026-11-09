@@ -20,6 +20,7 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
 	"github.com/dunkeltech/botbox/backend/internal/groups"
 	"github.com/dunkeltech/botbox/backend/internal/mcpproxy"
+	"github.com/dunkeltech/botbox/backend/internal/memory"
 	"github.com/dunkeltech/botbox/backend/internal/secrets"
 	"github.com/dunkeltech/botbox/backend/internal/secrets/llmproxy"
 	"github.com/dunkeltech/botbox/backend/internal/secrets/mitmproxy"
@@ -46,6 +47,9 @@ func modelExecutor(pool *pgxpool.Pool, q *db.Queries, ring *secrets.KeyRing, dri
 		if session.Preface != "" {
 			prompt += "\n" + session.Preface
 		}
+		if session.MemoryPrompt != "" {
+			prompt += "\n" + session.MemoryPrompt
+		}
 		var tools modelapi.Tools
 		profile := ""
 		var mcpSvc *mcpproxy.Service
@@ -53,6 +57,16 @@ func modelExecutor(pool *pgxpool.Pool, q *db.Queries, ring *secrets.KeyRing, dri
 		if session.TeamTool != nil {
 			prompt += "\n" + teamToolGuidance
 			for _, definition := range groups.TeamToolDefinitions(false) {
+				extraTools = append(extraTools, map[string]any{
+					"type": "function",
+					"function": map[string]any{
+						"name": definition.Name, "description": definition.Description, "parameters": definition.InputSchema,
+					},
+				})
+			}
+		}
+		if session.MemoryTool != nil {
+			for _, definition := range memory.ToolDefinitions(false) {
 				extraTools = append(extraTools, map[string]any{
 					"type": "function",
 					"function": map[string]any{
@@ -85,7 +99,7 @@ func modelExecutor(pool *pgxpool.Pool, q *db.Queries, ring *secrets.KeyRing, dri
 		// The memory driver executes local commands for deterministic development
 		// tests; model-generated tools must never use it to reach the API host.
 		if _, isolated := driver.(*docker.Driver); isolated {
-			tools = &sandboxTools{q: q, driver: driver, broker: broker, mcp: mcpSvc, team: session.TeamTool, workspaceID: session.WorkspaceID, botID: session.BotID}
+			tools = &sandboxTools{q: q, driver: driver, broker: broker, mcp: mcpSvc, team: session.TeamTool, memory: session.MemoryTool, workspaceID: session.WorkspaceID, botID: session.BotID}
 			switch session.Bot.LlmProvider {
 			case "anthropic":
 				profile = modelapi.ComputerAnthropic
@@ -95,8 +109,8 @@ func modelExecutor(pool *pgxpool.Pool, q *db.Queries, ring *secrets.KeyRing, dri
 				profile = modelapi.ComputerGeneric
 			}
 			prompt += "\n" + engine.DesktopGuidanceFor(broker != nil)
-		} else if mcpSvc != nil || session.TeamTool != nil {
-			tools = &sandboxTools{q: q, driver: driver, broker: broker, mcp: mcpSvc, team: session.TeamTool, workspaceID: session.WorkspaceID, botID: session.BotID}
+		} else if mcpSvc != nil || session.TeamTool != nil || session.MemoryTool != nil {
+			tools = &sandboxTools{q: q, driver: driver, broker: broker, mcp: mcpSvc, team: session.TeamTool, memory: session.MemoryTool, workspaceID: session.WorkspaceID, botID: session.BotID}
 		}
 		messages := []modelapi.Message{{Role: "system", Content: prompt}}
 		for i := len(session.Messages) - 1; i >= 0; i-- {
@@ -111,7 +125,7 @@ func modelExecutor(pool *pgxpool.Pool, q *db.Queries, ring *secrets.KeyRing, dri
 			messages = append(messages, modelapi.Message{Role: "user", Content: session.ContinuationPrompt})
 		}
 		provider := &modelapi.Provider{Client: llmproxy.ClientForHandler(proxy), URL: "http://proxy/llm/" + session.Bot.LlmProvider + "/v1/chat/completions", Model: session.Bot.LlmModel, BotID: session.BotID.String(), Tools: tools, Computer: profile, BrokerEnabled: broker != nil, ExtraTools: extraTools}
-		provider.ExtraToolsOnly = profile == "" && session.TeamTool != nil
+		provider.ExtraToolsOnly = profile == "" && (session.TeamTool != nil || session.MemoryTool != nil || mcpSvc != nil)
 		if profile != "" {
 			provider.MaxSteps = 25
 			provider.MaxScreenshots = 12
@@ -133,6 +147,7 @@ type sandboxTools struct {
 	broker             authbroker.Client
 	mcp                *mcpproxy.Service
 	team               func(context.Context, string, json.RawMessage) (string, error)
+	memory             func(context.Context, string, json.RawMessage) (string, error)
 	workspaceID, botID uuid.UUID
 }
 
@@ -143,6 +158,13 @@ func (t *sandboxTools) Call(ctx context.Context, name string, args json.RawMessa
 		}
 		result, err := t.team(ctx, name, args)
 		return groups.TeamToolResult(result, err), err
+	}
+	if memory.IsMemoryTool(name) {
+		if t.memory == nil {
+			return memory.ErrToolUnavailable.Error(), memory.ErrToolUnavailable
+		}
+		result, err := t.memory(ctx, name, args)
+		return memory.ToolResult(result, err), err
 	}
 	if slug, toolName, ok := mcpproxy.ParsePrefixedToolName(name); ok && t.mcp != nil {
 		res, err := t.mcp.CallBotTool(ctx, t.workspaceID, t.botID, slug, toolName, args)
@@ -525,6 +547,9 @@ func cliTurnPrompt(s engine.Session, external, guidance string) string {
 	}
 	if s.TeamTool != nil {
 		guidance += "\n" + teamToolGuidance + " Use the botbox-team tools with turn_id " + s.TurnID.String() + "."
+	}
+	if s.MemoryPrompt != "" {
+		guidance += "\n" + s.MemoryPrompt
 	}
 	return botIdentityPrompt(s) + "\n" + guidance + "\n" + prompt
 }

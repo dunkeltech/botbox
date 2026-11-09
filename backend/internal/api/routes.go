@@ -289,6 +289,13 @@ func (s *server) mountRoutes(r chi.Router) {
 			r.Get("/bots/{botID}/mcp", s.handleGetBotMCP)
 			r.Put("/bots/{botID}/mcp/{serverID}", s.handleUpdateBotMCPServer)
 			r.Get("/bots/{botID}/mcp/logs", s.handleListBotMCPLogs)
+
+			r.Get("/bots/{botID}/memories", s.handleListBotMemories)
+			r.Post("/bots/{botID}/memories", s.handleCreateBotMemory)
+			r.Delete("/bots/{botID}/memories", s.handleClearBotMemories)
+			r.Put("/bots/{botID}/memories/policy", s.handleUpdateBotMemoryPolicy)
+			r.Patch("/bots/{botID}/memories/{memoryID}", s.handleUpdateBotMemory)
+			r.Delete("/bots/{botID}/memories/{memoryID}", s.handleDeleteBotMemory)
 		})
 	})
 }

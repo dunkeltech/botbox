@@ -22,9 +22,11 @@ The interactive canvas (clickable prototype with live avatars) lives in Claude: 
 | Workspace settings: shared workspace secrets | [`workspace-settings-secrets.png`](screens/workspace-settings-secrets.png) | Phase 3 |
 | Workspace settings: MCP servers & self-hosted GitLab | [`workspace-settings-integrations.png`](screens/workspace-settings-integrations.png) | #18, ADR-0029 |
 | Bot workspace: chat + live computer + action timeline | [`bot-workspace.png`](screens/bot-workspace.png) | Phase 2, 4, 5 |
+| Bot workspace: chat memory capture & recall | [`bot-workspace-memory.png`](screens/bot-workspace-memory.png) | ADR-0033 |
 | Bot workspace: desktop fullscreen overlay | [`bot-workspace-fullscreen.png`](screens/bot-workspace-fullscreen.png) | Phase 2, 5 |
 | Bot workspace: loading skeleton & branded indicator | [`bot-workspace-loading.png`](screens/bot-workspace-loading.png) | Phase 2 |
 | Bot settings: general, runtime & danger zone | [`bot-settings-general.png`](screens/bot-settings-general.png) | Phase 1, 2 |
+| Bot settings: knowledge base & memory policy | [`bot-settings-knowledge-base.png`](screens/bot-settings-knowledge-base.png) | ADR-0033 |
 | Bot settings: budgets & usage | [`bot-settings-budgets.png`](screens/bot-settings-budgets.png) | Phase 4 |
 | Bot settings: MCP & GitLab integrations | [`bot-settings-integrations.png`](screens/bot-settings-integrations.png) | ADR-0029 |
 | Bot settings: secrets & egress | [`bot-settings-secrets.png`](screens/bot-settings-secrets.png) | Phase 3, #31 |
@@ -81,6 +83,10 @@ Viewport-filling split workspace (`projects/13598702750338265050`, screen `d1911
 
 ![Bot workspace](screens/bot-workspace.png)
 
+- **Chat memory capture & recall** (`screens/30164c6b88a34a518d93b99d7e5a75fe`): inline `Memory saved` card beneath the bot's confirmation reply (`Always in context` / `On-demand` mode pill, tags, token estimate, `Edit`, amber `Undo`, and `Open in Knowledge base →`) paired with memory recall/store entries in the `Tool calls` pane.
+
+![Bot workspace — chat memory capture and recall](screens/bot-workspace-memory.png)
+
 ### Bot desktop fullscreen & loading state
 - **Desktop fullscreen overlay** (`projects/13598702750338265050`, screen `ce23159708034299b16c7bcdb21737cd`): full-viewport `terminal` (`#14201a`) stage maximizing the 16:10 XFCE viewport beneath a pinned `dark-2` (`#1f2d1f`) control bar (`Take control` / `Hand back`, toggleable slide-over `Chat` drawer, browser fullscreen toggle, and `Exit fullscreen` with `Esc`).
 - **Workspace loading state** (`projects/13598702750338265050`, screen `66cac315501a4b92b6f81b6dc25f9109`): zero-layout-shift workspace skeleton matching the split layout with a centered `bot.Box` hexagon-robot loading indicator inside the `terminal` viewport.
@@ -93,11 +99,14 @@ Viewport-filling split workspace (`projects/13598702750338265050`, screen `d1911
 Reorganized into a two-column bot settings shell matching Workspace settings (`256 px` sticky left sub-navigation + dark `terminal` isolation card + `14 px`-radius content cards, Stitch project `13598702750338265050`):
 
 - **General & runtime** (`screens/3099ef0d6ba34e8eb368d453c8d1112c`): runtime pause/resume control, identity & global role, deterministic avatar seed + mood preview, model brain & sandbox driver, and dashed amber **Danger zone** deletion.
+- **Knowledge base** (`screens/9a8443023c674f1ba27fcf0e75c5cdd1`): `Auto-save memories from chat` toggle, `Always-in-context` 4,000-token budget meter with 80 % marker, `+ Add memory` dialog, search/mode/source/tag filters, inline `Always` / `On-demand` switch, zero-secret memory guard callout, and dashed amber **Danger zone** clear control.
 - **Budgets & usage** (`screens/b27c594b488d455b831d378383a6c8c4`, previously `8102d2afcc7241098e928036ef5e01b3` / `70ca340e5c754e348624d46ad3c35bd2`): 5-hour rolling, daily, weekly, and monthly spend caps per bot in a 2×2 meter grid (plus workspace monthly cap context), 80 % amber warning and `429 BudgetExceeded` hard-stop banner, 4-column limit form (blank clears a cap), and per-model subscription/token ledger across all four windows.
 - **MCP & GitLab** (`screens/23dcd676db654655a2d4e7bd22b94a39`): workspace-registered GitLab origins with instant revocation warning, per-bot MCP server switches, three-way command policies (`Allow` / `Ask approval` / `Block`), and dark `terminal` MCP audit log.
 - **Secrets & egress** (`screens/921383c3acd7489c99d629e2068dd8a1`): CLI subscription setup, write-only proxy secrets, `Allowlist` / `Open internet` policy, allowed & dashed-amber blocked hosts, and dark `terminal` egress triage log.
 
 ![Bot settings — general and runtime](screens/bot-settings-general.png)
+
+![Bot settings — knowledge base](screens/bot-settings-knowledge-base.png)
 
 ![Bot settings — budgets and usage](screens/bot-settings-budgets.png)
 

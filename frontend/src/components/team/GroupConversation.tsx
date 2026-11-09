@@ -14,6 +14,7 @@ import {
 } from '@/components/chat/toolTrace';
 import { BrokerTakeoverModal } from '@/components/chat/BrokerTakeoverModal';
 import { MarkdownMessage } from '@/components/chat/MarkdownMessage';
+import { MemorySavedCard } from '@/components/chat/MemorySavedCard';
 import { SecretRequestCard } from '@/components/chat/SecretRequestCard';
 import { SecretRequestModal } from '@/components/chat/SecretRequestModal';
 import { useSecretRequestControl } from '@/components/chat/useSecretRequestControl';
@@ -33,7 +34,8 @@ import {
 import { Alert, BotAvatar } from '@/components/ui';
 import { connectConversation } from '@/lib/conversation-events';
 import { getAccessToken, requestJson } from '@/lib/api-client';
-import type { WorkspaceRole } from '@/types/api';
+import { canManageBot } from '@/lib/rbac';
+import type { Bot, BotListResponse, WorkspaceRole } from '@/types/api';
 import type { components } from '@/types/openapi.gen';
 import { initials, type MentionTarget } from '@/components/team/text';
 
@@ -113,6 +115,19 @@ export function GroupConversation({
     queryFn: () => requestJson<History>(`${base}/groups/${group.id}/messages`),
     refetchInterval: 3000,
   });
+  const botsQuery = useQuery({
+    queryKey: ['bots', workspaceId],
+    enabled: role === 'member',
+    queryFn: () => requestJson<BotListResponse>(`${base}/bots`),
+  });
+  function canManageMemoryBot(targetBotId?: string): boolean {
+    if (role === 'owner' || role === 'admin') return true;
+    if (role !== 'member' || !targetBotId) return false;
+    const matchedBot: Bot | undefined = botsQuery.data?.bots.find(
+      (b) => b.id === targetBotId,
+    );
+    return canManageBot(role, userId, matchedBot);
+  }
   const approvalList = useApprovalList(workspaceId);
   const {
     decide,
@@ -338,6 +353,29 @@ export function GroupConversation({
                   onProvide={secretControl.openModal}
                   onTakeover={secretControl.openTakeover}
                   onDeny={(s) => void secretControl.deny(s)}
+                />
+                {renderUnattachedToolTurns(unattachedAfter)}
+              </div>
+            );
+          }
+          if (
+            message.kind === 'memory' &&
+            message.memory &&
+            message.senderBotId
+          ) {
+            return (
+              <div key={message.id} className="flex flex-col gap-3">
+                <MemorySavedCard
+                  className="mx-5"
+                  workspaceId={workspaceId}
+                  botId={message.senderBotId}
+                  memory={message.memory}
+                  canManage={canManageMemoryBot(message.senderBotId)}
+                  onUpdated={async () => {
+                    await client.invalidateQueries({
+                      queryKey: ['group-messages', workspaceId, group.id],
+                    });
+                  }}
                 />
                 {renderUnattachedToolTurns(unattachedAfter)}
               </div>

@@ -1258,6 +1258,64 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/workspaces/{workspaceID}/bots/{botID}/memories': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+        botID: components['parameters']['BotID'];
+      };
+      cookie?: never;
+    };
+    get: operations['listBotMemories'];
+    put?: never;
+    post: operations['createBotMemory'];
+    delete: operations['clearBotMemories'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/workspaces/{workspaceID}/bots/{botID}/memories/policy': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+        botID: components['parameters']['BotID'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put: operations['updateBotMemoryPolicy'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/workspaces/{workspaceID}/bots/{botID}/memories/{memoryID}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+        botID: components['parameters']['BotID'];
+        memoryID: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete: operations['deleteBotMemory'];
+    options?: never;
+    head?: never;
+    patch: operations['updateBotMemory'];
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1402,13 +1460,15 @@ export interface components {
         | 'approval'
         | 'secret_request'
         | 'progress'
-        | 'team_status';
+        | 'team_status'
+        | 'memory';
       content: string;
       secretRequest?: components['schemas']['SecretRequestSummary'];
       tool?: components['schemas']['ToolCallMeta'];
       inputRequest?: components['schemas']['GroupInputRequest'];
       progressBlocker?: boolean;
       teamStatus?: components['schemas']['TeamBotStatus'];
+      memory?: components['schemas']['ChatMessageMemory'];
       /** Format: date-time */
       createdAt: string;
     };
@@ -2208,6 +2268,81 @@ export interface components {
     };
     MCPCallLogListResponse: {
       logs: components['schemas']['MCPCallLogEntry'][];
+    };
+    /** @enum {string} */
+    BotMemoryMode: 'always' | 'on_demand';
+    /** @enum {string} */
+    BotMemorySourceKind: 'chat' | 'manual';
+    BotMemory: {
+      /** Format: uuid */
+      id: string;
+      /** Format: uuid */
+      workspaceId: string;
+      /** Format: uuid */
+      botId: string;
+      title: string;
+      content: string;
+      mode: components['schemas']['BotMemoryMode'];
+      tags: string[];
+      sourceKind: components['schemas']['BotMemorySourceKind'];
+      sourceLabel: string;
+      /** Format: uuid */
+      sourceConversationId?: string;
+      /** Format: uuid */
+      sourceTurnId?: string;
+      tokenEstimate: number;
+      /** Format: date-time */
+      createdAt: string;
+      /** Format: date-time */
+      updatedAt: string;
+    };
+    BotMemorySummary: {
+      autoSave: boolean;
+      /** Format: int64 */
+      totalCount: number;
+      /** Format: int64 */
+      alwaysCount: number;
+      /** Format: int64 */
+      onDemandCount: number;
+      /** Format: int64 */
+      alwaysTokens: number;
+      /** Format: int64 */
+      alwaysTokenLimit: number;
+      /** Format: int64 */
+      maxEntries: number;
+    };
+    BotMemoryListResponse: {
+      summary: components['schemas']['BotMemorySummary'];
+      entries: components['schemas']['BotMemory'][];
+      /** Format: int64 */
+      filteredCount: number;
+      tags: string[];
+    };
+    CreateBotMemoryRequest: {
+      title: string;
+      content: string;
+      mode: components['schemas']['BotMemoryMode'];
+      tags?: string[];
+    };
+    UpdateBotMemoryRequest: {
+      title?: string;
+      content?: string;
+      mode?: components['schemas']['BotMemoryMode'];
+      tags?: string[];
+    };
+    UpdateBotMemoryPolicyRequest: {
+      autoSave: boolean;
+    };
+    ChatMessageMemory: {
+      /** Format: uuid */
+      memoryId: string;
+      title: string;
+      content: string;
+      mode: components['schemas']['BotMemoryMode'];
+      tags: string[];
+      tokenEstimate: number;
+      sourceLabel: string;
+      deleted: boolean;
     };
   };
   responses: never;
@@ -7560,6 +7695,368 @@ export interface operations {
       };
       /** @description Workspace or bot not found */
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  listBotMemories: {
+    parameters: {
+      query?: {
+        q?: string;
+        mode?: components['schemas']['BotMemoryMode'];
+        source?: components['schemas']['BotMemorySourceKind'];
+        tag?: string;
+        limit?: number;
+        offset?: number;
+      };
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+        botID: components['parameters']['BotID'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Bot knowledge base entries and policy summary */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['BotMemoryListResponse'];
+        };
+      };
+      /** @description Invalid query parameter */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Workspace or bot not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  createBotMemory: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+        botID: components['parameters']['BotID'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateBotMemoryRequest'];
+      };
+    };
+    responses: {
+      /** @description Memory entry created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['BotMemory'];
+        };
+      };
+      /** @description Validation error or secret detected */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Bot manager required */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Workspace or bot not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Always-in-context budget or entry limit exceeded */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  clearBotMemories: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+        botID: components['parameters']['BotID'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Knowledge base cleared */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Bot manager required */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Workspace or bot not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  updateBotMemoryPolicy: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+        botID: components['parameters']['BotID'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateBotMemoryPolicyRequest'];
+      };
+    };
+    responses: {
+      /** @description Bot memory policy updated */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['BotMemorySummary'];
+        };
+      };
+      /** @description Validation error */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Bot manager required */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Workspace or bot not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  deleteBotMemory: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+        botID: components['parameters']['BotID'];
+        memoryID: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Memory entry deleted */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Bot manager required */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Workspace */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  updateBotMemory: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+        botID: components['parameters']['BotID'];
+        memoryID: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateBotMemoryRequest'];
+      };
+    };
+    responses: {
+      /** @description Memory entry updated */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['BotMemory'];
+        };
+      };
+      /** @description Validation error or secret detected */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Bot manager required */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Workspace */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Always-in-context budget exceeded */
+      409: {
         headers: {
           [name: string]: unknown;
         };

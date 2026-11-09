@@ -25,7 +25,7 @@ INSERT INTO bots (
     reply_language
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-RETURNING id, workspace_id, owner_user_id, name, description, avatar_seed, llm_mode, llm_provider, llm_model, driver_type, reply_language, created_at, updated_at
+RETURNING id, workspace_id, owner_user_id, name, description, avatar_seed, llm_mode, llm_provider, llm_model, driver_type, reply_language, created_at, updated_at, memory_auto_save
 `
 
 type CreateBotParams struct {
@@ -69,6 +69,7 @@ func (q *Queries) CreateBot(ctx context.Context, arg CreateBotParams) (Bot, erro
 		&i.ReplyLanguage,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.MemoryAutoSave,
 	)
 	return i, err
 }
@@ -92,7 +93,7 @@ func (q *Queries) DeleteBotByWorkspaceAndID(ctx context.Context, arg DeleteBotBy
 }
 
 const getBotByWorkspaceAndID = `-- name: GetBotByWorkspaceAndID :one
-SELECT id, workspace_id, owner_user_id, name, description, avatar_seed, llm_mode, llm_provider, llm_model, driver_type, reply_language, created_at, updated_at
+SELECT id, workspace_id, owner_user_id, name, description, avatar_seed, llm_mode, llm_provider, llm_model, driver_type, reply_language, created_at, updated_at, memory_auto_save
 FROM bots
 WHERE workspace_id = $1 AND id = $2
 `
@@ -119,12 +120,13 @@ func (q *Queries) GetBotByWorkspaceAndID(ctx context.Context, arg GetBotByWorksp
 		&i.ReplyLanguage,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.MemoryAutoSave,
 	)
 	return i, err
 }
 
 const listBotsByWorkspace = `-- name: ListBotsByWorkspace :many
-SELECT id, workspace_id, owner_user_id, name, description, avatar_seed, llm_mode, llm_provider, llm_model, driver_type, reply_language, created_at, updated_at
+SELECT id, workspace_id, owner_user_id, name, description, avatar_seed, llm_mode, llm_provider, llm_model, driver_type, reply_language, created_at, updated_at, memory_auto_save
 FROM bots
 WHERE workspace_id = $1
 ORDER BY created_at ASC, name ASC
@@ -153,6 +155,7 @@ func (q *Queries) ListBotsByWorkspace(ctx context.Context, workspaceID pgtype.UU
 			&i.ReplyLanguage,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.MemoryAutoSave,
 		); err != nil {
 			return nil, err
 		}
@@ -176,7 +179,7 @@ SET name = $3,
     reply_language = $10,
     updated_at = now()
 WHERE workspace_id = $1 AND id = $2
-RETURNING id, workspace_id, owner_user_id, name, description, avatar_seed, llm_mode, llm_provider, llm_model, driver_type, reply_language, created_at, updated_at
+RETURNING id, workspace_id, owner_user_id, name, description, avatar_seed, llm_mode, llm_provider, llm_model, driver_type, reply_language, created_at, updated_at, memory_auto_save
 `
 
 type UpdateBotByWorkspaceAndIDParams struct {
@@ -220,6 +223,7 @@ func (q *Queries) UpdateBotByWorkspaceAndID(ctx context.Context, arg UpdateBotBy
 		&i.ReplyLanguage,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.MemoryAutoSave,
 	)
 	return i, err
 }

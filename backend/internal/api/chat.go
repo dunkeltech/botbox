@@ -11,6 +11,7 @@ import (
 
 	apigen "github.com/dunkeltech/botbox/backend/internal/gen/api"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
+	"github.com/dunkeltech/botbox/backend/internal/memory"
 	"github.com/dunkeltech/botbox/backend/internal/secretrequests"
 	"github.com/dunkeltech/botbox/backend/internal/workspaces"
 	"github.com/go-chi/chi/v5"
@@ -139,6 +140,25 @@ func chatMessage(m db.Message) apigen.ChatMessage {
 	}
 	if m.Kind == "tool" && len(m.Metadata) > 0 {
 		out.Tool = parseToolCallMeta(m.Metadata)
+	}
+	if m.Kind == "memory" && len(m.Metadata) > 0 {
+		var card memory.ChatMemoryMetadata
+		if json.Unmarshal(m.Metadata, &card) == nil && card.MemoryID != uuid.Nil && apigen.BotMemoryMode(card.Mode).Valid() {
+			tags := card.Tags
+			if tags == nil {
+				tags = []string{}
+			}
+			out.Memory = &apigen.ChatMessageMemory{
+				MemoryId:      card.MemoryID,
+				Title:         card.Title,
+				Content:       card.Content,
+				Mode:          apigen.BotMemoryMode(card.Mode),
+				Tags:          tags,
+				TokenEstimate: int(card.TokenEstimate),
+				SourceLabel:   card.SourceLabel,
+				Deleted:       card.Deleted,
+			}
+		}
 	}
 	if m.Kind == "progress" || m.Kind == "team_status" {
 		var update struct {

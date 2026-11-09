@@ -2,6 +2,7 @@
 
 import {
   ArrowLeft,
+  BookOpen,
   Coins,
   KeyRound,
   Plug,
@@ -28,7 +29,7 @@ import { canManageBot } from '@/lib/rbac';
 import type { Bot, WorkspaceSummary } from '@/types/api';
 
 export type BotSettingsSection =
-  'general' | 'budgets' | 'integrations' | 'secrets';
+  'general' | 'knowledge' | 'budgets' | 'integrations' | 'secrets';
 
 export interface BotSettingsShellProps {
   bot: Bot;
@@ -74,6 +75,12 @@ export function BotSettingsShell({
           href: `/bots/${bot.id}/settings`,
           label: t('nav.general'),
           icon: SlidersHorizontal,
+        },
+        {
+          id: 'knowledge' as const,
+          href: `/bots/${bot.id}/settings/knowledge`,
+          label: t('nav.knowledge'),
+          icon: BookOpen,
         },
       ],
     },

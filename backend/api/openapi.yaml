@@ -2636,6 +2636,143 @@ paths:
         '401': {description: Unauthenticated, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
         '404': {description: Workspace or bot not found, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
 
+  /api/workspaces/{workspaceID}/bots/{botID}/memories:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceID'
+      - $ref: '#/components/parameters/BotID'
+    get:
+      operationId: listBotMemories
+      security: [{bearerAuth: []}]
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema: {type: string, maxLength: 200}
+        - name: mode
+          in: query
+          required: false
+          schema: {$ref: '#/components/schemas/BotMemoryMode'}
+        - name: source
+          in: query
+          required: false
+          schema: {$ref: '#/components/schemas/BotMemorySourceKind'}
+        - name: tag
+          in: query
+          required: false
+          schema: {type: string, maxLength: 32}
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 100}
+        - name: offset
+          in: query
+          required: false
+          schema: {type: integer, minimum: 0}
+      responses:
+        '200':
+          description: Bot knowledge base entries and policy summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BotMemoryListResponse'
+        '400': {description: Invalid query parameter, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '401': {description: Unauthenticated, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '404': {description: Workspace or bot not found, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+    post:
+      operationId: createBotMemory
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBotMemoryRequest'
+      responses:
+        '201':
+          description: Memory entry created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BotMemory'
+        '400': {description: Validation error or secret detected, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '401': {description: Unauthenticated, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '403': {description: Bot manager required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '404': {description: Workspace or bot not found, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '409': {description: Always-in-context budget or entry limit exceeded, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+    delete:
+      operationId: clearBotMemories
+      security: [{bearerAuth: []}]
+      responses:
+        '204': {description: Knowledge base cleared}
+        '401': {description: Unauthenticated, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '403': {description: Bot manager required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '404': {description: Workspace or bot not found, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+
+  /api/workspaces/{workspaceID}/bots/{botID}/memories/policy:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceID'
+      - $ref: '#/components/parameters/BotID'
+    put:
+      operationId: updateBotMemoryPolicy
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateBotMemoryPolicyRequest'
+      responses:
+        '200':
+          description: Bot memory policy updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BotMemorySummary'
+        '400': {description: Validation error, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '401': {description: Unauthenticated, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '403': {description: Bot manager required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '404': {description: Workspace or bot not found, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+
+  /api/workspaces/{workspaceID}/bots/{botID}/memories/{memoryID}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceID'
+      - $ref: '#/components/parameters/BotID'
+      - name: memoryID
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      operationId: updateBotMemory
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateBotMemoryRequest'
+      responses:
+        '200':
+          description: Memory entry updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BotMemory'
+        '400': {description: Validation error or secret detected, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '401': {description: Unauthenticated, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '403': {description: Bot manager required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '404': {description: Workspace, bot, or memory entry not found, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '409': {description: Always-in-context budget exceeded, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+    delete:
+      operationId: deleteBotMemory
+      security: [{bearerAuth: []}]
+      responses:
+        '204': {description: Memory entry deleted}
+        '401': {description: Unauthenticated, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '403': {description: Bot manager required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '404': {description: Workspace, bot, or memory entry not found, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+
 components:
   securitySchemes:
     bearerAuth:
@@ -2842,13 +2979,14 @@ components:
         # A group transcript has several speakers. The ids are omitted for system rows.
         senderUserId: {type: string, format: uuid}
         senderBotId: {type: string, format: uuid}
-        kind: {type: string, enum: [text, tool, system, card, approval, secret_request, progress, team_status]}
+        kind: {type: string, enum: [text, tool, system, card, approval, secret_request, progress, team_status, memory]}
         content: {type: string}
         secretRequest: {$ref: '#/components/schemas/SecretRequestSummary'}
         tool: {$ref: '#/components/schemas/ToolCallMeta'}
         inputRequest: {$ref: '#/components/schemas/GroupInputRequest'}
         progressBlocker: {type: boolean}
         teamStatus: {$ref: '#/components/schemas/TeamBotStatus'}
+        memory: {$ref: '#/components/schemas/ChatMessageMemory'}
         createdAt: {type: string, format: date-time}
     TeamBotStatusState:
       type: string
@@ -4299,3 +4437,101 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/MCPCallLogEntry'
+
+    BotMemoryMode:
+      type: string
+      enum: [always, on_demand]
+
+    BotMemorySourceKind:
+      type: string
+      enum: [chat, manual]
+
+    BotMemory:
+      type: object
+      required: [id, workspaceId, botId, title, content, mode, tags, sourceKind, sourceLabel, tokenEstimate, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        workspaceId: {type: string, format: uuid}
+        botId: {type: string, format: uuid}
+        title: {type: string}
+        content: {type: string}
+        mode: {$ref: '#/components/schemas/BotMemoryMode'}
+        tags:
+          type: array
+          items: {type: string}
+        sourceKind: {$ref: '#/components/schemas/BotMemorySourceKind'}
+        sourceLabel: {type: string}
+        sourceConversationId: {type: string, format: uuid}
+        sourceTurnId: {type: string, format: uuid}
+        tokenEstimate: {type: integer}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+
+    BotMemorySummary:
+      type: object
+      required: [autoSave, totalCount, alwaysCount, onDemandCount, alwaysTokens, alwaysTokenLimit, maxEntries]
+      properties:
+        autoSave: {type: boolean}
+        totalCount: {type: integer, format: int64}
+        alwaysCount: {type: integer, format: int64}
+        onDemandCount: {type: integer, format: int64}
+        alwaysTokens: {type: integer, format: int64}
+        alwaysTokenLimit: {type: integer, format: int64}
+        maxEntries: {type: integer, format: int64}
+
+    BotMemoryListResponse:
+      type: object
+      required: [summary, entries, filteredCount, tags]
+      properties:
+        summary: {$ref: '#/components/schemas/BotMemorySummary'}
+        entries:
+          type: array
+          items: {$ref: '#/components/schemas/BotMemory'}
+        filteredCount: {type: integer, format: int64}
+        tags:
+          type: array
+          items: {type: string}
+
+    CreateBotMemoryRequest:
+      type: object
+      required: [title, content, mode]
+      properties:
+        title: {type: string, minLength: 1, maxLength: 160}
+        content: {type: string, minLength: 1, maxLength: 4000}
+        mode: {$ref: '#/components/schemas/BotMemoryMode'}
+        tags:
+          type: array
+          maxItems: 12
+          items: {type: string, minLength: 1, maxLength: 32}
+
+    UpdateBotMemoryRequest:
+      type: object
+      properties:
+        title: {type: string, minLength: 1, maxLength: 160}
+        content: {type: string, minLength: 1, maxLength: 4000}
+        mode: {$ref: '#/components/schemas/BotMemoryMode'}
+        tags:
+          type: array
+          maxItems: 12
+          items: {type: string, minLength: 1, maxLength: 32}
+
+    UpdateBotMemoryPolicyRequest:
+      type: object
+      required: [autoSave]
+      properties:
+        autoSave: {type: boolean}
+
+    ChatMessageMemory:
+      type: object
+      required: [memoryId, title, content, mode, tags, tokenEstimate, sourceLabel, deleted]
+      properties:
+        memoryId: {type: string, format: uuid}
+        title: {type: string}
+        content: {type: string}
+        mode: {$ref: '#/components/schemas/BotMemoryMode'}
+        tags:
+          type: array
+          items: {type: string}
+        tokenEstimate: {type: integer}
+        sourceLabel: {type: string}
+        deleted: {type: boolean}

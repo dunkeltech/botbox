@@ -16,9 +16,11 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/events"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
 	"github.com/dunkeltech/botbox/backend/internal/groups"
+	"github.com/dunkeltech/botbox/backend/internal/memory"
 	"github.com/dunkeltech/botbox/backend/internal/notify"
 	"github.com/dunkeltech/botbox/backend/internal/orchestrator"
 	"github.com/dunkeltech/botbox/backend/internal/secretrequests"
+	"github.com/dunkeltech/botbox/backend/internal/secrets"
 	"github.com/dunkeltech/botbox/backend/internal/secrets/llmproxy"
 	"github.com/dunkeltech/botbox/backend/internal/secrets/mitmproxy"
 	"github.com/google/uuid"
@@ -40,8 +42,12 @@ type Session struct {
 	Messages                                   []db.Message
 	Preface                                    string
 	ContinuationPrompt                         string
+	// MemoryPrompt injects always-in-context knowledge base entries and tool guidance.
+	MemoryPrompt string
 	// TeamTool is bound to the active group turn. Direct messages leave it nil.
 	TeamTool func(context.Context, string, json.RawMessage) (string, error)
+	// MemoryTool is bound to the active turn across both DMs and groups.
+	MemoryTool func(context.Context, string, json.RawMessage) (string, error)
 }
 
 // ExecuteTurn runs one bounded turn and propagates event sink failures.
@@ -54,6 +60,7 @@ type Worker struct {
 	mu         sync.Mutex
 	active     map[string]context.CancelFunc
 	Pool       *pgxpool.Pool
+	KeyRing    *secrets.KeyRing
 	AuthBroker authbroker.Client
 	Execute    ExecuteTurn
 	Publish    func(context.Context, Session, Event) error
@@ -216,6 +223,16 @@ func (w *Worker) executeClaimed(ctx context.Context, tx pgx.Tx, turn db.BotTurn,
 			return tools.Call(ctx, scope, name, args)
 		}
 	}
+	memSvc := memory.Service{Pool: w.Pool, Ring: w.KeyRing, Signal: w.Signal, Now: w.now}
+	if memPrompt, memErr := memSvc.FormatPromptContext(ctx, session.WorkspaceID, session.BotID, session.TurnID, bot.LlmMode != "api"); memErr == nil {
+		session.MemoryPrompt = memPrompt
+	} else {
+		return memErr
+	}
+	memScope := memory.ToolScope{WorkspaceID: session.WorkspaceID, BotID: session.BotID, TurnID: session.TurnID}
+	session.MemoryTool = func(ctx context.Context, name string, args json.RawMessage) (string, error) {
+		return memSvc.Call(ctx, memScope, name, args)
+	}
 	stop, err := groups.ScreenBudget(ctx, w.Pool, turn.WorkspaceID, turn.ConversationID, turn.BotID, turn.MessageID, w.Signal)
 	if err != nil {
 		return err
@@ -329,9 +346,12 @@ func (w *Worker) executeClaimed(ctx context.Context, tx pgx.Tx, turn db.BotTurn,
 			if ev.Kind == EventKindToolCall {
 				ev.Text = ev.ToolName + "\n" + string(ev.ToolInput)
 				// The card is the gate. bot.Box does not push; the git host still
-				// has to reject a protected branch (ADR-0015).
-				if err := approvals.NoteTool(ctx, w.Pool, turn, ev.Text, w.Signal); err != nil {
-					return err
+				// has to reject a protected branch (ADR-0015). Memory entries
+				// describe policies rather than shell actions, so skip approval scanning.
+				if !memory.IsMemoryTool(ev.ToolName) {
+					if err := approvals.NoteTool(ctx, w.Pool, turn, ev.Text, w.Signal); err != nil {
+						return err
+					}
 				}
 			}
 			data, marshalErr := json.Marshal(ev)

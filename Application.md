@@ -154,6 +154,7 @@ type AgentRunner interface {
 - **Sessions:** one CLI session per (bot, conversation), so every conversation keeps its own context.
 - **Status:** persisted running turns and tool activity determine each bot's current status. Private live events carry bot, turn, and execution ids plus a sequence within that execution. Provider step completion cannot mark an ongoing bot turn idle. The Team bot list refreshes on live activity and every 3 seconds, including work in other conversations. Reconnecting reloads snapshots rather than applying stale event status. Group chat shows one indicator per active bot, including thinking before the first tool call, queued work, and secret waits.
 - **Reply language** is a per-bot setting. System prompts are in English.
+- **Bot knowledge base ([ADR-0033](docs/adr/0033-bot-knowledge-base.md)):** Each bot owns a workspace- and bot-scoped knowledge base (`bot_memories`, max 200 entries) supporting `always` (injected on every turn up to a 4,000-token budget) and `on_demand` (queried via PostgreSQL full-text and tag search) entries. Both Model API and CLI runners (`claude`, `codex`, `agy` via `/memory-mcp` on the bot egress proxy) expose `memory_save`, `memory_search`, `memory_update`, and `memory_delete`. Writes enforce a zero-secret memory guard rejecting credential patterns and decrypted bot/workspace/MCP secrets, respect `bots.memory_auto_save`, and record `kind = 'memory'` inline chat cards with `Edit`/`Undo` for bot managers alongside Bot Settings (`/bots/:id/settings/knowledge`).
 - **Responsibility for the bot computer:** every API and CLI turn, including
   resumed sessions and continuations, reminds the bot to maintain its own
   persistent sandbox. Bots decide routine local housekeeping themselves,
@@ -513,9 +514,11 @@ CREATE TABLE bots (
     llm_model VARCHAR(100) NOT NULL,
     driver_type VARCHAR(20) NOT NULL DEFAULT 'docker' CHECK (driver_type IN ('docker','kubernetes')),
     reply_language VARCHAR(10) NOT NULL DEFAULT 'en',
+    memory_auto_save BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- bot_memories (migration 00029): per-bot knowledge base entries (workspace_id, bot_id, title, content, mode IN ('always','on_demand'), tags TEXT[], source_kind, token_estimate).
 
 CREATE TABLE environments (
     bot_id UUID PRIMARY KEY REFERENCES bots(id) ON DELETE CASCADE,

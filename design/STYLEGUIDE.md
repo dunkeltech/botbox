@@ -135,7 +135,7 @@ The fleet shows known spend today. Budget meters follow the Stitch project `1359
 |---|---|
 | App header | Full-width `terminal` (`#14201a`) top bar (~54 px tall) across all authenticated views; current nav item white with a 2 px `green-light` (`#5eab60`) underline; workspace switcher pill `<workspace> · <role>`, approvals bell and account menu on the right |
 | Workspace settings | Two-column layout under the standard header with `256 px` sticky left sub-navigation (`Workspace`, `Spend & billing`, `Security & integrations`) and `14 px`-radius main content cards. Navigation links wrap horizontally on narrow viewports. The active link uses `mint-soft` fill, `green-600` bold text, and a `3 px` `green` left accent. The owner-only Danger zone uses `amber-tint` with a dashed `amber-line` border. |
-| Bot settings | Two-column settings shell (`BotSettingsShell`) with `256 px` sticky left sub-navigation (`Bot`, `Spend & usage`, `Security & integrations`) across `/bots/:id/settings` (`General & runtime`), `/bots/:id/settings/budgets` (`Budgets & usage`), `/bots/:id/settings/integrations` (`MCP & GitLab`), and `/bots/:id/secrets` (`Secrets & egress`) |
+| Bot settings | Two-column settings shell (`BotSettingsShell`) with `256 px` sticky left sub-navigation (`Bot`, `Spend & usage`, `Security & integrations`) across `/bots/:id/settings` (`General & runtime`), `/bots/:id/settings/knowledge` (`Knowledge base`), `/bots/:id/settings/budgets` (`Budgets & usage`), `/bots/:id/settings/integrations` (`MCP & GitLab`), and `/bots/:id/secrets` (`Secrets & egress`) |
 | Team chat | Same full-width `terminal` top bar with integrated search input, sidebar 264 px (`dark-2`), main pane flexible, right `paper-2` inspector aside 320–340 px (`Details` \| `Tool calls` segmented switch; slide-over sheet on narrow viewports) |
 | Bot workspace | Compact identity header (`// BOT WORKSPACE`), `400 px` internally scrolling chat column, flexible computer column with 16:10 desktop viewport, docked 4-cell telemetry bar, and `Fullscreen` overlay mode (`terminal` backdrop, `dark-2` pinned control bar, slide-over chat drawer, `Esc` to exit) |
 | Phone shell (390 px) | 16 px side gutters, ≥ 44 × 44 px header and noVNC touch controls (`Tap / Pan`), sticky bottom composer, and a slide-over `dark-2` team sidebar drawer with `overlay` scrim |
@@ -433,3 +433,16 @@ and dark `terminal` (`#14201a`) cards for runner wiring and `Recent MCP proxy ac
   controls. Label provider spend and internal subscription charges separately.
 - Show input, output, and cached-input token totals by model and period. Use a
   text status for usage awaiting reconciliation.
+
+### Bot knowledge base & in-chat memory cards
+
+- In DM and group chats, bot-saved memories render an inline `Memory saved` card
+  (`mint-line` border, or `paper-2` / `line` when removed via Undo) showing the
+  injection mode pill (`Always in context` in `mint-soft`/`green-600`, `On-demand`
+  in `blue-tint`/`blue`), title, content, tag chips, source/token metadata, `Edit`,
+  amber `Undo`, and `Open in Knowledge base →`.
+- Bot Settings exposes `/bots/:id/settings/knowledge` inside `BotSettingsShell`
+  with an `Auto-save memories from chat` switch, `Always-in-context` 4,000-token
+  progressbar (80 % tick, amber above 80 %), dark `terminal` zero-secret guard
+  card, search/mode/source/tag filters, inline `Always` / `On-demand` toggles,
+  modal Add/Edit form, and dashed `amber-line` **Clear knowledge base** danger zone.

@@ -4,13 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/dunkeltech/botbox/backend/internal/compute"
 	"github.com/dunkeltech/botbox/backend/internal/engine"
+	modelapi "github.com/dunkeltech/botbox/backend/internal/engine/api"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
 	"github.com/dunkeltech/botbox/backend/internal/groups"
+	"github.com/dunkeltech/botbox/backend/internal/memory"
 	"github.com/dunkeltech/botbox/backend/internal/orchestrator"
 	"github.com/google/uuid"
 )
@@ -103,6 +109,113 @@ func TestModelTeamToolsUseTurnBinding(t *testing.T) {
 	}
 	if result, err := tools.Call(ctx, groups.TeamProgressTool, args); err != nil || result != `{"posted":true}` {
 		t.Fatalf("bound team tool: %q %v", result, err)
+	}
+}
+
+func TestModelMemoryToolsAndCLIMemoryPrompt(t *testing.T) {
+	ctx := context.Background()
+	var tools sandboxTools
+	args := json.RawMessage(`{"title":"Convention","content":"Run tests cleanly"}`)
+	if _, err := tools.Call(ctx, memory.ToolSave, args); !errors.Is(err, memory.ErrToolUnavailable) {
+		t.Fatalf("unbound memory tool: %v, want ErrToolUnavailable", err)
+	}
+	tools.memory = func(_ context.Context, name string, input json.RawMessage) (string, error) {
+		if name != memory.ToolSave || string(input) != string(args) {
+			t.Fatalf("unexpected memory tool call %q %s", name, input)
+		}
+		return `{"saved":true}`, nil
+	}
+	if result, err := tools.Call(ctx, memory.ToolSave, args); err != nil || result != `{"saved":true}` {
+		t.Fatalf("bound memory tool: %q %v", result, err)
+	}
+
+	s := engine.Session{
+		Bot:          db.Bot{Name: "Atlas"},
+		MemoryPrompt: "## Bot Knowledge Base\nAlways run tests cleanly.",
+		Messages:     []db.Message{{Content: "Hello"}},
+	}
+	prompt := cliTurnPrompt(s, "", "Desktop guidance")
+	if !strings.Contains(prompt, s.MemoryPrompt) {
+		t.Fatalf("cliTurnPrompt omitted MemoryPrompt: %q", prompt)
+	}
+}
+
+func TestModelAPIRunnerMemoryToolLoop(t *testing.T) {
+	var step atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		switch step.Add(1) {
+		case 1:
+			_, _ = fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_mem_1\",\"type\":\"function\",\"function\":{\"name\":\"memory_save\",\"arguments\":\"{\\\"title\\\":\\\"Commits\\\",\\\"content\\\":\\\"Use imperative English commits.\\\"}\"}}]}}]}\n\n")
+			_, _ = fmt.Fprint(w, "data: {\"usage\":{\"prompt_tokens\":12,\"completion_tokens\":8}}\n\n")
+			_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+		default:
+			_, _ = fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"Saved to your knowledge base.\"}}]}\n\n")
+			_, _ = fmt.Fprint(w, "data: {\"usage\":{\"prompt_tokens\":20,\"completion_tokens\":6}}\n\n")
+			_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+		}
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}))
+	defer server.Close()
+
+	var called bool
+	tools := &sandboxTools{
+		memory: func(_ context.Context, name string, raw json.RawMessage) (string, error) {
+			called = true
+			if name != memory.ToolSave {
+				t.Fatalf("tool name = %q, want %s", name, memory.ToolSave)
+			}
+			return `{"saved":true,"memory_id":"` + uuid.NewString() + `"}`, nil
+		},
+	}
+
+	extraTools := make([]map[string]any, 0, 4)
+	for _, def := range memory.ToolDefinitions(false) {
+		extraTools = append(extraTools, map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name":        def.Name,
+				"description": def.Description,
+				"parameters":  def.InputSchema,
+			},
+		})
+	}
+
+	provider := &modelapi.Provider{
+		Client:         server.Client(),
+		URL:            server.URL,
+		Model:          "fake-model",
+		BotID:          uuid.NewString(),
+		Tools:          tools,
+		ExtraTools:     extraTools,
+		ExtraToolsOnly: true,
+	}
+
+	var events []engine.Event
+	err := provider.Run(context.Background(), []modelapi.Message{
+		{Role: "system", Content: "You have memory tools."},
+		{Role: "user", Content: "Remember we use imperative English commits."},
+	}, func(ev engine.Event) error {
+		events = append(events, ev)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Provider.Run failed: %v", err)
+	}
+	if !called {
+		t.Fatal("expected memory_save tool callback to be invoked")
+	}
+	var sawText string
+	for _, ev := range events {
+		if ev.Kind == engine.EventKindTextDelta {
+			sawText += ev.Text
+		}
+	}
+	if !strings.Contains(sawText, "Saved to your knowledge base.") {
+		t.Fatalf("unexpected assistant reply %q", sawText)
 	}
 }
 

@@ -134,7 +134,7 @@ func run(logger *slog.Logger) error {
 		cfg.AuthBroker = authBroker
 		cfg.Compute = computeDrv
 		if natsURL := strings.TrimSpace(os.Getenv("NATS_URL")); natsURL != "" {
-			worker := &engine.Worker{Pool: pool, AuthBroker: authBroker, Execute: modelExecutor(pool, queries, keyRing, computeDrv, authBroker)}
+			worker := &engine.Worker{Pool: pool, KeyRing: keyRing, AuthBroker: authBroker, Execute: modelExecutor(pool, queries, keyRing, computeDrv, authBroker)}
 			ready := make(chan struct{})
 			concurrency, err := turnConcurrency(os.Getenv("BOTBOX_TURN_CONCURRENCY"))
 			if err != nil {

@@ -126,6 +126,42 @@ func (e AvatarMood) Valid() bool {
 	}
 }
 
+// Defines values for BotMemoryMode.
+const (
+	Always   BotMemoryMode = "always"
+	OnDemand BotMemoryMode = "on_demand"
+)
+
+// Valid indicates whether the value is a known member of the BotMemoryMode enum.
+func (e BotMemoryMode) Valid() bool {
+	switch e {
+	case Always:
+		return true
+	case OnDemand:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BotMemorySourceKind.
+const (
+	Chat   BotMemorySourceKind = "chat"
+	Manual BotMemorySourceKind = "manual"
+)
+
+// Valid indicates whether the value is a known member of the BotMemorySourceKind enum.
+func (e BotMemorySourceKind) Valid() bool {
+	switch e {
+	case Chat:
+		return true
+	case Manual:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for BotStatus.
 const (
 	BotStatusAction   BotStatus = "action"
@@ -199,6 +235,7 @@ func (e BudgetStatePeriod) Valid() bool {
 const (
 	ChatMessageKindApproval      ChatMessageKind = "approval"
 	ChatMessageKindCard          ChatMessageKind = "card"
+	ChatMessageKindMemory        ChatMessageKind = "memory"
 	ChatMessageKindProgress      ChatMessageKind = "progress"
 	ChatMessageKindSecretRequest ChatMessageKind = "secret_request"
 	ChatMessageKindSystem        ChatMessageKind = "system"
@@ -213,6 +250,8 @@ func (e ChatMessageKind) Valid() bool {
 	case ChatMessageKindApproval:
 		return true
 	case ChatMessageKindCard:
+		return true
+	case ChatMessageKindMemory:
 		return true
 	case ChatMessageKindProgress:
 		return true
@@ -1052,6 +1091,49 @@ type BotMCPServerPolicy struct {
 	UpdatedAt            time.Time                    `json:"updatedAt"`
 }
 
+// BotMemory defines model for BotMemory.
+type BotMemory struct {
+	BotId                openapi_types.UUID  `json:"botId"`
+	Content              string              `json:"content"`
+	CreatedAt            time.Time           `json:"createdAt"`
+	Id                   openapi_types.UUID  `json:"id"`
+	Mode                 BotMemoryMode       `json:"mode"`
+	SourceConversationId *openapi_types.UUID `json:"sourceConversationId,omitempty"`
+	SourceKind           BotMemorySourceKind `json:"sourceKind"`
+	SourceLabel          string              `json:"sourceLabel"`
+	SourceTurnId         *openapi_types.UUID `json:"sourceTurnId,omitempty"`
+	Tags                 []string            `json:"tags"`
+	Title                string              `json:"title"`
+	TokenEstimate        int                 `json:"tokenEstimate"`
+	UpdatedAt            time.Time           `json:"updatedAt"`
+	WorkspaceId          openapi_types.UUID  `json:"workspaceId"`
+}
+
+// BotMemoryListResponse defines model for BotMemoryListResponse.
+type BotMemoryListResponse struct {
+	Entries       []BotMemory      `json:"entries"`
+	FilteredCount int64            `json:"filteredCount"`
+	Summary       BotMemorySummary `json:"summary"`
+	Tags          []string         `json:"tags"`
+}
+
+// BotMemoryMode defines model for BotMemoryMode.
+type BotMemoryMode string
+
+// BotMemorySourceKind defines model for BotMemorySourceKind.
+type BotMemorySourceKind string
+
+// BotMemorySummary defines model for BotMemorySummary.
+type BotMemorySummary struct {
+	AlwaysCount      int64 `json:"alwaysCount"`
+	AlwaysTokenLimit int64 `json:"alwaysTokenLimit"`
+	AlwaysTokens     int64 `json:"alwaysTokens"`
+	AutoSave         bool  `json:"autoSave"`
+	MaxEntries       int64 `json:"maxEntries"`
+	OnDemandCount    int64 `json:"onDemandCount"`
+	TotalCount       int64 `json:"totalCount"`
+}
+
 // BotRuntime defines model for BotRuntime.
 type BotRuntime struct {
 	Paused bool `json:"paused"`
@@ -1124,6 +1206,7 @@ type ChatMessage struct {
 	Id              openapi_types.UUID    `json:"id"`
 	InputRequest    *GroupInputRequest    `json:"inputRequest,omitempty"`
 	Kind            ChatMessageKind       `json:"kind"`
+	Memory          *ChatMessageMemory    `json:"memory,omitempty"`
 	Position        int64                 `json:"position"`
 	ProgressBlocker *bool                 `json:"progressBlocker,omitempty"`
 	SecretRequest   *SecretRequestSummary `json:"secretRequest,omitempty"`
@@ -1139,6 +1222,18 @@ type ChatMessageKind string
 
 // ChatMessageSenderType defines model for ChatMessage.SenderType.
 type ChatMessageSenderType string
+
+// ChatMessageMemory defines model for ChatMessageMemory.
+type ChatMessageMemory struct {
+	Content       string             `json:"content"`
+	Deleted       bool               `json:"deleted"`
+	MemoryId      openapi_types.UUID `json:"memoryId"`
+	Mode          BotMemoryMode      `json:"mode"`
+	SourceLabel   string             `json:"sourceLabel"`
+	Tags          []string           `json:"tags"`
+	Title         string             `json:"title"`
+	TokenEstimate int                `json:"tokenEstimate"`
+}
 
 // ChatTurn defines model for ChatTurn.
 type ChatTurn struct {
@@ -1189,6 +1284,14 @@ type ControlHolder struct {
 	DisplayName string              `json:"displayName"`
 	Email       openapi_types.Email `json:"email"`
 	UserId      openapi_types.UUID  `json:"userId"`
+}
+
+// CreateBotMemoryRequest defines model for CreateBotMemoryRequest.
+type CreateBotMemoryRequest struct {
+	Content string        `json:"content"`
+	Mode    BotMemoryMode `json:"mode"`
+	Tags    *[]string     `json:"tags,omitempty"`
+	Title   string        `json:"title"`
 }
 
 // CreateBotRequest defines model for CreateBotRequest.
@@ -1820,6 +1923,19 @@ type UpdateBotMCPServerPolicyRequest struct {
 	ToolPolicies     *map[string]MCPToolPolicyMode `json:"toolPolicies,omitempty"`
 }
 
+// UpdateBotMemoryPolicyRequest defines model for UpdateBotMemoryPolicyRequest.
+type UpdateBotMemoryPolicyRequest struct {
+	AutoSave bool `json:"autoSave"`
+}
+
+// UpdateBotMemoryRequest defines model for UpdateBotMemoryRequest.
+type UpdateBotMemoryRequest struct {
+	Content *string        `json:"content,omitempty"`
+	Mode    *BotMemoryMode `json:"mode,omitempty"`
+	Tags    *[]string      `json:"tags,omitempty"`
+	Title   *string        `json:"title,omitempty"`
+}
+
 // UpdateBotRequest defines model for UpdateBotRequest.
 type UpdateBotRequest struct {
 	AvatarSeed    *string     `json:"avatarSeed,omitempty"`
@@ -1999,6 +2115,16 @@ type ListBotMCPLogsParams struct {
 	Offset *int              `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
+// ListBotMemoriesParams defines parameters for ListBotMemories.
+type ListBotMemoriesParams struct {
+	Q      *string              `form:"q,omitempty" json:"q,omitempty"`
+	Mode   *BotMemoryMode       `form:"mode,omitempty" json:"mode,omitempty"`
+	Source *BotMemorySourceKind `form:"source,omitempty" json:"source,omitempty"`
+	Tag    *string              `form:"tag,omitempty" json:"tag,omitempty"`
+	Limit  *int                 `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *int                 `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
 // SetBotRuntimeJSONBody defines parameters for SetBotRuntime.
 type SetBotRuntimeJSONBody struct {
 	Paused *bool `json:"paused,omitempty"`
@@ -2083,6 +2209,15 @@ type SetBotGitLabInstancesJSONRequestBody = BotGitLabInstances
 
 // UpdateBotMCPServerPolicyJSONRequestBody defines body for UpdateBotMCPServerPolicy for application/json ContentType.
 type UpdateBotMCPServerPolicyJSONRequestBody = UpdateBotMCPServerPolicyRequest
+
+// CreateBotMemoryJSONRequestBody defines body for CreateBotMemory for application/json ContentType.
+type CreateBotMemoryJSONRequestBody = CreateBotMemoryRequest
+
+// UpdateBotMemoryPolicyJSONRequestBody defines body for UpdateBotMemoryPolicy for application/json ContentType.
+type UpdateBotMemoryPolicyJSONRequestBody = UpdateBotMemoryPolicyRequest
+
+// UpdateBotMemoryJSONRequestBody defines body for UpdateBotMemory for application/json ContentType.
+type UpdateBotMemoryJSONRequestBody = UpdateBotMemoryRequest
 
 // SetBotRuntimeJSONRequestBody defines body for SetBotRuntime for application/json ContentType.
 type SetBotRuntimeJSONRequestBody SetBotRuntimeJSONBody

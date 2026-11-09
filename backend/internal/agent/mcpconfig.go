@@ -17,6 +17,9 @@ const EgressMCPBaseURL = "http://egress:8081/mcp"
 // TeamMCPURL is the bot-scoped coordination endpoint on the same private proxy.
 const TeamMCPURL = "http://egress:8081/team-mcp"
 
+// MemoryMCPURL is the bot-scoped knowledge base endpoint on the same private proxy.
+const MemoryMCPURL = "http://egress:8081/memory-mcp"
+
 // InstallDesktopMCP registers the desktop MCP server for one CLI.
 // A failed write must not fail the turn: the CLI can still answer without the desktop.
 // claude receives the config path for --mcp-config. The other CLIs read their home config.
@@ -40,6 +43,7 @@ func InstallBotMCPServers(cli, home string, slugs []string) (string, error) {
 		servers := map[string]any{
 			"botbox-desktop": map[string]string{"type": "http", "url": DesktopMCPURL},
 			"botbox-team":    map[string]string{"type": "http", "url": TeamMCPURL},
+			"botbox-memory":  map[string]string{"type": "http", "url": MemoryMCPURL},
 		}
 		for _, slug := range slugs {
 			if s := strings.TrimSpace(slug); s != "" {
@@ -92,6 +96,7 @@ func writeCodexMCP(path string, slugs []string) error {
 	}
 	setServer("botbox_desktop", DesktopMCPURL)
 	setServer("botbox_team", TeamMCPURL)
+	setServer("botbox_memory", MemoryMCPURL)
 	for _, slug := range slugs {
 		s := strings.TrimSpace(slug)
 		if s == "" {
@@ -137,6 +142,7 @@ func writeAgyMCP(path string, slugs []string) error {
 	}
 	servers["botbox-desktop"] = map[string]string{"url": DesktopMCPURL}
 	servers["botbox-team"] = map[string]string{"url": TeamMCPURL}
+	servers["botbox-memory"] = map[string]string{"url": MemoryMCPURL}
 	for _, slug := range slugs {
 		if s := strings.TrimSpace(slug); s != "" {
 			servers["mcp-"+s] = map[string]string{"url": EgressMCPBaseURL + "/" + s}

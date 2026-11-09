@@ -35,19 +35,20 @@ type AuditLog struct {
 }
 
 type Bot struct {
-	ID            pgtype.UUID        `json:"id"`
-	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
-	OwnerUserID   pgtype.UUID        `json:"owner_user_id"`
-	Name          string             `json:"name"`
-	Description   string             `json:"description"`
-	AvatarSeed    string             `json:"avatar_seed"`
-	LlmMode       string             `json:"llm_mode"`
-	LlmProvider   string             `json:"llm_provider"`
-	LlmModel      string             `json:"llm_model"`
-	DriverType    string             `json:"driver_type"`
-	ReplyLanguage string             `json:"reply_language"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	ID             pgtype.UUID        `json:"id"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	OwnerUserID    pgtype.UUID        `json:"owner_user_id"`
+	Name           string             `json:"name"`
+	Description    string             `json:"description"`
+	AvatarSeed     string             `json:"avatar_seed"`
+	LlmMode        string             `json:"llm_mode"`
+	LlmProvider    string             `json:"llm_provider"`
+	LlmModel       string             `json:"llm_model"`
+	DriverType     string             `json:"driver_type"`
+	ReplyLanguage  string             `json:"reply_language"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	MemoryAutoSave bool               `json:"memory_auto_save"`
 }
 
 type BotGitlabInstance struct {
@@ -75,6 +76,24 @@ type BotMcpToolPolicy struct {
 	ToolName    string             `json:"tool_name"`
 	Policy      string             `json:"policy"`
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
+type BotMemory struct {
+	ID                   pgtype.UUID        `json:"id"`
+	WorkspaceID          pgtype.UUID        `json:"workspace_id"`
+	BotID                pgtype.UUID        `json:"bot_id"`
+	Title                string             `json:"title"`
+	Content              string             `json:"content"`
+	Mode                 string             `json:"mode"`
+	Tags                 []string           `json:"tags"`
+	SourceKind           string             `json:"source_kind"`
+	SourceLabel          string             `json:"source_label"`
+	SourceConversationID pgtype.UUID        `json:"source_conversation_id"`
+	SourceTurnID         pgtype.UUID        `json:"source_turn_id"`
+	CreatedByUserID      pgtype.UUID        `json:"created_by_user_id"`
+	TokenEstimate        int32              `json:"token_estimate"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
 }
 
 type BotRuntime struct {

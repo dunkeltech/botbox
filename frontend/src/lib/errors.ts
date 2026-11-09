@@ -53,6 +53,11 @@ export type ErrorTranslationKey =
   | 'mcpToolDenied'
   | 'mcpServerConflict'
   | 'mcpSyncFailed'
+  | 'memorySecretRejected'
+  | 'memoryAlwaysBudgetExceeded'
+  | 'memoryLimitReached'
+  | 'memoryNotFound'
+  | 'memoryAutoSaveDisabled'
   | 'unknownError';
 
 const ERROR_CODE_TO_KEY: Record<string, ErrorTranslationKey> = {
@@ -108,6 +113,11 @@ const ERROR_CODE_TO_KEY: Record<string, ErrorTranslationKey> = {
   'mcp.tool_denied': 'mcpToolDenied',
   'mcp.server_conflict': 'mcpServerConflict',
   'mcp.sync_failed': 'mcpSyncFailed',
+  'memory.secret_rejected': 'memorySecretRejected',
+  'memory.always_budget_exceeded': 'memoryAlwaysBudgetExceeded',
+  'memory.limit_reached': 'memoryLimitReached',
+  'memory.not_found': 'memoryNotFound',
+  'memory.auto_save_disabled': 'memoryAutoSaveDisabled',
 };
 
 /**

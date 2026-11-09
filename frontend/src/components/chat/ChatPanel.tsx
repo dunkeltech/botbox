@@ -27,11 +27,13 @@ import { ToolCallsSidebar } from '@/components/chat/ToolCallsSidebar';
 import { ToolImage } from '@/components/chat/ToolImage';
 import { BrokerTakeoverModal } from '@/components/chat/BrokerTakeoverModal';
 import { MarkdownMessage } from '@/components/chat/MarkdownMessage';
+import { MemorySavedCard } from '@/components/chat/MemorySavedCard';
 import { SecretRequestCard } from '@/components/chat/SecretRequestCard';
 import { SecretRequestModal } from '@/components/chat/SecretRequestModal';
 import { useSecretRequestControl } from '@/components/chat/useSecretRequestControl';
 import { useChatScroll } from '@/components/chat/useChatScroll';
-import type { WorkspaceRole } from '@/types/api';
+import { canManageBot } from '@/lib/rbac';
+import type { Bot, WorkspaceRole } from '@/types/api';
 import type { components } from '@/types/openapi.gen';
 
 type Conversation = components['schemas']['ChatConversation'];
@@ -105,6 +107,7 @@ export function ChatPanel({
   name,
   avatarSeed,
   canChat = true,
+  canManage,
   role,
   transcriptQuery = '',
   variant = 'session',
@@ -120,6 +123,7 @@ export function ChatPanel({
   name: string;
   avatarSeed: string;
   canChat?: boolean;
+  canManage?: boolean;
   role?: WorkspaceRole;
   /** Client-side filter for the team search field. Empty shows the whole history. */
   transcriptQuery?: string;
@@ -165,6 +169,17 @@ export function ChatPanel({
     queryFn: () => requestJson<BudgetSummary>(`${base}/budgets?botId=${botId}`),
     refetchInterval: 10000,
   });
+  const botMeta = useQuery({
+    queryKey: ['bot', workspaceId, botId],
+    enabled: canManage === undefined && effectiveRole === 'member',
+    queryFn: () => requestJson<Bot>(`${base}/bots/${botId}`),
+  });
+  const canManageMemory =
+    canManage ??
+    (effectiveRole === 'owner' ||
+      effectiveRole === 'admin' ||
+      (effectiveRole === 'member' &&
+        canManageBot(effectiveRole, userId, botMeta.data)));
 
   useEffect(() => {
     if (!conversationId) return;
@@ -192,6 +207,11 @@ export function ChatPanel({
           (data.Kind === 'tool_call' || data.Kind === 'tool_result')
         ) {
           void client.invalidateQueries({ queryKey: ['bots', workspaceId] });
+          void client.invalidateQueries({
+            queryKey: ['chat', workspaceId, userId, conversationId],
+          });
+        }
+        if ('conversationId' in data) {
           void client.invalidateQueries({
             queryKey: ['chat', workspaceId, userId, conversationId],
           });
@@ -445,6 +465,24 @@ export function ChatPanel({
                   onProvide={secretControl.openModal}
                   onTakeover={secretControl.openTakeover}
                   onDeny={(s) => void secretControl.deny(s)}
+                />
+                {renderUnattachedToolTurns(unattachedAfter)}
+              </div>
+            );
+          }
+          if (message.kind === 'memory' && message.memory) {
+            return (
+              <div key={message.id} className="flex flex-col gap-3">
+                <MemorySavedCard
+                  workspaceId={workspaceId}
+                  botId={botId}
+                  memory={message.memory}
+                  canManage={canManageMemory}
+                  onUpdated={async () => {
+                    await client.invalidateQueries({
+                      queryKey: ['chat', workspaceId, userId, conversationId],
+                    });
+                  }}
                 />
                 {renderUnattachedToolTurns(unattachedAfter)}
               </div>

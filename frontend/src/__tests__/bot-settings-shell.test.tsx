@@ -25,6 +25,7 @@ vi.mock('next/navigation', () => ({
 import BotSecretsPage from '@/app/bots/[botId]/secrets/page';
 import BotBudgetsSettingsPage from '@/app/bots/[botId]/settings/budgets/page';
 import BotIntegrationsSettingsPage from '@/app/bots/[botId]/settings/integrations/page';
+import BotKnowledgeSettingsPage from '@/app/bots/[botId]/settings/knowledge/page';
 import BotSettingsPage from '@/app/bots/[botId]/settings/page';
 import { QueryProvider } from '@/components/providers/QueryProvider';
 import { AuthProvider } from '@/context/AuthContext';
@@ -204,6 +205,27 @@ function stubSettingsFetch(options?: {
           jsonResponse({ status: 'disconnected', ownedByYou: false }, 200),
         );
       }
+      if (url.startsWith('/api/workspaces/ws-1/bots/bot-1/memories')) {
+        return Promise.resolve(
+          jsonResponse(
+            {
+              summary: {
+                autoSave: true,
+                totalCount: 0,
+                alwaysCount: 0,
+                onDemandCount: 0,
+                alwaysTokens: 0,
+                alwaysTokenLimit: 4000,
+                maxEntries: 200,
+              },
+              entries: [],
+              filteredCount: 0,
+              tags: [],
+            },
+            200,
+          ),
+        );
+      }
       return Promise.resolve(jsonResponse({}, 404));
     },
   );
@@ -296,6 +318,27 @@ describe('BotSettingsShell and all four bot settings sub-pages', () => {
     expect(
       await screen.findByRole('heading', {
         name: enMessages.mcpProxy.botTitle,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it('renders Knowledge base inside BotSettingsShell with active nav state', async () => {
+    mockPathname = '/bots/bot-1/settings/knowledge';
+    stubSettingsFetch();
+
+    renderWithProviders(<BotKnowledgeSettingsPage />);
+
+    const knowledgeLink = await screen.findByRole('link', {
+      name: enMessages.botSettings.nav.knowledge,
+    });
+    expect(knowledgeLink).toHaveAttribute('aria-current', 'page');
+    expect(knowledgeLink).toHaveAttribute(
+      'href',
+      '/bots/bot-1/settings/knowledge',
+    );
+    expect(
+      await screen.findByRole('heading', {
+        name: enMessages.botSettings.knowledge.policyTitle,
       }),
     ).toBeInTheDocument();
   });

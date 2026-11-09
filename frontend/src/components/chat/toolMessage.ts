@@ -34,7 +34,15 @@ export type ToolCopyKey =
   | 'pressed'
   | 'waited'
   | 'finished'
-  | 'toolNote';
+  | 'toolNote'
+  | 'toolMemorySave'
+  | 'toolMemorySearch'
+  | 'toolMemoryUpdate'
+  | 'toolMemoryDelete'
+  | 'toolMemorySaved'
+  | 'toolMemoryFound'
+  | 'toolMemoryUpdated'
+  | 'toolMemoryDeleted';
 
 export type ToolCopy = {
   key: ToolCopyKey;
@@ -147,13 +155,43 @@ function describeCall(name: string, raw: unknown): Omit<ToolCopy, 'image'> {
       return { key: 'move' };
     case 'wait':
       return { key: 'wait' };
+    case 'memory_save':
+      return { key: 'toolMemorySave' };
+    case 'memory_search':
+      return { key: 'toolMemorySearch' };
+    case 'memory_update':
+      return { key: 'toolMemoryUpdate' };
+    case 'memory_delete':
+      return { key: 'toolMemoryDelete' };
     default:
       return { key: 'usingTool', values: { name: safeName(leaf) } };
   }
 }
 
 function describeResult(text: string): Omit<ToolCopy, 'image'> {
-  if (text === '' || text.startsWith('{') || text.startsWith('[')) {
+  if (text.startsWith('{')) {
+    try {
+      const parsed: unknown = JSON.parse(text);
+      if (typeof parsed === 'object' && parsed !== null) {
+        if ('saved' in parsed && parsed.saved === true) {
+          return { key: 'toolMemorySaved' };
+        }
+        if ('entries' in parsed && Array.isArray(parsed.entries)) {
+          return { key: 'toolMemoryFound' };
+        }
+        if ('updated' in parsed && parsed.updated === true) {
+          return { key: 'toolMemoryUpdated' };
+        }
+        if ('deleted' in parsed && parsed.deleted === true) {
+          return { key: 'toolMemoryDeleted' };
+        }
+      }
+    } catch {
+      return { key: 'finished' };
+    }
+    return { key: 'finished' };
+  }
+  if (text === '' || text.startsWith('[')) {
     return { key: 'finished' };
   }
   const filled = /^filled (.+)$/.exec(text);
