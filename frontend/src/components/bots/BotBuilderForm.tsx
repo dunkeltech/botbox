@@ -26,12 +26,23 @@ import type {
   AvatarMood,
   Bot,
   DriverType,
-  LlmMode,
   WorkspaceSummary,
 } from '@/types/api';
 
 const MOOD_OPTIONS: AvatarMood[] = ['idle', 'thinking', 'action', 'offline'];
-const STANDARD_PROVIDERS = ['anthropic', 'openai', 'google'] as const;
+const AGENT_MODELS = {
+  anthropic: 'claude-sonnet-4-20250514',
+  openai: 'gpt-5.4',
+  google: 'gemini-2.5-pro',
+  openrouter: '',
+} as const;
+
+const AGENTS = Object.keys(AGENT_MODELS) as (keyof typeof AGENT_MODELS)[];
+const AGENT_ALIASES: Record<string, keyof typeof AGENT_MODELS> = {
+  claude: 'anthropic',
+  codex: 'openai',
+  agy: 'google',
+};
 const STANDARD_LANGUAGES = ['en', 'de', 'fr'] as const;
 
 export interface BotBuilderFormProps {
@@ -70,12 +81,11 @@ export function BotBuilderForm({
   const [previewMood, setPreviewMood] = useState<AvatarMood>(
     bot?.mood ?? 'idle',
   );
-  const [llmMode, setLlmMode] = useState<LlmMode>(bot?.llmMode ?? 'cli');
   const [llmProvider, setLlmProvider] = useState(
-    bot?.llmProvider ?? 'anthropic',
+    bot ? (AGENT_ALIASES[bot.llmProvider] ?? bot.llmProvider) : 'anthropic',
   );
   const [llmModel, setLlmModel] = useState(
-    bot?.llmModel ?? 'claude-sonnet-4-20250514',
+    bot?.llmModel ?? AGENT_MODELS.anthropic,
   );
   const [driverType, setDriverType] = useState<DriverType>(
     bot?.driverType ?? workspace.defaultDriver,
@@ -90,9 +100,6 @@ export function BotBuilderForm({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  const hasCustomProvider = !STANDARD_PROVIDERS.includes(
-    llmProvider as (typeof STANDARD_PROVIDERS)[number],
-  );
   const hasCustomLanguage = !STANDARD_LANGUAGES.includes(
     replyLanguage as (typeof STANDARD_LANGUAGES)[number],
   );
@@ -112,7 +119,7 @@ export function BotBuilderForm({
           name: name.trim(),
           description: description.trim(),
           avatarSeed: avatarSeed.trim(),
-          llmMode,
+          llmMode: 'cli',
           llmProvider,
           llmModel: llmModel.trim(),
           driverType,
@@ -124,7 +131,7 @@ export function BotBuilderForm({
           name: name.trim(),
           description: description.trim(),
           avatarSeed: avatarSeed.trim(),
-          llmMode,
+          llmMode: 'cli',
           llmProvider,
           llmModel: llmModel.trim(),
           driverType,
@@ -322,46 +329,31 @@ export function BotBuilderForm({
           </h2>
         </div>
 
-        <RadioCardGroup<LlmMode>
-          legend={t('llmModeLegend')}
-          name="bot-llm-mode"
-          value={llmMode}
-          onChange={setLlmMode}
-          disabled={!canEdit}
-          options={[
-            {
-              value: 'cli',
-              title: t('llmModeCliTitle'),
-              description: t('llmModeCliDesc'),
-            },
-            {
-              value: 'api',
-              title: t('llmModeApiTitle'),
-              description: t('llmModeApiDesc'),
-            },
-          ]}
-        />
-
         <div className="grid gap-4 sm:grid-cols-2">
           <Select
-            label={t('providerLabel')}
+            label={t('agentLabel')}
             value={llmProvider}
             disabled={!canEdit}
-            onChange={(event) => setLlmProvider(event.target.value)}
+            onChange={(event) => {
+              const selected = event.target.value as keyof typeof AGENT_MODELS;
+              setLlmProvider(selected);
+              setLlmModel(AGENT_MODELS[selected]);
+            }}
           >
-            {STANDARD_PROVIDERS.map((provider) => (
+            {AGENTS.map((provider) => (
               <option key={provider} value={provider}>
-                {t(`providers.${provider}`)}
+                {t(`agents.${provider}`)}
               </option>
             ))}
-            {hasCustomProvider ? (
-              <option value={llmProvider}>{llmProvider}</option>
-            ) : null}
           </Select>
 
           <Input
             label={t('modelLabel')}
-            placeholder={t('modelPlaceholder')}
+            placeholder={
+              llmProvider === 'openrouter'
+                ? t('openRouterModelPlaceholder')
+                : t('modelPlaceholder')
+            }
             mono
             autoCorrect="off"
             autoCapitalize="none"
@@ -372,6 +364,9 @@ export function BotBuilderForm({
             onChange={(event) => setLlmModel(event.target.value)}
           />
         </div>
+        {llmProvider === 'openrouter' && (
+          <p className="text-sm text-ink">{t('openRouterHelp')}</p>
+        )}
       </Card>
 
       <Card className="flex flex-col gap-5 p-6">
@@ -536,7 +531,7 @@ export function BotBuilderForm({
             <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 border-t border-line pt-3 text-[13px]">
               <dt className="text-muted">{t('sectionBrain')}</dt>
               <dd className="truncate font-mono text-ink">
-                {`${llmMode} · ${llmModel}`}
+                {`${t(`agents.${llmProvider}`)} · ${llmModel}`}
               </dd>
               <dt className="text-muted">{t('sectionComputer')}</dt>
               <dd className="truncate font-mono text-ink">{driverType}</dd>

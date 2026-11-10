@@ -20,7 +20,7 @@ func TestGroupMentionAnswersAfterLargePlanningHistory(t *testing.T) {
 	var members []any
 	var lead uuid.UUID
 	for _, name := range []string{"Yoda", "Nova", "Atlas", "Mace"} {
-		bot := createAPIBot(t, h, base, owner.AccessToken, name, strings.ToLower(name)+"-seed")
+		bot := createPiBot(t, h, base, owner.AccessToken, name, strings.ToLower(name)+"-seed")
 		if lead == uuid.Nil {
 			lead = bot.Id
 		}

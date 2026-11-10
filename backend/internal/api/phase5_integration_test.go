@@ -48,7 +48,7 @@ func TestPhase5DesktopTimelineRBACAndRetention(t *testing.T) {
 	ws := owner.ActiveWorkspace.Id
 	base := "/api/workspaces/" + ws.String()
 	created := h.request(http.MethodPost, base+"/bots", map[string]any{
-		"name": "Atlas", "avatarSeed": "atlas-01", "llmMode": "api", "llmProvider": "openrouter", "llmModel": "fixture",
+		"name": "Atlas", "avatarSeed": "atlas-01", "llmMode": "cli", "llmProvider": "openrouter", "llmModel": "openrouter/fixture",
 	}, owner.AccessToken, nil, true)
 	if created.status != http.StatusCreated {
 		t.Fatalf("create bot: %d %s", created.status, created.body)
@@ -150,7 +150,7 @@ func TestPhase5HandbackResumesBot(t *testing.T) {
 	ws := owner.ActiveWorkspace.Id
 	base := "/api/workspaces/" + ws.String()
 	created := h.request(http.MethodPost, base+"/bots", map[string]any{
-		"name": "Atlas", "avatarSeed": "atlas-01", "llmMode": "api", "llmProvider": "openrouter", "llmModel": "fixture",
+		"name": "Atlas", "avatarSeed": "atlas-01", "llmMode": "cli", "llmProvider": "openrouter", "llmModel": "openrouter/fixture",
 	}, owner.AccessToken, nil, true)
 	if created.status != http.StatusCreated {
 		t.Fatalf("create: %d %s", created.status, created.body)
@@ -207,7 +207,7 @@ func TestPhase5TakeFailsClosedWhenAgentRejectsLock(t *testing.T) {
 	ws := owner.ActiveWorkspace.Id
 	base := "/api/workspaces/" + ws.String()
 	created := h.request(http.MethodPost, base+"/bots", map[string]any{
-		"name": "Atlas", "avatarSeed": "atlas-01", "llmMode": "api", "llmProvider": "openrouter", "llmModel": "fixture",
+		"name": "Atlas", "avatarSeed": "atlas-01", "llmMode": "cli", "llmProvider": "openrouter", "llmModel": "openrouter/fixture",
 	}, owner.AccessToken, nil, true)
 	if created.status != http.StatusCreated {
 		t.Fatalf("create: %d %s", created.status, created.body)

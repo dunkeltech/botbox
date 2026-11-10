@@ -186,3 +186,62 @@ printf '%s|%s\n' "$NO_PROXY" "$no_proxy"
 		t.Fatalf("expected desktop-mcp.json to register mcp-gitlab, got %s", cfgRaw)
 	}
 }
+
+func TestPiUsesManagedOpenRouterConfiguration(t *testing.T) {
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"mcp__test-tools__echo"}]}}`))
+	}))
+	defer proxy.Close()
+	t.Setenv("HTTP_PROXY", proxy.URL)
+	t.Setenv("OPENROUTER_API_KEY", "host-secret")
+	t.Setenv("PI_CODING_AGENT_DIR", "host-configuration")
+
+	home := t.TempDir()
+	binary := filepath.Join(home, "fake-pi")
+	script := `#!/bin/sh
+set -eu
+[ -z "${OPENROUTER_API_KEY:-}" ]
+[ -z "${OPENAI_API_KEY:-}" ]
+[ -z "${ANTHROPIC_API_KEY:-}" ]
+[ "$PI_CODING_AGENT_DIR" != "host-configuration" ]
+grep -F "$HTTP_PROXY/llm/openrouter/v1" "$PI_CODING_AGENT_DIR/models.json" >/dev/null
+grep -F '"botbox-desktop"' "$PI_CODING_AGENT_DIR/mcp.json" >/dev/null
+grep -F '"botbox-team"' "$PI_CODING_AGENT_DIR/mcp.json" >/dev/null
+grep -F '"botbox-memory"' "$PI_CODING_AGENT_DIR/mcp.json" >/dev/null
+grep -F '"url":"http://egress:8081/mcp/test-tools"' "$PI_CODING_AGENT_DIR/mcp.json" >/dev/null
+case "$*" in
+  *'--provider openrouter --api-key botbox-placeholder'*'--session-id fixture-session --model openrouter/openrouter/auto') ;;
+  *) exit 2 ;;
+esac
+[ "$(cat)" = "fixture prompt" ]
+printf '%s\n' '{"type":"agent_settled","aborted":false}'
+`
+	//nolint:gosec // the process is an executable fixture under the test home
+	if err := os.WriteFile(binary, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	server := agent.NewServerWithOptions(agent.ServerOptions{HomeDir: home, CLIBinaries: map[string]string{"pi": binary}})
+	req := &agentv1.RunCLIRequest{Cli: "pi", Prompt: "fixture prompt", Model: "openrouter/auto", SessionId: "fixture-session"}
+	stream := &fakeCLIStream{ctx: context.Background()}
+	if err := server.RunCLI(req, stream); err != nil {
+		t.Fatal(err)
+	}
+	if len(stream.frames) < 2 || !stream.frames[len(stream.frames)-1].Exited || stream.frames[len(stream.frames)-1].ExitCode != 0 {
+		t.Fatalf("unexpected Pi subprocess frames: %v", stream.frames)
+	}
+	for _, invalid := range []*agentv1.RunCLIRequest{
+		{Cli: "pi", Prompt: "prompt"},
+		{Cli: "pi", Prompt: "prompt", Model: "--provider"},
+		{Cli: "pi", Prompt: "prompt", Model: "openrouter/auto", SessionId: "../different-session"},
+		{Cli: "pi", Prompt: "prompt", Model: "openrouter/auto", ClaudeSubscription: true},
+	} {
+		if err := server.RunCLI(invalid, &fakeCLIStream{ctx: context.Background()}); status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("invalid request accepted: %v", err)
+		}
+	}
+	t.Setenv("HTTP_PROXY", "")
+	if err := server.RunCLI(req, &fakeCLIStream{ctx: context.Background()}); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("Pi started without a proxy: %v", err)
+	}
+}

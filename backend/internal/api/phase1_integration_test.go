@@ -810,7 +810,7 @@ func TestRBACMatrixAndCrossWorkspaceIsolation(t *testing.T) {
 	botA2Resp := h.request(http.MethodPost, "/api/workspaces/"+wsA.String()+"/bots", map[string]any{
 		"name":        "Bot A2",
 		"avatarSeed":  "ops-fox-02",
-		"llmMode":     "api",
+		"llmMode":     "cli",
 		"llmProvider": "openai",
 		"llmModel":    "gpt-4o",
 	}, member2Sess.AccessToken, nil, true)

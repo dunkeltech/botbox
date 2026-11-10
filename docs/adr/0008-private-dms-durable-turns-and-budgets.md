@@ -3,6 +3,9 @@
 - **Date:** 2026-11-15
 - **Status:** Accepted
 
+[ADR-0034](0034-pi-openrouter-cli.md) replaced the Model API runner with Pi
+for OpenRouter. Managed execution now uses the sandbox CLI and its proxy routes.
+
 ## Context
 
 Phase 4 connects model execution to private user/bot conversations. A sandbox is

@@ -143,7 +143,7 @@ func TestGroupToolImageIsMemberAndPathLimited(t *testing.T) {
 	eve, _ := h.inviteAndAcceptNewUser(owner.AccessToken, other.Id, "eve@other.com", "owner", "Eve", "CorrectHorse123!")
 
 	base := "/api/workspaces/" + ws.String()
-	bot := createAPIBot(t, h, base, owner.AccessToken, "Atlas", "atlas-seed")
+	bot := createPiBot(t, h, base, owner.AccessToken, "Atlas", "atlas-seed")
 	groupResp := h.request(http.MethodPost, base+"/groups", map[string]any{
 		"id":           uuid.NewString(),
 		"name":         "ops",

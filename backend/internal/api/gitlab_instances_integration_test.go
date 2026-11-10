@@ -88,7 +88,7 @@ func TestSelfHostedGitLabRegistrationAndLogin(t *testing.T) {
 			t.Fatalf("cross workspace %s: %d", method, r.status)
 		}
 	}
-	atlas := createAPIBot(t, h, base, owner.AccessToken, "Atlas", "atlas-selfhost")
+	atlas := createPiBot(t, h, base, owner.AccessToken, "Atlas", "atlas-selfhost")
 	// Registration alone never overrides the bot egress policy.
 	open := authbroker.OpenSessionInput{WorkspaceID: ws, BotID: atlas.Id, AdapterID: "gitlab_web", TargetOrigin: "https://gitlab.example.org"}
 	if _, err := client.OpenSession(ctx, open); !errors.Is(err, authbroker.ErrNavigationForbidden) {
@@ -116,7 +116,7 @@ func TestSelfHostedGitLabRegistrationAndLogin(t *testing.T) {
 			t.Fatalf("invalid assignment: %d %s", r.status, r.body)
 		}
 	}
-	otherBot := createAPIBot(t, h, base, member.AccessToken, "Mia", "mia-selfhost")
+	otherBot := createPiBot(t, h, base, member.AccessToken, "Mia", "mia-selfhost")
 	if r := h.request(http.MethodPost, path, map[string]any{"name": "Second GitLab", "origin": "https://second.example.org"}, owner.AccessToken, nil, true); r.status != 201 {
 		t.Fatalf("second instance: %d", r.status)
 	}

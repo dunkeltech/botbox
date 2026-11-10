@@ -31,11 +31,21 @@ func Stream(ctx context.Context, cli string, stdout, stderr io.ReadCloser, emit 
 		return errors.New("stdout and event sink are required")
 	}
 	var parse func(context.Context, io.Reader) ([]Event, error)
+	var pi piStream
 	switch cli {
 	case "claude":
 		parse = ParseClaudeStream
 	case "codex":
 		parse = ParseCodexStream
+	case "pi":
+		// Pi needs turn state to distinguish a transient provider error from a failed run.
+		parse = func(_ context.Context, r io.Reader) ([]Event, error) {
+			line, err := io.ReadAll(r)
+			if err != nil {
+				return nil, err
+			}
+			return pi.parseLine(line)
+		}
 	case "agy":
 		parse = func(ctx context.Context, r io.Reader) ([]Event, error) { return ParseAgyStream(ctx, r, nil) }
 	default:
@@ -107,6 +117,9 @@ func Stream(ctx context.Context, cli string, stdout, stderr io.ReadCloser, emit 
 	}
 	if err := context.Cause(ctx); err != nil {
 		return fmt.Errorf("CLI stream interrupted: %w", err)
+	}
+	if cli == "pi" {
+		return pi.finish()
 	}
 	return nil
 }

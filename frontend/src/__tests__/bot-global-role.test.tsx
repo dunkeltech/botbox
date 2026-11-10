@@ -38,7 +38,7 @@ const bot: Bot = {
   name: 'Yoda',
   description: 'Check proposals for GDPR compliance.',
   avatarSeed: 'yoda',
-  llmMode: 'api',
+  llmMode: 'cli',
   llmProvider: 'openai',
   llmModel: 'fixture',
   driverType: 'docker',

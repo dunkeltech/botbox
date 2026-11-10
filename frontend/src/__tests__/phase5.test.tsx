@@ -107,7 +107,7 @@ function makeBot(): Bot {
     name: 'Atlas',
     description: 'Fills forms on the desktop.',
     avatarSeed: 'atlas-005a',
-    llmMode: 'api',
+    llmMode: 'cli',
     llmProvider: 'anthropic',
     llmModel: 'claude-sonnet',
     driverType: 'docker',

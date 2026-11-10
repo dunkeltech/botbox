@@ -1,8 +1,10 @@
 package api_test
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,7 +14,6 @@ import (
 	"testing"
 
 	"github.com/dunkeltech/botbox/backend/internal/engine"
-	modelapi "github.com/dunkeltech/botbox/backend/internal/engine/api"
 	"github.com/dunkeltech/botbox/backend/internal/engine/enginetest"
 	apigen "github.com/dunkeltech/botbox/backend/internal/gen/api"
 	"github.com/google/uuid"
@@ -30,8 +31,8 @@ func TestPhase6GroupHandoffAcceptance(t *testing.T) {
 	viewer, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "vera@example.com", "viewer", "Vera", "CorrectHorse123!")
 	outsider, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "oscar@example.com", "member", "Oscar", "CorrectHorse123!")
 
-	atlas := createAPIBot(t, h, base, owner.AccessToken, "Atlas", "atlas-seed")
-	nova := createAPIBot(t, h, base, owner.AccessToken, "Nova", "nova-seed")
+	atlas := createPiBot(t, h, base, owner.AccessToken, "Atlas", "atlas-seed")
+	nova := createPiBot(t, h, base, owner.AccessToken, "Nova", "nova-seed")
 	members := []any{
 		groupUser(humanA.User.Id, "Maintainer"),
 		groupUser(humanB.User.Id, "Release manager"),
@@ -87,7 +88,7 @@ func TestPhase6GroupHandoffAcceptance(t *testing.T) {
 		Enqueue: queue.Enqueue,
 		Execute: func(ctx context.Context, session engine.Session, emit func(engine.Event) error) error {
 			step := callSeq.Add(1)
-			if err := runFakeProvider(ctx, providerServer, session, emit); err != nil {
+			if err := runFakeProvider(ctx, h, providerServer, session, emit); err != nil {
 				return err
 			}
 			if step == 1 {
@@ -210,7 +211,7 @@ func TestPhase6CardEventValidation(t *testing.T) {
 	owner, _ := h.completeSetup("owner@example.com", "CorrectHorse123!", "Owner", "Workspace", "workspace")
 	ws := owner.ActiveWorkspace.Id
 	base := "/api/workspaces/" + ws.String()
-	atlas := createAPIBot(t, h, base, owner.AccessToken, "Atlas", "atlas-seed")
+	atlas := createPiBot(t, h, base, owner.AccessToken, "Atlas", "atlas-seed")
 	group := createGroup(t, h, base, owner.AccessToken, groupSettings{
 		name: "cards", lead: atlas.Id, botTalk: false, turnLimit: 10, members: []any{groupBot(atlas.Id, "lead")},
 	})
@@ -293,23 +294,54 @@ type errSecretLeaked string
 
 func (e errSecretLeaked) Error() string { return "secret leaked in prompt: " + string(e) }
 
-func runFakeProvider(ctx context.Context, server *httptest.Server, session engine.Session, emit func(engine.Event) error) error {
-	messages := []modelapi.Message{{Role: "system", Content: session.Preface}}
+func runFakeProvider(ctx context.Context, h *testHarness, server *httptest.Server, session engine.Session, emit func(engine.Event) error) error {
+	var prompt strings.Builder
+	prompt.WriteString(session.Preface)
 	for i := len(session.Messages) - 1; i >= 0; i-- {
-		m := session.Messages[i]
-		role := "user"
-		if m.SenderType == "bot" {
-			role = "assistant"
+		prompt.WriteByte('\n')
+		prompt.WriteString(session.Messages[i].Content)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL, strings.NewReader(prompt.String()))
+	if err != nil {
+		return err
+	}
+	resp, err := server.Client().Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return errors.New("fixture provider rejected request")
+	}
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		payload, ok := strings.CutPrefix(scanner.Text(), "data: ")
+		if !ok {
+			continue
 		}
-		messages = append(messages, modelapi.Message{Role: role, Content: m.Content})
+		if payload == "[DONE]" {
+			return recordMeteredFixture(ctx, h, session, 1, true)
+		}
+		var response struct {
+			Choices []struct {
+				Delta struct {
+					Content string `json:"content"`
+				} `json:"delta"`
+			} `json:"choices"`
+		}
+		if err := json.Unmarshal([]byte(payload), &response); err != nil {
+			return err
+		}
+		for _, choice := range response.Choices {
+			if err := emit(engine.Event{Kind: engine.EventKindTextDelta, Text: choice.Delta.Content}); err != nil {
+				return err
+			}
+		}
 	}
-	provider := &modelapi.Provider{
-		Client: server.Client(),
-		URL:    server.URL,
-		Model:  session.Bot.LlmModel,
-		BotID:  session.BotID.String(),
+	if err := scanner.Err(); err != nil {
+		return err
 	}
-	return provider.Run(ctx, messages, emit)
+	return errors.New("fixture provider omitted completion")
 }
 
 func assertCardPersisted(t *testing.T, h *testHarness, ws, conv, bot uuid.UUID, history apigen.ChatHistory, wantText, wantKind, wantRepo string, wantMR int) {
@@ -379,7 +411,7 @@ func assertGroupRBAC(t *testing.T, h *testHarness, base string, groupID, approva
 func assertSingleRunningTurnAcrossGroups(t *testing.T, h *testHarness, queue *fakeTurnQueue, base, token string, ws uuid.UUID) {
 	t.Helper()
 	queue.jobs = nil
-	shared := createAPIBot(t, h, base, token, "Shared", "shared-seed")
+	shared := createPiBot(t, h, base, token, "Shared", "shared-seed")
 	if r := h.request(http.MethodPatch, base+"/bots/"+shared.Id.String(), map[string]any{"llmMode": "cli", "llmProvider": "anthropic", "llmModel": "sonnet"}, token, nil, true); r.status != http.StatusOK {
 		t.Fatalf("cli patch=%d %s", r.status, r.body)
 	}

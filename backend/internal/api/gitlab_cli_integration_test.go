@@ -39,8 +39,8 @@ func TestSelfHostedGitLabCLIGrantsAndRevocation(t *testing.T) {
 	owner, _ := h.completeSetup("glab-owner@example.com", "CorrectHorse123!", "Owner", "Workspace", "gitlab-cli")
 	ws := owner.ActiveWorkspace.Id
 	base := "/api/workspaces/" + ws.String()
-	atlas := createAPIBot(t, h, base, owner.AccessToken, "Atlas", "atlas-glab")
-	mia := createAPIBot(t, h, base, owner.AccessToken, "Mia", "mia-glab")
+	atlas := createPiBot(t, h, base, owner.AccessToken, "Atlas", "atlas-glab")
+	mia := createPiBot(t, h, base, owner.AccessToken, "Mia", "mia-glab")
 	origin := "https://gitlab.example.org"
 	registry := base + "/gitlab-instances"
 	must := func(method, path string, body any, status int) {
@@ -404,7 +404,7 @@ func TestLegacyWorkspaceSecretCannotBypassGitLabBoundary(t *testing.T) {
 	owner, _ := h.completeSetup("legacy-gitlab@example.com", "CorrectHorse123!", "Owner", "Workspace", "legacy-gitlab")
 	ws := owner.ActiveWorkspace.Id
 	base := "/api/workspaces/" + ws.String()
-	bot := createAPIBot(t, h, base, owner.AccessToken, "Atlas", "legacy-atlas")
+	bot := createPiBot(t, h, base, owner.AccessToken, "Atlas", "legacy-atlas")
 	origin := "https://gitlab.example.org"
 	must := func(method, path string, body any, status int) {
 		t.Helper()

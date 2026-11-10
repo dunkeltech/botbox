@@ -8,12 +8,14 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	"github.com/dunkeltech/botbox/backend/internal/bots"
 	agentv1 "github.com/dunkeltech/botbox/backend/internal/gen/proto/agent/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -45,6 +47,16 @@ func (s *Server) RunCLI(req *agentv1.RunCLIRequest, stream grpc.ServerStreamingS
 			args = append(args, "resume", req.SessionId)
 		}
 		args = append(args, "-")
+	case "pi":
+		if !bots.ValidOpenRouterModel(req.Model) || (req.SessionId != "" && !piSessionID.MatchString(req.SessionId)) {
+			return status.Error(codes.InvalidArgument, "invalid Pi model or session")
+		}
+		args = []string{"--mode", "json", "--offline", "--no-approve", "--no-extensions", "--extension", "builtin:mcp",
+			"--no-skills", "--no-prompt-templates", "--provider", "openrouter", "--api-key", "botbox-placeholder",
+			"--session-dir", filepath.Join(s.homeDir, ".botbox", "pi-sessions")}
+		if req.SessionId != "" {
+			args = append(args, "--session-id", req.SessionId)
+		}
 	case "agy":
 		args = []string{"--input-format", "stream-json", "--output-format", "stream-json", "--print-timeout", "600s"}
 		if req.SessionId != "" {
@@ -55,15 +67,36 @@ func (s *Server) RunCLI(req *agentv1.RunCLIRequest, stream grpc.ServerStreamingS
 	default:
 		return status.Error(codes.InvalidArgument, "unsupported CLI")
 	}
+	proxy := strings.TrimSpace(os.Getenv("HTTP_PROXY"))
 	var assignedSlugs []string
-	if proxy := strings.TrimSpace(os.Getenv("HTTP_PROXY")); proxy != "" {
+	if proxy != "" {
 		assignedSlugs = DiscoverAssignedMCPSlugs(stream.Context(), proxy)
 	}
-	if configPath, mcpErr := InstallBotMCPServers(req.Cli, s.homeDir, assignedSlugs); mcpErr == nil && req.Cli == "claude" && configPath != "" {
+	piConfig := ""
+	if req.Cli == "pi" {
+		if proxy == "" {
+			return status.Error(codes.FailedPrecondition, "Pi requires the LLM proxy")
+		}
+		// A fresh config keeps managed runs independent of interactive Pi logins and extensions.
+		var err error
+		piConfig, err = os.MkdirTemp("", "botbox-pi-")
+		if err != nil {
+			return status.Error(codes.Internal, "cannot prepare Pi configuration")
+		}
+		defer func() { _ = os.RemoveAll(piConfig) }()
+		if err := writePiConfig(piConfig, proxy, assignedSlugs); err != nil {
+			return status.Error(codes.Internal, "cannot prepare Pi configuration")
+		}
+	} else if configPath, mcpErr := InstallBotMCPServers(req.Cli, s.homeDir, assignedSlugs); mcpErr == nil && req.Cli == "claude" && configPath != "" {
 		args = append(args, "--mcp-config", configPath)
 	}
 	if req.Model != "" {
-		args = append(args, "--model", req.Model)
+		model := req.Model
+		if req.Cli == "pi" {
+			// Pi consumes the first provider prefix. Preserve OpenRouter IDs such as openrouter/auto.
+			model = "openrouter/" + model
+		}
+		args = append(args, "--model", model)
 	}
 	binary := req.Cli
 	if configured := s.cliBinaries[req.Cli]; configured != "" {
@@ -81,7 +114,7 @@ func (s *Server) RunCLI(req *agentv1.RunCLIRequest, stream grpc.ServerStreamingS
 			cmd.Env = append(cmd.Env, key+"="+value)
 		}
 	}
-	if proxy := strings.TrimSpace(os.Getenv("HTTP_PROXY")); proxy != "" {
+	if proxy != "" {
 		// Bypass the egress HTTP forward proxy for direct control-plane proxy endpoints like http://egress:8081/mcp/*.
 		noProxy := appendNoProxyHost(os.Getenv("NO_PROXY"), proxy)
 		trimmedProxy := strings.TrimRight(proxy, "/")
@@ -90,18 +123,23 @@ func (s *Server) RunCLI(req *agentv1.RunCLIRequest, stream grpc.ServerStreamingS
 			"no_proxy="+noProxy,
 			"http_proxy="+proxy,
 			"https_proxy="+proxy,
-			"ANTHROPIC_BASE_URL="+trimmedProxy+"/llm/anthropic",
-			"OPENAI_BASE_URL="+trimmedProxy+"/llm/openai/v1",
 		)
+		if req.Cli != "pi" {
+			cmd.Env = append(cmd.Env, "ANTHROPIC_BASE_URL="+trimmedProxy+"/llm/anthropic", "OPENAI_BASE_URL="+trimmedProxy+"/llm/openai/v1")
+		}
 	} else if noProxy := strings.TrimSpace(os.Getenv("NO_PROXY")); noProxy != "" {
 		cmd.Env = append(cmd.Env, "NO_PROXY="+noProxy, "no_proxy="+noProxy)
 	}
-	if req.ClaudeSubscription {
+	if req.Cli == "pi" {
+		cmd.Env = append(cmd.Env, "PI_CODING_AGENT_DIR="+piConfig, "PI_TELEMETRY=0")
+	} else if req.ClaudeSubscription {
 		cmd.Env = append(cmd.Env, "CLAUDE_CODE_OAUTH_TOKEN=botbox-placeholder")
 	} else {
 		cmd.Env = append(cmd.Env, "ANTHROPIC_API_KEY=botbox-placeholder")
 	}
-	cmd.Env = append(cmd.Env, "OPENAI_API_KEY=botbox-placeholder")
+	if req.Cli != "pi" {
+		cmd.Env = append(cmd.Env, "OPENAI_API_KEY=botbox-placeholder")
+	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error {
 		if cmd.Process == nil {

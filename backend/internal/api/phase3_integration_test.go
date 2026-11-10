@@ -292,7 +292,7 @@ func TestPhase3LiveEgressProxyEndToEndAndPrecedence(t *testing.T) {
 	botResp := h.request(http.MethodPost, "/api/workspaces/"+wsID+"/bots", map[string]any{
 		"name":        "ProxyBot",
 		"avatarSeed":  "proxybot-seed",
-		"llmMode":     "api",
+		"llmMode":     "cli",
 		"llmProvider": "anthropic",
 		"llmModel":    "claude-sonnet-4",
 	}, owner.AccessToken, nil, true)

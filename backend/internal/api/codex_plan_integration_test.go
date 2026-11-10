@@ -113,7 +113,7 @@ func TestCodexPlanDesktopAuthorizationAndAccounting(t *testing.T) {
 		return r
 	}
 	var bot apigen.Bot
-	do("POST", base+"/bots", map[string]any{"name": "Desktop", "avatarSeed": "desktop", "llmMode": "api", "llmProvider": "anthropic", "llmModel": "fixture"}, token, 201).decode(t, &bot)
+	do("POST", base+"/bots", map[string]any{"name": "Desktop", "avatarSeed": "desktop", "llmMode": "cli", "llmProvider": "anthropic", "llmModel": "fixture"}, token, 201).decode(t, &bot)
 	botPath := base + "/bots/" + bot.Id.String()
 	pairRoute := botPath + "/codex-plan/pairing"
 	do("POST", pairRoute, nil, "", 401)

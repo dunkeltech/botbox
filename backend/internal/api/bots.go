@@ -94,14 +94,19 @@ func (s *server) handleCreateBot(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.logger, http.StatusBadRequest, "validation_error", "invalid llmMode")
 		return
 	}
-	provider, provOK := validateNonEmptyMax(req.LlmProvider, 50)
-	if !provOK {
-		writeError(w, s.logger, http.StatusBadRequest, "validation_error", "llmProvider must be 1..50 characters")
+	provider := strings.TrimSpace(req.LlmProvider)
+	if cli, _ := bots.RunnerForProvider(provider); cli == "" {
+		writeError(w, s.logger, http.StatusBadRequest, "validation_error", "unsupported llmProvider")
 		return
 	}
 	model, modelOK := validateNonEmptyMax(req.LlmModel, 100)
 	if !modelOK {
 		writeError(w, s.logger, http.StatusBadRequest, "validation_error", "llmModel must be 1..100 characters")
+		return
+	}
+
+	if provider == "openrouter" && !bots.ValidOpenRouterModel(model) {
+		writeError(w, s.logger, http.StatusBadRequest, "validation_error", "OpenRouter requires a provider/model identifier")
 		return
 	}
 
@@ -318,9 +323,9 @@ func (s *server) handleUpdateBot(w http.ResponseWriter, r *http.Request) {
 		params.LlmMode = string(*req.LlmMode)
 	}
 	if req.LlmProvider != nil {
-		prov, provOK := validateNonEmptyMax(*req.LlmProvider, 50)
-		if !provOK {
-			writeError(w, s.logger, http.StatusBadRequest, "validation_error", "llmProvider must be 1..50 characters")
+		prov := strings.TrimSpace(*req.LlmProvider)
+		if cli, _ := bots.RunnerForProvider(prov); cli == "" {
+			writeError(w, s.logger, http.StatusBadRequest, "validation_error", "unsupported llmProvider")
 			return
 		}
 		params.LlmProvider = prov
@@ -332,6 +337,10 @@ func (s *server) handleUpdateBot(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		params.LlmModel = model
+	}
+	if (req.LlmProvider != nil || req.LlmModel != nil) && params.LlmProvider == "openrouter" && !bots.ValidOpenRouterModel(params.LlmModel) {
+		writeError(w, s.logger, http.StatusBadRequest, "validation_error", "OpenRouter requires a provider/model identifier")
+		return
 	}
 	if req.DriverType != nil {
 		if !req.DriverType.Valid() {

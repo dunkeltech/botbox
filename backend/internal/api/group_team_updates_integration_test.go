@@ -29,9 +29,9 @@ func TestGroupTeamUpdatesWhileWorkIsRunning(t *testing.T) {
 	ws := owner.ActiveWorkspace.Id
 	base := "/api/workspaces/" + ws.String()
 	viewer, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "viewer@example.com", "viewer", "Viewer", "CorrectHorse123!")
-	yoda := createAPIBot(t, h, base, owner.AccessToken, "Yoda", "yoda")
-	babu := createAPIBot(t, h, base, owner.AccessToken, "Babu Frik", "babu")
-	createAPIBot(t, h, base, owner.AccessToken, "Other Bot", "other-bot")
+	yoda := createPiBot(t, h, base, owner.AccessToken, "Yoda", "yoda")
+	babu := createPiBot(t, h, base, owner.AccessToken, "Babu Frik", "babu")
+	createPiBot(t, h, base, owner.AccessToken, "Other Bot", "other-bot")
 	group := createGroup(t, h, base, owner.AccessToken, groupSettings{
 		name: "Snake", lead: yoda.Id, turnLimit: 20, botTalk: true,
 		members: []any{groupBot(yoda.Id, ""), groupBot(babu.Id, ""), groupUser(viewer.User.Id, "")},

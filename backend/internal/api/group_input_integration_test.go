@@ -19,9 +19,9 @@ func TestGroupInputCollectsRepliesAndResumesOnce(t *testing.T) {
 	owner, _ := h.completeSetup("owner@example.com", "CorrectHorse123!", "Owner", "Workspace", "workspace")
 	ws := owner.ActiveWorkspace.Id
 	base := "/api/workspaces/" + ws.String()
-	yoda := createAPIBot(t, h, base, owner.AccessToken, "Yoda", "yoda")
-	mace := createAPIBot(t, h, base, owner.AccessToken, "Mace", "mace")
-	babu := createAPIBot(t, h, base, owner.AccessToken, "Babu", "babu")
+	yoda := createPiBot(t, h, base, owner.AccessToken, "Yoda", "yoda")
+	mace := createPiBot(t, h, base, owner.AccessToken, "Mace", "mace")
+	babu := createPiBot(t, h, base, owner.AccessToken, "Babu", "babu")
 	group := createGroup(t, h, base, owner.AccessToken, groupSettings{
 		name: "Holiday discussion", lead: mace.Id, turnLimit: 20, botTalk: true,
 		members: []any{groupBot(yoda.Id, ""), groupBot(mace.Id, ""), groupBot(babu.Id, "")},
@@ -164,8 +164,8 @@ func TestGroupInputHonorsGroupSettingsAndTurnLimit(t *testing.T) {
 	h := newTestHarness(t, nil, harnessOpts{turnQueue: queue, chatLimit: 50})
 	owner, _ := h.completeSetup("owner@example.com", "CorrectHorse123!", "Owner", "Workspace", "workspace")
 	base := "/api/workspaces/" + owner.ActiveWorkspace.Id.String()
-	yoda := createAPIBot(t, h, base, owner.AccessToken, "Yoda", "yoda")
-	mace := createAPIBot(t, h, base, owner.AccessToken, "Mace", "mace")
+	yoda := createPiBot(t, h, base, owner.AccessToken, "Yoda", "yoda")
+	mace := createPiBot(t, h, base, owner.AccessToken, "Mace", "mace")
 	members := []any{groupBot(yoda.Id, ""), groupBot(mace.Id, "")}
 	var calls int
 	worker := &engine.Worker{Pool: h.pool, Now: h.clock.Now, Enqueue: queue.Enqueue, Execute: func(_ context.Context, _ engine.Session, emit func(engine.Event) error) error {

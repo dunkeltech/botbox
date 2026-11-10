@@ -29,7 +29,7 @@ func TestPhase6Notifications(t *testing.T) {
 	quiet, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "quiet@example.com", "member", "Quiet", "CorrectHorse123!")
 	viewer, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "viewer@example.com", "viewer", "Viewer", "CorrectHorse123!")
 	admin, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "admin@example.com", "admin", "Admin", "CorrectHorse123!")
-	atlas := createAPIBot(t, h, base, owner.AccessToken, "Atlas", "atlas-seed")
+	atlas := createPiBot(t, h, base, owner.AccessToken, "Atlas", "atlas-seed")
 	people := []any{
 		groupBot(atlas.Id, "lead"),
 		groupUser(owner.User.Id, "owner"),
@@ -193,7 +193,7 @@ func TestPhase6Notifications(t *testing.T) {
 				t.Errorf("publish: %v", err)
 			}
 		},
-		Execute: func(_ context.Context, s engine.Session, emit func(engine.Event) error) error {
+		Execute: func(ctx context.Context, s engine.Session, emit func(engine.Event) error) error {
 			switch s.ConversationID {
 			case cards.Id:
 				return emit(engine.Event{Kind: engine.EventKindTextDelta, Text: "ship the release"})
@@ -203,7 +203,7 @@ func TestPhase6Notifications(t *testing.T) {
 				if capTurns == 1 {
 					amount = 80
 				}
-				return emit(engine.Event{Kind: engine.EventKindUsage, CostMicros: &amount, InputTokens: 1, OutputTokens: 1})
+				return recordMeteredFixture(ctx, h, s, amount, true)
 			default:
 				// Only the first stored reply mentions a human. Later replies
 				// must not add mention rows while the queue is being drained.

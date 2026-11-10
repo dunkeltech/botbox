@@ -41,7 +41,7 @@ func TestPrivateChatWebSocketAndRevocation(t *testing.T) {
 	ws := owner.ActiveWorkspace.Id
 	base := "/api/workspaces/" + ws.String()
 	member, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "member@example.com", "member", "Member", "CorrectHorse123!")
-	r := h.request(http.MethodPost, base+"/bots", map[string]any{"name": "Atlas", "avatarSeed": "atlas-seed", "llmMode": "api", "llmProvider": "openrouter", "llmModel": "fixture"}, owner.AccessToken, nil, true)
+	r := h.request(http.MethodPost, base+"/bots", map[string]any{"name": "Atlas", "avatarSeed": "atlas-seed", "llmMode": "cli", "llmProvider": "openrouter", "llmModel": "openrouter/fixture"}, owner.AccessToken, nil, true)
 	var bot apigen.Bot
 	r.decode(t, &bot)
 	r = h.request(http.MethodPost, base+"/bots/"+bot.Id.String()+"/dm", nil, member.AccessToken, nil, true)

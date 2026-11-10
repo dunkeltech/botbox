@@ -170,8 +170,8 @@ func TestMCPProxyWorkspaceAndBotPolicies(t *testing.T) {
 	}
 
 	// Bot policies: member's own bot vs owner's bot.
-	atlas := createAPIBot(t, h, base, owner.AccessToken, "Atlas", "atlas-mcp")
-	mia := createAPIBot(t, h, base, member.AccessToken, "Mia", "mia-mcp")
+	atlas := createPiBot(t, h, base, owner.AccessToken, "Atlas", "atlas-mcp")
+	mia := createPiBot(t, h, base, member.AccessToken, "Mia", "mia-mcp")
 
 	atlasMCPPath := base + "/bots/" + atlas.Id.String() + "/mcp"
 	atlasServerPath := atlasMCPPath + "/" + created.Id.String()
@@ -246,7 +246,7 @@ func TestMCPProxyWorkspaceAndBotPolicies(t *testing.T) {
 	}
 
 	// Initial tool policy with allowed commands auto-enables an unassigned server cleanly.
-	luke := createAPIBot(t, h, base, owner.AccessToken, "Luke", "luke-mcp")
+	luke := createPiBot(t, h, base, owner.AccessToken, "Luke", "luke-mcp")
 	lukeServerPath := base + "/bots/" + luke.Id.String() + "/mcp/" + created.Id.String()
 	autoEnableResp := h.request(http.MethodPut, lukeServerPath, map[string]any{
 		"enabled":          false,

@@ -12,7 +12,6 @@ import (
 
 	"github.com/dunkeltech/botbox/backend/internal/approvals"
 	"github.com/dunkeltech/botbox/backend/internal/authbroker"
-	"github.com/dunkeltech/botbox/backend/internal/budgets"
 	"github.com/dunkeltech/botbox/backend/internal/events"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
 	"github.com/dunkeltech/botbox/backend/internal/groups"
@@ -224,7 +223,7 @@ func (w *Worker) executeClaimed(ctx context.Context, tx pgx.Tx, turn db.BotTurn,
 		}
 	}
 	memSvc := memory.Service{Pool: w.Pool, Ring: w.KeyRing, Signal: w.Signal, Now: w.now}
-	if memPrompt, memErr := memSvc.FormatPromptContext(ctx, session.WorkspaceID, session.BotID, session.TurnID, bot.LlmMode != "api"); memErr == nil {
+	if memPrompt, memErr := memSvc.FormatPromptContext(ctx, session.WorkspaceID, session.BotID, session.TurnID, true); memErr == nil {
 		session.MemoryPrompt = memPrompt
 	} else {
 		return memErr
@@ -269,7 +268,7 @@ func (w *Worker) executeClaimed(ctx context.Context, tx pgx.Tx, turn db.BotTurn,
 		case EventKindToolCall, EventKindToolResult:
 			// Team tools persist their own bounded, scoped messages. In particular,
 			// rejected progress text must never reach chat through tool traces.
-			if ev.Kind == EventKindToolCall && session.TeamTool != nil && isTeamTool(ev.ToolName, bot.LlmMode) {
+			if ev.Kind == EventKindToolCall && session.TeamTool != nil && isTeamTool(ev.ToolName) {
 				teamToolCalls[ev.ToolID] = true
 				return nil
 			}
@@ -398,28 +397,7 @@ func (w *Worker) executeClaimed(ctx context.Context, tx pgx.Tx, turn db.BotTurn,
 			if ev.InputTokens < 0 || ev.OutputTokens < 0 || ev.CacheTokens < 0 {
 				return errors.New("invalid usage")
 			}
-			cost := pgtype.Int8{}
-			if ev.CostMicros != nil && bot.LlmMode != "cli" {
-				if *ev.CostMicros < 0 {
-					return errors.New("invalid reported cost")
-				}
-				cost = pgtype.Int8{Int64: *ev.CostMicros, Valid: true}
-			}
-			price, priceErr := q.GetModelPrice(ctx, db.GetModelPriceParams{WorkspaceID: turn.WorkspaceID, Provider: bot.LlmProvider, Model: bot.LlmModel})
-			if priceErr == nil && !cost.Valid && !ev.IsError && bot.LlmMode != "cli" {
-				amount, e := budgets.PriceMicros(ev.InputTokens, ev.OutputTokens, ev.CacheTokens, price.InputMicrosPerMillion, price.OutputMicrosPerMillion, price.CacheMicrosPerMillion)
-				if e != nil {
-					return e
-				}
-				cost = pgtype.Int8{Int64: amount, Valid: true}
-			} else if priceErr != nil && !errors.Is(priceErr, pgx.ErrNoRows) {
-				return priceErr
-			}
-			source := "api_response"
-			if bot.LlmMode == "cli" {
-				source = "cli_result"
-			}
-			if e := q.RecordTurnUsage(ctx, db.RecordTurnUsageParams{WorkspaceID: turn.WorkspaceID, BotID: turn.BotID, TurnID: turn.ID, RequestID: pgID(uuid.New()), Source: source, CostMicros: cost, CreatedAt: pgtype.Timestamptz{Time: w.now(), Valid: true}, Model: bot.LlmModel, InputTokens: ev.InputTokens, OutputTokens: ev.OutputTokens, CacheTokens: ev.CacheTokens}); e != nil {
+			if e := q.RecordTurnUsage(ctx, db.RecordTurnUsageParams{WorkspaceID: turn.WorkspaceID, BotID: turn.BotID, TurnID: turn.ID, RequestID: pgID(uuid.New()), Source: "cli_result", CreatedAt: pgtype.Timestamptz{Time: w.now(), Valid: true}, Model: bot.LlmModel, InputTokens: ev.InputTokens, OutputTokens: ev.OutputTokens, CacheTokens: ev.CacheTokens}); e != nil {
 				return e
 			}
 		}
@@ -530,12 +508,10 @@ func (w *Worker) executeClaimed(ctx context.Context, tx pgx.Tx, turn db.BotTurn,
 	return nil
 }
 
-func isTeamTool(name, llmMode string) bool {
-	if llmMode != "api" {
-		name = strings.ReplaceAll(name, "-", "_")
-		for _, prefix := range []string{"mcp__botbox_team__", "botbox_team."} {
-			name = strings.TrimPrefix(name, prefix)
-		}
+func isTeamTool(name string) bool {
+	name = strings.ReplaceAll(name, "-", "_")
+	for _, prefix := range []string{"mcp__botbox_team__", "botbox_team."} {
+		name = strings.TrimPrefix(name, prefix)
 	}
 	return name == groups.TeamStatusTool || name == groups.TeamProgressTool
 }

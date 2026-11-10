@@ -31,7 +31,7 @@ const (
 var ErrLineTooLong = errors.New("stream line exceeds maximum allowed size")
 
 // IsRequestSecretTool reports whether a normalized tool name targets the
-// zero-context secret request tool across CLI MCP servers or API mode.
+// zero-context secret request tool across CLI MCP servers.
 func IsRequestSecretTool(name string) bool {
 	trimmed := strings.TrimSpace(name)
 	return trimmed == "request_secret" ||
@@ -42,13 +42,12 @@ func IsRequestSecretTool(name string) bool {
 // EventKind identifies normalized bot engine stream events.
 type EventKind string
 
-// Event is the unified internal representation produced from claude, codex, and agy streams.
+// Event is the unified internal representation produced from managed CLI streams.
 type Event struct {
 	BotID        string
 	RunID        string
 	TurnID       string
 	Sequence     uint64
-	CostMicros   *int64
 	SessionID    string
 	Kind         EventKind
 	Text         string

@@ -3,20 +3,13 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"strings"
-	"sync/atomic"
 	"testing"
 
 	"github.com/dunkeltech/botbox/backend/internal/compute"
 	"github.com/dunkeltech/botbox/backend/internal/engine"
-	modelapi "github.com/dunkeltech/botbox/backend/internal/engine/api"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
 	"github.com/dunkeltech/botbox/backend/internal/groups"
-	"github.com/dunkeltech/botbox/backend/internal/memory"
 	"github.com/dunkeltech/botbox/backend/internal/orchestrator"
 	"github.com/google/uuid"
 )
@@ -82,53 +75,7 @@ func TestCLIDirectMessageKeepsGlobalRoleOnResume(t *testing.T) {
 	}
 }
 
-func TestModelToolsRejectHostBackedMemoryDriver(t *testing.T) {
-	driver, err := compute.NewMemoryDriver()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer driver.Close()
-	tools := &sandboxTools{driver: driver}
-	if _, err = tools.Call(context.Background(), "exec", []byte(`{"command":"must never run"}`)); err == nil {
-		t.Fatal("model tool reached host-backed compute")
-	}
-}
-
-func TestModelTeamToolsUseTurnBinding(t *testing.T) {
-	ctx := context.Background()
-	var tools sandboxTools
-	args := json.RawMessage(`{"text":"Tests passed"}`)
-	if _, err := tools.Call(ctx, groups.TeamProgressTool, args); !errors.Is(err, groups.ErrTeamToolUnavailable) {
-		t.Fatalf("unbound tool: %v", err)
-	}
-	tools.team = func(_ context.Context, name string, input json.RawMessage) (string, error) {
-		if name != groups.TeamProgressTool || string(input) != string(args) {
-			t.Fatalf("unexpected team tool call %q %s", name, input)
-		}
-		return `{"posted":true}`, nil
-	}
-	if result, err := tools.Call(ctx, groups.TeamProgressTool, args); err != nil || result != `{"posted":true}` {
-		t.Fatalf("bound team tool: %q %v", result, err)
-	}
-}
-
-func TestModelMemoryToolsAndCLIMemoryPrompt(t *testing.T) {
-	ctx := context.Background()
-	var tools sandboxTools
-	args := json.RawMessage(`{"title":"Convention","content":"Run tests cleanly"}`)
-	if _, err := tools.Call(ctx, memory.ToolSave, args); !errors.Is(err, memory.ErrToolUnavailable) {
-		t.Fatalf("unbound memory tool: %v, want ErrToolUnavailable", err)
-	}
-	tools.memory = func(_ context.Context, name string, input json.RawMessage) (string, error) {
-		if name != memory.ToolSave || string(input) != string(args) {
-			t.Fatalf("unexpected memory tool call %q %s", name, input)
-		}
-		return `{"saved":true}`, nil
-	}
-	if result, err := tools.Call(ctx, memory.ToolSave, args); err != nil || result != `{"saved":true}` {
-		t.Fatalf("bound memory tool: %q %v", result, err)
-	}
-
+func TestCLIMemoryPrompt(t *testing.T) {
 	s := engine.Session{
 		Bot:          db.Bot{Name: "Atlas"},
 		MemoryPrompt: "## Bot Knowledge Base\nAlways run tests cleanly.",
@@ -137,85 +84,6 @@ func TestModelMemoryToolsAndCLIMemoryPrompt(t *testing.T) {
 	prompt := cliTurnPrompt(s, "", "Desktop guidance")
 	if !strings.Contains(prompt, s.MemoryPrompt) {
 		t.Fatalf("cliTurnPrompt omitted MemoryPrompt: %q", prompt)
-	}
-}
-
-func TestModelAPIRunnerMemoryToolLoop(t *testing.T) {
-	var step atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		flusher, _ := w.(http.Flusher)
-		switch step.Add(1) {
-		case 1:
-			_, _ = fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_mem_1\",\"type\":\"function\",\"function\":{\"name\":\"memory_save\",\"arguments\":\"{\\\"title\\\":\\\"Commits\\\",\\\"content\\\":\\\"Use imperative English commits.\\\"}\"}}]}}]}\n\n")
-			_, _ = fmt.Fprint(w, "data: {\"usage\":{\"prompt_tokens\":12,\"completion_tokens\":8}}\n\n")
-			_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
-		default:
-			_, _ = fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"Saved to your knowledge base.\"}}]}\n\n")
-			_, _ = fmt.Fprint(w, "data: {\"usage\":{\"prompt_tokens\":20,\"completion_tokens\":6}}\n\n")
-			_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
-		}
-		if flusher != nil {
-			flusher.Flush()
-		}
-	}))
-	defer server.Close()
-
-	var called bool
-	tools := &sandboxTools{
-		memory: func(_ context.Context, name string, raw json.RawMessage) (string, error) {
-			called = true
-			if name != memory.ToolSave {
-				t.Fatalf("tool name = %q, want %s", name, memory.ToolSave)
-			}
-			return `{"saved":true,"memory_id":"` + uuid.NewString() + `"}`, nil
-		},
-	}
-
-	extraTools := make([]map[string]any, 0, 4)
-	for _, def := range memory.ToolDefinitions(false) {
-		extraTools = append(extraTools, map[string]any{
-			"type": "function",
-			"function": map[string]any{
-				"name":        def.Name,
-				"description": def.Description,
-				"parameters":  def.InputSchema,
-			},
-		})
-	}
-
-	provider := &modelapi.Provider{
-		Client:         server.Client(),
-		URL:            server.URL,
-		Model:          "fake-model",
-		BotID:          uuid.NewString(),
-		Tools:          tools,
-		ExtraTools:     extraTools,
-		ExtraToolsOnly: true,
-	}
-
-	var events []engine.Event
-	err := provider.Run(context.Background(), []modelapi.Message{
-		{Role: "system", Content: "You have memory tools."},
-		{Role: "user", Content: "Remember we use imperative English commits."},
-	}, func(ev engine.Event) error {
-		events = append(events, ev)
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("Provider.Run failed: %v", err)
-	}
-	if !called {
-		t.Fatal("expected memory_save tool callback to be invoked")
-	}
-	var sawText string
-	for _, ev := range events {
-		if ev.Kind == engine.EventKindTextDelta {
-			sawText += ev.Text
-		}
-	}
-	if !strings.Contains(sawText, "Saved to your knowledge base.") {
-		t.Fatalf("unexpected assistant reply %q", sawText)
 	}
 }
 
@@ -228,26 +96,5 @@ func TestCLIOnSimulatedComputerHasActionableFailure(t *testing.T) {
 	err = runCLITurn(context.Background(), nil, nil, nil, driver, engine.Session{}, func(engine.Event) error { return nil })
 	if engine.TurnFailureCode(err) != engine.FailureCLIUnavailable {
 		t.Fatalf("failure code=%s", engine.TurnFailureCode(err))
-	}
-}
-
-func TestRequestSecretAcceptsSelfHostedGitLabBrowserOnly(t *testing.T) {
-	for _, tt := range []struct {
-		name, args    string
-		broker, valid bool
-	}{
-		{"custom browser", `{"kind":"browser_login","adapter_id":"gitlab_web","target_origin":"https://gitlab.example.org","reason":"Review project"}`, true, true},
-		{"disabled broker", `{"kind":"browser_login","adapter_id":"gitlab_web","target_origin":"https://gitlab.example.org","reason":"Review project"}`, false, false},
-		{"other adapter", `{"kind":"browser_login","adapter_id":"github_web","target_origin":"https://gitlab.example.org","reason":"Review project"}`, true, false},
-		{"custom CLI", `{"kind":"cli_egress","adapter_id":"gitlab_api","target_origin":"https://gitlab.example.org","reason":"Review project"}`, true, true},
-		{"invalid target type", `{"kind":"browser_login","adapter_id":"gitlab_web","target_origin":3,"reason":"Review project"}`, true, false},
-		{"missing reason", `{"kind":"browser_login","adapter_id":"gitlab_web","target_origin":"https://gitlab.example.org"}`, true, false},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := handleRequestSecretTool([]byte(tt.args), tt.broker)
-			if (err == nil) != tt.valid {
-				t.Fatalf("valid=%v err=%v", tt.valid, err)
-			}
-		})
 	}
 }

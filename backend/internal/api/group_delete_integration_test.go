@@ -18,7 +18,7 @@ func TestDeleteGroupAuthorization(t *testing.T) {
 	owner, _ := h.completeSetup("owner@example.com", "CorrectHorse123!", "Owner", "Workspace", "workspace")
 	ws := owner.ActiveWorkspace.Id
 	base := "/api/workspaces/" + ws.String()
-	bot := createAPIBot(t, h, base, owner.AccessToken, "Atlas", "atlas")
+	bot := createPiBot(t, h, base, owner.AccessToken, "Atlas", "atlas")
 	admin, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "admin@example.com", "admin", "Admin", "CorrectHorse123!")
 	member, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "member@example.com", "member", "Member", "CorrectHorse123!")
 	viewer, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "viewer@example.com", "viewer", "Viewer", "CorrectHorse123!")
@@ -92,7 +92,7 @@ func TestDeleteGroupCascadesButKeepsUsageAndBots(t *testing.T) {
 	owner, _ := h.completeSetup("owner@example.com", "CorrectHorse123!", "Owner", "Workspace", "workspace")
 	ws := owner.ActiveWorkspace.Id
 	base := "/api/workspaces/" + ws.String()
-	bot := createAPIBot(t, h, base, owner.AccessToken, "Atlas", "atlas")
+	bot := createPiBot(t, h, base, owner.AccessToken, "Atlas", "atlas")
 	id := uuid.New()
 	created := h.request(http.MethodPost, base+"/groups", newGroupBody(id, "Launch", bot.Id, []any{groupBot(bot.Id, "lead")}), owner.AccessToken, nil, true)
 	if created.status != http.StatusCreated {
@@ -169,7 +169,7 @@ func TestDeleteGroupRejectsActiveWorkAndRollsBackStorageFailure(t *testing.T) {
 	owner, _ := h.completeSetup("owner@example.com", "CorrectHorse123!", "Owner", "Workspace", "workspace")
 	ws := owner.ActiveWorkspace.Id
 	base := "/api/workspaces/" + ws.String()
-	bot := createAPIBot(t, h, base, owner.AccessToken, "Atlas", "atlas")
+	bot := createPiBot(t, h, base, owner.AccessToken, "Atlas", "atlas")
 	id := uuid.New()
 	if r := h.request(http.MethodPost, base+"/groups", newGroupBody(id, "Launch", bot.Id, []any{groupBot(bot.Id, "lead")}), owner.AccessToken, nil, true); r.status != http.StatusCreated {
 		t.Fatalf("create=%d %s", r.status, r.body)
@@ -241,7 +241,7 @@ func TestDeleteGroupCancellationKeepsHistory(t *testing.T) {
 	owner, _ := h.completeSetup("owner@example.com", "CorrectHorse123!", "Owner", "Workspace", "workspace")
 	ws := owner.ActiveWorkspace.Id
 	base := "/api/workspaces/" + ws.String()
-	bot := createAPIBot(t, h, base, owner.AccessToken, "Atlas", "atlas")
+	bot := createPiBot(t, h, base, owner.AccessToken, "Atlas", "atlas")
 	id := uuid.New()
 	if r := h.request(http.MethodPost, base+"/groups", newGroupBody(id, "Launch", bot.Id, []any{groupBot(bot.Id, "lead")}), owner.AccessToken, nil, true); r.status != http.StatusCreated {
 		t.Fatalf("create=%d %s", r.status, r.body)

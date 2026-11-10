@@ -13,7 +13,6 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/engine"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
 	"github.com/dunkeltech/botbox/backend/internal/secrets"
-	"github.com/dunkeltech/botbox/backend/internal/secrets/llmproxy"
 	"github.com/dunkeltech/botbox/backend/internal/testutil/pgtest"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -127,16 +126,6 @@ func TestClaudeSonnetPreflightAndPrivateCredentials(t *testing.T) {
 	run("")
 	if !computer.subscription {
 		t.Fatal("subscription token did not select native OAuth CLI mode")
-	}
-	apiCredential, err := secrets.ProviderResolver(q, ring, ws, bot)(ctx, bot.String(), "anthropic")
-	if err != nil || apiCredential.AuthKind != "anthropic_key" {
-		t.Fatal("API mode received subscription credentials")
-	}
-	if _, err = q.DeleteBotSecretByWorkspaceBotAndID(ctx, db.DeleteBotSecretByWorkspaceBotAndIDParams{WorkspaceID: pg(ws), BotID: pg(bot), ID: pg(id)}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = secrets.ProviderResolver(q, ring, ws, bot)(ctx, bot.String(), "anthropic"); !errors.Is(err, llmproxy.ErrSecretNotFound) {
-		t.Fatal("subscription token became available to generic API mode")
 	}
 	computer.runErr = errors.New("fixture-private-provider-key")
 	run(engine.FailureProvider)

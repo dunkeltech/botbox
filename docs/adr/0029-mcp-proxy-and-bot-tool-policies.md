@@ -3,6 +3,9 @@
 - **Date:** 2026-11-18
 - **Status:** Accepted
 
+[ADR-0034](0034-pi-openrouter-cli.md) replaced the Model API runner with Pi
+for OpenRouter. Managed execution now uses the sandbox CLI and its proxy routes.
+
 ## Context
 
 Bots run in both in-sandbox CLI mode (`claude`, `codex`, `agy`) and host-side Model API mode (`openrouter`, `anthropic`, `openai`). Users want to expose external Model Context Protocol (MCP) servers to bots while enforcing two core `bot.Box` invariants (`Application.md` §1):

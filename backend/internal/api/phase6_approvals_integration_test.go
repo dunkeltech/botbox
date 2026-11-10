@@ -32,7 +32,7 @@ func TestPhase6ApprovalDecisions(t *testing.T) {
 	owner, _ := h.completeSetup("owner@example.com", "CorrectHorse123!", "Owner", "Workspace", "workspace")
 	ws := owner.ActiveWorkspace.Id
 	base := "/api/workspaces/" + ws.String()
-	atlas := createAPIBot(t, h, base, owner.AccessToken, "Atlas", "atlas-seed")
+	atlas := createPiBot(t, h, base, owner.AccessToken, "Atlas", "atlas-seed")
 	member, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "member@example.com", "member", "Member", "CorrectHorse123!")
 	admin, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "admin@example.com", "admin", "Admin", "CorrectHorse123!")
 	viewer, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "viewer@example.com", "viewer", "Viewer", "CorrectHorse123!")
@@ -195,7 +195,7 @@ func TestPhase6ApprovalDecisions(t *testing.T) {
 		t.Fatalf("turn limit moved=%s jobs=%d", mustJSON(stays), len(queue.jobs))
 	}
 
-	quill := createAPIBot(t, h, base, owner.AccessToken, "Quill", "quill-seed")
+	quill := createPiBot(t, h, base, owner.AccessToken, "Quill", "quill-seed")
 	reply = "ship the release"
 	full := askGroup(t, h, base, member.AccessToken, "Full", quill.Id, false, 20, customRule, []any{groupBot(quill.Id, "lead"), groupUser(viewer.User.Id, "reader")})
 	postGroup(t, h, base, member.AccessToken, full.Id, "fill card")
@@ -219,9 +219,9 @@ func TestPhase6ApprovalDecisions(t *testing.T) {
 		t.Fatalf("decision was kept %+v", still)
 	}
 
-	meter := createAPIBot(t, h, base, owner.AccessToken, "Meter", "meter-seed")
+	meter := createPiBot(t, h, base, owner.AccessToken, "Meter", "meter-seed")
 	budget := map[string]any{"botId": meter.Id, "period": "day", "limitMicros": 100}
-	price := map[string]any{"provider": "openrouter", "model": "fixture", "inputMicrosPerMillion": 1000000, "outputMicrosPerMillion": 1000000, "cacheMicrosPerMillion": 1000000}
+	price := map[string]any{"provider": "openrouter", "model": "openrouter/fixture", "inputMicrosPerMillion": 1000000, "outputMicrosPerMillion": 1000000, "cacheMicrosPerMillion": 1000000}
 	if r := h.request(http.MethodPut, base+"/budgets", budget, owner.AccessToken, nil, true); r.status != http.StatusOK {
 		t.Fatalf("budget=%d %s", r.status, r.body)
 	}
@@ -238,8 +238,8 @@ func TestPhase6ApprovalDecisions(t *testing.T) {
 	if meterJob.BotID != meter.Id {
 		t.Fatalf("meter job=%v", meterJob.BotID)
 	}
-	worker.Execute = func(_ context.Context, _ engine.Session, emit func(engine.Event) error) error {
-		return emit(engine.Event{Kind: engine.EventKindUsage, InputTokens: 100})
+	worker.Execute = func(ctx context.Context, s engine.Session, _ func(engine.Event) error) error {
+		return recordMeteredFixture(ctx, h, s, 100, true)
 	}
 	if err := worker.Process(context.Background(), meterJob); err != nil {
 		t.Fatal(err)
@@ -275,7 +275,7 @@ func TestPhase6BlockedHostApproval(t *testing.T) {
 	owner, _ := h.completeSetup("owner@example.com", "CorrectHorse123!", "Owner", "Workspace", "workspace")
 	ws := owner.ActiveWorkspace.Id
 	base := "/api/workspaces/" + ws.String()
-	atlas := createAPIBot(t, h, base, owner.AccessToken, "Atlas", "atlas-seed")
+	atlas := createPiBot(t, h, base, owner.AccessToken, "Atlas", "atlas-seed")
 	member, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "member@example.com", "member", "Member", "CorrectHorse123!")
 	if r := h.request(http.MethodPatch, base+"/bots/"+atlas.Id.String()+"/egress", map[string]any{"policy": "allowlist", "allowedHosts": []string{"docs.example.com"}, "expectedRevision": 0}, owner.AccessToken, nil, true); r.status != http.StatusOK {
 		t.Fatalf("egress=%d %s", r.status, r.body)

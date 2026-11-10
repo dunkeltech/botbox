@@ -10,7 +10,7 @@ Bots behave like **colleagues**. Users talk to them in direct messages and put t
 
 ### Goals
 - Create, configure and run bots, each with a sandboxed Linux desktop, browser and agent CLIs.
-- Drive bots either through an **agent CLI inside the sandbox** (`claude`, `codex`, `agy`) or through a **model API** (OpenRouter, Anthropic, OpenAI) with tools.
+- Drive bots through an **agent CLI inside the sandbox** using Claude Code for Anthropic, Codex for OpenAI, agy for Google Antigravity, or Pi for OpenRouter.
 - Let bots run commands **and** operate the desktop (computer use).
 - Multiple users per workspace, with roles.
 - A Slack-style team chat with direct messages and bot-to-bot group chats.
@@ -53,7 +53,7 @@ SSO (the auth design is ready for it), threads and reactions in chat, integratio
                                     | REST / WebSocket (same origin via Caddy)
 +-----------------------------------v--------------------------------------+
 |                              Backend API (Go)                            |
-|  Auth & workspaces · Bot engine (CLI + API runners) · Orchestrator       |
+|  Auth & workspaces · Bot engine (CLI runners)       · Orchestrator       |
 |  Compute driver manager · Secrets · Budgets · Chat · VNC/PTY relays      |
 +-----------+------------------------+------------------------+------------+
             |                        |                        |
@@ -127,10 +127,7 @@ type AuthProvider interface {
 
 ### 4.2 Bot engine & LLM integration
 
-A bot runs in one of two modes:
-
-1. **Agent CLI in the sandbox.** The CLI runs inside the bot's computer and acts there directly. The in-sandbox agent starts it, and the API talks to its stdio over gRPC.
-2. **Model API.** The bot engine calls a provider API (OpenRouter, Anthropic, OpenAI) and runs the tool loop itself. The tools are executed through the agent: `exec`, `read_file`, `write_file`, `list_files` and the desktop tools (§4.7).
+Each bot runs an agent CLI inside its computer. The sandbox agent starts the CLI and streams its output to the API over gRPC. Bot settings select a CLI and its model. The API uses `llmMode: cli` and derives the CLI from `llmProvider`. See [ADR-0034](docs/adr/0034-pi-openrouter-cli.md).
 
 ```go
 type AgentRunner interface {
@@ -147,6 +144,7 @@ type AgentRunner interface {
 | `claude` | `claude -p --input-format stream-json --output-format stream-json` | Resume per conversation | Placeholder `ANTHROPIC_API_KEY`; `ANTHROPIC_BASE_URL` points at the egress proxy |
 | `codex` | `codex exec --json` | Resume | Placeholder key; the provider base URL points at the egress proxy |
 | `agy` | `agy --input-format stream-json --output-format stream-json --conversation <id> --print-timeout <d>`. Events: `init`, `step_update` (`text_delta`, `tool_info`, `subagent_info`), `result` | `--conversation <id>` | **Open:** the CLI documents only cached credentials from an interactive login. A spike decides how this fits principle 1 (§7). |
+| `pi` | `pi --mode json --provider openrouter --model openrouter/<model-id>` with the prompt on stdin | `--session-id <id>` per conversation | Placeholder API key; OpenRouter requests use the metered bot egress route |
 
 - **Permissions:** permission prompts inside the CLI are disabled, because the sandbox is the boundary. For `agy`, scoped `permissions.allow` rules are possible. `agy` soft-denies tools (exit code 0, notice on stderr), so the adapter must surface these notices.
 - **One event model** for all runners. Every adapter is tested against recorded stream fixtures.
@@ -154,8 +152,8 @@ type AgentRunner interface {
 - **Sessions:** one CLI session per (bot, conversation), so every conversation keeps its own context.
 - **Status:** persisted running turns and tool activity determine each bot's current status. Private live events carry bot, turn, and execution ids plus a sequence within that execution. Provider step completion cannot mark an ongoing bot turn idle. The Team bot list refreshes on live activity and every 3 seconds, including work in other conversations. Reconnecting reloads snapshots rather than applying stale event status. Group chat shows one indicator per active bot, including thinking before the first tool call, queued work, and secret waits.
 - **Reply language** is a per-bot setting. System prompts are in English.
-- **Bot knowledge base ([ADR-0033](docs/adr/0033-bot-knowledge-base.md)):** Each bot owns a workspace- and bot-scoped knowledge base (`bot_memories`, max 200 entries) supporting `always` (injected on every turn up to a 4,000-token budget) and `on_demand` (queried via PostgreSQL full-text and tag search) entries. Both Model API and CLI runners (`claude`, `codex`, `agy` via `/memory-mcp` on the bot egress proxy) expose `memory_save`, `memory_search`, `memory_update`, and `memory_delete`. Writes enforce a zero-secret memory guard rejecting credential patterns and decrypted bot/workspace/MCP secrets, respect `bots.memory_auto_save`, and record `kind = 'memory'` inline chat cards with `Edit`/`Undo` for bot managers alongside Bot Settings (`/bots/:id/settings/knowledge`).
-- **Responsibility for the bot computer:** every API and CLI turn, including
+- **Bot knowledge base ([ADR-0033](docs/adr/0033-bot-knowledge-base.md)):** Each bot owns a workspace- and bot-scoped knowledge base (`bot_memories`, max 200 entries) supporting `always` (injected on every turn up to a 4,000-token budget) and `on_demand` (queried via PostgreSQL full-text and tag search) entries. CLI runners expose `memory_save`, `memory_search`, `memory_update`, and `memory_delete` through `/memory-mcp` on the bot egress proxy. Writes enforce a zero-secret memory guard rejecting credential patterns and decrypted bot/workspace/MCP secrets, respect `bots.memory_auto_save`, and record `kind = 'memory'` inline chat cards with `Edit`/`Undo` for bot managers alongside Bot Settings (`/bots/:id/settings/knowledge`).
+- **Responsibility for the bot computer:** every CLI turn, including
   resumed sessions and continuations, reminds the bot to maintain its own
   persistent sandbox. Bots decide routine local housekeeping themselves,
   including removing their own obsolete helper scripts and stale working copies
@@ -170,8 +168,8 @@ Claude CLI bots can use a Pro/Max subscription through an encrypted
 `llm-anthropic-oauth` secret, prepared on the bot Secrets page. The user completes
 `claude setup-token` outside the bot (or uses `make claude-login`), then stores the
 token through the write-only form. The sandbox receives only an OAuth placeholder
-and no API key; the proxy injects the actual token. Generic API mode ignores this
-credential. Subscription records keep tokens with `billing_kind=subscription`.
+and no API key; the proxy injects the actual token. Subscription records keep
+tokens with `billing_kind=subscription`.
 The optional workspace policy uses model prices to add an internal budget
 charge while preserving the separate provider cost. See
 [ADR-0011](docs/adr/0011-claude-subscription-outside-sandbox.md).
@@ -226,15 +224,18 @@ can read it. The runner lifecycle owns a bounded event stream and propagates
 cancellation to CLI process groups and API requests. In a private DM, **Stop
 response** cancels the identified running turn for the caller's conversation.
 Later messages remain queued and may run after cleanup.
-See [ADR-0028](docs/adr/0028-stop-private-chat-turns.md). API runners
-support OpenAI-compatible providers and native Anthropic Messages with bounded
-sandbox tools. Credentials named `llm-openrouter`, `llm-openai` and `llm-anthropic`
-are resolved from encrypted bot/workspace secrets outside the sandbox.
+See [ADR-0028](docs/adr/0028-stop-private-chat-turns.md). The proxy resolves
+`llm-openrouter`, `llm-openai`, and `llm-anthropic` from encrypted bot/workspace
+secrets outside the sandbox. For Pi, an owner or admin can create the
+`llm-openrouter` workspace secret for `openrouter.ai` with Bearer authentication
+and path prefix `/api/v1`. Pi uses the OpenRouter model identifier as published
+in the catalog, for example `openrouter/auto`. Pi uses OpenRouter Chat
+Completions or Messages according to the model. Both routes are metered.
 
 Budget accounting uses UTC periods and integer microdollars. Execution is
 serialized per workspace to protect shared spend. Model prices can be listed via
 `GET /api/workspaces/{workspaceID}/model-prices` and edited via
-`PUT /api/workspaces/{workspaceID}/model-prices`; budgeted API turns require a
+`PUT /api/workspaces/{workspaceID}/model-prices`; budgeted model requests require a
 configured price. At exhaustion the next API request is denied and a deduplicated
 budget approval is created. Raising a budget above current spend resolves its
 pending approval with audit logging.
@@ -325,7 +326,7 @@ The **Secrets & egress** section of bot settings opens with a short overview of 
 
 **How the proxy works (one per bot):**
 1. All bot traffic must pass the proxy. On Docker, the sandbox is only attached to an internal network; on Kubernetes, see §4.4. The sandbox gets `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY`.
-2. **LLM base-URL mode:** the CLIs and the API runner call plain-HTTP proxy endpoints (for example `/llm/anthropic/…`) with placeholder keys. The proxy forwards over TLS and swaps in the real key. No TLS interception is needed.
+2. **LLM base-URL mode:** the CLIs call plain-HTTP proxy endpoints (for example `/llm/anthropic/…`) with placeholder keys. The proxy forwards over TLS and swaps in the real key. No TLS interception is needed.
 3. **Forward mode:** `CONNECT` tunnels. Hosts without a secret are tunnelled without inspection, and only the allowlist is checked (CONNECT host and SNI).
 4. **Selective TLS interception** only for hosts with a configured secret:
    - Each bot has its own CA, with the key stored encrypted.
@@ -345,7 +346,7 @@ The **Secrets & egress** section of bot settings opens with a short overview of 
 - Bot secrets and workspace secrets (inherited by bots), plus bounded ephemeral `secret_leases` created by in-chat `request_secret` fulfillment.
 - **In-chat secret requests ([ADR-0016](docs/adr/0016-zero-context-secret-requests.md)):** Bots invoke `request_secret` (`cli_egress` with a reviewed HTTPS credential adapter and optional validated `env_placeholder_name`, or `browser_login` when the external `auth-broker` is configured via `BOTBOX_AUTH_BROKER_URL`). For GitLab CLI access, an eligible saved secret for the bot, exact origin and adapter is tried using a non-secret placeholder before requesting human input ([ADR-0020](docs/adr/0020-self-hosted-gitlab-cli-grants.md)). When human input is needed, the turn pauses as `waiting_secret` and eligible workspace owners, admins and conversation members submit via the write-only modal (`POST .../secret-requests/{id}/fulfill`). Group secret dialogs identify the bot that sent the request. The `mitmproxy` evaluates lease expiry, revocation, adapter routes, fail-closed dynamic policy reload, and all-status response mediation per request on every `CONNECT`/TLS tunnel. For `browser_login`, the standalone `cmd/auth-broker` service owns credential-bearing Chromium targets/cookies outside sandbox containers with atomic `(target, frame, document, origin, form)` binding, restricted bot browsing (`broker_open`, `broker_read`, `broker_click`, `broker_screenshot`), and dedicated human-only broker takeover (`POST .../broker-takeover/*`). When unconfigured (`AuthBroker == nil`), `browser_login` fails closed with `422 unsupported_capability`.
 - **Self-hosted GitLab access ([ADR-0019](docs/adr/0019-live-public-gitlab-and-bot-assignment.md), [ADR-0020](docs/adr/0020-self-hosted-gitlab-cli-grants.md)):** Workspace owners/admins register up to 20 named HTTPS origins through `GET/POST/DELETE .../gitlab-instances`. Bot managers select origins through `GET/PUT .../bots/{botID}/gitlab-instances`; new registrations grant no implicit access. Reviewed `gitlab_web`, `gitlab_api` and `gitlab_git` adapters use the exact assigned origin and independent egress permission. Real API/Git tokens remain envelope-encrypted outside sandboxes; `glab` receives only a generated `GITLAB_TOKEN` placeholder and host guidance, while the proxy injects PRIVATE-TOKEN on REST `/api/v4/` or Basic on smart-HTTP Git routes. Public DNS checks and literal-IP dialing apply to each custom upstream connection; all-status response mediation and live assignment checks remain enforced. Removing access revokes sessions/leases and saved bot credentials, cancels requests, and records per-bot exclusions of existing inherited workspace tokens; reassignment does not resurrect them. Removing an instance removes its saved adapter tokens globally within the workspace. Retained `gitlab_known_origins` metadata prevents legacy generic/wildcard secrets or secret-derived host allowances from bypassing registration, assignment and explicit network policy after removal. Expected failures produce safe tool results and actionable localized turn codes. Default GitLab.com behavior remains. GraphQL, SSH, private targets, custom upstream CAs, alternate ports, subpaths and cross-origin SSO are deferred.
-- **MCP Proxy & per-bot command access control ([ADR-0029](docs/adr/0029-mcp-proxy-and-bot-tool-policies.md)):** Workspace owners/admins register remote HTTPS MCP servers (`GET/POST /api/workspaces/{workspaceID}/mcp-servers`, `PATCH/DELETE .../mcp-servers/{serverID}`, `POST .../sync`) with optional write-only envelope-encrypted credentials (`none`, `bearer`, `header`, `basic`) and `netguard` public-DNS/literal-IP validation. New servers grant no implicit bot access. Bot managers explicitly assign servers (`GET .../bots/{botID}/mcp`, `PUT .../bots/{botID}/mcp/{serverID}` with `expectedRevision`) and set three-state per-command policies (`allow`, `ask`, `deny`; new tools fail closed as `deny`). Both `cmd/egress-proxy` (`POST /mcp`, `POST /mcp/{slug}`) and the Model API runner (`mcp__<slug>__<tool>`) enforce `tools/list` filtering, `tools/call` execution with `2 MiB` caps and credential-reflection scrubbing, `kind = 'mcp_tool'` chat approval cards for `ask` commands, and `mcp_call_log` audit records while keeping upstream credentials strictly outside sandboxes.
+- **MCP Proxy & per-bot command access control ([ADR-0029](docs/adr/0029-mcp-proxy-and-bot-tool-policies.md)):** Workspace owners/admins register remote HTTPS MCP servers (`GET/POST /api/workspaces/{workspaceID}/mcp-servers`, `PATCH/DELETE .../mcp-servers/{serverID}`, `POST .../sync`) with optional write-only envelope-encrypted credentials (`none`, `bearer`, `header`, `basic`) and `netguard` public-DNS/literal-IP validation. New servers grant no implicit bot access. Bot managers explicitly assign servers (`GET .../bots/{botID}/mcp`, `PUT .../bots/{botID}/mcp/{serverID}` with `expectedRevision`) and set three-state per-command policies (`allow`, `ask`, `deny`; new tools fail closed as `deny`). The egress proxy (`POST /mcp`, `POST /mcp/{slug}`) enforces `tools/list` filtering, `tools/call` execution with `2 MiB` caps and credential-reflection scrubbing, `kind = 'mcp_tool'` chat approval cards for `ask` commands, and `mcp_call_log` audit records while keeping upstream credentials strictly outside sandboxes.
 - Every change goes to the audit log.
 
 ### 4.6 Robot avatars
@@ -362,9 +363,7 @@ Every bot gets a unique, animated robot avatar, generated deterministically from
 ### 4.7 Computer use
 
 - **Desktop tools in the agent:** `screenshot`, `cursor_position`, `mouse_move`, `click` (left, right, middle, double), `drag`, `scroll`, `type`, `key`, `wait`. They are implemented with xdotool and X11 capture. Coordinates are scaled when screenshots are downscaled.
-- **One implementation, two interfaces:**
-  - gRPC for API mode, with adapters for Anthropic computer use (`computer_20251124`), OpenAI computer use (translated to the Responses API), and generic image-returning function tools for OpenRouter.
-  - A local MCP server in the same agent process at `POST http://127.0.0.1:9091/mcp`, registered with the CLIs. Stdio is only the `--mcp-stdio` fallback.
+- **CLI interface:** the agent runs a local MCP server at `POST http://127.0.0.1:9091/mcp`. Desktop tools, including image-returning screenshots, are registered with the CLIs. Stdio is available as a `--mcp-stdio` fallback.
 - **Browser tool (recommended):** Chromium with remote debugging on `127.0.0.1:9222` only, driven via CDP. It is more reliable and cheaper than pixel clicks on web pages.
 - **Limits per turn:** screenshots, steps and tokens.
 - **Takeover:** a human taking control interrupts the bot within 1 s and pauses the turn. On hand-back the bot receives the exact system note `A human used the desktop; take a fresh screenshot.` and the turn resumes.
@@ -399,7 +398,7 @@ Membership is the only read path, including for workspace admins. See
 - **Orchestrator** (`internal/orchestrator`), used for groups only:
   - **Router:** human messages use mentioned bots, otherwise the lead; lead first plus mentions; or round robin. A human's case-insensitive `@all` token addresses all group members and queues each member bot once, overriding round robin. Human recipients use the existing mention notification preferences.
   - **Context builder:** the responding bot's identity, the lead, goal, roster with global bot responsibilities and group metadata, rules, up to the last 50 messages and progress updates, and an extractive summary of older text. The group brief is bounded to 48 KiB so the current input, bot identity, and desktop guidance fit the agent's 64 KiB CLI input limit. Newer messages take priority over the old summary; oversized recent replies keep their ending. Very large roster metadata is limited to half the brief. Truncation is UTF-8-safe, identified in the prompt, and never deletes stored history. See [ADR-0026](docs/adr/0026-bounded-group-context-and-visible-turn-failures.md). The summary does not call a model. The prompt describes how to request input explicitly. Secrets are not included.
-  - **Global bot roles:** the free-form "Global role & responsibilities" field in bot settings (`bots.description`, up to 4000 bytes) applies across groups and direct messages. It supports Markdown; the team chat's direct-message details render it with the same safe CommonMark/GFM renderer as messages. Long roles show a preview about four body lines high, with "More" to expand and "Less" to collapse. It is prompt context, not a fixed role enum or permission grant. The current name, role, and reply language are sent on every API and CLI turn, including resumed CLI sessions and continuations. Group context is refreshed on every turn so colleagues' replies and role edits are visible. Existing bot-management permissions govern edits. See [ADR-0021](docs/adr/0021-broadcast-mentions-and-global-bot-roles.md).
+  - **Global bot roles:** the free-form "Global role & responsibilities" field in bot settings (`bots.description`, up to 4000 bytes) applies across groups and direct messages. It supports Markdown; the team chat's direct-message details render it with the same safe CommonMark/GFM renderer as messages. Long roles show a preview about four body lines high, with "More" to expand and "Less" to collapse. It is prompt context, not a fixed role enum or permission grant. The current name, role, and reply language are sent on every CLI turn, including resumed CLI sessions and continuations. Group context is refreshed on every turn so colleagues' replies and role edits are visible. Existing bot-management permissions govern edits. See [ADR-0021](docs/adr/0021-broadcast-mentions-and-global-bot-roles.md).
   - **Requests for input:** with bot-to-bot on, a bot can ask up to eight other member bots for input on a question. It ends its turn while recipients answer in parallel. The request message shows who is waiting, who replied, and whose input was unavailable. There is one open request per requester per group. When recipients finish or the five-minute deadline passes, the scheduler queues the requester once with the collected replies and any gaps. The requester can ask for required input and report a blocker if that input is missing. Human messages can still steer the discussion. Group pauses, budgets, and turn limits govern the continuation. See [ADR-0027](docs/adr/0027-group-input-requests.md).
   - **Live coordination:** `post_team_progress` publishes a bot-authored milestone or blocker immediately in its group while its turn continues. `get_team_status` reads another member bot's state in the same group when bot-to-bot is on. Its result and transcript entry include the latest progress for the selected turn when available. A worker heartbeat distinguishes active work from an unverified running row. The team tools never schedule turns. The requester also gets group-scoped status for missing input when a round is collected. See [ADR-0032](docs/adr/0032-live-team-updates.md).
 - **Stop response:** a non-viewer group member can stop a running bot turn through
@@ -429,7 +428,7 @@ Membership is the only read path, including for workspace admins. See
 
 ### 4.9 Usage & budgets
 
-- **Usage records per turn:** tokens in and out, cache tokens and cost. Sources are CLI `result` events, API responses and proxy metering. The cost comes from an admin-editable `model_prices` table; OpenRouter's reported cost wins when present. Subscription logins record tokens by model and period. **Count subscription usage toward budgets** optionally applies the workspace model prices to new requests and shows the resulting internal charge separately from provider spend.
+- **Usage records per turn:** tokens in and out, cache tokens and cost. Sources are proxy metering and CLI `result` events. The cost comes from an admin-editable `model_prices` table; OpenRouter's reported cost wins when present. Subscription logins record tokens by model and period. **Count subscription usage toward budgets** optionally applies the workspace model prices to new requests and shows the resulting internal charge separately from provider spend.
 - **Budgets:** per workspace (monthly), bot (5-hour rolling window, daily UTC, weekly Mon–Sun UTC, monthly UTC) and group. Individual bot window caps can be updated via `PUT /api/workspaces/{workspaceID}/budgets` and removed via `DELETE /api/workspaces/{workspaceID}/budgets`.
   - **80 %:** warning.
   - **100 %:** no new turns, the proxy kill switch blocks LLM calls, and an approval request to raise the budget is created. For Codex plan traffic, an in-flight request can cross the limit because the Responses preview does not accept a per-request output cap. The next request is checked after settlement.
@@ -510,8 +509,8 @@ CREATE TABLE bots (
     name VARCHAR(100) NOT NULL,
     description TEXT,
     avatar_seed VARCHAR(100) NOT NULL CHECK (avatar_seed ~ '^[a-z0-9-]+$'),
-    llm_mode VARCHAR(10) NOT NULL CHECK (llm_mode IN ('cli','api')),
-    llm_provider VARCHAR(50) NOT NULL,             -- 'claude', 'codex', 'agy', 'openrouter', 'anthropic', 'openai'
+    llm_mode VARCHAR(10) NOT NULL CHECK (llm_mode IN ('cli','api')), -- current bots use 'cli'
+    llm_provider VARCHAR(50) NOT NULL,             -- canonical providers 'anthropic', 'openai', 'google', 'openrouter'
     llm_model VARCHAR(100) NOT NULL,
     driver_type VARCHAR(20) NOT NULL DEFAULT 'docker' CHECK (driver_type IN ('docker','kubernetes')),
     reply_language VARCHAR(10) NOT NULL DEFAULT 'en',
@@ -674,7 +673,7 @@ Each phase is a GitHub issue with a detailed task list, designs and acceptance c
 | 1 · Auth, workspaces & app shell | [#3](https://github.com/dunkeltech/botbox/issues/3) | Multi-user workspaces with roles, local auth, app shell, bot CRUD, avatar component |
 | 2 · Sandbox & Docker driver | [#4](https://github.com/dunkeltech/botbox/issues/4) | Sandbox image, agent, Docker driver, VNC/terminal relays, control lock |
 | 3 · Egress proxy & secrets | [#5](https://github.com/dunkeltech/botbox/issues/5) | Proxy with allowlist and secret injection, encrypted write-only secrets, egress log |
-| 4 · Bot engine, commands & DMs | [#6](https://github.com/dunkeltech/botbox/issues/6) | `claude`, `codex`, `agy` adapters, API mode, direct messages, usage and budgets |
+| 4 · Bot engine, commands & DMs | [#6](https://github.com/dunkeltech/botbox/issues/6) | Sandbox CLI adapters, direct messages, usage and budgets |
 | 5 · Computer use | [#7](https://github.com/dunkeltech/botbox/issues/7) | Desktop tools via gRPC and MCP, provider adapters, takeover, action timeline |
 | 6 · Team chat & bot-to-bot | [#8](https://github.com/dunkeltech/botbox/issues/8) | Group chats with humans and bots, orchestrator, approvals, notifications. Decisions in [ADR-0015](docs/adr/0015-group-chat-orchestration.md) |
 | 7 · Kubernetes driver | [#9](https://github.com/dunkeltech/botbox/issues/9) | Kubernetes driver with isolation and quotas, Helm chart |

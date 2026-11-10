@@ -130,7 +130,7 @@ Extends the bot **Secrets & network** view (Stitch project `13598702750338265050
 ![Egress activity domain triage and blocklist](screens/secrets-egress-triage.png)
 
 ### MCP proxy & command access control
-Central workspace MCP server registry (`Owner` / `Admin`) paired with per-bot server assignment, three-tier per-command policies (`Allow`, `Ask approval`, `Block` with fail-closed default), sandbox/API runner wiring summary, and dark terminal `Recent MCP proxy activity` log (`projects/13598702750338265050`, screen `5dbbd2440e4f46d6b33b9818c9cb7bfe`).
+Central workspace MCP server registry (`Owner` / `Admin`) paired with per-bot server assignment, three-tier per-command policies (`Allow`, `Ask approval`, `Block` with fail-closed default), sandbox MCP endpoint summary, and dark terminal `Recent MCP proxy activity` log (`projects/13598702750338265050`, screen `5dbbd2440e4f46d6b33b9818c9cb7bfe`).
 
 ![MCP proxy and command access control](screens/mcp-proxy-management.png)
 

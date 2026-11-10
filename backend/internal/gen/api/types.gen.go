@@ -551,15 +551,12 @@ func (e GroupMemberType) Valid() bool {
 
 // Defines values for LlmMode.
 const (
-	Api LlmMode = "api"
 	Cli LlmMode = "cli"
 )
 
 // Valid indicates whether the value is a known member of the LlmMode enum.
 func (e LlmMode) Valid() bool {
 	switch e {
-	case Api:
-		return true
 	case Cli:
 		return true
 	default:
@@ -1039,13 +1036,15 @@ type AvatarMood string
 
 // Bot defines model for Bot.
 type Bot struct {
-	AvatarSeed    string              `json:"avatarSeed"`
-	CreatedAt     time.Time           `json:"createdAt"`
-	Description   string              `json:"description"`
-	DriverType    DriverType          `json:"driverType"`
-	Id            openapi_types.UUID  `json:"id"`
-	LlmMode       LlmMode             `json:"llmMode"`
-	LlmModel      string              `json:"llmModel"`
+	AvatarSeed  string             `json:"avatarSeed"`
+	CreatedAt   time.Time          `json:"createdAt"`
+	Description string             `json:"description"`
+	DriverType  DriverType         `json:"driverType"`
+	Id          openapi_types.UUID `json:"id"`
+	LlmMode     LlmMode            `json:"llmMode"`
+	LlmModel    string             `json:"llmModel"`
+
+	// LlmProvider Selects the sandbox CLI. OpenRouter uses Pi, OpenAI uses Codex, Anthropic uses Claude Code, and Google uses agy.
 	LlmProvider   string              `json:"llmProvider"`
 	Mood          AvatarMood          `json:"mood"`
 	Name          string              `json:"name"`
@@ -1299,14 +1298,16 @@ type CreateBotMemoryRequest struct {
 
 // CreateBotRequest defines model for CreateBotRequest.
 type CreateBotRequest struct {
-	AvatarSeed    string      `json:"avatarSeed"`
-	Description   *string     `json:"description,omitempty"`
-	DriverType    *DriverType `json:"driverType,omitempty"`
-	LlmMode       LlmMode     `json:"llmMode"`
-	LlmModel      string      `json:"llmModel"`
-	LlmProvider   string      `json:"llmProvider"`
-	Name          string      `json:"name"`
-	ReplyLanguage *string     `json:"replyLanguage,omitempty"`
+	AvatarSeed  string      `json:"avatarSeed"`
+	Description *string     `json:"description,omitempty"`
+	DriverType  *DriverType `json:"driverType,omitempty"`
+	LlmMode     LlmMode     `json:"llmMode"`
+	LlmModel    string      `json:"llmModel"`
+
+	// LlmProvider Selects the sandbox CLI. OpenRouter uses Pi, OpenAI uses Codex, Anthropic uses Claude Code, and Google uses agy.
+	LlmProvider   string  `json:"llmProvider"`
+	Name          string  `json:"name"`
+	ReplyLanguage *string `json:"replyLanguage,omitempty"`
 }
 
 // CreateGroupRequest defines model for CreateGroupRequest.
@@ -1941,14 +1942,16 @@ type UpdateBotMemoryRequest struct {
 
 // UpdateBotRequest defines model for UpdateBotRequest.
 type UpdateBotRequest struct {
-	AvatarSeed    *string     `json:"avatarSeed,omitempty"`
-	Description   *string     `json:"description,omitempty"`
-	DriverType    *DriverType `json:"driverType,omitempty"`
-	LlmMode       *LlmMode    `json:"llmMode,omitempty"`
-	LlmModel      *string     `json:"llmModel,omitempty"`
-	LlmProvider   *string     `json:"llmProvider,omitempty"`
-	Name          *string     `json:"name,omitempty"`
-	ReplyLanguage *string     `json:"replyLanguage,omitempty"`
+	AvatarSeed  *string     `json:"avatarSeed,omitempty"`
+	Description *string     `json:"description,omitempty"`
+	DriverType  *DriverType `json:"driverType,omitempty"`
+	LlmMode     *LlmMode    `json:"llmMode,omitempty"`
+	LlmModel    *string     `json:"llmModel,omitempty"`
+
+	// LlmProvider Selects the sandbox CLI. OpenRouter uses Pi, OpenAI uses Codex, Anthropic uses Claude Code, and Google uses agy.
+	LlmProvider   *string `json:"llmProvider,omitempty"`
+	Name          *string `json:"name,omitempty"`
+	ReplyLanguage *string `json:"replyLanguage,omitempty"`
 }
 
 // UpdateEgressPolicyRequest defines model for UpdateEgressPolicyRequest.

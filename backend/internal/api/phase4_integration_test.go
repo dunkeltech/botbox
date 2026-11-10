@@ -45,7 +45,7 @@ func TestPhase4PrivateDirectMessagesAndWorker(t *testing.T) {
 	owner, _ := h.completeSetup("owner@example.com", "CorrectHorse123!", "Owner", "Workspace", "workspace")
 	ws := owner.ActiveWorkspace.Id
 	base := "/api/workspaces/" + ws.String()
-	created := h.request(http.MethodPost, base+"/bots", map[string]any{"name": "Atlas", "avatarSeed": "atlas-seed", "llmMode": "api", "llmProvider": "openrouter", "llmModel": "fixture"}, owner.AccessToken, nil, true)
+	created := h.request(http.MethodPost, base+"/bots", map[string]any{"name": "Atlas", "avatarSeed": "atlas-seed", "llmMode": "cli", "llmProvider": "openrouter", "llmModel": "openrouter/fixture"}, owner.AccessToken, nil, true)
 	if created.status != 201 {
 		t.Fatalf("create: %d %s", created.status, created.body)
 	}
@@ -169,14 +169,14 @@ func TestPhase4BudgetsAndApprovals(t *testing.T) {
 	owner, _ := h.completeSetup("owner@example.com", "CorrectHorse123!", "Owner", "Workspace", "workspace")
 	ws := owner.ActiveWorkspace.Id
 	base := "/api/workspaces/" + ws.String()
-	r := h.request(http.MethodPost, base+"/bots", map[string]any{"name": "Atlas", "avatarSeed": "atlas-seed", "llmMode": "api", "llmProvider": "openrouter", "llmModel": "fixture"}, owner.AccessToken, nil, true)
+	r := h.request(http.MethodPost, base+"/bots", map[string]any{"name": "Atlas", "avatarSeed": "atlas-seed", "llmMode": "cli", "llmProvider": "openrouter", "llmModel": "openrouter/fixture"}, owner.AccessToken, nil, true)
 	var bot apigen.Bot
 	r.decode(t, &bot)
 	member, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "member@example.com", "member", "Member", "CorrectHorse123!")
 	admin, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "admin@example.com", "admin", "Admin", "CorrectHorse123!")
 	viewer, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "viewer@example.com", "viewer", "Viewer", "CorrectHorse123!")
 	budget := map[string]any{"botId": bot.Id, "period": "day", "limitMicros": 100}
-	price := map[string]any{"provider": "openrouter", "model": "fixture", "inputMicrosPerMillion": 1000000, "outputMicrosPerMillion": 1000000, "cacheMicrosPerMillion": 1000000}
+	price := map[string]any{"provider": "openrouter", "model": "openrouter/fixture", "inputMicrosPerMillion": 1000000, "outputMicrosPerMillion": 1000000, "cacheMicrosPerMillion": 1000000}
 	for _, tc := range []struct {
 		token  string
 		status int
@@ -201,7 +201,7 @@ func TestPhase4BudgetsAndApprovals(t *testing.T) {
 		t.Fatal(string(r.body))
 	}
 	worker := &engine.Worker{Pool: h.pool, Now: h.clock.Now, Execute: func(ctx context.Context, s engine.Session, emit func(engine.Event) error) error {
-		return emit(engine.Event{Kind: engine.EventKindUsage, InputTokens: 100})
+		return recordMeteredFixture(ctx, h, s, 100, true)
 	}}
 	if err := worker.Process(context.Background(), queue.jobs[0]); err != nil {
 		t.Fatal(err)
@@ -238,7 +238,7 @@ func TestPhase4BudgetsAndApprovals(t *testing.T) {
 		t.Fatal(string(r.body))
 	}
 	worker.Execute = func(ctx context.Context, s engine.Session, emit func(engine.Event) error) error {
-		if err := emit(engine.Event{Kind: engine.EventKindUsage, IsError: true, ErrorCode: "usage_unavailable"}); err != nil {
+		if err := recordMeteredFixture(ctx, h, s, 0, false); err != nil {
 			return err
 		}
 		return errors.New("incomplete provider stream")
@@ -257,7 +257,7 @@ func TestPhase4EncryptedProviderCredentialScope(t *testing.T) {
 	owner, _ := h.completeSetup("owner@example.com", "CorrectHorse123!", "Owner", "Workspace", "workspace")
 	ws := owner.ActiveWorkspace.Id
 	base := "/api/workspaces/" + ws.String()
-	r := h.request(http.MethodPost, base+"/bots", map[string]any{"name": "Atlas", "avatarSeed": "atlas-seed", "llmMode": "api", "llmProvider": "openrouter", "llmModel": "fixture"}, owner.AccessToken, nil, true)
+	r := h.request(http.MethodPost, base+"/bots", map[string]any{"name": "Atlas", "avatarSeed": "atlas-seed", "llmMode": "cli", "llmProvider": "openrouter", "llmModel": "openrouter/fixture"}, owner.AccessToken, nil, true)
 	var bot apigen.Bot
 	r.decode(t, &bot)
 	input := map[string]any{"name": "llm-openrouter", "domainMatch": "openrouter.ai", "pathPrefix": "/api/v1", "authScheme": "bearer", "value": "fixture-provider-value"}
@@ -267,7 +267,7 @@ func TestPhase4EncryptedProviderCredentialScope(t *testing.T) {
 	}
 	var secret apigen.SecretMetadata
 	r.decode(t, &secret)
-	resolver := secrets.ProviderResolver(h.queries, h.keyRing, ws, bot.Id)
+	resolver := secrets.CLIProviderResolver(h.queries, h.keyRing, ws, bot.Id)
 	cfg, err := resolver(context.Background(), bot.Id.String(), "openrouter")
 	if err != nil || cfg.SecretValue != "fixture-provider-value" || cfg.PathPrefix != "/api/v1" {
 		t.Fatal("provider credential was not resolved with its scope")
@@ -290,7 +290,7 @@ func TestPhase4MessageRateLimit(t *testing.T) {
 	h := newTestHarness(t, nil, harnessOpts{turnQueue: queue, chatLimit: 1})
 	owner, _ := h.completeSetup("owner@example.com", "CorrectHorse123!", "Owner", "Workspace", "workspace")
 	base := "/api/workspaces/" + owner.ActiveWorkspace.Id.String()
-	r := h.request(http.MethodPost, base+"/bots", map[string]any{"name": "Atlas", "avatarSeed": "atlas-seed", "llmMode": "api", "llmProvider": "openrouter", "llmModel": "fixture"}, owner.AccessToken, nil, true)
+	r := h.request(http.MethodPost, base+"/bots", map[string]any{"name": "Atlas", "avatarSeed": "atlas-seed", "llmMode": "cli", "llmProvider": "openrouter", "llmModel": "openrouter/fixture"}, owner.AccessToken, nil, true)
 	var bot apigen.Bot
 	r.decode(t, &bot)
 	r = h.request(http.MethodPost, base+"/bots/"+bot.Id.String()+"/dm", nil, owner.AccessToken, nil, true)
@@ -333,7 +333,7 @@ func TestPhase4BotFiveHourAndWeeklyBudgets(t *testing.T) {
 	base := "/api/workspaces/" + ws.String()
 
 	r := h.request(http.MethodPost, base+"/bots", map[string]any{
-		"name": "Atlas", "avatarSeed": "atlas-seed", "llmMode": "api", "llmProvider": "openrouter", "llmModel": "fixture",
+		"name": "Atlas", "avatarSeed": "atlas-seed", "llmMode": "cli", "llmProvider": "openrouter", "llmModel": "openrouter/fixture",
 	}, owner.AccessToken, nil, true)
 	var bot apigen.Bot
 	r.decode(t, &bot)
@@ -388,7 +388,7 @@ func TestPhase4BotFiveHourAndWeeklyBudgets(t *testing.T) {
 		t.Fatalf("PUT week=%d %s", res.status, res.body)
 	}
 	if res := h.request(http.MethodPut, base+"/model-prices", map[string]any{
-		"provider": "openrouter", "model": "fixture", "inputMicrosPerMillion": 1000000, "outputMicrosPerMillion": 1000000, "cacheMicrosPerMillion": 1000000,
+		"provider": "openrouter", "model": "openrouter/fixture", "inputMicrosPerMillion": 1000000, "outputMicrosPerMillion": 1000000, "cacheMicrosPerMillion": 1000000,
 	}, owner.AccessToken, nil, true); res.status != 200 {
 		t.Fatalf("PUT model-prices=%d", res.status)
 	}
@@ -402,7 +402,7 @@ func TestPhase4BotFiveHourAndWeeklyBudgets(t *testing.T) {
 		t.Fatalf("send chat=%d %s", r.status, r.body)
 	}
 	worker := &engine.Worker{Pool: h.pool, Now: h.clock.Now, Execute: func(ctx context.Context, s engine.Session, emit func(engine.Event) error) error {
-		return emit(engine.Event{Kind: engine.EventKindUsage, InputTokens: 100})
+		return recordMeteredFixture(ctx, h, s, 100, true)
 	}}
 	if err := worker.Process(context.Background(), queue.jobs[0]); err != nil {
 		t.Fatal(err)

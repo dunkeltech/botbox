@@ -38,7 +38,7 @@ func TestSecretRequestsRBACLifecycleIsolationAndProxy(t *testing.T) {
 	ws := owner.ActiveWorkspace.Id
 	base := "/api/workspaces/" + ws.String()
 
-	atlas := createAPIBot(t, h, base, owner.AccessToken, "Atlas", "atlas-sr")
+	atlas := createPiBot(t, h, base, owner.AccessToken, "Atlas", "atlas-sr")
 	admin, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "admin-sr@example.com", "admin", "Admin", "CorrectHorse123!")
 	member, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "member-sr@example.com", "member", "Member", "CorrectHorse123!")
 	outsider, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "outsider-sr@example.com", "member", "Outsider", "CorrectHorse123!")

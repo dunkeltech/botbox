@@ -13,19 +13,10 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// ProviderResolver selects an encrypted llm-{provider} secret, preferring bot
-// scope over workspace inheritance. Identity is fixed by trusted provisioning.
-func ProviderResolver(q *db.Queries, ring *KeyRing, workspaceID, botID uuid.UUID) llmproxy.SecretResolver {
-	return providerResolver(q, ring, workspaceID, botID, false)
-}
-
-// CLIProviderResolver additionally accepts a Claude subscription token for the
-// official CLI. Generic API-mode clients never receive subscription credentials.
+// CLIProviderResolver selects the encrypted credential for the scoped bot,
+// preferring a bot secret over the inherited workspace secret. Claude may use
+// a subscription token. Other CLI provider routes use API keys.
 func CLIProviderResolver(q *db.Queries, ring *KeyRing, workspaceID, botID uuid.UUID) llmproxy.SecretResolver {
-	return providerResolver(q, ring, workspaceID, botID, true)
-}
-
-func providerResolver(q *db.Queries, ring *KeyRing, workspaceID, botID uuid.UUID, allowSubscription bool) llmproxy.SecretResolver {
 	return func(ctx context.Context, requestedBot, provider string) (*llmproxy.SecretConfig, error) {
 		if q == nil || ring == nil || requestedBot != botID.String() {
 			return nil, llmproxy.ErrSecretNotFound
@@ -65,7 +56,7 @@ func providerResolver(q *db.Queries, ring *KeyRing, workspaceID, botID uuid.UUID
 			return &llmproxy.SecretConfig{UpstreamURL: target, AuthKind: auth, SecretValue: string(plaintext), PathPrefix: path}, nil
 		}
 		names := []string{"llm-" + provider}
-		if allowSubscription && provider == "anthropic" {
+		if provider == "anthropic" {
 			names = []string{"llm-anthropic-oauth", "llm-anthropic"}
 		}
 		for _, name := range names {

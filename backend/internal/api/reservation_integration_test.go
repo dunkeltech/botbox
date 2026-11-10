@@ -30,9 +30,9 @@ func testParallelReservation(t *testing.T, scope string) {
 	owner, _ := h.completeSetup("owner@example.com", "CorrectHorse123!", "Owner", "Workspace", "workspace")
 	ws := owner.ActiveWorkspace.Id
 	base := "/api/workspaces/" + ws.String()
-	a := createAPIBot(t, h, base, owner.AccessToken, "Yoda", "yoda-seed")
-	b := createAPIBot(t, h, base, owner.AccessToken, "Nova", "nova-seed")
-	c := createAPIBot(t, h, base, owner.AccessToken, "Atlas", "atlas-seed")
+	a := createPiBot(t, h, base, owner.AccessToken, "Yoda", "yoda-seed")
+	b := createPiBot(t, h, base, owner.AccessToken, "Nova", "nova-seed")
+	c := createPiBot(t, h, base, owner.AccessToken, "Atlas", "atlas-seed")
 	limit := int64(10000)
 	group := createGroup(t, h, base, owner.AccessToken, groupSettings{name: "Budget", lead: a.Id, turnLimit: 20, budget: 0, members: []any{groupBot(a.Id, "lead"), groupBot(b.Id, "reviewer"), groupBot(c.Id, "reviewer")}})
 	if scope == "group" {
@@ -54,7 +54,7 @@ func testParallelReservation(t *testing.T, scope string) {
 	if _, err := h.pool.Exec(ctx, "UPDATE bot_turns SET status='running' WHERE workspace_id=$1 AND conversation_id=$2", ws, group.Id); err != nil {
 		t.Fatal(err)
 	}
-	response := h.request(http.MethodPut, base+"/model-prices", map[string]any{"provider": "openrouter", "model": "fixture", "inputMicrosPerMillion": 1000000, "outputMicrosPerMillion": 1000000, "cacheMicrosPerMillion": 1000000}, owner.AccessToken, nil, true)
+	response := h.request(http.MethodPut, base+"/model-prices", map[string]any{"provider": "openrouter", "model": "openrouter/fixture", "inputMicrosPerMillion": 1000000, "outputMicrosPerMillion": 1000000, "cacheMicrosPerMillion": 1000000}, owner.AccessToken, nil, true)
 	if response.status != 200 {
 		t.Fatal(string(response.body))
 	}
@@ -81,7 +81,7 @@ func testParallelReservation(t *testing.T, scope string) {
 			t.Error(err)
 			return 0
 		}
-		req := httptest.NewRequest("POST", "/llm/openrouter/v1/chat/completions", strings.NewReader(`{"model":"fixture","messages":[{"role":"user","content":"hi"}],"max_tokens":100}`)).WithContext(ctx)
+		req := httptest.NewRequest("POST", "/llm/openrouter/v1/chat/completions", strings.NewReader(`{"model":"openrouter/fixture","messages":[{"role":"user","content":"hi"}],"max_tokens":100}`)).WithContext(ctx)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 		return rec.Code
@@ -130,10 +130,10 @@ func TestUncertainReservedRequestBlocksFurtherSpend(t *testing.T) {
 	owner, _ := h.completeSetup("owner@example.com", "CorrectHorse123!", "Owner", "Workspace", "workspace")
 	ws := owner.ActiveWorkspace.Id
 	base := "/api/workspaces/" + ws.String()
-	bot := createAPIBot(t, h, base, owner.AccessToken, "Yoda", "yoda-seed")
+	bot := createPiBot(t, h, base, owner.AccessToken, "Yoda", "yoda-seed")
 	for path, body := range map[string]any{
 		"/budgets":      map[string]any{"period": "month", "limitMicros": 10000},
-		"/model-prices": map[string]any{"provider": "openrouter", "model": "fixture", "inputMicrosPerMillion": 1000000, "outputMicrosPerMillion": 1000000, "cacheMicrosPerMillion": 1000000},
+		"/model-prices": map[string]any{"provider": "openrouter", "model": "openrouter/fixture", "inputMicrosPerMillion": 1000000, "outputMicrosPerMillion": 1000000, "cacheMicrosPerMillion": 1000000},
 	} {
 		if r := h.request(http.MethodPut, base+path, body, owner.AccessToken, nil, true); r.status != 200 {
 			t.Fatal(string(r.body))
@@ -152,7 +152,7 @@ func TestUncertainReservedRequestBlocksFurtherSpend(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := httptest.NewRequest("POST", "/llm/openrouter/v1/chat/completions", strings.NewReader(`{"model":"fixture","max_tokens":100}`)).WithContext(ctx)
+	req := httptest.NewRequest("POST", "/llm/openrouter/v1/chat/completions", strings.NewReader(`{"model":"openrouter/fixture","max_tokens":100}`)).WithContext(ctx)
 	handler.ServeHTTP(httptest.NewRecorder(), req)
 	var reserved, unknown int
 	if err := h.pool.QueryRow(context.Background(), "SELECT count(reserved_micros),count(*) FILTER(WHERE cost_micros IS NULL) FROM usage_records WHERE workspace_id=$1", ws).Scan(&reserved, &unknown); err != nil {
@@ -172,7 +172,7 @@ func TestGroupBudgetCheckWaitsForSettlementAndCleansUpCanceledClaim(t *testing.T
 	owner, _ := h.completeSetup("owner@example.com", "CorrectHorse123!", "Owner", "Workspace", "workspace")
 	ws := owner.ActiveWorkspace.Id
 	base := "/api/workspaces/" + ws.String()
-	bot := createAPIBot(t, h, base, owner.AccessToken, "Yoda", "yoda-seed")
+	bot := createPiBot(t, h, base, owner.AccessToken, "Yoda", "yoda-seed")
 	g := createGroup(t, h, base, owner.AccessToken, groupSettings{name: "Pending", lead: bot.Id, turnLimit: 20, budget: 10000, members: []any{groupBot(bot.Id, "lead")}})
 	postGroup(t, h, base, owner.AccessToken, g.Id, "@Yoda go")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -187,7 +187,7 @@ func TestGroupBudgetCheckWaitsForSettlementAndCleansUpCanceledClaim(t *testing.T
 		t.Fatal(err)
 	}
 	defer func() { _ = q.UnlockWorkspaceSpend(context.Background(), ws.String()) }()
-	if err = q.RecordTurnUsage(ctx, db.RecordTurnUsageParams{WorkspaceID: pgtype.UUID{Bytes: ws, Valid: true}, BotID: pgtype.UUID{Bytes: bot.Id, Valid: true}, TurnID: pgtype.UUID{Bytes: queue.jobs[0].TurnID, Valid: true}, RequestID: pgtype.UUID{Bytes: uuid.New(), Valid: true}, Source: "proxy_meter", Model: "fixture", CreatedAt: pgtype.Timestamptz{Time: h.clock.Now(), Valid: true}}); err != nil {
+	if err = q.RecordTurnUsage(ctx, db.RecordTurnUsageParams{WorkspaceID: pgtype.UUID{Bytes: ws, Valid: true}, BotID: pgtype.UUID{Bytes: bot.Id, Valid: true}, TurnID: pgtype.UUID{Bytes: queue.jobs[0].TurnID, Valid: true}, RequestID: pgtype.UUID{Bytes: uuid.New(), Valid: true}, Source: "proxy_meter", Model: "openrouter/fixture", CreatedAt: pgtype.Timestamptz{Time: h.clock.Now(), Valid: true}}); err != nil {
 		t.Fatal(err)
 	}
 	worker := &engine.Worker{Pool: h.pool, Execute: func(context.Context, engine.Session, func(engine.Event) error) error {

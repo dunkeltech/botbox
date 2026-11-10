@@ -19,6 +19,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # postinstall must run or bin/claude.exe stays a text stub (ADR-0012).
 ARG CLAUDE_CLI_VERSION=2.1.323
 ARG CODEX_CLI_VERSION=0.155.0
+ARG PI_CLI_VERSION=1.5.2
 # agy release URLs and SHA-512 digests are pinned in releases/.
 
 RUN apt-get update \
@@ -76,6 +77,8 @@ RUN npm install --global --omit=dev \
         "@openai/codex@${CODEX_CLI_VERSION}" \
     && python3 -c 'import pathlib,sys; p=pathlib.Path("/usr/local/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe"); b=p.read_bytes()[:4]; sys.exit("claude native binary missing" if b!=b"\x7fELF" else 0)' \
     && /usr/local/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe --version | grep -F "${CLAUDE_CLI_VERSION}" \
+    && npm install --global --omit=dev --ignore-scripts "@earendil-works/pi-coding-agent@${PI_CLI_VERSION}" \
+    && pi --version | grep -Fx "${PI_CLI_VERSION}" \
     && npm cache clean --force
 
 COPY images/sandbox/releases/agy-linux-*.json /tmp/

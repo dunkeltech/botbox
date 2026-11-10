@@ -49,8 +49,8 @@ func TestEgressBlocklistValidationRevisionsAndRBAC(t *testing.T) {
 	otherWsResp.decode(t, &otherWs)
 	eve, _ := h.inviteAndAcceptNewUser(owner.AccessToken, otherWs.Id, "eve@other.com", "owner", "Eve", "CorrectHorse123!")
 
-	ownerBot := createAPIBot(t, h, base, owner.AccessToken, "Atlas", "atlas-seed")
-	memberBot := createAPIBot(t, h, base, member.AccessToken, "Courier", "courier-seed")
+	ownerBot := createPiBot(t, h, base, owner.AccessToken, "Atlas", "atlas-seed")
+	memberBot := createPiBot(t, h, base, member.AccessToken, "Courier", "courier-seed")
 
 	atlasEgress := base + "/bots/" + ownerBot.Id.String() + "/egress"
 	courierEgress := base + "/bots/" + memberBot.Id.String() + "/egress"
@@ -230,7 +230,7 @@ func TestEgressAppliedPendingAndNotRunningEnforcement(t *testing.T) {
 	owner, _ := h.completeSetup("owner@example.com", "CorrectHorse123!", "Alex", "Acme", "acme")
 	wsID := owner.ActiveWorkspace.Id
 	base := "/api/workspaces/" + wsID.String()
-	bot := createAPIBot(t, h, base, owner.AccessToken, "Atlas", "atlas-seed")
+	bot := createPiBot(t, h, base, owner.AccessToken, "Atlas", "atlas-seed")
 	egressURL := base + "/bots/" + bot.Id.String() + "/egress"
 
 	// 1. Stopped/unstarted bot -> 200 not_running.
@@ -312,7 +312,7 @@ func TestEgressApprovalsBlocklistPermissionsAndRaces(t *testing.T) {
 	ws := owner.ActiveWorkspace.Id
 	base := "/api/workspaces/" + ws.String()
 
-	atlas := createAPIBot(t, h, base, owner.AccessToken, "Atlas", "atlas-seed")
+	atlas := createPiBot(t, h, base, owner.AccessToken, "Atlas", "atlas-seed")
 	member, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "member@example.com", "member", "Member", "CorrectHorse123!")
 
 	// Owner explicitly blocks exact.blocked.example and wildcard *.wild.example under open mode!
@@ -377,7 +377,7 @@ func TestEgressApprovalsBlocklistPermissionsAndRaces(t *testing.T) {
 	}
 
 	// 4. Race between PATCH and an approval decision: serialized cleanly on shared revision.
-	raceBot := createAPIBot(t, h, base, owner.AccessToken, "Courier", "courier-seed")
+	raceBot := createPiBot(t, h, base, owner.AccessToken, "Courier", "courier-seed")
 	if r := h.request(http.MethodPatch, base+"/bots/"+raceBot.Id.String()+"/egress", map[string]any{
 		"policy":           "allowlist",
 		"allowedHosts":     []string{"existing.example"},

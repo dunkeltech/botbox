@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	apigen "github.com/dunkeltech/botbox/backend/internal/gen/api"
 	"github.com/dunkeltech/botbox/backend/internal/memory"
@@ -44,8 +45,8 @@ func TestBotKnowledgeBaseAPIAndMemoryTools(t *testing.T) {
 	otherWSResp.decode(t, &otherWS)
 	eve, _ := h.inviteAndAcceptNewUser(owner.AccessToken, otherWS.Id, "kb-eve@example.com", "owner", "Eve", "CorrectHorse123!")
 
-	atlas := createAPIBot(t, h, base, owner.AccessToken, "Atlas", "atlas-kb")
-	mia := createAPIBot(t, h, base, member.AccessToken, "Mia", "mia-kb")
+	atlas := createPiBot(t, h, base, owner.AccessToken, "Atlas", "atlas-kb")
+	mia := createPiBot(t, h, base, member.AccessToken, "Mia", "mia-kb")
 
 	atlasMemBase := base + "/bots/" + atlas.Id.String() + "/memories"
 	miaMemBase := base + "/bots/" + mia.Id.String() + "/memories"
@@ -228,6 +229,8 @@ func TestBotKnowledgeBaseAPIAndMemoryTools(t *testing.T) {
 		t.Fatalf("unexpected updatedB: %+v", updatedB)
 	}
 
+	// The prompt prefers older entries. Keep the budget fillers younger than the rules under test.
+	h.clock.Advance(time.Second)
 	// Always-in-context budget enforcement (> 4000 tokens -> 409 memory.always_budget_exceeded).
 	for i := range 4 {
 		r := h.request(http.MethodPost, atlasMemBase, map[string]any{

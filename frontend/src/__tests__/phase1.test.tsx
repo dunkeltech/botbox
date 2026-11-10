@@ -430,6 +430,22 @@ describe('Phase 1 frontend workflows', () => {
       enMessages.builder.avatarSeedLabel,
     );
 
+    const agent = screen.getByRole('combobox', {
+      name: enMessages.builder.agentLabel,
+    });
+    expect(
+      screen.getByRole('option', {
+        name: enMessages.builder.agents.openrouter,
+      }),
+    ).toHaveValue('openrouter');
+    fireEvent.change(agent, { target: { value: 'openrouter' } });
+    const model = screen.getByLabelText(enMessages.builder.modelLabel);
+    expect(model).toHaveValue('');
+    expect(
+      screen.getByText(enMessages.builder.openRouterHelp),
+    ).toBeInTheDocument();
+    fireEvent.change(model, { target: { value: 'openrouter/auto' } });
+
     fireEvent.change(nameInput, { target: { value: 'Sentinel' } });
     fireEvent.click(
       screen.getByRole('button', { name: enMessages.builder.moods.thinking }),
@@ -463,6 +479,11 @@ describe('Phase 1 frontend workflows', () => {
       'Bearer jwt-builder-1',
     );
     expect(createCall?.headers.get('X-BotBox-CSRF')).toBe('1');
+    expect(JSON.parse(String(createCall?.body))).toMatchObject({
+      llmMode: 'cli',
+      llmProvider: 'openrouter',
+      llmModel: 'openrouter/auto',
+    });
   });
 
   it('Members settings updates roles, creates invitations, and surfaces workspace.last_owner', async () => {

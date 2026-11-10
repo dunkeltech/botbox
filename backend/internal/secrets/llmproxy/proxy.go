@@ -403,6 +403,11 @@ func parseLLMPath(path string) (provider, upstreamPath string, ok bool) {
 	if len(parts) == 2 && parts[1] != "" {
 		subpath = "/" + parts[1]
 	}
+	// Pi's Messages client includes /v1 even when its shared OpenRouter base
+	// URL already includes it for Chat Completions.
+	if parts[0] == ProviderOpenRouter && subpath == "/v1/v1/messages" {
+		subpath = "/v1/messages"
+	}
 	return parts[0], subpath, true
 }
 
@@ -520,7 +525,7 @@ func meteredPath(provider, path string) bool {
 	case ProviderOpenAI:
 		return path == "/v1/responses" || path == "/v1/chat/completions"
 	case ProviderOpenRouter:
-		return path == "/v1/chat/completions"
+		return path == "/v1/chat/completions" || path == "/v1/messages"
 	case ProviderAnthropic:
 		return path == "/v1/messages" || path == "/v1/messages/count_tokens"
 	default:

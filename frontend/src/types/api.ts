@@ -6,7 +6,7 @@ import type { components } from './openapi.gen';
 
 export type WorkspaceRole = 'owner' | 'admin' | 'member' | 'viewer';
 export type DriverType = 'docker' | 'kubernetes';
-export type LlmMode = 'cli' | 'api';
+export type LlmMode = components['schemas']['LlmMode'];
 export type BotStatus = 'idle' | 'thinking' | 'action' | 'stopped';
 export type AvatarMood = 'idle' | 'thinking' | 'action' | 'offline';
 

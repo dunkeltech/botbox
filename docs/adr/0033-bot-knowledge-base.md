@@ -2,6 +2,9 @@
 
 **Status** Accepted
 
+[ADR-0034](0034-pi-openrouter-cli.md) replaced the Model API runner with Pi
+for OpenRouter. Managed execution now uses the sandbox CLI and its proxy routes.
+
 ## Context
 
 Users need bots to remember instructions, conventions, and project facts across

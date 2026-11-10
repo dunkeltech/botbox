@@ -21,8 +21,8 @@ func TestStopGroupTurnLeavesOtherBotsRunning(t *testing.T) {
 	member, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "member@example.com", "member", "Member", "CorrectHorse123!")
 	viewer, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "viewer@example.com", "viewer", "Viewer", "CorrectHorse123!")
 	admin, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "admin@example.com", "admin", "Admin", "CorrectHorse123!")
-	atlas := createAPIBot(t, h, base, owner.AccessToken, "Atlas", "atlas-seed")
-	nova := createAPIBot(t, h, base, owner.AccessToken, "Nova", "nova-seed")
+	atlas := createPiBot(t, h, base, owner.AccessToken, "Atlas", "atlas-seed")
+	nova := createPiBot(t, h, base, owner.AccessToken, "Nova", "nova-seed")
 	group := createGroup(t, h, base, owner.AccessToken, groupSettings{
 		name: "Shared", lead: atlas.Id, turnLimit: 20,
 		members: []any{groupBot(atlas.Id, "lead"), groupBot(nova.Id, "reviewer"), groupUser(member.User.Id, "writer"), groupUser(viewer.User.Id, "reader")},
@@ -130,8 +130,8 @@ func checkGroupReplyFinalization(t *testing.T, queueErr error, status apigen.Cha
 	h := newTestHarness(t, nil, harnessOpts{turnQueue: queue})
 	owner, _ := h.completeSetup("owner@example.com", "CorrectHorse123!", "Owner", "Workspace", "workspace")
 	base := "/api/workspaces/" + owner.ActiveWorkspace.Id.String()
-	atlas := createAPIBot(t, h, base, owner.AccessToken, "Atlas", "atlas-seed")
-	nova := createAPIBot(t, h, base, owner.AccessToken, "Nova", "nova-seed")
+	atlas := createPiBot(t, h, base, owner.AccessToken, "Atlas", "atlas-seed")
+	nova := createPiBot(t, h, base, owner.AccessToken, "Nova", "nova-seed")
 	group := createGroup(t, h, base, owner.AccessToken, groupSettings{
 		name: "Handoff", lead: atlas.Id, botTalk: true, turnLimit: 20, members: []any{groupBot(atlas.Id, "lead"), groupBot(nova.Id, "reviewer")},
 	})

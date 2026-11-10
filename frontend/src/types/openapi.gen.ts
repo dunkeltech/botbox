@@ -1740,7 +1740,7 @@ export interface components {
     /** @enum {string} */
     DriverType: 'docker' | 'kubernetes';
     /** @enum {string} */
-    LlmMode: 'cli' | 'api';
+    LlmMode: 'cli';
     /** @enum {string} */
     BotStatus: 'idle' | 'thinking' | 'action' | 'stopped';
     /** @enum {string} */
@@ -1919,6 +1919,7 @@ export interface components {
       description: string;
       avatarSeed: string;
       llmMode: components['schemas']['LlmMode'];
+      /** @description Selects the sandbox CLI. OpenRouter uses Pi, OpenAI uses Codex, Anthropic uses Claude Code, and Google uses agy. */
       llmProvider: string;
       llmModel: string;
       driverType: components['schemas']['DriverType'];
@@ -1938,6 +1939,7 @@ export interface components {
       description?: string;
       avatarSeed: string;
       llmMode: components['schemas']['LlmMode'];
+      /** @description Selects the sandbox CLI. OpenRouter uses Pi, OpenAI uses Codex, Anthropic uses Claude Code, and Google uses agy. */
       llmProvider: string;
       llmModel: string;
       driverType?: components['schemas']['DriverType'];
@@ -1948,6 +1950,7 @@ export interface components {
       description?: string;
       avatarSeed?: string;
       llmMode?: components['schemas']['LlmMode'];
+      /** @description Selects the sandbox CLI. OpenRouter uses Pi, OpenAI uses Codex, Anthropic uses Claude Code, and Google uses agy. */
       llmProvider?: string;
       llmModel?: string;
       driverType?: components['schemas']['DriverType'];

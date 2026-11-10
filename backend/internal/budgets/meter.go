@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dunkeltech/botbox/backend/internal/bots"
 	"github.com/dunkeltech/botbox/backend/internal/codexplan"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
 	"github.com/dunkeltech/botbox/backend/internal/secrets/llmproxy"
@@ -66,8 +67,13 @@ func ProxyAdmission(pool *pgxpool.Pool, workspaceID, botID uuid.UUID, now func()
 				return nil, turnErr
 			}
 			config, cfgErr := q.GetBotByWorkspaceAndID(ctx, db.GetBotByWorkspaceAndIDParams{WorkspaceID: ws, ID: bot})
-			if cfgErr != nil || cliProvider(config.LlmProvider) != provider {
+			_, configured := bots.RunnerForProvider(config.LlmProvider)
+			if cfgErr != nil || configured != provider {
 				return nil, errors.New("provider is not configured for bot")
+			}
+			if provider == llmproxy.ProviderOpenRouter && model != config.LlmModel {
+				// Pi can resolve model patterns fuzzily. Meter only the exact saved OpenRouter ID.
+				return nil, errors.New("OpenRouter model is not configured for bot")
 			}
 		}
 
@@ -230,19 +236,6 @@ func lockSpend(ctx context.Context, pool *pgxpool.Pool, workspace uuid.UUID) (*d
 			conn.Release()
 		}
 	}, nil
-}
-
-func cliProvider(provider string) string {
-	switch provider {
-	case "claude":
-		return "anthropic"
-	case "codex":
-		return "openai"
-	case "agy":
-		return "google"
-	default:
-		return provider
-	}
 }
 
 // CheckSerialized reads commitments under the same short lock used for admission.

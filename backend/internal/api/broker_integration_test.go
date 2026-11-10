@@ -44,7 +44,7 @@ func TestBrowserBrokerEndToEndTakeoverRBACAndIsolation(t *testing.T) {
 	ws := owner.ActiveWorkspace.Id
 	base := "/api/workspaces/" + ws.String()
 
-	atlas := createAPIBot(t, h, base, owner.AccessToken, "Atlas", "atlas-bb")
+	atlas := createPiBot(t, h, base, owner.AccessToken, "Atlas", "atlas-bb")
 	admin, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "admin-bb@example.com", "admin", "Admin", "CorrectHorse123!")
 	member, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "member-bb@example.com", "member", "Member", "CorrectHorse123!")
 	outsider, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "outsider-bb@example.com", "member", "Outsider", "CorrectHorse123!")
@@ -287,7 +287,7 @@ func TestBrowserBrokerEndToEndTakeoverRBACAndIsolation(t *testing.T) {
 	}
 
 	// Deleting a bot revokes its active isolated broker sessions in the external broker.
-	beta := createAPIBot(t, h, base, owner.AccessToken, "Beta", "beta-bb")
+	beta := createPiBot(t, h, base, owner.AccessToken, "Beta", "beta-bb")
 	betaSess, err := brokerClient.OpenSession(ctx, authbroker.OpenSessionInput{
 		WorkspaceID: ws,
 		BotID:       beta.Id,
@@ -309,7 +309,7 @@ func TestBrowserLoginCapabilityDisabledWithoutBroker(t *testing.T) {
 	h := newTestHarness(t, nil, harnessOpts{turnQueue: &fakeTurnQueue{}, chatLimit: 500})
 	owner, _ := h.completeSetup("owner-nobroker@example.com", "CorrectHorse123!", "Owner", "WS", "ws")
 	ws := owner.ActiveWorkspace.Id
-	atlas := createAPIBot(t, h, "/api/workspaces/"+ws.String(), owner.AccessToken, "Atlas", "atlas-nb")
+	atlas := createPiBot(t, h, "/api/workspaces/"+ws.String(), owner.AccessToken, "Atlas", "atlas-nb")
 
 	_, err := secretrequests.CreateRequest(ctx, h.pool, secretrequests.CreateInput{
 		WorkspaceID:    ws,

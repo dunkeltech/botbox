@@ -23,7 +23,7 @@ func TestStopPrivateChatTurn(t *testing.T) {
 	admin, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "admin@example.com", "admin", "Admin", "CorrectHorse123!")
 	viewer, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "viewer@example.com", "viewer", "Viewer", "CorrectHorse123!")
 	r := h.request(http.MethodPost, base+"/bots", map[string]any{
-		"name": "Atlas", "avatarSeed": "atlas-seed", "llmMode": "api", "llmProvider": "openrouter", "llmModel": "fixture",
+		"name": "Atlas", "avatarSeed": "atlas-seed", "llmMode": "cli", "llmProvider": "openrouter", "llmModel": "openrouter/fixture",
 	}, owner.AccessToken, nil, true)
 	var bot apigen.Bot
 	r.decode(t, &bot)

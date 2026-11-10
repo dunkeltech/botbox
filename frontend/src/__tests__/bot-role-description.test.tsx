@@ -17,7 +17,7 @@ const bot: Bot = {
   name: 'Atlas',
   description: '',
   avatarSeed: 'atlas',
-  llmMode: 'api',
+  llmMode: 'cli',
   llmProvider: 'openai',
   llmModel: 'fixture',
   driverType: 'docker',

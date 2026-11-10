@@ -15,8 +15,8 @@ func TestPhase6GroupConversationAPI(t *testing.T) {
 	owner, _ := h.completeSetup("owner@example.com", "CorrectHorse123!", "Owner", "Workspace", "workspace")
 	ws := owner.ActiveWorkspace.Id
 	base := "/api/workspaces/" + ws.String()
-	atlas := createAPIBot(t, h, base, owner.AccessToken, "Atlas", "atlas-seed")
-	nova := createAPIBot(t, h, base, owner.AccessToken, "Nova", "nova-seed")
+	atlas := createPiBot(t, h, base, owner.AccessToken, "Atlas", "atlas-seed")
+	nova := createPiBot(t, h, base, owner.AccessToken, "Nova", "nova-seed")
 	member, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "member@example.com", "member", "Member", "CorrectHorse123!")
 	admin, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "admin@example.com", "admin", "Admin", "CorrectHorse123!")
 	viewer, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "viewer@example.com", "viewer", "Viewer", "CorrectHorse123!")
@@ -24,7 +24,7 @@ func TestPhase6GroupConversationAPI(t *testing.T) {
 	var otherWS apigen.WorkspaceSummary
 	other.decode(t, &otherWS)
 	otherBase := "/api/workspaces/" + otherWS.Id.String()
-	outsider := createAPIBot(t, h, otherBase, owner.AccessToken, "Outsider", "outsider-seed")
+	outsider := createPiBot(t, h, otherBase, owner.AccessToken, "Outsider", "outsider-seed")
 	eve, _ := h.inviteAndAcceptNewUser(owner.AccessToken, otherWS.Id, "eve@other.com", "owner", "Eve", "CorrectHorse123!")
 
 	if r := h.request(http.MethodGet, base+"/groups", nil, "", nil, false); r.status != http.StatusUnauthorized {
@@ -264,7 +264,7 @@ func TestPhase6GroupMessageRateLimit(t *testing.T) {
 	h := newTestHarness(t, nil, harnessOpts{turnQueue: queue, chatLimit: 1})
 	owner, _ := h.completeSetup("owner@example.com", "CorrectHorse123!", "Owner", "Workspace", "workspace")
 	base := "/api/workspaces/" + owner.ActiveWorkspace.Id.String()
-	atlas := createAPIBot(t, h, base, owner.AccessToken, "Atlas", "atlas-seed")
+	atlas := createPiBot(t, h, base, owner.AccessToken, "Atlas", "atlas-seed")
 	body := newGroupBody(uuid.New(), "Launch", atlas.Id, []any{groupBot(atlas.Id, "lead")})
 	created := h.request(http.MethodPost, base+"/groups", body, owner.AccessToken, nil, true)
 	if created.status != http.StatusCreated {
@@ -288,9 +288,9 @@ func TestPhase6GroupMessageRateLimit(t *testing.T) {
 	}
 }
 
-func createAPIBot(t *testing.T, h *testHarness, base, token, name, seed string) apigen.Bot {
+func createPiBot(t *testing.T, h *testHarness, base, token, name, seed string) apigen.Bot {
 	t.Helper()
-	r := h.request(http.MethodPost, base+"/bots", map[string]any{"name": name, "avatarSeed": seed, "llmMode": "api", "llmProvider": "openrouter", "llmModel": "fixture"}, token, nil, true)
+	r := h.request(http.MethodPost, base+"/bots", map[string]any{"name": name, "avatarSeed": seed, "llmMode": "cli", "llmProvider": "openrouter", "llmModel": "openrouter/fixture"}, token, nil, true)
 	if r.status != http.StatusCreated {
 		t.Fatalf("create bot=%d %s", r.status, r.body)
 	}

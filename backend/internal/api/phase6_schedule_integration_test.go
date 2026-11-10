@@ -19,8 +19,8 @@ func TestPhase6GroupHandoffTurnLimitAndLoop(t *testing.T) {
 	h := newTestHarness(t, nil, harnessOpts{turnQueue: queue, chatLimit: 50})
 	owner, _ := h.completeSetup("owner@example.com", "CorrectHorse123!", "Owner", "Workspace", "workspace")
 	base := "/api/workspaces/" + owner.ActiveWorkspace.Id.String()
-	atlas := createAPIBot(t, h, base, owner.AccessToken, "Atlas", "atlas-seed")
-	nova := createAPIBot(t, h, base, owner.AccessToken, "Nova", "nova-seed")
+	atlas := createPiBot(t, h, base, owner.AccessToken, "Atlas", "atlas-seed")
+	nova := createPiBot(t, h, base, owner.AccessToken, "Nova", "nova-seed")
 	members := []any{groupBot(atlas.Id, "lead"), groupBot(nova.Id, "reviewer")}
 
 	handoff := createGroup(t, h, base, owner.AccessToken, groupSettings{
@@ -116,17 +116,17 @@ func TestPhase6GroupBudgetAndQueueGuards(t *testing.T) {
 	owner, _ := h.completeSetup("owner@example.com", "CorrectHorse123!", "Owner", "Workspace", "workspace")
 	ws := owner.ActiveWorkspace.Id
 	base := "/api/workspaces/" + ws.String()
-	atlas := createAPIBot(t, h, base, owner.AccessToken, "Atlas", "atlas-seed")
-	nova := createAPIBot(t, h, base, owner.AccessToken, "Nova", "nova-seed")
+	atlas := createPiBot(t, h, base, owner.AccessToken, "Atlas", "atlas-seed")
+	nova := createPiBot(t, h, base, owner.AccessToken, "Nova", "nova-seed")
 	calls := 0
 	var cost int64 = 80
-	worker := &engine.Worker{Pool: h.pool, Now: h.clock.Now, Enqueue: queue.Enqueue, Execute: func(_ context.Context, _ engine.Session, emit func(engine.Event) error) error {
+	worker := &engine.Worker{Pool: h.pool, Now: h.clock.Now, Enqueue: queue.Enqueue, Execute: func(ctx context.Context, s engine.Session, _ func(engine.Event) error) error {
 		calls++
 		amount := cost
 		if calls > 1 {
 			amount = 20
 		}
-		return emit(engine.Event{Kind: engine.EventKindUsage, CostMicros: &amount, InputTokens: 1, OutputTokens: 1})
+		return recordMeteredFixture(ctx, h, s, amount, true)
 	}}
 	capped := createGroup(t, h, base, owner.AccessToken, groupSettings{
 		name: "Cap", lead: atlas.Id, botTalk: false, turnLimit: 20, budget: 100, members: []any{groupBot(atlas.Id, "lead")},
@@ -171,9 +171,9 @@ func TestPhase6GroupBudgetAndQueueGuards(t *testing.T) {
 	unknown := createGroup(t, h, base, owner.AccessToken, groupSettings{
 		name: "Unknown", lead: atlas.Id, botTalk: false, turnLimit: 20, budget: 1000, members: []any{groupBot(atlas.Id, "lead")},
 	})
-	worker.Execute = func(_ context.Context, _ engine.Session, emit func(engine.Event) error) error {
+	worker.Execute = func(ctx context.Context, s engine.Session, _ func(engine.Event) error) error {
 		calls++
-		return emit(engine.Event{Kind: engine.EventKindUsage, IsError: true, ErrorCode: "usage_unavailable"})
+		return recordMeteredFixture(ctx, h, s, 0, false)
 	}
 	postGroup(t, h, base, owner.AccessToken, unknown.Id, "meter")
 	drainTurns(t, worker, queue, 2)
@@ -193,7 +193,7 @@ func TestPhase6GroupBudgetAndQueueGuards(t *testing.T) {
 
 	// The cap is per bot. Earlier sections leave Atlas turns in other statuses,
 	// so this group uses a bot whose queue starts empty.
-	fullBot := createAPIBot(t, h, base, owner.AccessToken, "Quill", "quill-seed")
+	fullBot := createPiBot(t, h, base, owner.AccessToken, "Quill", "quill-seed")
 	full := createGroup(t, h, base, owner.AccessToken, groupSettings{
 		name: "Full", lead: fullBot.Id, botTalk: false, turnLimit: 100, members: []any{groupBot(fullBot.Id, "lead")},
 	})
@@ -233,10 +233,8 @@ func TestPhase6GroupBudgetAndQueueGuards(t *testing.T) {
 
 	queue.err = nil
 	queue.jobs = nil
-	// API mode holds the workspace spend lock for the whole turn, so a second
-	// Process would wait on that lock. A CLI bot leaves the lock to its proxy
-	// and the per-bot running turn is what refuses the other group (ADR-0015).
-	shared := createAPIBot(t, h, base, owner.AccessToken, "Shared", "shared-seed")
+	// The per-bot running turn prevents the other group from launching the CLI.
+	shared := createPiBot(t, h, base, owner.AccessToken, "Shared", "shared-seed")
 	cli := h.request(http.MethodPatch, base+"/bots/"+shared.Id.String(), map[string]any{"llmMode": "cli", "llmProvider": "anthropic", "llmModel": "sonnet"}, owner.AccessToken, nil, true)
 	if cli.status != http.StatusOK {
 		t.Fatalf("cli bot=%d %s", cli.status, cli.body)

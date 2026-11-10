@@ -17,9 +17,9 @@ func TestGroupBroadcastRoutesOnlyMembersAndRefreshesRoles(t *testing.T) {
 	owner, _ := h.completeSetup("owner@example.com", "CorrectHorse123!", "Owner", "Workspace", "workspace")
 	ws := owner.ActiveWorkspace.Id
 	base := "/api/workspaces/" + ws.String()
-	lead := createAPIBot(t, h, base, owner.AccessToken, "Yoda", "yoda")
-	other := createAPIBot(t, h, base, owner.AccessToken, "Mace Windu", "mace")
-	createAPIBot(t, h, base, owner.AccessToken, "Outsider", "outsider")
+	lead := createPiBot(t, h, base, owner.AccessToken, "Yoda", "yoda")
+	other := createPiBot(t, h, base, owner.AccessToken, "Mace Windu", "mace")
+	createPiBot(t, h, base, owner.AccessToken, "Outsider", "outsider")
 	viewer, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "viewer@example.com", "viewer", "Viewer", "CorrectHorse123!")
 	group := createGroup(t, h, base, owner.AccessToken, groupSettings{name: "Discussion", lead: lead.Id, botTalk: true, turnLimit: 20, members: []any{groupBot(lead.Id, ""), groupBot(other.Id, ""), groupUser(viewer.User.Id, "")}})
 	path := base + "/groups/" + group.Id.String() + "/messages"

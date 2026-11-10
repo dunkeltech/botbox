@@ -422,6 +422,12 @@ describe('BotMCPProxyPanel', () => {
 
     expect(await screen.findByText('Linear Issue Tracker')).toBeInTheDocument();
     expect(
+      screen.getByRole('heading', { name: 'MCP endpoints' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('http://egress:8081/mcp/linear'),
+    ).toBeInTheDocument();
+    expect(
       screen.getByText('1 Allowed · 1 Ask approval · 1 Blocked'),
     ).toBeInTheDocument();
     expect(
@@ -461,7 +467,12 @@ describe('BotMCPProxyPanel', () => {
         create_issue: 'ask',
       },
     });
-    expect(screen.getByText('mcp__linear__create_issue')).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('group', { name: 'create_issue' })).getByRole(
+        'button',
+        { name: 'Ask approval' },
+      ),
+    ).toHaveAttribute('aria-pressed', 'true');
 
     fireEvent.click(screen.getByRole('button', { name: 'Save MCP policy' }));
     expect(

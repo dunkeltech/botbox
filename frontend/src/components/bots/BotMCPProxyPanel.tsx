@@ -67,7 +67,7 @@ function initDrafts(servers: BotMCPServerPolicy[]) {
 /**
  * Per-bot MCP proxy policy editor and decision log panel:
  * assignment switch, 3-state (Allow / Ask approval / Block) command matrix,
- * dual-mode endpoint wiring, and one-click activity triage.
+ * sandbox endpoints, and one-click activity triage.
  */
 export function BotMCPProxyPanel({
   workspaceId,
@@ -287,19 +287,6 @@ export function BotMCPProxyPanel({
   if (hidden) {
     return null;
   }
-
-  const exposedToolNames = servers.flatMap((srv) => {
-    const isAssigned = draftEnabled[srv.serverId] ?? srv.enabled;
-    if (!isAssigned) {
-      return [];
-    }
-    return (srv.tools ?? [])
-      .filter((tool) => {
-        const mode = getEffectivePolicy(srv, tool.toolName);
-        return mode === 'allow' || mode === 'ask';
-      })
-      .map((tool) => `mcp__${srv.serverSlug}__${tool.toolName}`);
-  });
 
   const activeServers = servers.filter(
     (srv) => draftEnabled[srv.serverId] ?? srv.enabled,
@@ -593,41 +580,13 @@ export function BotMCPProxyPanel({
               {t('wiringNone', { bot: botName })}
             </p>
           ) : (
-            <div className="flex flex-col gap-3 text-[13px]">
-              <div>
-                <p className="font-bold text-on-dark-muted">
-                  {t('wiringCliLabel')}
-                </p>
-                <ul className="mt-1 flex flex-col gap-1 font-mono text-green-light">
-                  {activeServers.map((srv) => (
-                    <li key={srv.serverId}>
-                      {`http://egress:8081/mcp/${srv.serverSlug}`}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div>
-                <p className="font-bold text-on-dark-muted">
-                  {t('wiringApiLabel')}
-                </p>
-                {exposedToolNames.length === 0 ? (
-                  <p className="mt-1 text-on-dark-muted">
-                    {t('wiringNone', { bot: botName })}
-                  </p>
-                ) : (
-                  <ul className="mt-1 flex flex-wrap gap-1.5 font-mono text-[12px]">
-                    {exposedToolNames.map((prefixed) => (
-                      <li
-                        key={prefixed}
-                        className="rounded-xs bg-dark-2 px-2 py-1 text-on-dark"
-                      >
-                        {prefixed}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </div>
+            <ul className="flex flex-col gap-1 font-mono text-[13px] text-green-light">
+              {activeServers.map((srv) => (
+                <li key={srv.serverId}>
+                  {`http://egress:8081/mcp/${srv.serverSlug}`}
+                </li>
+              ))}
+            </ul>
           )}
         </div>
 
