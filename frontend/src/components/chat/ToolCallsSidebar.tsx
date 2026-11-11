@@ -35,7 +35,9 @@ function StepCard({
   defaultExpanded: boolean;
 }) {
   const t = useTranslations('chat');
-  const [expanded, setExpanded] = useState(defaultExpanded);
+  const [expanded, setExpanded] = useState(
+    defaultExpanded || Boolean(step.guardrail),
+  );
 
   useEffect(() => {
     if (defaultExpanded) {
@@ -52,7 +54,116 @@ function StepCard({
       : t(step.resultCopy.key)
     : null;
   const duration = formatToolDuration(step.durationMs);
-  const hasDetails = Boolean(resultText || step.errorCode || step.imagePath);
+  const hasDetails = Boolean(
+    resultText || step.errorCode || step.imagePath || step.guardrail,
+  );
+
+  if (step.guardrail) {
+    const guardrail = step.guardrail;
+    const isBlocked = guardrail.action === 'blocked';
+    const chips = [
+      ...guardrail.ruleSlugs,
+      ...guardrail.matchLabels.filter(
+        (label) => !guardrail.ruleSlugs.includes(label),
+      ),
+    ];
+
+    const containerClass = isBlocked
+      ? 'rounded-sm border-[1.5px] border-dashed border-amber-line bg-amber-tint'
+      : 'rounded-sm border border-l-[3px] border-blue-line border-l-blue bg-paper';
+
+    const badgeClass = isBlocked
+      ? 'border-amber-line bg-paper text-amber'
+      : 'border-blue-line bg-blue-tint text-blue';
+
+    const chipClass = isBlocked
+      ? 'border-amber-line bg-paper text-amber'
+      : 'border-blue-line bg-blue-tint text-blue';
+
+    const footerClass = isBlocked
+      ? 'border-t border-amber-line bg-paper/70 px-3 py-1.5 font-mono text-[11px] text-ink-2'
+      : 'border-t border-line bg-paper-2 px-3 py-1.5 font-mono text-[11px] text-muted';
+
+    return (
+      <div
+        className={containerClass}
+        data-guardrail-trace-action={guardrail.action}
+      >
+        <button
+          type="button"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((prev) => !prev)}
+          className="flex min-h-[44px] w-full items-start justify-between gap-2 px-3 py-2.5 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
+        >
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            {isBlocked ? (
+              <AlertTriangle
+                className="h-3.5 w-3.5 shrink-0 text-amber"
+                aria-hidden="true"
+              />
+            ) : (
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-3.5 w-3.5 shrink-0 text-blue"
+                aria-hidden="true"
+              >
+                <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
+              </svg>
+            )}
+            <span
+              className={`text-[13px] font-bold ${isBlocked ? 'text-amber' : 'text-ink'}`}
+            >
+              {callText}
+            </span>
+            <span
+              className={`inline-flex items-center rounded-pill border px-2 py-0.5 text-[11px] font-bold ${badgeClass}`}
+            >
+              {isBlocked
+                ? t('guardrailBlockedBadge')
+                : t('guardrailRedactedBadge')}
+            </span>
+          </div>
+          <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted">
+            {`${guardrail.latencyMs} ms`}
+          </span>
+        </button>
+
+        {expanded ? (
+          <>
+            <div className="flex flex-col gap-2 px-3 pb-2.5">
+              {chips.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {chips.map((chip) => (
+                    <span
+                      key={chip}
+                      className={`inline-flex items-center rounded-xs border px-2 py-0.5 font-mono text-[11px] font-bold ${chipClass}`}
+                    >
+                      {chip}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+              <p className="text-[12px] leading-[1.45] text-ink-2">
+                {guardrail.summary}
+              </p>
+            </div>
+            <div className={footerClass}>
+              {t('guardrailTraceFooter', {
+                route: guardrail.routePath || '-',
+                model: guardrail.model || guardrail.provider,
+                action: guardrail.action,
+              })}
+            </div>
+          </>
+        ) : null}
+      </div>
+    );
+  }
 
   const borderTone =
     step.status === 'error'

@@ -20,6 +20,7 @@ export interface ToolTraceStep {
   finishedAt?: string;
   durationMs: number | null;
   imagePath?: string;
+  guardrail?: components['schemas']['ChatMessageGuardrail'];
 }
 
 export interface ToolTraceTurn {
@@ -205,6 +206,34 @@ export function buildToolTrace({
     }
 
     const turn = getOrCreateTurn(turnKey, msg, explicitTurnId);
+
+    const guardrail = msg.tool?.guardrail;
+    if (guardrail) {
+      const guardrailKey =
+        guardrail.action === 'blocked'
+          ? guardrail.direction === 'output'
+            ? 'guardrailTraceOutputBlocked'
+            : 'guardrailTraceInputBlocked'
+          : guardrail.direction === 'output'
+            ? 'guardrailTraceOutputRedacted'
+            : 'guardrailTraceInputRedacted';
+      turn.steps.push({
+        id: msg.id,
+        turnKey,
+        toolCallId: msg.tool?.toolCallId,
+        botId: msg.senderBotId,
+        callCopy: { key: guardrailKey, image: false },
+        status: guardrail.action === 'blocked' ? 'error' : 'done',
+        errorCode: msg.tool?.errorCode,
+        startedAt: msg.createdAt,
+        finishedAt: msg.createdAt,
+        durationMs: guardrail.latencyMs,
+        guardrail,
+        awaitedResult: false,
+      });
+      continue;
+    }
+
     const phase: 'call' | 'result' =
       msg.tool?.phase ?? (isToolCallContent(msg.content) ? 'call' : 'result');
     const copy: ToolCopy = describeToolMessage('tool', msg.content) ?? {

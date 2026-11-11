@@ -286,6 +286,14 @@ func (s *server) mountRoutes(r chi.Router) {
 			r.Delete("/mcp-servers/{serverID}", s.handleDeleteMCPServer)
 			r.Post("/mcp-servers/{serverID}/sync", s.handleSyncMCPServer)
 
+			r.Get("/guardrails", s.handleGetWorkspaceGuardrails)
+			r.Put("/guardrails/policy", s.handleUpdateWorkspaceGuardrailPolicy)
+			r.Post("/guardrails/rules", s.handleCreateWorkspaceGuardrailRule)
+			r.Patch("/guardrails/rules/{ruleID}", s.handleUpdateWorkspaceGuardrailRule)
+			r.Delete("/guardrails/rules/{ruleID}", s.handleDeleteWorkspaceGuardrailRule)
+			r.Post("/guardrails/test", s.handleTestWorkspaceGuardrailRule)
+			r.Get("/guardrails/events", s.handleListWorkspaceGuardrailEvents)
+
 			r.Get("/bots/{botID}/mcp", s.handleGetBotMCP)
 			r.Put("/bots/{botID}/mcp/{serverID}", s.handleUpdateBotMCPServer)
 			r.Get("/bots/{botID}/mcp/logs", s.handleListBotMCPLogs)

@@ -42,7 +42,11 @@ export type ToolCopyKey =
   | 'toolMemorySaved'
   | 'toolMemoryFound'
   | 'toolMemoryUpdated'
-  | 'toolMemoryDeleted';
+  | 'toolMemoryDeleted'
+  | 'guardrailTraceInputRedacted'
+  | 'guardrailTraceOutputRedacted'
+  | 'guardrailTraceInputBlocked'
+  | 'guardrailTraceOutputBlocked';
 
 export type ToolCopy = {
   key: ToolCopyKey;

@@ -1316,6 +1316,115 @@ export interface paths {
     patch: operations['updateBotMemory'];
     trace?: never;
   };
+  '/api/workspaces/{workspaceID}/guardrails': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+      };
+      cookie?: never;
+    };
+    get: operations['getWorkspaceGuardrails'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/workspaces/{workspaceID}/guardrails/policy': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put: operations['updateWorkspaceGuardrailPolicy'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/workspaces/{workspaceID}/guardrails/rules': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations['createWorkspaceGuardrailRule'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/workspaces/{workspaceID}/guardrails/rules/{ruleID}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+        ruleID: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete: operations['deleteWorkspaceGuardrailRule'];
+    options?: never;
+    head?: never;
+    patch: operations['updateWorkspaceGuardrailRule'];
+    trace?: never;
+  };
+  '/api/workspaces/{workspaceID}/guardrails/test': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations['testWorkspaceGuardrailRule'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/workspaces/{workspaceID}/guardrails/events': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+      };
+      cookie?: never;
+    };
+    get: operations['listWorkspaceGuardrailEvents'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1445,6 +1554,7 @@ export interface components {
       phase: components['schemas']['ToolCallPhase'];
       isError: boolean;
       errorCode?: string;
+      guardrail?: components['schemas']['ChatMessageGuardrail'];
     };
     ChatMessage: {
       /** Format: uuid */
@@ -1467,7 +1577,8 @@ export interface components {
         | 'secret_request'
         | 'progress'
         | 'team_status'
-        | 'memory';
+        | 'memory'
+        | 'guardrail';
       content: string;
       secretRequest?: components['schemas']['SecretRequestSummary'];
       tool?: components['schemas']['ToolCallMeta'];
@@ -1475,6 +1586,7 @@ export interface components {
       progressBlocker?: boolean;
       teamStatus?: components['schemas']['TeamBotStatus'];
       memory?: components['schemas']['ChatMessageMemory'];
+      guardrail?: components['schemas']['ChatMessageGuardrail'];
       /** Format: date-time */
       createdAt: string;
     };
@@ -2352,6 +2464,162 @@ export interface components {
       tokenEstimate: number;
       sourceLabel: string;
       deleted: boolean;
+    };
+    /** @enum {string} */
+    GuardrailDirection: 'input' | 'output' | 'both';
+    /** @enum {string} */
+    GuardrailAction: 'block' | 'redact' | 'audit';
+    /** @enum {string} */
+    GuardrailFailureMode: 'fail_closed' | 'fail_open';
+    /** @enum {string} */
+    GuardrailMatchMode: 'regex' | 'keywords';
+    /** @enum {string} */
+    GuardrailPIIEntity: 'email' | 'iban' | 'card' | 'phone';
+    /** @enum {string} */
+    GuardrailEventAction: 'allowed' | 'audited' | 'redacted' | 'blocked';
+    GuardrailDetectorConfig: {
+      enabled: boolean;
+      direction: components['schemas']['GuardrailDirection'];
+      action: components['schemas']['GuardrailAction'];
+    };
+    GuardrailPIIDetectorConfig: {
+      enabled: boolean;
+      direction: components['schemas']['GuardrailDirection'];
+      action: components['schemas']['GuardrailAction'];
+      entities: components['schemas']['GuardrailPIIEntity'][];
+    };
+    WorkspaceGuardrailPolicy: {
+      /** Format: uuid */
+      workspaceId: string;
+      enabled: boolean;
+      failureMode: components['schemas']['GuardrailFailureMode'];
+      secrets: components['schemas']['GuardrailDetectorConfig'];
+      pii: components['schemas']['GuardrailPIIDetectorConfig'];
+      promptInjection: components['schemas']['GuardrailDetectorConfig'];
+      /** Format: int64 */
+      revision: number;
+      /** Format: date-time */
+      updatedAt: string;
+    };
+    UpdateGuardrailPolicyRequest: {
+      enabled: boolean;
+      failureMode: components['schemas']['GuardrailFailureMode'];
+      secrets: components['schemas']['GuardrailDetectorConfig'];
+      pii: components['schemas']['GuardrailPIIDetectorConfig'];
+      promptInjection: components['schemas']['GuardrailDetectorConfig'];
+    };
+    WorkspaceGuardrailRule: {
+      /** Format: uuid */
+      id: string;
+      /** Format: uuid */
+      workspaceId: string;
+      slug: string;
+      name: string;
+      matchMode: components['schemas']['GuardrailMatchMode'];
+      pattern: string;
+      direction: components['schemas']['GuardrailDirection'];
+      action: components['schemas']['GuardrailAction'];
+      replacementToken: string;
+      enabled: boolean;
+      /** Format: date-time */
+      createdAt: string;
+      /** Format: date-time */
+      updatedAt: string;
+    };
+    CreateGuardrailRuleRequest: {
+      slug: string;
+      name: string;
+      matchMode: components['schemas']['GuardrailMatchMode'];
+      pattern: string;
+      direction: components['schemas']['GuardrailDirection'];
+      action: components['schemas']['GuardrailAction'];
+      replacementToken?: string;
+      enabled: boolean;
+    };
+    UpdateGuardrailRuleRequest: {
+      name?: string;
+      matchMode?: components['schemas']['GuardrailMatchMode'];
+      pattern?: string;
+      direction?: components['schemas']['GuardrailDirection'];
+      action?: components['schemas']['GuardrailAction'];
+      replacementToken?: string;
+      enabled?: boolean;
+    };
+    TestGuardrailRuleRequest: {
+      matchMode: components['schemas']['GuardrailMatchMode'];
+      pattern: string;
+      replacementToken?: string;
+      sampleText: string;
+    };
+    TestGuardrailRuleResponse: {
+      valid: boolean;
+      matchCount: number;
+      preview: string;
+      error?: string;
+    };
+    GuardrailSummary24h: {
+      /** Format: int64 */
+      totalEvaluations: number;
+      /** Format: int64 */
+      redactedCount: number;
+      /** Format: int64 */
+      blockedCount: number;
+      /** Format: int64 */
+      auditedCount: number;
+    };
+    WorkspaceGuardrailsResponse: {
+      policy: components['schemas']['WorkspaceGuardrailPolicy'];
+      rules: components['schemas']['WorkspaceGuardrailRule'][];
+      summary24h: components['schemas']['GuardrailSummary24h'];
+      activeRuleCount: number;
+      coveredProviders: string[];
+    };
+    GuardrailEvent: {
+      /** Format: uuid */
+      id: string;
+      /** Format: uuid */
+      workspaceId: string;
+      /** Format: uuid */
+      botId: string;
+      botName: string;
+      /** Format: uuid */
+      conversationId?: string;
+      /** Format: uuid */
+      turnId?: string;
+      provider: string;
+      model: string;
+      routePath: string;
+      /** @enum {string} */
+      direction: 'input' | 'output';
+      action: components['schemas']['GuardrailEventAction'];
+      statusCode: number;
+      latencyMs: number;
+      ruleSlugs: string[];
+      matchLabels: string[];
+      matchCount: number;
+      summary: string;
+      /** Format: date-time */
+      createdAt: string;
+    };
+    GuardrailEventListResponse: {
+      events: components['schemas']['GuardrailEvent'][];
+    };
+    ChatMessageGuardrail: {
+      /** Format: uuid */
+      eventId: string;
+      turnId?: string;
+      /** @enum {string} */
+      direction: 'input' | 'output';
+      action: components['schemas']['GuardrailEventAction'];
+      provider: string;
+      model?: string;
+      routePath?: string;
+      statusCode: number;
+      latencyMs: number;
+      ruleSlugs: string[];
+      matchLabels: string[];
+      matchCount: number;
+      summary: string;
     };
   };
   responses: never;
@@ -8066,6 +8334,407 @@ export interface operations {
       };
       /** @description Always-in-context budget exceeded */
       409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  getWorkspaceGuardrails: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Workspace LLM proxy guardrail policy, custom rules, and 24h evaluation summary */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['WorkspaceGuardrailsResponse'];
+        };
+      };
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Workspace not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  updateWorkspaceGuardrailPolicy: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateGuardrailPolicyRequest'];
+      };
+    };
+    responses: {
+      /** @description Workspace LLM proxy guardrail policy updated */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['WorkspaceGuardrailPolicy'];
+        };
+      };
+      /** @description Validation error */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Owner or admin required */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Workspace not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  createWorkspaceGuardrailRule: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateGuardrailRuleRequest'];
+      };
+    };
+    responses: {
+      /** @description Custom guardrail rule created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['WorkspaceGuardrailRule'];
+        };
+      };
+      /** @description Validation error */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Owner or admin required */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Workspace not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Duplicate slug or rule limit reached */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  deleteWorkspaceGuardrailRule: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+        ruleID: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Custom guardrail rule deleted */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Owner or admin required */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Workspace or guardrail rule not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  updateWorkspaceGuardrailRule: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+        ruleID: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateGuardrailRuleRequest'];
+      };
+    };
+    responses: {
+      /** @description Custom guardrail rule updated */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['WorkspaceGuardrailRule'];
+        };
+      };
+      /** @description Validation error */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Owner or admin required */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Workspace or guardrail rule not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  testWorkspaceGuardrailRule: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['TestGuardrailRuleRequest'];
+      };
+    };
+    responses: {
+      /** @description Stateless Quick Test evaluation result */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TestGuardrailRuleResponse'];
+        };
+      };
+      /** @description Validation error */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Owner or admin required */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Workspace not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  listWorkspaceGuardrailEvents: {
+    parameters: {
+      query?: {
+        action?: components['schemas']['GuardrailEventAction'];
+        direction?: 'input' | 'output';
+        botId?: string;
+        limit?: number;
+        offset?: number;
+      };
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Sanitized LLM proxy guardrail audit log events */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['GuardrailEventListResponse'];
+        };
+      };
+      /** @description Validation error */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Workspace not found */
+      404: {
         headers: {
           [name: string]: unknown;
         };

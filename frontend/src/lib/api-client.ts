@@ -41,6 +41,7 @@ import type {
   WorkspaceSummary,
   WriteFileContentRequest,
 } from '@/types/api';
+import type { components } from '@/types/openapi.gen';
 
 /**
  * Error raised when an API request fails with a structured backend error or HTTP failure.
@@ -857,5 +858,14 @@ export function listBotEgressLogs(
   const suffix = qs ? `?${qs}` : '';
   return requestJson<EgressLogListResponse>(
     `/api/workspaces/${encodeURIComponent(workspaceId)}/bots/${encodeURIComponent(botId)}/egress/logs${suffix}`,
+  );
+}
+
+/** Fetches the workspace LLM proxy guardrail policy and rule counts. */
+export function getWorkspaceGuardrails(
+  workspaceId: string,
+): Promise<components['schemas']['WorkspaceGuardrailsResponse']> {
+  return requestJson<components['schemas']['WorkspaceGuardrailsResponse']>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/guardrails`,
   );
 }

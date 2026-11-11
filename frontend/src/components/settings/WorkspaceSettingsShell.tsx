@@ -1,6 +1,13 @@
 'use client';
 
-import { Coins, KeyRound, Plug, SlidersHorizontal, Users } from 'lucide-react';
+import {
+  Coins,
+  KeyRound,
+  Plug,
+  Shield,
+  SlidersHorizontal,
+  Users,
+} from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
@@ -56,6 +63,11 @@ const SETTINGS_NAV_GROUPS = [
         href: '/settings/integrations',
         labelKey: 'nav.integrations',
         icon: Plug,
+      },
+      {
+        href: '/settings/guardrails',
+        labelKey: 'nav.guardrails',
+        icon: Shield,
       },
     ],
   },

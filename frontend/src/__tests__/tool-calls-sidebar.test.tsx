@@ -15,6 +15,7 @@ import {
   getAccessToken,
   getBot,
   getBotEnvironment,
+  getWorkspaceGuardrails,
   listBotSecrets,
   listDesktopActions,
   requestJson,
@@ -59,6 +60,7 @@ vi.mock('@/lib/api-client', async () => {
     getAccessToken: vi.fn(() => null),
     getBot: vi.fn(),
     getBotEnvironment: vi.fn(),
+    getWorkspaceGuardrails: vi.fn(),
     listBotSecrets: vi.fn(),
     listDesktopActions: vi.fn(),
   };
@@ -404,6 +406,7 @@ describe('Tool calls sidebar (Proposal 1)', () => {
       updatedAt: '2026-11-15T00:00:00Z',
     });
     vi.mocked(listBotSecrets).mockResolvedValue({ secrets: [] });
+    vi.mocked(getWorkspaceGuardrails).mockResolvedValue(null as never);
     vi.mocked(listDesktopActions).mockResolvedValue({
       actions: [],
       screenshotRetentionDays: 7,
@@ -446,5 +449,264 @@ describe('Tool calls sidebar (Proposal 1)', () => {
     });
     expect(screen.getByText('Using Bash')).toBeInTheDocument();
     expect(screen.getByText('Preparing desktop tools')).toBeInTheDocument();
+  });
+
+  it('renders inline guardrail notices, specialized guardrail tool trace cards, and header badge in BotWorkspaceView', async () => {
+    const maceBot = bots[0]!;
+    vi.mocked(getBot).mockResolvedValue(maceBot);
+    vi.mocked(getBotEnvironment).mockResolvedValue({
+      botId: 'bot-1',
+      workspaceId: 'ws-1',
+      envId: 'env-1',
+      driver: 'docker',
+      status: 'stopped',
+      controlHolder: null,
+      controlNote: '',
+      watchers: [],
+      stats: {
+        cpuPercent: 0,
+        memoryUsedMiB: 0,
+        memoryLimitMiB: 2048,
+        volumeUsedMiB: 0,
+        volumeLimitMiB: 10240,
+      },
+      image: 'botbox/desktop:dev',
+      cpuMillis: 2000,
+      memoryMiB: 2048,
+      volumeRef: 'vol-1',
+      startedAt: null,
+      updatedAt: '2026-11-15T00:00:00Z',
+    });
+    vi.mocked(listBotSecrets).mockResolvedValue({ secrets: [] });
+    vi.mocked(getWorkspaceGuardrails).mockResolvedValue({
+      policy: {
+        workspaceId: 'ws-1',
+        enabled: true,
+        failureMode: 'fail_closed',
+        secrets: { enabled: true, direction: 'both', action: 'block' },
+        pii: {
+          enabled: true,
+          direction: 'both',
+          action: 'redact',
+          entities: ['email'],
+        },
+        promptInjection: { enabled: true, direction: 'input', action: 'audit' },
+        revision: 1,
+        updatedAt: '2026-11-19T00:00:00Z',
+      },
+      rules: [],
+      summary24h: {
+        totalEvaluations: 5,
+        redactedCount: 1,
+        blockedCount: 1,
+        auditedCount: 0,
+      },
+      activeRuleCount: 3,
+      coveredProviders: ['anthropic', 'openai'],
+    });
+    vi.mocked(listDesktopActions).mockResolvedValue({
+      actions: [],
+      screenshotRetentionDays: 7,
+    });
+
+    const guardrailMessages = [
+      {
+        id: 'msg-user-gr',
+        position: 1,
+        senderType: 'user',
+        senderUserId: 'user-1',
+        kind: 'text',
+        content: 'Analyze this payload',
+        createdAt: '2026-11-19T00:00:00Z',
+      },
+      {
+        id: 'msg-gr-card-1',
+        position: 2,
+        senderType: 'bot',
+        senderBotId: 'bot-1',
+        kind: 'guardrail',
+        content: '1 match(es) masked (email)',
+        createdAt: '2026-11-19T00:00:01Z',
+        guardrail: {
+          eventId: 'ev-gr-1',
+          turnId: 'turn-gr',
+          direction: 'input',
+          action: 'redacted',
+          provider: 'anthropic',
+          model: 'claude-sonnet-4-5',
+          routePath: '/v1/messages',
+          statusCode: 200,
+          latencyMs: 4,
+          ruleSlugs: ['pii-protection'],
+          matchLabels: ['email'],
+          matchCount: 1,
+          summary: '1 match(es) masked (email)',
+        },
+      },
+      {
+        id: 'msg-gr-tool-1',
+        position: 3,
+        senderType: 'bot',
+        senderBotId: 'bot-1',
+        kind: 'tool',
+        content: '1 match(es) masked (email)',
+        createdAt: '2026-11-19T00:00:01Z',
+        tool: {
+          turnId: 'turn-gr',
+          toolCallId: 'guardrail-ev-gr-1',
+          phase: 'result',
+          isError: false,
+          guardrail: {
+            eventId: 'ev-gr-1',
+            turnId: 'turn-gr',
+            direction: 'input',
+            action: 'redacted',
+            provider: 'anthropic',
+            model: 'claude-sonnet-4-5',
+            routePath: '/v1/messages',
+            statusCode: 200,
+            latencyMs: 4,
+            ruleSlugs: ['pii-protection'],
+            matchLabels: ['email'],
+            matchCount: 1,
+            summary: '1 match(es) masked (email)',
+          },
+        },
+      },
+      {
+        id: 'msg-gr-card-2',
+        position: 4,
+        senderType: 'bot',
+        senderBotId: 'bot-1',
+        kind: 'guardrail',
+        content: '1 policy violation(s) detected · response rejected',
+        createdAt: '2026-11-19T00:00:03Z',
+        guardrail: {
+          eventId: 'ev-gr-2',
+          turnId: 'turn-gr',
+          direction: 'output',
+          action: 'blocked',
+          provider: 'anthropic',
+          model: 'claude-sonnet-4-5',
+          routePath: '/v1/messages',
+          statusCode: 403,
+          latencyMs: 3,
+          ruleSlugs: ['secrets-leak-guard'],
+          matchLabels: ['api_key'],
+          matchCount: 1,
+          summary: '1 policy violation(s) detected · response rejected',
+        },
+      },
+      {
+        id: 'msg-gr-tool-2',
+        position: 5,
+        senderType: 'bot',
+        senderBotId: 'bot-1',
+        kind: 'tool',
+        content: '1 policy violation(s) detected · response rejected',
+        createdAt: '2026-11-19T00:00:03Z',
+        tool: {
+          turnId: 'turn-gr',
+          toolCallId: 'guardrail-ev-gr-2',
+          phase: 'result',
+          isError: true,
+          errorCode: 'guardrail_blocked',
+          guardrail: {
+            eventId: 'ev-gr-2',
+            turnId: 'turn-gr',
+            direction: 'output',
+            action: 'blocked',
+            provider: 'anthropic',
+            model: 'claude-sonnet-4-5',
+            routePath: '/v1/messages',
+            statusCode: 403,
+            latencyMs: 3,
+            ruleSlugs: ['secrets-leak-guard'],
+            matchLabels: ['api_key'],
+            matchCount: 1,
+            summary: '1 policy violation(s) detected · response rejected',
+          },
+        },
+      },
+      {
+        id: 'msg-gr-reply',
+        position: 6,
+        senderType: 'bot',
+        senderBotId: 'bot-1',
+        kind: 'text',
+        content: 'Done after guardrail intervention.',
+        createdAt: '2026-11-19T00:00:03Z',
+      },
+    ];
+
+    request.mockImplementation((path: string) => {
+      if (path.endsWith('/runtime')) return Promise.resolve({ paused: false });
+      if (path.endsWith('/dm')) {
+        return Promise.resolve({ id: 'conv-1', botId: 'bot-1' });
+      }
+      if (path.includes('/conversations/conv-1/messages')) {
+        return Promise.resolve({
+          messages: guardrailMessages,
+          turns: [
+            {
+              id: 'turn-gr',
+              status: 'failed',
+              queueAhead: 0,
+              errorCode: 'engine.guardrail_blocked',
+            },
+          ],
+        });
+      }
+      if (path.includes('/budgets')) {
+        return Promise.resolve({ spendTodayMicros: 0, budgets: [] });
+      }
+      return Promise.resolve({});
+    });
+
+    renderWithIntl(<BotWorkspaceView />);
+
+    const headerChip = await screen.findByRole('link', {
+      name: 'LLM guardrails · 3 active',
+    });
+    expect(headerChip).toHaveAttribute('href', '/settings/guardrails');
+
+    expect(
+      await screen.findByText('LLM guardrail redacted prompt'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('LLM response blocked by workspace guardrail'),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText('LLM proxy guardrail · Input redacted'),
+    ).toBeNull();
+
+    const chip = await screen.findByRole('button', {
+      name: '2 tool steps · 2.0 s · 1 guardrail redact · 1 guardrail block',
+    });
+    fireEvent.click(chip);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: 'Tool calls' }),
+      ).toHaveAttribute('aria-pressed', 'true');
+    });
+    expect(
+      screen.getByText('LLM proxy guardrail · Input redacted'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('LLM proxy guardrail · Output blocked'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('pii-protection')).toBeInTheDocument();
+    expect(screen.getByText('secrets-leak-guard')).toBeInTheDocument();
+    expect(screen.getByText('4 ms')).toBeInTheDocument();
+    expect(screen.getByText('3 ms')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Errors (1)' }));
+    expect(
+      screen.queryByText('LLM proxy guardrail · Input redacted'),
+    ).toBeNull();
+    expect(
+      screen.getByText('LLM proxy guardrail · Output blocked'),
+    ).toBeInTheDocument();
   });
 });

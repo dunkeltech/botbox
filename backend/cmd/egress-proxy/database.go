@@ -20,6 +20,7 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/events"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
 	"github.com/dunkeltech/botbox/backend/internal/groups"
+	"github.com/dunkeltech/botbox/backend/internal/guardrails"
 	"github.com/dunkeltech/botbox/backend/internal/mcpproxy"
 	"github.com/dunkeltech/botbox/backend/internal/memory"
 	"github.com/dunkeltech/botbox/backend/internal/notify"
@@ -141,8 +142,29 @@ func databaseHandlerWithLifecycle(
 			return &llmproxy.SecretConfig{UpstreamURL: codexplan.Upstream, PathPrefix: "/v1/responses", AuthKind: llmproxy.AuthKindOpenAIPlan, SecretValue: token, PlanRevision: revision}, nil
 		}
 	}
-	llm, err := llmproxy.NewScopedHandler(workspace.String(), bot.String(), resolve, &llmproxy.Options{Logger: logger, Admit: budgets.ProxyAdmission(pool, workspace, bot, time.Now), Client: &http.Client{Timeout: 10 * time.Minute}})
+	guardrailSvc := guardrails.NewService(pool, ring, signal, logger)
+	guardrailUnsub := func() {}
+	if pub != nil {
+		subStop, subErr := pub.SubscribeGuardrailsInvalidate(workspace, func() {
+			guardrailSvc.InvalidateWorkspace(workspace)
+		})
+		if subErr != nil {
+			if logger != nil {
+				logger.Warn("guardrails invalidation subscription unavailable", "err", subErr)
+			}
+		} else {
+			guardrailUnsub = subStop
+		}
+	}
+
+	llm, err := llmproxy.NewScopedHandler(workspace.String(), bot.String(), resolve, &llmproxy.Options{
+		Logger:     logger,
+		Admit:      budgets.ProxyAdmission(pool, workspace, bot, time.Now),
+		Guardrails: guardrailSvc.ForBot(workspace, bot),
+		Client:     &http.Client{Timeout: 10 * time.Minute},
+	})
 	if err != nil {
+		guardrailUnsub()
 		unsub()
 		stopReval()
 		return nil, nil, err
@@ -163,6 +185,7 @@ func databaseHandlerWithLifecycle(
 	}
 	stopAll := func() {
 		mcpUnsub()
+		guardrailUnsub()
 		unsub()
 		stopReval()
 	}

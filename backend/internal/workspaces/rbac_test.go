@@ -47,7 +47,11 @@ func TestCan(t *testing.T) {
 		{name: "member views workspace", role: RoleMember, action: ActionViewWorkspace, want: true},
 		{name: "viewer views workspace", role: RoleViewer, action: ActionViewWorkspace, want: true},
 
-		// Manage workspace
+		// Manage workspace & security policies
+		{name: "owner manages guardrails", role: RoleOwner, action: ActionManageGuardrails, want: true},
+		{name: "admin manages guardrails", role: RoleAdmin, action: ActionManageGuardrails, want: true},
+		{name: "member cannot manage guardrails", role: RoleMember, action: ActionManageGuardrails, want: false},
+		{name: "viewer cannot manage guardrails", role: RoleViewer, action: ActionManageGuardrails, want: false},
 		{name: "owner manages GitLab instances", role: RoleOwner, action: ActionManageGitLabInstances, want: true},
 		{name: "admin manages GitLab instances", role: RoleAdmin, action: ActionManageGitLabInstances, want: true},
 		{name: "member cannot manage GitLab instances", role: RoleMember, action: ActionManageGitLabInstances, want: false},

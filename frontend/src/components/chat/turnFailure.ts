@@ -15,6 +15,7 @@ const turnFailureKeys: Record<string, string> = {
   'engine.credentials_unavailable': 'credentialsUnavailable',
   'engine.provider_failed': 'providerFailed',
   'engine.stream_format_invalid': 'streamFormatInvalid',
+  'engine.guardrail_blocked': 'guardrailBlocked',
   'engine.interrupted': 'turnInterrupted',
   budget_exceeded: 'budgetExceeded',
   'engine.control_held': 'computerControlled',

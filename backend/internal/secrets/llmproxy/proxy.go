@@ -84,6 +84,29 @@ type AuditEvent struct {
 	Result   string
 }
 
+// GuardrailInputDecision reports the outcome of evaluating an outbound LLM request body.
+type GuardrailInputDecision struct {
+	Action  string
+	Code    string
+	Message string
+	Body    []byte
+}
+
+// GuardrailOutputDecision reports the outcome of evaluating a non-streaming LLM response body.
+type GuardrailOutputDecision struct {
+	Action  string
+	Code    string
+	Message string
+	Body    []byte
+}
+
+// GuardrailEnforcer inspects and optionally redacts or blocks LLM requests and responses.
+type GuardrailEnforcer interface {
+	EvaluateInput(ctx context.Context, provider, model, routePath string, body []byte) (GuardrailInputDecision, error)
+	EvaluateOutputJSON(ctx context.Context, provider, model, routePath string, body []byte) (GuardrailOutputDecision, error)
+	WrapSSEOutput(ctx context.Context, provider, model, routePath string, dst io.Writer) io.WriteCloser
+}
+
 // Options configures optional dependencies for NewHandler.
 type Options struct {
 	// Admit reserves accounting before forwarding and returns a settlement function.
@@ -92,6 +115,7 @@ type Options struct {
 
 	// CheckBudget must atomically check all applicable limits before each request.
 	CheckBudget    func(context.Context, string, string) error
+	Guardrails     GuardrailEnforcer
 	workspaceID    string
 	botID          string
 	BotIDHeader    string
@@ -250,6 +274,7 @@ func NewHandler(resolve SecretResolver, opts *Options) http.Handler {
 		}
 
 		var settle func(Usage) error
+		var requestModel string
 		if opts != nil && opts.Admit != nil {
 			if r.Method != http.MethodPost || !meteredPath(provider, upstreamPath) {
 				writeError(w, logger, 403, "forbidden", "unsupported metered endpoint")
@@ -267,11 +292,36 @@ func NewHandler(resolve SecretResolver, opts *Options) http.Handler {
 				writeError(w, logger, 400, "validation_error", "model is required")
 				return
 			}
+			requestModel = model.Model
 			if plan {
 				body, bodyErr = planRequest(body, model.Model)
 				if bodyErr != nil {
 					writeError(w, logger, http.StatusBadRequest, "plan_request_unsupported", "Codex sent an unsupported ChatGPT plan request")
 					return
+				}
+			}
+			if opts.Guardrails != nil {
+				dec, gErr := opts.Guardrails.EvaluateInput(requestCtx, provider, requestModel, upstreamPath, body)
+				if gErr != nil {
+					emitAudit(onAudit, botID, provider, r.Method, upstreamPath, "guardrail_unavailable")
+					writeError(w, logger, http.StatusForbidden, "guardrail_unavailable", "LLM guardrail evaluation failed closed")
+					return
+				}
+				if dec.Action == "blocked" {
+					code := dec.Code
+					if code == "" {
+						code = "guardrail_blocked"
+					}
+					msg := dec.Message
+					if msg == "" {
+						msg = "LLM request blocked by workspace guardrail"
+					}
+					emitAudit(onAudit, botID, provider, r.Method, upstreamPath, "guardrail_blocked")
+					writeError(w, logger, http.StatusForbidden, code, msg)
+					return
+				}
+				if dec.Action == "redacted" && len(dec.Body) > 0 {
+					body = dec.Body
 				}
 			}
 			outReq.Body = io.NopCloser(bytes.NewReader(body))
@@ -299,6 +349,41 @@ func NewHandler(resolve SecretResolver, opts *Options) http.Handler {
 				writeError(w, logger, 503, "budget_unavailable", "accounting unavailable")
 				return
 			}
+		} else if opts != nil && opts.Guardrails != nil && r.Method == http.MethodPost && outReq.Body != nil {
+			body, bodyErr := io.ReadAll(io.LimitReader(outReq.Body, (8<<20)+1))
+			if bodyErr != nil || len(body) > 8<<20 {
+				writeError(w, logger, 400, "validation_error", "invalid model request")
+				return
+			}
+			var model struct {
+				Model string `json:"model"`
+			}
+			_ = json.Unmarshal(body, &model)
+			requestModel = model.Model
+			dec, gErr := opts.Guardrails.EvaluateInput(requestCtx, provider, requestModel, upstreamPath, body)
+			if gErr != nil {
+				emitAudit(onAudit, botID, provider, r.Method, upstreamPath, "guardrail_unavailable")
+				writeError(w, logger, http.StatusForbidden, "guardrail_unavailable", "LLM guardrail evaluation failed closed")
+				return
+			}
+			if dec.Action == "blocked" {
+				code := dec.Code
+				if code == "" {
+					code = "guardrail_blocked"
+				}
+				msg := dec.Message
+				if msg == "" {
+					msg = "LLM request blocked by workspace guardrail"
+				}
+				emitAudit(onAudit, botID, provider, r.Method, upstreamPath, "guardrail_blocked")
+				writeError(w, logger, http.StatusForbidden, code, msg)
+				return
+			}
+			if dec.Action == "redacted" && len(dec.Body) > 0 {
+				body = dec.Body
+			}
+			outReq.Body = io.NopCloser(bytes.NewReader(body))
+			outReq.ContentLength = int64(len(body))
 		}
 		usage := Usage{}
 		if settle != nil {
@@ -351,6 +436,61 @@ func NewHandler(resolve SecretResolver, opts *Options) http.Handler {
 		}
 		emitAudit(onAudit, botID, provider, r.Method, upstreamPath, "token_added")
 
+		if opts != nil && opts.Guardrails != nil && resp.StatusCode >= 200 && resp.StatusCode < 300 && !isEventStream(resp.Header.Get("Content-Type")) {
+			respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, (8<<20)+1))
+			if readErr != nil || len(respBody) > 8<<20 {
+				writeError(w, logger, http.StatusBadGateway, "upstream_error", "upstream response exceeds maximum size")
+				return
+			}
+			collector := newUsageCollector(resp.Header.Get("Content-Type"))
+			if settle != nil {
+				_, _ = collector.Write(respBody)
+			}
+			dec, gErr := opts.Guardrails.EvaluateOutputJSON(requestCtx, provider, requestModel, upstreamPath, respBody)
+			if gErr != nil {
+				if settle != nil {
+					usage = collector.finish(true)
+				}
+				emitAudit(onAudit, botID, provider, r.Method, upstreamPath, "guardrail_unavailable")
+				writeError(w, logger, http.StatusForbidden, "guardrail_unavailable", "LLM guardrail evaluation failed closed")
+				return
+			}
+			if dec.Action == "blocked" {
+				if settle != nil {
+					usage = collector.finish(true)
+				}
+				code := dec.Code
+				if code == "" {
+					code = "guardrail_blocked"
+				}
+				msg := dec.Message
+				if msg == "" {
+					msg = "LLM response blocked by workspace guardrail"
+				}
+				emitAudit(onAudit, botID, provider, r.Method, upstreamPath, "guardrail_blocked")
+				writeError(w, logger, http.StatusForbidden, code, msg)
+				return
+			}
+			if dec.Action == "redacted" && len(dec.Body) > 0 {
+				respBody = dec.Body
+			}
+			if settle != nil {
+				w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+			} else {
+				copyHeaders(w.Header(), resp.Header)
+				w.Header().Del("Content-Length")
+			}
+			w.WriteHeader(resp.StatusCode)
+			_, copyErr := w.Write(respBody)
+			if settle != nil {
+				usage = collector.finish(copyErr == nil)
+				if copyErr == nil && upstreamPath == "/v1/messages/count_tokens" && resp.StatusCode == 200 {
+					usage = Usage{Known: true}
+				}
+			}
+			return
+		}
+
 		if settle != nil {
 			if plan {
 				w.Header().Set("Content-Type", "text/event-stream")
@@ -367,6 +507,13 @@ func NewHandler(resolve SecretResolver, opts *Options) http.Handler {
 			// live CLI activity and delaying cancellation feedback in the UI.
 			destination = flushingWriter{w}
 		}
+		var guardCloser io.WriteCloser
+		if opts != nil && opts.Guardrails != nil && resp.StatusCode >= 200 && resp.StatusCode < 300 && isEventStream(resp.Header.Get("Content-Type")) {
+			guardCloser = opts.Guardrails.WrapSSEOutput(requestCtx, provider, requestModel, upstreamPath, destination)
+			if guardCloser != nil {
+				destination = guardCloser
+			}
+		}
 		var source io.Reader = resp.Body
 		collector := newUsageCollector(resp.Header.Get("Content-Type"))
 		if settle != nil {
@@ -377,6 +524,11 @@ func NewHandler(resolve SecretResolver, opts *Options) http.Handler {
 			copyErr = copyPlanStream(destination, source, cfg.SecretValue)
 		} else {
 			_, copyErr = io.Copy(destination, source)
+		}
+		if guardCloser != nil {
+			if closeErr := guardCloser.Close(); closeErr != nil && copyErr == nil {
+				copyErr = closeErr
+			}
 		}
 		if settle != nil {
 			usage = collector.finish(copyErr == nil && resp.StatusCode >= 200 && resp.StatusCode < 300)

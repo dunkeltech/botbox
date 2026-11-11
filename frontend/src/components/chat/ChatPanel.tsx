@@ -26,6 +26,7 @@ import { StopTurnButton } from '@/components/chat/StopTurnButton';
 import { ToolCallsSidebar } from '@/components/chat/ToolCallsSidebar';
 import { ToolImage } from '@/components/chat/ToolImage';
 import { BrokerTakeoverModal } from '@/components/chat/BrokerTakeoverModal';
+import { GuardrailNoticeCard } from '@/components/chat/GuardrailNoticeCard';
 import { MarkdownMessage } from '@/components/chat/MarkdownMessage';
 import { MemorySavedCard } from '@/components/chat/MemorySavedCard';
 import { SecretRequestCard } from '@/components/chat/SecretRequestCard';
@@ -470,6 +471,19 @@ export function ChatPanel({
               </div>
             );
           }
+          if (message.kind === 'guardrail' && message.guardrail) {
+            return (
+              <div key={message.id} className="flex flex-col gap-3">
+                <GuardrailNoticeCard
+                  guardrail={message.guardrail}
+                  role={effectiveRole}
+                  onInspect={handleInspectTurn}
+                />
+                {renderUnattachedToolTurns(unattachedAfter)}
+              </div>
+            );
+          }
+
           if (message.kind === 'memory' && message.memory) {
             return (
               <div key={message.id} className="flex flex-col gap-3">
@@ -639,6 +653,14 @@ export function ChatPanel({
               href={`/bots/${botId}#computer-controls`}
             >
               {t('openComputer')}
+            </Link>
+          ) : turn.errorCode === 'engine.guardrail_blocked' &&
+            (effectiveRole === 'owner' || effectiveRole === 'admin') ? (
+            <Link
+              className="mt-2 inline-flex min-h-[44px] items-center font-bold underline"
+              href="/settings/guardrails"
+            >
+              {t('openGuardrails')}
             </Link>
           ) : null}
         </Alert>

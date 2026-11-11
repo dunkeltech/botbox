@@ -2773,6 +2773,178 @@ paths:
         '403': {description: Bot manager required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
         '404': {description: Workspace, bot, or memory entry not found, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
 
+  /api/workspaces/{workspaceID}/guardrails:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceID'
+    get:
+      operationId: getWorkspaceGuardrails
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Workspace LLM proxy guardrail policy, custom rules, and 24h evaluation summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceGuardrailsResponse'
+        '401': {description: Unauthenticated, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '404': {description: Workspace not found, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+
+  /api/workspaces/{workspaceID}/guardrails/policy:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceID'
+    put:
+      operationId: updateWorkspaceGuardrailPolicy
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateGuardrailPolicyRequest'
+      responses:
+        '200':
+          description: Workspace LLM proxy guardrail policy updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceGuardrailPolicy'
+        '400': {description: Validation error, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '401': {description: Unauthenticated, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '403': {description: Owner or admin required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '404': {description: Workspace not found, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+
+  /api/workspaces/{workspaceID}/guardrails/rules:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceID'
+    post:
+      operationId: createWorkspaceGuardrailRule
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGuardrailRuleRequest'
+      responses:
+        '201':
+          description: Custom guardrail rule created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceGuardrailRule'
+        '400': {description: Validation error, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '401': {description: Unauthenticated, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '403': {description: Owner or admin required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '404': {description: Workspace not found, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '409': {description: Duplicate slug or rule limit reached, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+
+  /api/workspaces/{workspaceID}/guardrails/rules/{ruleID}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceID'
+      - name: ruleID
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      operationId: updateWorkspaceGuardrailRule
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateGuardrailRuleRequest'
+      responses:
+        '200':
+          description: Custom guardrail rule updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceGuardrailRule'
+        '400': {description: Validation error, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '401': {description: Unauthenticated, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '403': {description: Owner or admin required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '404': {description: Workspace or guardrail rule not found, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+    delete:
+      operationId: deleteWorkspaceGuardrailRule
+      security: [{bearerAuth: []}]
+      responses:
+        '204': {description: Custom guardrail rule deleted}
+        '401': {description: Unauthenticated, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '403': {description: Owner or admin required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '404': {description: Workspace or guardrail rule not found, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+
+  /api/workspaces/{workspaceID}/guardrails/test:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceID'
+    post:
+      operationId: testWorkspaceGuardrailRule
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestGuardrailRuleRequest'
+      responses:
+        '200':
+          description: Stateless Quick Test evaluation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestGuardrailRuleResponse'
+        '400': {description: Validation error, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '401': {description: Unauthenticated, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '403': {description: Owner or admin required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '404': {description: Workspace not found, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+
+  /api/workspaces/{workspaceID}/guardrails/events:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceID'
+    get:
+      operationId: listWorkspaceGuardrailEvents
+      security: [{bearerAuth: []}]
+      parameters:
+        - name: action
+          in: query
+          schema:
+            $ref: '#/components/schemas/GuardrailEventAction'
+        - name: direction
+          in: query
+          schema:
+            type: string
+            enum: [input, output]
+        - name: botId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: Sanitized LLM proxy guardrail audit log events
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GuardrailEventListResponse'
+        '400': {description: Validation error, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '401': {description: Unauthenticated, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '404': {description: Workspace not found, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+
 components:
   securitySchemes:
     bearerAuth:
@@ -2972,6 +3144,7 @@ components:
         phase: {$ref: '#/components/schemas/ToolCallPhase'}
         isError: {type: boolean}
         errorCode: {type: string}
+        guardrail: {$ref: '#/components/schemas/ChatMessageGuardrail'}
     ChatMessage:
       type: object
       required: [id, position, senderType, kind, content, createdAt]
@@ -2982,7 +3155,7 @@ components:
         # A group transcript has several speakers. The ids are omitted for system rows.
         senderUserId: {type: string, format: uuid}
         senderBotId: {type: string, format: uuid}
-        kind: {type: string, enum: [text, tool, system, card, approval, secret_request, progress, team_status, memory]}
+        kind: {type: string, enum: [text, tool, system, card, approval, secret_request, progress, team_status, memory, guardrail]}
         content: {type: string}
         secretRequest: {$ref: '#/components/schemas/SecretRequestSummary'}
         tool: {$ref: '#/components/schemas/ToolCallMeta'}
@@ -2990,6 +3163,7 @@ components:
         progressBlocker: {type: boolean}
         teamStatus: {$ref: '#/components/schemas/TeamBotStatus'}
         memory: {$ref: '#/components/schemas/ChatMessageMemory'}
+        guardrail: {$ref: '#/components/schemas/ChatMessageGuardrail'}
         createdAt: {type: string, format: date-time}
     TeamBotStatusState:
       type: string
@@ -4541,3 +4715,208 @@ components:
         tokenEstimate: {type: integer}
         sourceLabel: {type: string}
         deleted: {type: boolean}
+
+    GuardrailDirection:
+      type: string
+      enum: [input, output, both]
+
+    GuardrailAction:
+      type: string
+      enum: [block, redact, audit]
+
+    GuardrailFailureMode:
+      type: string
+      enum: [fail_closed, fail_open]
+
+    GuardrailMatchMode:
+      type: string
+      enum: [regex, keywords]
+
+    GuardrailPIIEntity:
+      type: string
+      enum: [email, iban, card, phone]
+
+    GuardrailEventAction:
+      type: string
+      enum: [allowed, audited, redacted, blocked]
+
+    GuardrailDetectorConfig:
+      type: object
+      required: [enabled, direction, action]
+      properties:
+        enabled: {type: boolean}
+        direction: {$ref: '#/components/schemas/GuardrailDirection'}
+        action: {$ref: '#/components/schemas/GuardrailAction'}
+
+    GuardrailPIIDetectorConfig:
+      type: object
+      required: [enabled, direction, action, entities]
+      properties:
+        enabled: {type: boolean}
+        direction: {$ref: '#/components/schemas/GuardrailDirection'}
+        action: {$ref: '#/components/schemas/GuardrailAction'}
+        entities:
+          type: array
+          items: {$ref: '#/components/schemas/GuardrailPIIEntity'}
+
+    WorkspaceGuardrailPolicy:
+      type: object
+      required: [workspaceId, enabled, failureMode, secrets, pii, promptInjection, revision, updatedAt]
+      properties:
+        workspaceId: {type: string, format: uuid}
+        enabled: {type: boolean}
+        failureMode: {$ref: '#/components/schemas/GuardrailFailureMode'}
+        secrets: {$ref: '#/components/schemas/GuardrailDetectorConfig'}
+        pii: {$ref: '#/components/schemas/GuardrailPIIDetectorConfig'}
+        promptInjection: {$ref: '#/components/schemas/GuardrailDetectorConfig'}
+        revision: {type: integer, format: int64}
+        updatedAt: {type: string, format: date-time}
+
+    UpdateGuardrailPolicyRequest:
+      type: object
+      required: [enabled, failureMode, secrets, pii, promptInjection]
+      properties:
+        enabled: {type: boolean}
+        failureMode: {$ref: '#/components/schemas/GuardrailFailureMode'}
+        secrets: {$ref: '#/components/schemas/GuardrailDetectorConfig'}
+        pii: {$ref: '#/components/schemas/GuardrailPIIDetectorConfig'}
+        promptInjection: {$ref: '#/components/schemas/GuardrailDetectorConfig'}
+
+    WorkspaceGuardrailRule:
+      type: object
+      required: [id, workspaceId, slug, name, matchMode, pattern, direction, action, replacementToken, enabled, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        workspaceId: {type: string, format: uuid}
+        slug: {type: string}
+        name: {type: string}
+        matchMode: {$ref: '#/components/schemas/GuardrailMatchMode'}
+        pattern: {type: string}
+        direction: {$ref: '#/components/schemas/GuardrailDirection'}
+        action: {$ref: '#/components/schemas/GuardrailAction'}
+        replacementToken: {type: string}
+        enabled: {type: boolean}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+
+    CreateGuardrailRuleRequest:
+      type: object
+      required: [slug, name, matchMode, pattern, direction, action, enabled]
+      properties:
+        slug: {type: string, minLength: 2, maxLength: 64}
+        name: {type: string, minLength: 1, maxLength: 100}
+        matchMode: {$ref: '#/components/schemas/GuardrailMatchMode'}
+        pattern: {type: string, minLength: 1, maxLength: 2000}
+        direction: {$ref: '#/components/schemas/GuardrailDirection'}
+        action: {$ref: '#/components/schemas/GuardrailAction'}
+        replacementToken: {type: string, maxLength: 80}
+        enabled: {type: boolean}
+
+    UpdateGuardrailRuleRequest:
+      type: object
+      properties:
+        name: {type: string, minLength: 1, maxLength: 100}
+        matchMode: {$ref: '#/components/schemas/GuardrailMatchMode'}
+        pattern: {type: string, minLength: 1, maxLength: 2000}
+        direction: {$ref: '#/components/schemas/GuardrailDirection'}
+        action: {$ref: '#/components/schemas/GuardrailAction'}
+        replacementToken: {type: string, maxLength: 80}
+        enabled: {type: boolean}
+
+    TestGuardrailRuleRequest:
+      type: object
+      required: [matchMode, pattern, sampleText]
+      properties:
+        matchMode: {$ref: '#/components/schemas/GuardrailMatchMode'}
+        pattern: {type: string, minLength: 1, maxLength: 2000}
+        replacementToken: {type: string, maxLength: 80}
+        sampleText: {type: string, maxLength: 8000}
+
+    TestGuardrailRuleResponse:
+      type: object
+      required: [valid, matchCount, preview]
+      properties:
+        valid: {type: boolean}
+        matchCount: {type: integer}
+        preview: {type: string}
+        error: {type: string}
+
+    GuardrailSummary24h:
+      type: object
+      required: [totalEvaluations, redactedCount, blockedCount, auditedCount]
+      properties:
+        totalEvaluations: {type: integer, format: int64}
+        redactedCount: {type: integer, format: int64}
+        blockedCount: {type: integer, format: int64}
+        auditedCount: {type: integer, format: int64}
+
+    WorkspaceGuardrailsResponse:
+      type: object
+      required: [policy, rules, summary24h, activeRuleCount, coveredProviders]
+      properties:
+        policy: {$ref: '#/components/schemas/WorkspaceGuardrailPolicy'}
+        rules:
+          type: array
+          items: {$ref: '#/components/schemas/WorkspaceGuardrailRule'}
+        summary24h: {$ref: '#/components/schemas/GuardrailSummary24h'}
+        activeRuleCount: {type: integer}
+        coveredProviders:
+          type: array
+          items: {type: string}
+
+    GuardrailEvent:
+      type: object
+      required: [id, workspaceId, botId, botName, provider, model, routePath, direction, action, statusCode, latencyMs, ruleSlugs, matchLabels, matchCount, summary, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        workspaceId: {type: string, format: uuid}
+        botId: {type: string, format: uuid}
+        botName: {type: string}
+        conversationId: {type: string, format: uuid}
+        turnId: {type: string, format: uuid}
+        provider: {type: string}
+        model: {type: string}
+        routePath: {type: string}
+        direction: {type: string, enum: [input, output]}
+        action: {$ref: '#/components/schemas/GuardrailEventAction'}
+        statusCode: {type: integer}
+        latencyMs: {type: integer}
+        ruleSlugs:
+          type: array
+          items: {type: string}
+        matchLabels:
+          type: array
+          items: {type: string}
+        matchCount: {type: integer}
+        summary: {type: string}
+        createdAt: {type: string, format: date-time}
+
+    GuardrailEventListResponse:
+      type: object
+      required: [events]
+      properties:
+        events:
+          type: array
+          items: {$ref: '#/components/schemas/GuardrailEvent'}
+
+    ChatMessageGuardrail:
+      type: object
+      required: [eventId, direction, action, provider, statusCode, latencyMs, ruleSlugs, matchLabels, matchCount, summary]
+      properties:
+        eventId: {type: string, format: uuid}
+        turnId: {type: string}
+        direction: {type: string, enum: [input, output]}
+        action: {$ref: '#/components/schemas/GuardrailEventAction'}
+        provider: {type: string}
+        model: {type: string}
+        routePath: {type: string}
+        statusCode: {type: integer}
+        latencyMs: {type: integer}
+        ruleSlugs:
+          type: array
+          items: {type: string}
+        matchLabels:
+          type: array
+          items: {type: string}
+        matchCount: {type: integer}
+        summary: {type: string}

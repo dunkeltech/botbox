@@ -130,6 +130,12 @@ func runCLITurnWithBroker(ctx context.Context, pool *pgxpool.Pool, q *db.Queries
 			cause = cause[:200]
 		}
 		slog.Warn("cli turn failed", "bot_id", s.BotID.String(), "err", cause)
+		if blocked, checkErr := q.HasTurnGuardrailBlock(ctx, db.HasTurnGuardrailBlockParams{
+			WorkspaceID: ws,
+			TurnID:      pgtype.UUID{Bytes: s.TurnID, Valid: true},
+		}); checkErr == nil && blocked {
+			return engine.WithFailureCode(engine.FailureGuardrailBlocked, runErr)
+		}
 		if engine.TurnFailureCode(runErr) == engine.FailureStreamFormat {
 			return runErr
 		}

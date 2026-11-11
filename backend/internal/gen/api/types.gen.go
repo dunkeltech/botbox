@@ -235,6 +235,7 @@ func (e BudgetStatePeriod) Valid() bool {
 const (
 	ChatMessageKindApproval      ChatMessageKind = "approval"
 	ChatMessageKindCard          ChatMessageKind = "card"
+	ChatMessageKindGuardrail     ChatMessageKind = "guardrail"
 	ChatMessageKindMemory        ChatMessageKind = "memory"
 	ChatMessageKindProgress      ChatMessageKind = "progress"
 	ChatMessageKindSecretRequest ChatMessageKind = "secret_request"
@@ -250,6 +251,8 @@ func (e ChatMessageKind) Valid() bool {
 	case ChatMessageKindApproval:
 		return true
 	case ChatMessageKindCard:
+		return true
+	case ChatMessageKindGuardrail:
 		return true
 	case ChatMessageKindMemory:
 		return true
@@ -285,6 +288,24 @@ func (e ChatMessageSenderType) Valid() bool {
 	case ChatMessageSenderTypeSystem:
 		return true
 	case ChatMessageSenderTypeUser:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ChatMessageGuardrailDirection.
+const (
+	ChatMessageGuardrailDirectionInput  ChatMessageGuardrailDirection = "input"
+	ChatMessageGuardrailDirectionOutput ChatMessageGuardrailDirection = "output"
+)
+
+// Valid indicates whether the value is a known member of the ChatMessageGuardrailDirection enum.
+func (e ChatMessageGuardrailDirection) Valid() bool {
+	switch e {
+	case ChatMessageGuardrailDirectionInput:
+		return true
+	case ChatMessageGuardrailDirectionOutput:
 		return true
 	default:
 		return false
@@ -549,6 +570,150 @@ func (e GroupMemberType) Valid() bool {
 	}
 }
 
+// Defines values for GuardrailAction.
+const (
+	Audit  GuardrailAction = "audit"
+	Block  GuardrailAction = "block"
+	Redact GuardrailAction = "redact"
+)
+
+// Valid indicates whether the value is a known member of the GuardrailAction enum.
+func (e GuardrailAction) Valid() bool {
+	switch e {
+	case Audit:
+		return true
+	case Block:
+		return true
+	case Redact:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GuardrailDirection.
+const (
+	GuardrailDirectionBoth   GuardrailDirection = "both"
+	GuardrailDirectionInput  GuardrailDirection = "input"
+	GuardrailDirectionOutput GuardrailDirection = "output"
+)
+
+// Valid indicates whether the value is a known member of the GuardrailDirection enum.
+func (e GuardrailDirection) Valid() bool {
+	switch e {
+	case GuardrailDirectionBoth:
+		return true
+	case GuardrailDirectionInput:
+		return true
+	case GuardrailDirectionOutput:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GuardrailEventDirection.
+const (
+	GuardrailEventDirectionInput  GuardrailEventDirection = "input"
+	GuardrailEventDirectionOutput GuardrailEventDirection = "output"
+)
+
+// Valid indicates whether the value is a known member of the GuardrailEventDirection enum.
+func (e GuardrailEventDirection) Valid() bool {
+	switch e {
+	case GuardrailEventDirectionInput:
+		return true
+	case GuardrailEventDirectionOutput:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GuardrailEventAction.
+const (
+	GuardrailEventActionAllowed  GuardrailEventAction = "allowed"
+	GuardrailEventActionAudited  GuardrailEventAction = "audited"
+	GuardrailEventActionBlocked  GuardrailEventAction = "blocked"
+	GuardrailEventActionRedacted GuardrailEventAction = "redacted"
+)
+
+// Valid indicates whether the value is a known member of the GuardrailEventAction enum.
+func (e GuardrailEventAction) Valid() bool {
+	switch e {
+	case GuardrailEventActionAllowed:
+		return true
+	case GuardrailEventActionAudited:
+		return true
+	case GuardrailEventActionBlocked:
+		return true
+	case GuardrailEventActionRedacted:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GuardrailFailureMode.
+const (
+	FailClosed GuardrailFailureMode = "fail_closed"
+	FailOpen   GuardrailFailureMode = "fail_open"
+)
+
+// Valid indicates whether the value is a known member of the GuardrailFailureMode enum.
+func (e GuardrailFailureMode) Valid() bool {
+	switch e {
+	case FailClosed:
+		return true
+	case FailOpen:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GuardrailMatchMode.
+const (
+	Keywords GuardrailMatchMode = "keywords"
+	Regex    GuardrailMatchMode = "regex"
+)
+
+// Valid indicates whether the value is a known member of the GuardrailMatchMode enum.
+func (e GuardrailMatchMode) Valid() bool {
+	switch e {
+	case Keywords:
+		return true
+	case Regex:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GuardrailPIIEntity.
+const (
+	GuardrailPIIEntityCard  GuardrailPIIEntity = "card"
+	GuardrailPIIEntityEmail GuardrailPIIEntity = "email"
+	GuardrailPIIEntityIban  GuardrailPIIEntity = "iban"
+	GuardrailPIIEntityPhone GuardrailPIIEntity = "phone"
+)
+
+// Valid indicates whether the value is a known member of the GuardrailPIIEntity enum.
+func (e GuardrailPIIEntity) Valid() bool {
+	switch e {
+	case GuardrailPIIEntityCard:
+		return true
+	case GuardrailPIIEntityEmail:
+		return true
+	case GuardrailPIIEntityIban:
+		return true
+	case GuardrailPIIEntityPhone:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for LlmMode.
 const (
 	Cli LlmMode = "cli"
@@ -590,28 +755,28 @@ func (e MCPAuthScheme) Valid() bool {
 
 // Defines values for MCPCallLogAction.
 const (
-	Allowed         MCPCallLogAction = "allowed"
-	ApprovedByHuman MCPCallLogAction = "approved_by_human"
-	AskPending      MCPCallLogAction = "ask_pending"
-	Blocked         MCPCallLogAction = "blocked"
-	DeniedByHuman   MCPCallLogAction = "denied_by_human"
-	UpstreamError   MCPCallLogAction = "upstream_error"
+	MCPCallLogActionAllowed         MCPCallLogAction = "allowed"
+	MCPCallLogActionApprovedByHuman MCPCallLogAction = "approved_by_human"
+	MCPCallLogActionAskPending      MCPCallLogAction = "ask_pending"
+	MCPCallLogActionBlocked         MCPCallLogAction = "blocked"
+	MCPCallLogActionDeniedByHuman   MCPCallLogAction = "denied_by_human"
+	MCPCallLogActionUpstreamError   MCPCallLogAction = "upstream_error"
 )
 
 // Valid indicates whether the value is a known member of the MCPCallLogAction enum.
 func (e MCPCallLogAction) Valid() bool {
 	switch e {
-	case Allowed:
+	case MCPCallLogActionAllowed:
 		return true
-	case ApprovedByHuman:
+	case MCPCallLogActionApprovedByHuman:
 		return true
-	case AskPending:
+	case MCPCallLogActionAskPending:
 		return true
-	case Blocked:
+	case MCPCallLogActionBlocked:
 		return true
-	case DeniedByHuman:
+	case MCPCallLogActionDeniedByHuman:
 		return true
-	case UpstreamError:
+	case MCPCallLogActionUpstreamError:
 		return true
 	default:
 		return false
@@ -972,6 +1137,24 @@ func (e DeleteBotBudgetParamsPeriod) Valid() bool {
 	}
 }
 
+// Defines values for ListWorkspaceGuardrailEventsParamsDirection.
+const (
+	ListWorkspaceGuardrailEventsParamsDirectionInput  ListWorkspaceGuardrailEventsParamsDirection = "input"
+	ListWorkspaceGuardrailEventsParamsDirectionOutput ListWorkspaceGuardrailEventsParamsDirection = "output"
+)
+
+// Valid indicates whether the value is a known member of the ListWorkspaceGuardrailEventsParamsDirection enum.
+func (e ListWorkspaceGuardrailEventsParamsDirection) Valid() bool {
+	switch e {
+	case ListWorkspaceGuardrailEventsParamsDirectionInput:
+		return true
+	case ListWorkspaceGuardrailEventsParamsDirectionOutput:
+		return true
+	default:
+		return false
+	}
+}
+
 // AcceptInvitationRequest defines model for AcceptInvitationRequest.
 type AcceptInvitationRequest struct {
 	DisplayName *string              `json:"displayName,omitempty"`
@@ -1205,6 +1388,7 @@ type ChatHistory struct {
 type ChatMessage struct {
 	Content         string                `json:"content"`
 	CreatedAt       time.Time             `json:"createdAt"`
+	Guardrail       *ChatMessageGuardrail `json:"guardrail,omitempty"`
 	Id              openapi_types.UUID    `json:"id"`
 	InputRequest    *GroupInputRequest    `json:"inputRequest,omitempty"`
 	Kind            ChatMessageKind       `json:"kind"`
@@ -1224,6 +1408,26 @@ type ChatMessageKind string
 
 // ChatMessageSenderType defines model for ChatMessage.SenderType.
 type ChatMessageSenderType string
+
+// ChatMessageGuardrail defines model for ChatMessageGuardrail.
+type ChatMessageGuardrail struct {
+	Action      GuardrailEventAction          `json:"action"`
+	Direction   ChatMessageGuardrailDirection `json:"direction"`
+	EventId     openapi_types.UUID            `json:"eventId"`
+	LatencyMs   int                           `json:"latencyMs"`
+	MatchCount  int                           `json:"matchCount"`
+	MatchLabels []string                      `json:"matchLabels"`
+	Model       *string                       `json:"model,omitempty"`
+	Provider    string                        `json:"provider"`
+	RoutePath   *string                       `json:"routePath,omitempty"`
+	RuleSlugs   []string                      `json:"ruleSlugs"`
+	StatusCode  int                           `json:"statusCode"`
+	Summary     string                        `json:"summary"`
+	TurnId      *string                       `json:"turnId,omitempty"`
+}
+
+// ChatMessageGuardrailDirection defines model for ChatMessageGuardrail.Direction.
+type ChatMessageGuardrailDirection string
 
 // ChatMessageMemory defines model for ChatMessageMemory.
 type ChatMessageMemory struct {
@@ -1326,6 +1530,18 @@ type CreateGroupRequest struct {
 
 // CreateGroupRequestAnswerPolicy defines model for CreateGroupRequest.AnswerPolicy.
 type CreateGroupRequestAnswerPolicy string
+
+// CreateGuardrailRuleRequest defines model for CreateGuardrailRuleRequest.
+type CreateGuardrailRuleRequest struct {
+	Action           GuardrailAction    `json:"action"`
+	Direction        GuardrailDirection `json:"direction"`
+	Enabled          bool               `json:"enabled"`
+	MatchMode        GuardrailMatchMode `json:"matchMode"`
+	Name             string             `json:"name"`
+	Pattern          string             `json:"pattern"`
+	ReplacementToken *string            `json:"replacementToken,omitempty"`
+	Slug             string             `json:"slug"`
+}
 
 // CreateInvitationRequest defines model for CreateInvitationRequest.
 type CreateInvitationRequest struct {
@@ -1587,6 +1803,77 @@ type GroupMember struct {
 
 // GroupMemberType defines model for GroupMember.Type.
 type GroupMemberType string
+
+// GuardrailAction defines model for GuardrailAction.
+type GuardrailAction string
+
+// GuardrailDetectorConfig defines model for GuardrailDetectorConfig.
+type GuardrailDetectorConfig struct {
+	Action    GuardrailAction    `json:"action"`
+	Direction GuardrailDirection `json:"direction"`
+	Enabled   bool               `json:"enabled"`
+}
+
+// GuardrailDirection defines model for GuardrailDirection.
+type GuardrailDirection string
+
+// GuardrailEvent defines model for GuardrailEvent.
+type GuardrailEvent struct {
+	Action         GuardrailEventAction    `json:"action"`
+	BotId          openapi_types.UUID      `json:"botId"`
+	BotName        string                  `json:"botName"`
+	ConversationId *openapi_types.UUID     `json:"conversationId,omitempty"`
+	CreatedAt      time.Time               `json:"createdAt"`
+	Direction      GuardrailEventDirection `json:"direction"`
+	Id             openapi_types.UUID      `json:"id"`
+	LatencyMs      int                     `json:"latencyMs"`
+	MatchCount     int                     `json:"matchCount"`
+	MatchLabels    []string                `json:"matchLabels"`
+	Model          string                  `json:"model"`
+	Provider       string                  `json:"provider"`
+	RoutePath      string                  `json:"routePath"`
+	RuleSlugs      []string                `json:"ruleSlugs"`
+	StatusCode     int                     `json:"statusCode"`
+	Summary        string                  `json:"summary"`
+	TurnId         *openapi_types.UUID     `json:"turnId,omitempty"`
+	WorkspaceId    openapi_types.UUID      `json:"workspaceId"`
+}
+
+// GuardrailEventDirection defines model for GuardrailEvent.Direction.
+type GuardrailEventDirection string
+
+// GuardrailEventAction defines model for GuardrailEventAction.
+type GuardrailEventAction string
+
+// GuardrailEventListResponse defines model for GuardrailEventListResponse.
+type GuardrailEventListResponse struct {
+	Events []GuardrailEvent `json:"events"`
+}
+
+// GuardrailFailureMode defines model for GuardrailFailureMode.
+type GuardrailFailureMode string
+
+// GuardrailMatchMode defines model for GuardrailMatchMode.
+type GuardrailMatchMode string
+
+// GuardrailPIIDetectorConfig defines model for GuardrailPIIDetectorConfig.
+type GuardrailPIIDetectorConfig struct {
+	Action    GuardrailAction      `json:"action"`
+	Direction GuardrailDirection   `json:"direction"`
+	Enabled   bool                 `json:"enabled"`
+	Entities  []GuardrailPIIEntity `json:"entities"`
+}
+
+// GuardrailPIIEntity defines model for GuardrailPIIEntity.
+type GuardrailPIIEntity string
+
+// GuardrailSummary24h defines model for GuardrailSummary24h.
+type GuardrailSummary24h struct {
+	AuditedCount     int64 `json:"auditedCount"`
+	BlockedCount     int64 `json:"blockedCount"`
+	RedactedCount    int64 `json:"redactedCount"`
+	TotalEvaluations int64 `json:"totalEvaluations"`
+}
 
 // HealthResponse defines model for HealthResponse.
 type HealthResponse struct {
@@ -1907,13 +2194,30 @@ type TerminalExecResponse struct {
 	Stdout   string `json:"stdout"`
 }
 
+// TestGuardrailRuleRequest defines model for TestGuardrailRuleRequest.
+type TestGuardrailRuleRequest struct {
+	MatchMode        GuardrailMatchMode `json:"matchMode"`
+	Pattern          string             `json:"pattern"`
+	ReplacementToken *string            `json:"replacementToken,omitempty"`
+	SampleText       string             `json:"sampleText"`
+}
+
+// TestGuardrailRuleResponse defines model for TestGuardrailRuleResponse.
+type TestGuardrailRuleResponse struct {
+	Error      *string `json:"error,omitempty"`
+	MatchCount int     `json:"matchCount"`
+	Preview    string  `json:"preview"`
+	Valid      bool    `json:"valid"`
+}
+
 // ToolCallMeta defines model for ToolCallMeta.
 type ToolCallMeta struct {
-	ErrorCode  *string       `json:"errorCode,omitempty"`
-	IsError    bool          `json:"isError"`
-	Phase      ToolCallPhase `json:"phase"`
-	ToolCallId *string       `json:"toolCallId,omitempty"`
-	TurnId     *string       `json:"turnId,omitempty"`
+	ErrorCode  *string               `json:"errorCode,omitempty"`
+	Guardrail  *ChatMessageGuardrail `json:"guardrail,omitempty"`
+	IsError    bool                  `json:"isError"`
+	Phase      ToolCallPhase         `json:"phase"`
+	ToolCallId *string               `json:"toolCallId,omitempty"`
+	TurnId     *string               `json:"turnId,omitempty"`
 }
 
 // ToolCallPhase defines model for ToolCallPhase.
@@ -1978,6 +2282,26 @@ type UpdateGroupRequest struct {
 // UpdateGroupRequestAnswerPolicy defines model for UpdateGroupRequest.AnswerPolicy.
 type UpdateGroupRequestAnswerPolicy string
 
+// UpdateGuardrailPolicyRequest defines model for UpdateGuardrailPolicyRequest.
+type UpdateGuardrailPolicyRequest struct {
+	Enabled         bool                       `json:"enabled"`
+	FailureMode     GuardrailFailureMode       `json:"failureMode"`
+	Pii             GuardrailPIIDetectorConfig `json:"pii"`
+	PromptInjection GuardrailDetectorConfig    `json:"promptInjection"`
+	Secrets         GuardrailDetectorConfig    `json:"secrets"`
+}
+
+// UpdateGuardrailRuleRequest defines model for UpdateGuardrailRuleRequest.
+type UpdateGuardrailRuleRequest struct {
+	Action           *GuardrailAction    `json:"action,omitempty"`
+	Direction        *GuardrailDirection `json:"direction,omitempty"`
+	Enabled          *bool               `json:"enabled,omitempty"`
+	MatchMode        *GuardrailMatchMode `json:"matchMode,omitempty"`
+	Name             *string             `json:"name,omitempty"`
+	Pattern          *string             `json:"pattern,omitempty"`
+	ReplacementToken *string             `json:"replacementToken,omitempty"`
+}
+
 // UpdateMCPServerRequest defines model for UpdateMCPServerRequest.
 type UpdateMCPServerRequest struct {
 	AuthHeaderName *string                   `json:"authHeaderName,omitempty"`
@@ -2027,6 +2351,43 @@ type User struct {
 type WatcherUser struct {
 	DisplayName string             `json:"displayName"`
 	UserId      openapi_types.UUID `json:"userId"`
+}
+
+// WorkspaceGuardrailPolicy defines model for WorkspaceGuardrailPolicy.
+type WorkspaceGuardrailPolicy struct {
+	Enabled         bool                       `json:"enabled"`
+	FailureMode     GuardrailFailureMode       `json:"failureMode"`
+	Pii             GuardrailPIIDetectorConfig `json:"pii"`
+	PromptInjection GuardrailDetectorConfig    `json:"promptInjection"`
+	Revision        int64                      `json:"revision"`
+	Secrets         GuardrailDetectorConfig    `json:"secrets"`
+	UpdatedAt       time.Time                  `json:"updatedAt"`
+	WorkspaceId     openapi_types.UUID         `json:"workspaceId"`
+}
+
+// WorkspaceGuardrailRule defines model for WorkspaceGuardrailRule.
+type WorkspaceGuardrailRule struct {
+	Action           GuardrailAction    `json:"action"`
+	CreatedAt        time.Time          `json:"createdAt"`
+	Direction        GuardrailDirection `json:"direction"`
+	Enabled          bool               `json:"enabled"`
+	Id               openapi_types.UUID `json:"id"`
+	MatchMode        GuardrailMatchMode `json:"matchMode"`
+	Name             string             `json:"name"`
+	Pattern          string             `json:"pattern"`
+	ReplacementToken string             `json:"replacementToken"`
+	Slug             string             `json:"slug"`
+	UpdatedAt        time.Time          `json:"updatedAt"`
+	WorkspaceId      openapi_types.UUID `json:"workspaceId"`
+}
+
+// WorkspaceGuardrailsResponse defines model for WorkspaceGuardrailsResponse.
+type WorkspaceGuardrailsResponse struct {
+	ActiveRuleCount  int                      `json:"activeRuleCount"`
+	CoveredProviders []string                 `json:"coveredProviders"`
+	Policy           WorkspaceGuardrailPolicy `json:"policy"`
+	Rules            []WorkspaceGuardrailRule `json:"rules"`
+	Summary24h       GuardrailSummary24h      `json:"summary24h"`
 }
 
 // WorkspaceListResponse defines model for WorkspaceListResponse.
@@ -2160,6 +2521,18 @@ type ListGroupMessagesParams struct {
 	Before *int64 `form:"before,omitempty" json:"before,omitempty"`
 }
 
+// ListWorkspaceGuardrailEventsParams defines parameters for ListWorkspaceGuardrailEvents.
+type ListWorkspaceGuardrailEventsParams struct {
+	Action    *GuardrailEventAction                        `form:"action,omitempty" json:"action,omitempty"`
+	Direction *ListWorkspaceGuardrailEventsParamsDirection `form:"direction,omitempty" json:"direction,omitempty"`
+	BotId     *openapi_types.UUID                          `form:"botId,omitempty" json:"botId,omitempty"`
+	Limit     *int                                         `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset    *int                                         `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// ListWorkspaceGuardrailEventsParamsDirection defines parameters for ListWorkspaceGuardrailEvents.
+type ListWorkspaceGuardrailEventsParamsDirection string
+
 // ListNotificationsParams defines parameters for ListNotifications.
 type ListNotificationsParams struct {
 	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
@@ -2257,6 +2630,18 @@ type UpdateGroupJSONRequestBody = UpdateGroupRequest
 
 // SendGroupMessageJSONRequestBody defines body for SendGroupMessage for application/json ContentType.
 type SendGroupMessageJSONRequestBody = SendChatMessageRequest
+
+// UpdateWorkspaceGuardrailPolicyJSONRequestBody defines body for UpdateWorkspaceGuardrailPolicy for application/json ContentType.
+type UpdateWorkspaceGuardrailPolicyJSONRequestBody = UpdateGuardrailPolicyRequest
+
+// CreateWorkspaceGuardrailRuleJSONRequestBody defines body for CreateWorkspaceGuardrailRule for application/json ContentType.
+type CreateWorkspaceGuardrailRuleJSONRequestBody = CreateGuardrailRuleRequest
+
+// UpdateWorkspaceGuardrailRuleJSONRequestBody defines body for UpdateWorkspaceGuardrailRule for application/json ContentType.
+type UpdateWorkspaceGuardrailRuleJSONRequestBody = UpdateGuardrailRuleRequest
+
+// TestWorkspaceGuardrailRuleJSONRequestBody defines body for TestWorkspaceGuardrailRule for application/json ContentType.
+type TestWorkspaceGuardrailRuleJSONRequestBody = TestGuardrailRuleRequest
 
 // CreateInvitationJSONRequestBody defines body for CreateInvitation for application/json ContentType.
 type CreateInvitationJSONRequestBody = CreateInvitationRequest

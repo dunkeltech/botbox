@@ -58,6 +58,10 @@ export type ErrorTranslationKey =
   | 'memoryLimitReached'
   | 'memoryNotFound'
   | 'memoryAutoSaveDisabled'
+  | 'guardrailRuleConflict'
+  | 'guardrailRuleLimit'
+  | 'guardrailRuleNotFound'
+  | 'guardrailInvalidPattern'
   | 'unknownError';
 
 const ERROR_CODE_TO_KEY: Record<string, ErrorTranslationKey> = {
@@ -118,6 +122,10 @@ const ERROR_CODE_TO_KEY: Record<string, ErrorTranslationKey> = {
   'memory.limit_reached': 'memoryLimitReached',
   'memory.not_found': 'memoryNotFound',
   'memory.auto_save_disabled': 'memoryAutoSaveDisabled',
+  'guardrail.rule_conflict': 'guardrailRuleConflict',
+  'guardrail.rule_limit': 'guardrailRuleLimit',
+  'guardrail.rule_not_found': 'guardrailRuleNotFound',
+  'guardrail.invalid_pattern': 'guardrailInvalidPattern',
 };
 
 /**

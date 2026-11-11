@@ -247,6 +247,18 @@ func (q *Queue) PublishMCPPolicyInvalidate(ctx context.Context, ws, bot uuid.UUI
 	return q.conn.Publish("mcp.invalidate."+ws.String()+"."+bot.String(), []byte("{}"))
 }
 
+// PublishGuardrailsInvalidate notifies all running proxies in a workspace to drop
+// cached LLM guardrail policies and custom rules.
+func (q *Queue) PublishGuardrailsInvalidate(ctx context.Context, ws uuid.UUID) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if ws == uuid.Nil {
+		return nil
+	}
+	return q.conn.Publish("guardrails.invalidate."+ws.String(), []byte("{}"))
+}
+
 // Publisher emits conversation signals without consuming the turn queue.
 // The egress proxy uses it so a blocked host can ping the conversation
 // channel without starting a second worker.
@@ -327,6 +339,24 @@ func (p *Publisher) SubscribeMCPPolicyInvalidate(ws, bot uuid.UUID, onInvalidate
 		return func() {}, nil
 	}
 	sub, err := p.conn.Subscribe("mcp.invalidate."+ws.String()+"."+bot.String(), func(_ *nats.Msg) {
+		onInvalidate()
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := p.conn.Flush(); err != nil {
+		_ = sub.Unsubscribe()
+		return nil, err
+	}
+	return func() { _ = sub.Unsubscribe() }, nil
+}
+
+// SubscribeGuardrailsInvalidate invokes onInvalidate whenever a workspace's LLM guardrail policy or rules change.
+func (p *Publisher) SubscribeGuardrailsInvalidate(ws uuid.UUID, onInvalidate func()) (func(), error) {
+	if p == nil || p.conn == nil || ws == uuid.Nil || onInvalidate == nil {
+		return func() {}, nil
+	}
+	sub, err := p.conn.Subscribe("guardrails.invalidate."+ws.String(), func(_ *nats.Msg) {
 		onInvalidate()
 	})
 	if err != nil {

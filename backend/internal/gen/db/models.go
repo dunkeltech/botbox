@@ -353,6 +353,26 @@ type Invitation struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type LlmGuardrailEvent struct {
+	ID             pgtype.UUID        `json:"id"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	BotID          pgtype.UUID        `json:"bot_id"`
+	ConversationID pgtype.UUID        `json:"conversation_id"`
+	TurnID         pgtype.UUID        `json:"turn_id"`
+	Provider       string             `json:"provider"`
+	Model          string             `json:"model"`
+	RoutePath      string             `json:"route_path"`
+	Direction      string             `json:"direction"`
+	Action         string             `json:"action"`
+	StatusCode     int32              `json:"status_code"`
+	LatencyMs      int32              `json:"latency_ms"`
+	RuleSlugs      []string           `json:"rule_slugs"`
+	MatchLabels    []string           `json:"match_labels"`
+	MatchCount     int32              `json:"match_count"`
+	Summary        string             `json:"summary"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
 type McpCallLog struct {
 	ID          pgtype.UUID        `json:"id"`
 	WorkspaceID pgtype.UUID        `json:"workspace_id"`
@@ -554,6 +574,39 @@ type Workspace struct {
 	CreatedAt               pgtype.Timestamptz `json:"created_at"`
 	ScreenshotRetentionDays int32              `json:"screenshot_retention_days"`
 	CountSubscriptionUsage  bool               `json:"count_subscription_usage"`
+}
+
+type WorkspaceGuardrailPolicy struct {
+	WorkspaceID              pgtype.UUID        `json:"workspace_id"`
+	Enabled                  bool               `json:"enabled"`
+	FailureMode              string             `json:"failure_mode"`
+	SecretsEnabled           bool               `json:"secrets_enabled"`
+	SecretsDirection         string             `json:"secrets_direction"`
+	SecretsAction            string             `json:"secrets_action"`
+	PiiEnabled               bool               `json:"pii_enabled"`
+	PiiDirection             string             `json:"pii_direction"`
+	PiiAction                string             `json:"pii_action"`
+	PiiEntities              []string           `json:"pii_entities"`
+	PromptInjectionEnabled   bool               `json:"prompt_injection_enabled"`
+	PromptInjectionDirection string             `json:"prompt_injection_direction"`
+	PromptInjectionAction    string             `json:"prompt_injection_action"`
+	Revision                 int64              `json:"revision"`
+	UpdatedAt                pgtype.Timestamptz `json:"updated_at"`
+}
+
+type WorkspaceGuardrailRule struct {
+	ID               pgtype.UUID        `json:"id"`
+	WorkspaceID      pgtype.UUID        `json:"workspace_id"`
+	Slug             string             `json:"slug"`
+	Name             string             `json:"name"`
+	MatchMode        string             `json:"match_mode"`
+	Pattern          string             `json:"pattern"`
+	Direction        string             `json:"direction"`
+	Action           string             `json:"action"`
+	ReplacementToken string             `json:"replacement_token"`
+	Enabled          bool               `json:"enabled"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 }
 
 type WorkspaceMember struct {

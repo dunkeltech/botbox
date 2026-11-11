@@ -22,6 +22,12 @@ export function ChatTurnToolChip({
 }) {
   const t = useTranslations('chat');
   const runningCount = turn.steps.filter((s) => s.status === 'running').length;
+  const guardrailRedacts = turn.steps.filter(
+    (s) => s.guardrail?.action === 'redacted',
+  ).length;
+  const guardrailBlocks = turn.steps.filter(
+    (s) => s.guardrail?.action === 'blocked',
+  ).length;
   const duration = formatToolDuration(turn.durationMs);
 
   let label: string;
@@ -34,6 +40,21 @@ export function ChatTurnToolChip({
     });
   } else {
     label = t('toolStepCount', { count: turn.steps.length });
+  }
+
+  const guardrailParts: string[] = [];
+  if (guardrailRedacts > 0) {
+    guardrailParts.push(
+      t('guardrailRedactedSummary', { count: guardrailRedacts }),
+    );
+  }
+  if (guardrailBlocks > 0) {
+    guardrailParts.push(
+      t('guardrailBlockedSummary', { count: guardrailBlocks }),
+    );
+  }
+  if (guardrailParts.length > 0) {
+    label = `${label} · ${guardrailParts.join(' · ')}`;
   }
 
   const toneClass =

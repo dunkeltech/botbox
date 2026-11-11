@@ -56,6 +56,7 @@ import {
   getBot,
   getBotEnvironment,
   listBotFiles,
+  getWorkspaceGuardrails,
   listBotSecrets,
   listDesktopActions,
   readBotFile,
@@ -169,6 +170,10 @@ export function BotWorkspaceView() {
   const [bot, setBot] = useState<Bot | null>(null);
   const [env, setEnv] = useState<EnvironmentStateResponse | null>(null);
   const [secretCount, setSecretCount] = useState<number | null>(null);
+  const [guardrailSummary, setGuardrailSummary] = useState<{
+    enabled: boolean;
+    activeRuleCount: number;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadErrorKey, setLoadErrorKey] = useState<ErrorTranslationKey | null>(
     null,
@@ -250,15 +255,27 @@ export function BotWorkspaceView() {
 
     void (async () => {
       try {
-        const [fetchedBot, fetchedEnv, fetchedSecrets] = await Promise.all([
-          getBot(activeWorkspace.id, botId),
-          getBotEnvironment(activeWorkspace.id, botId),
-          listBotSecrets(activeWorkspace.id, botId).catch(() => null),
-        ]);
+        const [fetchedBot, fetchedEnv, fetchedSecrets, fetchedGuardrails] =
+          await Promise.all([
+            getBot(activeWorkspace.id, botId),
+            getBotEnvironment(activeWorkspace.id, botId),
+            listBotSecrets(activeWorkspace.id, botId).catch(() => null),
+            Promise.resolve(getWorkspaceGuardrails(activeWorkspace.id)).catch(
+              () => null,
+            ),
+          ]);
         if (!cancelled) {
           setBot(fetchedBot);
           setEnv(fetchedEnv);
           setSecretCount(fetchedSecrets ? fetchedSecrets.secrets.length : null);
+          setGuardrailSummary(
+            fetchedGuardrails?.policy
+              ? {
+                  enabled: fetchedGuardrails.policy.enabled,
+                  activeRuleCount: fetchedGuardrails.activeRuleCount ?? 0,
+                }
+              : null,
+          );
         }
       } catch (err) {
         if (!cancelled) {
@@ -846,6 +863,25 @@ export function BotWorkspaceView() {
                   >
                     <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
                     <span>{t('egressChip', { count: secretCount })}</span>
+                  </Link>
+                ) : null}
+                {guardrailSummary !== null ? (
+                  <Link
+                    href="/settings/guardrails"
+                    className={
+                      guardrailSummary.enabled
+                        ? 'inline-flex items-center gap-1.5 rounded-xs border border-mint-line bg-mint-soft px-2.5 py-0.5 font-bold text-green-600 transition duration-150 hover:border-green hover:bg-mint focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green'
+                        : 'inline-flex items-center gap-1.5 rounded-xs border border-line bg-paper-2 px-2.5 py-0.5 font-bold text-muted transition duration-150 hover:border-line-strong focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green'
+                    }
+                  >
+                    <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>
+                      {guardrailSummary.enabled
+                        ? t('guardrailsChip', {
+                            count: guardrailSummary.activeRuleCount,
+                          })
+                        : t('guardrailsPausedChip')}
+                    </span>
                   </Link>
                 ) : null}
                 <span className="inline-flex items-center gap-1.5 rounded-xs border border-blue-line bg-blue-tint px-2.5 py-0.5 font-bold text-blue">

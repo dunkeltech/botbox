@@ -11,6 +11,7 @@ import (
 
 	apigen "github.com/dunkeltech/botbox/backend/internal/gen/api"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
+	"github.com/dunkeltech/botbox/backend/internal/guardrails"
 	"github.com/dunkeltech/botbox/backend/internal/memory"
 	"github.com/dunkeltech/botbox/backend/internal/secretrequests"
 	"github.com/dunkeltech/botbox/backend/internal/workspaces"
@@ -160,6 +161,12 @@ func chatMessage(m db.Message) apigen.ChatMessage {
 			}
 		}
 	}
+	if m.Kind == "guardrail" && len(m.Metadata) > 0 {
+		var card guardrails.ChatGuardrailMetadata
+		if json.Unmarshal(m.Metadata, &card) == nil && card.EventID != uuid.Nil {
+			out.Guardrail = toAPIChatGuardrail(card)
+		}
+	}
 	if m.Kind == "progress" || m.Kind == "team_status" {
 		var update struct {
 			Blocker bool                  `json:"blocker"`
@@ -181,11 +188,12 @@ func chatMessage(m db.Message) apigen.ChatMessage {
 // engine metadata so raw tool arguments and sandbox paths never reach API clients.
 func parseToolCallMeta(raw []byte) *apigen.ToolCallMeta {
 	var meta struct {
-		Kind      string `json:"Kind"`
-		TurnID    string `json:"TurnID"`
-		ToolID    string `json:"ToolID"`
-		IsError   bool   `json:"IsError"`
-		ErrorCode string `json:"ErrorCode"`
+		Kind      string                            `json:"Kind"`
+		TurnID    string                            `json:"TurnID"`
+		ToolID    string                            `json:"ToolID"`
+		IsError   bool                              `json:"IsError"`
+		ErrorCode string                            `json:"ErrorCode"`
+		Guardrail *guardrails.ChatGuardrailMetadata `json:"Guardrail"`
 	}
 	if json.Unmarshal(raw, &meta) != nil {
 		return nil
@@ -194,7 +202,7 @@ func parseToolCallMeta(raw []byte) *apigen.ToolCallMeta {
 	switch meta.Kind {
 	case "tool_call":
 		phase = apigen.Call
-	case "tool_result":
+	case "tool_result", "guardrail_event":
 		phase = apigen.Result
 	default:
 		return nil
@@ -211,6 +219,42 @@ func parseToolCallMeta(raw []byte) *apigen.ToolCallMeta {
 	}
 	if meta.ErrorCode != "" {
 		out.ErrorCode = &meta.ErrorCode
+	}
+	if meta.Kind == "guardrail_event" && meta.Guardrail != nil && meta.Guardrail.EventID != uuid.Nil {
+		out.Guardrail = toAPIChatGuardrail(*meta.Guardrail)
+	}
+	return out
+}
+
+func toAPIChatGuardrail(card guardrails.ChatGuardrailMetadata) *apigen.ChatMessageGuardrail {
+	slugs := card.RuleSlugs
+	if slugs == nil {
+		slugs = []string{}
+	}
+	labels := card.MatchLabels
+	if labels == nil {
+		labels = []string{}
+	}
+	out := &apigen.ChatMessageGuardrail{
+		EventId:     card.EventID,
+		Direction:   apigen.ChatMessageGuardrailDirection(card.Direction),
+		Action:      apigen.GuardrailEventAction(card.Action),
+		Provider:    card.Provider,
+		StatusCode:  card.StatusCode,
+		LatencyMs:   card.LatencyMs,
+		RuleSlugs:   slugs,
+		MatchLabels: labels,
+		MatchCount:  card.MatchCount,
+		Summary:     card.Summary,
+	}
+	if card.TurnID != "" {
+		out.TurnId = &card.TurnID
+	}
+	if card.Model != "" {
+		out.Model = &card.Model
+	}
+	if card.RoutePath != "" {
+		out.RoutePath = &card.RoutePath
 	}
 	return out
 }

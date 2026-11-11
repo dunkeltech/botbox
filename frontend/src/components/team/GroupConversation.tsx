@@ -13,6 +13,7 @@ import {
   type ToolTraceTurn,
 } from '@/components/chat/toolTrace';
 import { BrokerTakeoverModal } from '@/components/chat/BrokerTakeoverModal';
+import { GuardrailNoticeCard } from '@/components/chat/GuardrailNoticeCard';
 import { MarkdownMessage } from '@/components/chat/MarkdownMessage';
 import { MemorySavedCard } from '@/components/chat/MemorySavedCard';
 import { SecretRequestCard } from '@/components/chat/SecretRequestCard';
@@ -358,6 +359,20 @@ export function GroupConversation({
               </div>
             );
           }
+          if (message.kind === 'guardrail' && message.guardrail) {
+            return (
+              <div key={message.id} className="flex flex-col gap-3">
+                <GuardrailNoticeCard
+                  className="mx-5"
+                  guardrail={message.guardrail}
+                  role={role}
+                  onInspect={onInspectToolTurn}
+                />
+                {renderUnattachedToolTurns(unattachedAfter)}
+              </div>
+            );
+          }
+
           if (
             message.kind === 'memory' &&
             message.memory &&
