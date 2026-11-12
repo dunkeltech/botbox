@@ -50,7 +50,7 @@ func (q *Queries) CountPendingBotTurns(ctx context.Context, arg CountPendingBotT
 }
 
 const createBotTurn = `-- name: CreateBotTurn :one
-INSERT INTO bot_turns(workspace_id,bot_id,conversation_id,message_id) VALUES($1,$2,$3,$4) RETURNING id, position, workspace_id, bot_id, conversation_id, message_id, status, error_code, created_at, updated_at, continuation_prompt, stop_requested, heartbeat_at
+INSERT INTO bot_turns(workspace_id,bot_id,conversation_id,message_id) VALUES($1,$2,$3,$4) RETURNING id, position, workspace_id, bot_id, conversation_id, message_id, status, error_code, created_at, updated_at, continuation_prompt, stop_requested, heartbeat_at, run_deadline_at
 `
 
 type CreateBotTurnParams struct {
@@ -82,6 +82,7 @@ func (q *Queries) CreateBotTurn(ctx context.Context, arg CreateBotTurnParams) (B
 		&i.ContinuationPrompt,
 		&i.StopRequested,
 		&i.HeartbeatAt,
+		&i.RunDeadlineAt,
 	)
 	return i, err
 }
@@ -136,7 +137,8 @@ const expireStaleBotTurns = `-- name: ExpireStaleBotTurns :exec
 UPDATE bot_turns SET status='interrupted',
 error_code=CASE WHEN stop_requested THEN 'engine.interrupted' ELSE 'engine.worker_lost' END,
 updated_at=$3::timestamptz
-WHERE workspace_id=$1 AND bot_id=$2 AND status='running' AND updated_at < $3::timestamptz - interval '20 minutes'
+WHERE workspace_id=$1 AND bot_id=$2 AND status='running'
+AND COALESCE(run_deadline_at + interval '5 minutes', updated_at + interval '20 minutes') < $3::timestamptz
 `
 
 type ExpireStaleBotTurnsParams struct {
@@ -200,7 +202,7 @@ func (q *Queries) GetBotSession(ctx context.Context, arg GetBotSessionParams) (B
 }
 
 const getBotTurn = `-- name: GetBotTurn :one
-SELECT id, position, workspace_id, bot_id, conversation_id, message_id, status, error_code, created_at, updated_at, continuation_prompt, stop_requested, heartbeat_at FROM bot_turns WHERE workspace_id=$1 AND id=$2
+SELECT id, position, workspace_id, bot_id, conversation_id, message_id, status, error_code, created_at, updated_at, continuation_prompt, stop_requested, heartbeat_at, run_deadline_at FROM bot_turns WHERE workspace_id=$1 AND id=$2
 `
 
 type GetBotTurnParams struct {
@@ -225,6 +227,7 @@ func (q *Queries) GetBotTurn(ctx context.Context, arg GetBotTurnParams) (BotTurn
 		&i.ContinuationPrompt,
 		&i.StopRequested,
 		&i.HeartbeatAt,
+		&i.RunDeadlineAt,
 	)
 	return i, err
 }
@@ -379,7 +382,7 @@ func (q *Queries) ListChatMessages(ctx context.Context, arg ListChatMessagesPara
 }
 
 const listConversationTurns = `-- name: ListConversationTurns :many
-SELECT t.id, t.position, t.workspace_id, t.bot_id, t.conversation_id, t.message_id, t.status, t.error_code, t.created_at, t.updated_at, t.continuation_prompt, t.stop_requested, t.heartbeat_at, (SELECT count(*) FROM bot_turns q WHERE q.workspace_id=t.workspace_id AND q.bot_id=t.bot_id AND q.status IN ('queued','running') AND q.position<t.position)::bigint AS queue_ahead
+SELECT t.id, t.position, t.workspace_id, t.bot_id, t.conversation_id, t.message_id, t.status, t.error_code, t.created_at, t.updated_at, t.continuation_prompt, t.stop_requested, t.heartbeat_at, t.run_deadline_at, (SELECT count(*) FROM bot_turns q WHERE q.workspace_id=t.workspace_id AND q.bot_id=t.bot_id AND q.status IN ('queued','running') AND q.position<t.position)::bigint AS queue_ahead
 FROM bot_turns t WHERE t.workspace_id=$1 AND t.conversation_id=$2 ORDER BY t.position DESC LIMIT 100
 `
 
@@ -402,6 +405,7 @@ type ListConversationTurnsRow struct {
 	ContinuationPrompt string             `json:"continuation_prompt"`
 	StopRequested      bool               `json:"stop_requested"`
 	HeartbeatAt        pgtype.Timestamptz `json:"heartbeat_at"`
+	RunDeadlineAt      pgtype.Timestamptz `json:"run_deadline_at"`
 	QueueAhead         int64              `json:"queue_ahead"`
 }
 
@@ -428,6 +432,7 @@ func (q *Queries) ListConversationTurns(ctx context.Context, arg ListConversatio
 			&i.ContinuationPrompt,
 			&i.StopRequested,
 			&i.HeartbeatAt,
+			&i.RunDeadlineAt,
 			&i.QueueAhead,
 		); err != nil {
 			return nil, err
@@ -643,7 +648,7 @@ func (q *Queries) LockRunningBotTurnForFinalization(ctx context.Context, arg Loc
 }
 
 const nextQueuedBotTurn = `-- name: NextQueuedBotTurn :one
-SELECT t.id, t.position, t.workspace_id, t.bot_id, t.conversation_id, t.message_id, t.status, t.error_code, t.created_at, t.updated_at, t.continuation_prompt, t.stop_requested, t.heartbeat_at FROM bot_turns t
+SELECT t.id, t.position, t.workspace_id, t.bot_id, t.conversation_id, t.message_id, t.status, t.error_code, t.created_at, t.updated_at, t.continuation_prompt, t.stop_requested, t.heartbeat_at, t.run_deadline_at FROM bot_turns t
 WHERE t.workspace_id=$1 AND t.bot_id=$2 AND t.status='queued'
   AND NOT EXISTS (SELECT 1 FROM bot_turns running WHERE running.workspace_id=$1 AND running.bot_id=$2 AND running.status='running')
   AND NOT EXISTS (SELECT 1 FROM secret_leases sl WHERE sl.workspace_id=$1 AND sl.bot_id=$2 AND sl.revoked_at IS NULL AND sl.expires_at > now() AND sl.turn_id <> t.id)
@@ -672,6 +677,7 @@ func (q *Queries) NextQueuedBotTurn(ctx context.Context, arg NextQueuedBotTurnPa
 		&i.ContinuationPrompt,
 		&i.StopRequested,
 		&i.HeartbeatAt,
+		&i.RunDeadlineAt,
 	)
 	return i, err
 }
@@ -771,18 +777,25 @@ func (q *Queries) SetBotTurnWaitingSecret(ctx context.Context, arg SetBotTurnWai
 }
 
 const startBotTurn = `-- name: StartBotTurn :exec
-UPDATE bot_turns SET status='running', error_code='', updated_at=$3, heartbeat_at=$3
+UPDATE bot_turns SET status='running', error_code='', updated_at=$3, heartbeat_at=$3,
+run_deadline_at=$4
 WHERE workspace_id=$1 AND id=$2 AND status='queued'
 `
 
 type StartBotTurnParams struct {
-	WorkspaceID pgtype.UUID        `json:"workspace_id"`
-	ID          pgtype.UUID        `json:"id"`
-	AsOf        pgtype.Timestamptz `json:"as_of"`
+	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
+	ID            pgtype.UUID        `json:"id"`
+	AsOf          pgtype.Timestamptz `json:"as_of"`
+	RunDeadlineAt pgtype.Timestamptz `json:"run_deadline_at"`
 }
 
 func (q *Queries) StartBotTurn(ctx context.Context, arg StartBotTurnParams) error {
-	_, err := q.db.Exec(ctx, startBotTurn, arg.WorkspaceID, arg.ID, arg.AsOf)
+	_, err := q.db.Exec(ctx, startBotTurn,
+		arg.WorkspaceID,
+		arg.ID,
+		arg.AsOf,
+		arg.RunDeadlineAt,
+	)
 	return err
 }
 

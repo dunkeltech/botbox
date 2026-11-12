@@ -22,23 +22,25 @@ INSERT INTO bots (
     llm_provider,
     llm_model,
     driver_type,
-    reply_language
+    reply_language,
+    turn_timeout_minutes
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-RETURNING id, workspace_id, owner_user_id, name, description, avatar_seed, llm_mode, llm_provider, llm_model, driver_type, reply_language, created_at, updated_at, memory_auto_save
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11::integer, 10))
+RETURNING id, workspace_id, owner_user_id, name, description, avatar_seed, llm_mode, llm_provider, llm_model, driver_type, reply_language, created_at, updated_at, memory_auto_save, turn_timeout_minutes
 `
 
 type CreateBotParams struct {
-	WorkspaceID   pgtype.UUID `json:"workspace_id"`
-	OwnerUserID   pgtype.UUID `json:"owner_user_id"`
-	Name          string      `json:"name"`
-	Description   string      `json:"description"`
-	AvatarSeed    string      `json:"avatar_seed"`
-	LlmMode       string      `json:"llm_mode"`
-	LlmProvider   string      `json:"llm_provider"`
-	LlmModel      string      `json:"llm_model"`
-	DriverType    string      `json:"driver_type"`
-	ReplyLanguage string      `json:"reply_language"`
+	WorkspaceID        pgtype.UUID `json:"workspace_id"`
+	OwnerUserID        pgtype.UUID `json:"owner_user_id"`
+	Name               string      `json:"name"`
+	Description        string      `json:"description"`
+	AvatarSeed         string      `json:"avatar_seed"`
+	LlmMode            string      `json:"llm_mode"`
+	LlmProvider        string      `json:"llm_provider"`
+	LlmModel           string      `json:"llm_model"`
+	DriverType         string      `json:"driver_type"`
+	ReplyLanguage      string      `json:"reply_language"`
+	TurnTimeoutMinutes pgtype.Int4 `json:"turn_timeout_minutes"`
 }
 
 func (q *Queries) CreateBot(ctx context.Context, arg CreateBotParams) (Bot, error) {
@@ -53,6 +55,7 @@ func (q *Queries) CreateBot(ctx context.Context, arg CreateBotParams) (Bot, erro
 		arg.LlmModel,
 		arg.DriverType,
 		arg.ReplyLanguage,
+		arg.TurnTimeoutMinutes,
 	)
 	var i Bot
 	err := row.Scan(
@@ -70,6 +73,7 @@ func (q *Queries) CreateBot(ctx context.Context, arg CreateBotParams) (Bot, erro
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.MemoryAutoSave,
+		&i.TurnTimeoutMinutes,
 	)
 	return i, err
 }
@@ -93,7 +97,7 @@ func (q *Queries) DeleteBotByWorkspaceAndID(ctx context.Context, arg DeleteBotBy
 }
 
 const getBotByWorkspaceAndID = `-- name: GetBotByWorkspaceAndID :one
-SELECT id, workspace_id, owner_user_id, name, description, avatar_seed, llm_mode, llm_provider, llm_model, driver_type, reply_language, created_at, updated_at, memory_auto_save
+SELECT id, workspace_id, owner_user_id, name, description, avatar_seed, llm_mode, llm_provider, llm_model, driver_type, reply_language, created_at, updated_at, memory_auto_save, turn_timeout_minutes
 FROM bots
 WHERE workspace_id = $1 AND id = $2
 `
@@ -121,12 +125,13 @@ func (q *Queries) GetBotByWorkspaceAndID(ctx context.Context, arg GetBotByWorksp
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.MemoryAutoSave,
+		&i.TurnTimeoutMinutes,
 	)
 	return i, err
 }
 
 const listBotsByWorkspace = `-- name: ListBotsByWorkspace :many
-SELECT id, workspace_id, owner_user_id, name, description, avatar_seed, llm_mode, llm_provider, llm_model, driver_type, reply_language, created_at, updated_at, memory_auto_save
+SELECT id, workspace_id, owner_user_id, name, description, avatar_seed, llm_mode, llm_provider, llm_model, driver_type, reply_language, created_at, updated_at, memory_auto_save, turn_timeout_minutes
 FROM bots
 WHERE workspace_id = $1
 ORDER BY created_at ASC, name ASC
@@ -156,6 +161,7 @@ func (q *Queries) ListBotsByWorkspace(ctx context.Context, workspaceID pgtype.UU
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.MemoryAutoSave,
+			&i.TurnTimeoutMinutes,
 		); err != nil {
 			return nil, err
 		}
@@ -177,22 +183,24 @@ SET name = $3,
     llm_model = $8,
     driver_type = $9,
     reply_language = $10,
+    turn_timeout_minutes = COALESCE($11::integer, turn_timeout_minutes),
     updated_at = now()
 WHERE workspace_id = $1 AND id = $2
-RETURNING id, workspace_id, owner_user_id, name, description, avatar_seed, llm_mode, llm_provider, llm_model, driver_type, reply_language, created_at, updated_at, memory_auto_save
+RETURNING id, workspace_id, owner_user_id, name, description, avatar_seed, llm_mode, llm_provider, llm_model, driver_type, reply_language, created_at, updated_at, memory_auto_save, turn_timeout_minutes
 `
 
 type UpdateBotByWorkspaceAndIDParams struct {
-	WorkspaceID   pgtype.UUID `json:"workspace_id"`
-	ID            pgtype.UUID `json:"id"`
-	Name          string      `json:"name"`
-	Description   string      `json:"description"`
-	AvatarSeed    string      `json:"avatar_seed"`
-	LlmMode       string      `json:"llm_mode"`
-	LlmProvider   string      `json:"llm_provider"`
-	LlmModel      string      `json:"llm_model"`
-	DriverType    string      `json:"driver_type"`
-	ReplyLanguage string      `json:"reply_language"`
+	WorkspaceID        pgtype.UUID `json:"workspace_id"`
+	ID                 pgtype.UUID `json:"id"`
+	Name               string      `json:"name"`
+	Description        string      `json:"description"`
+	AvatarSeed         string      `json:"avatar_seed"`
+	LlmMode            string      `json:"llm_mode"`
+	LlmProvider        string      `json:"llm_provider"`
+	LlmModel           string      `json:"llm_model"`
+	DriverType         string      `json:"driver_type"`
+	ReplyLanguage      string      `json:"reply_language"`
+	TurnTimeoutMinutes pgtype.Int4 `json:"turn_timeout_minutes"`
 }
 
 func (q *Queries) UpdateBotByWorkspaceAndID(ctx context.Context, arg UpdateBotByWorkspaceAndIDParams) (Bot, error) {
@@ -207,6 +215,7 @@ func (q *Queries) UpdateBotByWorkspaceAndID(ctx context.Context, arg UpdateBotBy
 		arg.LlmModel,
 		arg.DriverType,
 		arg.ReplyLanguage,
+		arg.TurnTimeoutMinutes,
 	)
 	var i Bot
 	err := row.Scan(
@@ -224,6 +233,7 @@ func (q *Queries) UpdateBotByWorkspaceAndID(ctx context.Context, arg UpdateBotBy
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.MemoryAutoSave,
+		&i.TurnTimeoutMinutes,
 	)
 	return i, err
 }

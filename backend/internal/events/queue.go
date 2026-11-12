@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dunkeltech/botbox/backend/internal/bots"
 	"github.com/google/uuid"
 	"github.com/nats-io/nats.go"
 )
@@ -84,9 +85,29 @@ func OpenQueueWithConcurrency(url string, concurrency int, process func(context.
 				_ = msg.Term()
 				return
 			}
-			ctx, cancel := context.WithTimeout(q.ctx, 15*time.Minute)
-			defer cancel()
-			if err := process(ctx, job); err != nil {
+			ctx, cancel := context.WithTimeout(q.ctx, bots.MaxTurnTimeout+5*time.Minute)
+			// The message may have waited locally for a worker slot.
+			_ = msg.InProgress()
+			progressDone := make(chan struct{})
+			go func() {
+				defer close(progressDone)
+				// Renew the existing durable consumer's 16-minute ack window
+				// without changing its configuration on a running deployment.
+				ticker := time.NewTicker(8 * time.Minute)
+				defer ticker.Stop()
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case <-ticker.C:
+						_ = msg.InProgress()
+					}
+				}
+			}()
+			err := process(ctx, job)
+			cancel()
+			<-progressDone
+			if err != nil {
 				_ = msg.NakWithDelay(time.Second)
 				return
 			}

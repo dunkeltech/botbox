@@ -2036,6 +2036,7 @@ export interface components {
       llmModel: string;
       driverType: components['schemas']['DriverType'];
       replyLanguage: string;
+      turnTimeoutMinutes: components['schemas']['BotTurnTimeoutMinutes'];
       status: components['schemas']['BotStatus'];
       mood: components['schemas']['AvatarMood'];
       /** Format: date-time */
@@ -2043,6 +2044,11 @@ export interface components {
       /** Format: date-time */
       updatedAt: string;
     };
+    /**
+     * Format: int32
+     * @description Maximum execution time in minutes for each bot turn. New bots default to 10 when omitted.
+     */
+    BotTurnTimeoutMinutes: number;
     BotListResponse: {
       bots: components['schemas']['Bot'][];
     };
@@ -2056,6 +2062,7 @@ export interface components {
       llmModel: string;
       driverType?: components['schemas']['DriverType'];
       replyLanguage?: string;
+      turnTimeoutMinutes?: components['schemas']['BotTurnTimeoutMinutes'];
     };
     UpdateBotRequest: {
       name?: string;
@@ -2067,6 +2074,7 @@ export interface components {
       llmModel?: string;
       driverType?: components['schemas']['DriverType'];
       replyLanguage?: string;
+      turnTimeoutMinutes?: components['schemas']['BotTurnTimeoutMinutes'];
     };
     /** @enum {string} */
     EnvironmentStatus: 'creating' | 'running' | 'stopped' | 'error';

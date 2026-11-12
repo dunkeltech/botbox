@@ -93,7 +93,7 @@ func (q *Queries) CreateGroupInputRequest(ctx context.Context, arg CreateGroupIn
 
 const createGroupInputTurn = `-- name: CreateGroupInputTurn :one
 INSERT INTO bot_turns (workspace_id, bot_id, conversation_id, message_id, continuation_prompt)
-VALUES ($1, $2, $3, $4, $5) RETURNING id, position, workspace_id, bot_id, conversation_id, message_id, status, error_code, created_at, updated_at, continuation_prompt, stop_requested, heartbeat_at
+VALUES ($1, $2, $3, $4, $5) RETURNING id, position, workspace_id, bot_id, conversation_id, message_id, status, error_code, created_at, updated_at, continuation_prompt, stop_requested, heartbeat_at, run_deadline_at
 `
 
 type CreateGroupInputTurnParams struct {
@@ -127,6 +127,7 @@ func (q *Queries) CreateGroupInputTurn(ctx context.Context, arg CreateGroupInput
 		&i.ContinuationPrompt,
 		&i.StopRequested,
 		&i.HeartbeatAt,
+		&i.RunDeadlineAt,
 	)
 	return i, err
 }

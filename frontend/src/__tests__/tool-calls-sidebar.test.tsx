@@ -82,6 +82,7 @@ const bots: Bot[] = [
     llmModel: 'opus',
     driverType: 'docker',
     replyLanguage: 'en',
+    turnTimeoutMinutes: 10,
     status: 'idle',
     mood: 'idle',
     createdAt: '2026-11-15T00:00:00Z',

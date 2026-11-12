@@ -3784,6 +3784,7 @@ components:
         - llmModel
         - driverType
         - replyLanguage
+        - turnTimeoutMinutes
         - status
         - mood
         - createdAt
@@ -3816,6 +3817,8 @@ components:
           $ref: '#/components/schemas/DriverType'
         replyLanguage:
           type: string
+        turnTimeoutMinutes:
+          $ref: '#/components/schemas/BotTurnTimeoutMinutes'
         status:
           $ref: '#/components/schemas/BotStatus'
         mood:
@@ -3826,6 +3829,13 @@ components:
         updatedAt:
           type: string
           format: date-time
+
+    BotTurnTimeoutMinutes:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 120
+      description: Maximum execution time in minutes for each bot turn. New bots default to 10 when omitted.
 
     BotListResponse:
       type: object
@@ -3862,6 +3872,8 @@ components:
           $ref: '#/components/schemas/DriverType'
         replyLanguage:
           type: string
+        turnTimeoutMinutes:
+          $ref: '#/components/schemas/BotTurnTimeoutMinutes'
 
     UpdateBotRequest:
       type: object
@@ -3883,6 +3895,8 @@ components:
           $ref: '#/components/schemas/DriverType'
         replyLanguage:
           type: string
+        turnTimeoutMinutes:
+          $ref: '#/components/schemas/BotTurnTimeoutMinutes'
 
     EnvironmentStatus:
       type: string

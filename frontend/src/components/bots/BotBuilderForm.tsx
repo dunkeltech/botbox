@@ -44,6 +44,7 @@ const AGENT_ALIASES: Record<string, keyof typeof AGENT_MODELS> = {
   agy: 'google',
 };
 const STANDARD_LANGUAGES = ['en', 'de', 'fr'] as const;
+const DEFAULT_TURN_TIMEOUT_MINUTES = 10;
 
 export interface BotBuilderFormProps {
   mode: 'create' | 'edit';
@@ -93,6 +94,9 @@ export function BotBuilderForm({
   const [replyLanguage, setReplyLanguage] = useState(
     bot?.replyLanguage ?? 'en',
   );
+  const [turnTimeoutMinutes, setTurnTimeoutMinutes] = useState(
+    String(bot?.turnTimeoutMinutes ?? DEFAULT_TURN_TIMEOUT_MINUTES),
+  );
 
   const [submitting, setSubmitting] = useState(false);
   const [errorKey, setErrorKey] = useState<ErrorTranslationKey | null>(null);
@@ -124,6 +128,7 @@ export function BotBuilderForm({
           llmModel: llmModel.trim(),
           driverType,
           replyLanguage,
+          turnTimeoutMinutes: Number(turnTimeoutMinutes),
         });
         router.push(`/bots/${created.id}`);
       } else if (bot) {
@@ -136,10 +141,12 @@ export function BotBuilderForm({
           llmModel: llmModel.trim(),
           driverType,
           replyLanguage,
+          turnTimeoutMinutes: Number(turnTimeoutMinutes),
         });
         setName(updated.name);
         setDescription(updated.description);
         setAvatarSeed(updated.avatarSeed);
+        setTurnTimeoutMinutes(String(updated.turnTimeoutMinutes));
         setSavedBanner(true);
       }
     } catch (err) {
@@ -406,6 +413,18 @@ export function BotBuilderForm({
             <option value={replyLanguage}>{replyLanguage}</option>
           ) : null}
         </Select>
+        <Input
+          label={t('turnTimeoutLabel')}
+          helperText={t('turnTimeoutHelp')}
+          type="number"
+          min={1}
+          max={120}
+          step={1}
+          value={turnTimeoutMinutes}
+          disabled={!canEdit}
+          required
+          onChange={(event) => setTurnTimeoutMinutes(event.target.value)}
+        />
       </Card>
 
       {canEdit ? (

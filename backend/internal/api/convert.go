@@ -270,21 +270,22 @@ func toAPIBotWithEnv(b db.Bot, env *db.Environment) api.Bot {
 		}
 	}
 	return api.Bot{
-		Id:            fromPGUUID(b.ID),
-		WorkspaceId:   fromPGUUID(b.WorkspaceID),
-		OwnerUserId:   ownerID,
-		Name:          b.Name,
-		Description:   b.Description,
-		AvatarSeed:    b.AvatarSeed,
-		LlmMode:       api.LlmMode(b.LlmMode),
-		LlmProvider:   b.LlmProvider,
-		LlmModel:      b.LlmModel,
-		DriverType:    api.DriverType(b.DriverType),
-		ReplyLanguage: b.ReplyLanguage,
-		Status:        status,
-		Mood:          mood,
-		CreatedAt:     b.CreatedAt.Time.UTC(),
-		UpdatedAt:     b.UpdatedAt.Time.UTC(),
+		Id:                 fromPGUUID(b.ID),
+		WorkspaceId:        fromPGUUID(b.WorkspaceID),
+		OwnerUserId:        ownerID,
+		Name:               b.Name,
+		Description:        b.Description,
+		AvatarSeed:         b.AvatarSeed,
+		LlmMode:            api.LlmMode(b.LlmMode),
+		LlmProvider:        b.LlmProvider,
+		LlmModel:           b.LlmModel,
+		DriverType:         api.DriverType(b.DriverType),
+		ReplyLanguage:      b.ReplyLanguage,
+		TurnTimeoutMinutes: b.TurnTimeoutMinutes,
+		Status:             status,
+		Mood:               mood,
+		CreatedAt:          b.CreatedAt.Time.UTC(),
+		UpdatedAt:          b.UpdatedAt.Time.UTC(),
 	}
 }
 

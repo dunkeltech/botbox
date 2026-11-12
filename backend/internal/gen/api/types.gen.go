@@ -1234,8 +1234,11 @@ type Bot struct {
 	OwnerUserId   *openapi_types.UUID `json:"ownerUserId,omitempty"`
 	ReplyLanguage string              `json:"replyLanguage"`
 	Status        BotStatus           `json:"status"`
-	UpdatedAt     time.Time           `json:"updatedAt"`
-	WorkspaceId   openapi_types.UUID  `json:"workspaceId"`
+
+	// TurnTimeoutMinutes Maximum execution time in minutes for each bot turn. New bots default to 10 when omitted.
+	TurnTimeoutMinutes BotTurnTimeoutMinutes `json:"turnTimeoutMinutes"`
+	UpdatedAt          time.Time             `json:"updatedAt"`
+	WorkspaceId        openapi_types.UUID    `json:"workspaceId"`
 }
 
 // BotGitLabInstances defines model for BotGitLabInstances.
@@ -1323,6 +1326,9 @@ type BotRuntime struct {
 
 // BotStatus defines model for BotStatus.
 type BotStatus string
+
+// BotTurnTimeoutMinutes Maximum execution time in minutes for each bot turn. New bots default to 10 when omitted.
+type BotTurnTimeoutMinutes = int32
 
 // BrokerTakeoverInputBody defines model for BrokerTakeoverInputBody.
 type BrokerTakeoverInputBody struct {
@@ -1512,6 +1518,9 @@ type CreateBotRequest struct {
 	LlmProvider   string  `json:"llmProvider"`
 	Name          string  `json:"name"`
 	ReplyLanguage *string `json:"replyLanguage,omitempty"`
+
+	// TurnTimeoutMinutes Maximum execution time in minutes for each bot turn. New bots default to 10 when omitted.
+	TurnTimeoutMinutes *BotTurnTimeoutMinutes `json:"turnTimeoutMinutes,omitempty"`
 }
 
 // CreateGroupRequest defines model for CreateGroupRequest.
@@ -2256,6 +2265,9 @@ type UpdateBotRequest struct {
 	LlmProvider   *string `json:"llmProvider,omitempty"`
 	Name          *string `json:"name,omitempty"`
 	ReplyLanguage *string `json:"replyLanguage,omitempty"`
+
+	// TurnTimeoutMinutes Maximum execution time in minutes for each bot turn. New bots default to 10 when omitted.
+	TurnTimeoutMinutes *BotTurnTimeoutMinutes `json:"turnTimeoutMinutes,omitempty"`
 }
 
 // UpdateEgressPolicyRequest defines model for UpdateEgressPolicyRequest.

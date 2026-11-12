@@ -86,6 +86,7 @@ function makeBot(ownerUserId = 'user-1'): Bot {
     llmModel: 'claude-sonnet-4-20250514',
     driverType: 'docker',
     replyLanguage: 'en',
+    turnTimeoutMinutes: 10,
     status: 'action',
     mood: 'action',
     createdAt: '2026-11-14T12:00:00Z',

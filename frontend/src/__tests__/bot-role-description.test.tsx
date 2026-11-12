@@ -22,6 +22,7 @@ const bot: Bot = {
   llmModel: 'fixture',
   driverType: 'docker',
   replyLanguage: 'en',
+  turnTimeoutMinutes: 10,
   status: 'idle',
   mood: 'idle',
   createdAt: '',

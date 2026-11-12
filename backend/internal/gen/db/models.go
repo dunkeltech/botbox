@@ -35,20 +35,21 @@ type AuditLog struct {
 }
 
 type Bot struct {
-	ID             pgtype.UUID        `json:"id"`
-	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
-	OwnerUserID    pgtype.UUID        `json:"owner_user_id"`
-	Name           string             `json:"name"`
-	Description    string             `json:"description"`
-	AvatarSeed     string             `json:"avatar_seed"`
-	LlmMode        string             `json:"llm_mode"`
-	LlmProvider    string             `json:"llm_provider"`
-	LlmModel       string             `json:"llm_model"`
-	DriverType     string             `json:"driver_type"`
-	ReplyLanguage  string             `json:"reply_language"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	MemoryAutoSave bool               `json:"memory_auto_save"`
+	ID                 pgtype.UUID        `json:"id"`
+	WorkspaceID        pgtype.UUID        `json:"workspace_id"`
+	OwnerUserID        pgtype.UUID        `json:"owner_user_id"`
+	Name               string             `json:"name"`
+	Description        string             `json:"description"`
+	AvatarSeed         string             `json:"avatar_seed"`
+	LlmMode            string             `json:"llm_mode"`
+	LlmProvider        string             `json:"llm_provider"`
+	LlmModel           string             `json:"llm_model"`
+	DriverType         string             `json:"driver_type"`
+	ReplyLanguage      string             `json:"reply_language"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	MemoryAutoSave     bool               `json:"memory_auto_save"`
+	TurnTimeoutMinutes int32              `json:"turn_timeout_minutes"`
 }
 
 type BotGitlabInstance struct {
@@ -147,6 +148,7 @@ type BotTurn struct {
 	ContinuationPrompt string             `json:"continuation_prompt"`
 	StopRequested      bool               `json:"stop_requested"`
 	HeartbeatAt        pgtype.Timestamptz `json:"heartbeat_at"`
+	RunDeadlineAt      pgtype.Timestamptz `json:"run_deadline_at"`
 }
 
 type BrokerSession struct {

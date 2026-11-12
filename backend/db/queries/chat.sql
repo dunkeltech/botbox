@@ -53,7 +53,8 @@ ORDER BY t.position LIMIT 1 FOR UPDATE OF t SKIP LOCKED;
 UPDATE bot_turns SET status=$3,error_code=$4,updated_at=now() WHERE workspace_id=$1 AND id=$2;
 
 -- name: StartBotTurn :exec
-UPDATE bot_turns SET status='running', error_code='', updated_at=sqlc.arg(as_of), heartbeat_at=sqlc.arg(as_of)
+UPDATE bot_turns SET status='running', error_code='', updated_at=sqlc.arg(as_of), heartbeat_at=sqlc.arg(as_of),
+run_deadline_at=sqlc.arg(run_deadline_at)
 WHERE workspace_id=$1 AND id=$2 AND status='queued';
 
 -- name: TouchBotTurnHeartbeat :exec
@@ -104,7 +105,8 @@ FROM bot_turns t WHERE t.workspace_id=$1 AND t.status='running';
 UPDATE bot_turns SET status='interrupted',
 error_code=CASE WHEN stop_requested THEN 'engine.interrupted' ELSE 'engine.worker_lost' END,
 updated_at=sqlc.arg(as_of)::timestamptz
-WHERE workspace_id=$1 AND bot_id=$2 AND status='running' AND updated_at < sqlc.arg(as_of)::timestamptz - interval '20 minutes';
+WHERE workspace_id=$1 AND bot_id=$2 AND status='running'
+AND COALESCE(run_deadline_at + interval '5 minutes', updated_at + interval '20 minutes') < sqlc.arg(as_of)::timestamptz;
 
 -- name: CountPendingBotTurns :one
 SELECT count(*) FROM bot_turns WHERE workspace_id=$1 AND bot_id=$2 AND status IN ('queued','running','waiting_secret');

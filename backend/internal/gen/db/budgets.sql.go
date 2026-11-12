@@ -75,7 +75,7 @@ func (q *Queries) GetModelPrice(ctx context.Context, arg GetModelPriceParams) (M
 }
 
 const getRunningBotTurn = `-- name: GetRunningBotTurn :one
-SELECT t.id, t.position, t.workspace_id, t.bot_id, t.conversation_id, t.message_id, t.status, t.error_code, t.created_at, t.updated_at, t.continuation_prompt, t.stop_requested, t.heartbeat_at FROM bot_turns t WHERE t.workspace_id=$1 AND t.bot_id=$2 AND t.status='running'
+SELECT t.id, t.position, t.workspace_id, t.bot_id, t.conversation_id, t.message_id, t.status, t.error_code, t.created_at, t.updated_at, t.continuation_prompt, t.stop_requested, t.heartbeat_at, t.run_deadline_at FROM bot_turns t WHERE t.workspace_id=$1 AND t.bot_id=$2 AND t.status='running'
 `
 
 type GetRunningBotTurnParams struct {
@@ -100,6 +100,7 @@ func (q *Queries) GetRunningBotTurn(ctx context.Context, arg GetRunningBotTurnPa
 		&i.ContinuationPrompt,
 		&i.StopRequested,
 		&i.HeartbeatAt,
+		&i.RunDeadlineAt,
 	)
 	return i, err
 }

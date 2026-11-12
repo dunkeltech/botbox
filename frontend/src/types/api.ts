@@ -177,49 +177,15 @@ export interface AcceptInvitationRequest {
   password?: string;
 }
 
-export interface Bot {
-  id: string;
-  workspaceId: string;
-  ownerUserId?: string | null;
-  name: string;
-  description: string;
-  avatarSeed: string;
-  llmMode: LlmMode;
-  llmProvider: string;
-  llmModel: string;
-  driverType: DriverType;
-  replyLanguage: string;
-  status: BotStatus;
-  mood: AvatarMood;
-  createdAt: string;
-  updatedAt: string;
-}
+export type Bot = components['schemas']['Bot'];
 
 export interface BotListResponse {
   bots: Bot[];
 }
 
-export interface CreateBotRequest {
-  name: string;
-  description?: string;
-  avatarSeed: string;
-  llmMode: LlmMode;
-  llmProvider: string;
-  llmModel: string;
-  driverType?: DriverType;
-  replyLanguage?: string;
-}
+export type CreateBotRequest = components['schemas']['CreateBotRequest'];
 
-export interface UpdateBotRequest {
-  name?: string;
-  description?: string;
-  avatarSeed?: string;
-  llmMode?: LlmMode;
-  llmProvider?: string;
-  llmModel?: string;
-  driverType?: DriverType;
-  replyLanguage?: string;
-}
+export type UpdateBotRequest = components['schemas']['UpdateBotRequest'];
 
 export type EnvironmentStatus = 'creating' | 'running' | 'stopped' | 'error';
 

@@ -182,7 +182,7 @@ func (q *Queries) ListTeamTurnUpdates(ctx context.Context, arg ListTeamTurnUpdat
 }
 
 const lockTeamToolTurn = `-- name: LockTeamToolTurn :one
-SELECT t.id, t.position, t.workspace_id, t.bot_id, t.conversation_id, t.message_id, t.status, t.error_code, t.created_at, t.updated_at, t.continuation_prompt, t.stop_requested, t.heartbeat_at FROM bot_turns t
+SELECT t.id, t.position, t.workspace_id, t.bot_id, t.conversation_id, t.message_id, t.status, t.error_code, t.created_at, t.updated_at, t.continuation_prompt, t.stop_requested, t.heartbeat_at, t.run_deadline_at FROM bot_turns t
 JOIN conversation_members member ON member.workspace_id=t.workspace_id
   AND member.conversation_id=t.conversation_id AND member.member_type='bot' AND member.member_id=t.bot_id
 WHERE t.workspace_id=$1 AND t.conversation_id=$2 AND t.id=$3 AND t.bot_id=$4
@@ -221,6 +221,7 @@ func (q *Queries) LockTeamToolTurn(ctx context.Context, arg LockTeamToolTurnPara
 		&i.ContinuationPrompt,
 		&i.StopRequested,
 		&i.HeartbeatAt,
+		&i.RunDeadlineAt,
 	)
 	return i, err
 }

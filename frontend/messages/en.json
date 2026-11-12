@@ -335,6 +335,8 @@
     "driverDocker": "Docker",
     "driverK8s": "Kubernetes",
     "replyLanguageLabel": "Reply language",
+    "turnTimeoutLabel": "Maximum turn duration (minutes)",
+    "turnTimeoutHelp": "Set how long this bot can work on each turn, from 1 to 120 minutes. Changes apply from its next turn.",
     "createSubmit": "Create bot",
     "creating": "Creating bot…",
     "saveSubmit": "Save bot changes",

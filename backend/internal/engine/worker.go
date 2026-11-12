@@ -78,11 +78,6 @@ func (w *Worker) Process(ctx context.Context, job events.TurnNotification) error
 	if w.Pool == nil || w.Execute == nil {
 		return errors.New("worker is not configured")
 	}
-	config, err := db.New(w.Pool).GetBotByWorkspaceAndID(ctx, db.GetBotByWorkspaceAndIDParams{WorkspaceID: pgID(job.WorkspaceID), ID: pgID(job.BotID)})
-	if err != nil {
-		return err
-	}
-
 	tx, err := w.Pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -101,8 +96,7 @@ func (w *Worker) Process(ctx context.Context, job events.TurnNotification) error
 	if _, err = q.GetGroupForUpdate(ctx, db.GetGroupForUpdateParams{WorkspaceID: pending.WorkspaceID, ID: pending.ConversationID}); err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return err
 	}
-	// Notifications have a 15-minute deadline, so after 20 minutes the old
-	// execution is past its maximum lifetime. Fail it without replaying effects.
+	// Reclaim only after the saved deadline and cleanup grace have passed.
 	if err = q.ExpireStaleBotTurns(ctx, db.ExpireStaleBotTurnsParams{WorkspaceID: pgID(job.WorkspaceID), BotID: pgID(job.BotID), AsOf: pgtype.Timestamptz{Time: w.now(), Valid: true}}); err != nil {
 		return err
 	}
@@ -156,16 +150,29 @@ func (w *Worker) Process(ctx context.Context, job events.TurnNotification) error
 		}
 		return nil
 	}
-	// Commit the running marker before any external side effect. The partial
-	// unique index prevents another worker from claiming a second turn per bot.
-	if err = q.StartBotTurn(ctx, db.StartBotTurnParams{WorkspaceID: turn.WorkspaceID, ID: turn.ID, AsOf: pgtype.Timestamptz{Time: w.now(), Valid: true}}); err != nil {
+	config, err := q.GetBotByWorkspaceAndID(ctx, db.GetBotByWorkspaceAndIDParams{WorkspaceID: turn.WorkspaceID, ID: turn.BotID})
+	if err != nil {
 		return err
 	}
-	return w.executeClaimed(ctx, tx, turn, config, inputReply)
+	// Commit the running marker before any external side effect. The partial
+	// unique index prevents another worker from claiming a second turn per bot.
+	claimedAt := w.now()
+	runTimeout := time.Duration(config.TurnTimeoutMinutes) * time.Minute
+	runCtx, cancel := context.WithTimeout(ctx, runTimeout)
+	defer cancel()
+	if err = q.StartBotTurn(runCtx, db.StartBotTurnParams{
+		WorkspaceID:   turn.WorkspaceID,
+		ID:            turn.ID,
+		AsOf:          pgtype.Timestamptz{Time: claimedAt, Valid: true},
+		RunDeadlineAt: pgtype.Timestamptz{Time: claimedAt.Add(runTimeout), Valid: true},
+	}); err != nil {
+		return err
+	}
+	return w.executeClaimed(runCtx, cancel, tx, turn, config, inputReply)
 }
 
-func (w *Worker) executeClaimed(ctx context.Context, tx pgx.Tx, turn db.BotTurn, bot db.Bot, inputReply bool) (resultErr error) {
-	if err := tx.Commit(ctx); err != nil {
+func (w *Worker) executeClaimed(runCtx context.Context, cancel context.CancelFunc, tx pgx.Tx, turn db.BotTurn, bot db.Bot, inputReply bool) (resultErr error) {
+	if err := tx.Commit(runCtx); err != nil {
 		return err
 	}
 	q := db.New(w.Pool)
@@ -187,21 +194,25 @@ func (w *Worker) executeClaimed(ctx context.Context, tx pgx.Tx, turn db.BotTurn,
 		if resultErr == nil {
 			return
 		}
-		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		cleanup, cancel := context.WithTimeout(context.WithoutCancel(runCtx), 5*time.Second)
 		defer cancel()
-		_ = q.FinishRunningBotTurn(cleanup, db.FinishRunningBotTurnParams{WorkspaceID: turn.WorkspaceID, ID: turn.ID, Status: "failed", ErrorCode: TurnFailureCode(resultErr)})
+		status, code := "failed", TurnFailureCode(resultErr)
+		if errors.Is(runCtx.Err(), context.DeadlineExceeded) && errors.Is(resultErr, context.DeadlineExceeded) {
+			status, code = "interrupted", "engine.interrupted"
+		}
+		_ = q.FinishRunningBotTurn(cleanup, db.FinishRunningBotTurnParams{WorkspaceID: turn.WorkspaceID, ID: turn.ID, Status: status, ErrorCode: code})
 		_ = publish(cleanup, Session{WorkspaceID: uuidID(turn.WorkspaceID), BotID: uuidID(turn.BotID), ConversationID: uuidID(turn.ConversationID), TurnID: uuidID(turn.ID)}, Event{Kind: EventKindStatus, Status: "idle"})
 	}()
 	// Keep the configuration that was validated before the turn was claimed.
-	input, err := q.GetTurnMessage(ctx, db.GetTurnMessageParams{WorkspaceID: turn.WorkspaceID, ID: turn.MessageID})
+	input, err := q.GetTurnMessage(runCtx, db.GetTurnMessageParams{WorkspaceID: turn.WorkspaceID, ID: turn.MessageID})
 	if err != nil {
 		return err
 	}
-	history, err := q.ListTurnContext(ctx, db.ListTurnContextParams{WorkspaceID: turn.WorkspaceID, ConversationID: turn.ConversationID, UpToPosition: input.Position})
+	history, err := q.ListTurnContext(runCtx, db.ListTurnContextParams{WorkspaceID: turn.WorkspaceID, ConversationID: turn.ConversationID, UpToPosition: input.Position})
 	if err != nil {
 		return err
 	}
-	preface, err := groups.Preface(ctx, q, turn.WorkspaceID, turn.ConversationID, turn.BotID, w.now())
+	preface, err := groups.Preface(runCtx, q, turn.WorkspaceID, turn.ConversationID, turn.BotID, w.now())
 	if err != nil {
 		return err
 	}
@@ -223,7 +234,7 @@ func (w *Worker) executeClaimed(ctx context.Context, tx pgx.Tx, turn db.BotTurn,
 		}
 	}
 	memSvc := memory.Service{Pool: w.Pool, Ring: w.KeyRing, Signal: w.Signal, Now: w.now}
-	if memPrompt, memErr := memSvc.FormatPromptContext(ctx, session.WorkspaceID, session.BotID, session.TurnID, true); memErr == nil {
+	if memPrompt, memErr := memSvc.FormatPromptContext(runCtx, session.WorkspaceID, session.BotID, session.TurnID, true); memErr == nil {
 		session.MemoryPrompt = memPrompt
 	} else {
 		return memErr
@@ -232,16 +243,16 @@ func (w *Worker) executeClaimed(ctx context.Context, tx pgx.Tx, turn db.BotTurn,
 	session.MemoryTool = func(ctx context.Context, name string, args json.RawMessage) (string, error) {
 		return memSvc.Call(ctx, memScope, name, args)
 	}
-	stop, err := groups.ScreenBudget(ctx, w.Pool, turn.WorkspaceID, turn.ConversationID, turn.BotID, turn.MessageID, w.Signal)
+	stop, err := groups.ScreenBudget(runCtx, w.Pool, turn.WorkspaceID, turn.ConversationID, turn.BotID, turn.MessageID, w.Signal)
 	if err != nil {
 		return err
 	}
 	if stop {
-		if err = q.FinishRunningBotTurn(ctx, db.FinishRunningBotTurnParams{WorkspaceID: turn.WorkspaceID, ID: turn.ID, Status: "budget_exceeded", ErrorCode: "budget_exceeded"}); err != nil {
+		if err = q.FinishRunningBotTurn(runCtx, db.FinishRunningBotTurnParams{WorkspaceID: turn.WorkspaceID, ID: turn.ID, Status: "budget_exceeded", ErrorCode: "budget_exceeded"}); err != nil {
 			return err
 		}
 		if w.Publish != nil {
-			return publish(ctx, session, Event{Kind: EventKindStatus, Status: "idle"})
+			return publish(runCtx, session, Event{Kind: EventKindStatus, Status: "idle"})
 		}
 		return nil
 	}
@@ -251,9 +262,8 @@ func (w *Worker) executeClaimed(ctx context.Context, tx pgx.Tx, turn db.BotTurn,
 	teamToolCalls := make(map[string]bool)
 	var savedCredentialPrompt string
 	useSavedCredential := errors.New("continue with saved GitLab credential")
-	runCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
-	defer cancel()
 	emit := func(ev Event) error {
+		ctx := runCtx
 		ev.BotID = uuidID(turn.BotID).String()
 		ev.TurnID = uuidID(turn.ID).String()
 		// Provider completion is only a model step, not completion of the turn.
@@ -447,6 +457,9 @@ func (w *Worker) executeClaimed(ctx context.Context, tx pgx.Tx, turn db.BotTurn,
 			runErr = runCtx.Err()
 		}
 	}
+	if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+		runErr = context.DeadlineExceeded
+	}
 	cancel()
 	status, code := "completed", ""
 	if waitingSecret || errors.Is(runErr, ErrTurnWaitingSecret) {
@@ -460,7 +473,7 @@ func (w *Worker) executeClaimed(ctx context.Context, tx pgx.Tx, turn db.BotTurn,
 			status, code = "interrupted", "engine.interrupted"
 		}
 	}
-	finalCtx, finalCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	finalCtx, finalCancel := context.WithTimeout(context.WithoutCancel(runCtx), 5*time.Second)
 	defer finalCancel()
 	kind, err := q.GetConversationType(finalCtx, db.GetConversationTypeParams{WorkspaceID: turn.WorkspaceID, ID: turn.ConversationID})
 	if err != nil {

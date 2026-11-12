@@ -6,9 +6,11 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/dunkeltech/botbox/backend/internal/agent"
 	agentv1 "github.com/dunkeltech/botbox/backend/internal/gen/proto/agent/v1"
@@ -99,6 +101,51 @@ func TestRunCLICancellationKillsToolProcessGroup(t *testing.T) {
 	}}
 	if err := server.RunCLI(&agentv1.RunCLIRequest{Cli: "codex", Prompt: "fixture"}, stream); status.Code(err) != codes.Canceled {
 		t.Fatalf("cancel=%v", err)
+	}
+}
+
+func TestAgyPrintTimeoutFollowsTurnDeadline(t *testing.T) {
+	home := t.TempDir()
+	binary := filepath.Join(home, "fake-agy")
+	//nolint:gosec // executable fixture owned by this test
+	if err := os.WriteFile(binary, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\"\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	server := agent.NewServerWithOptions(agent.ServerOptions{HomeDir: home, CLIBinaries: map[string]string{"agy": binary}})
+	t.Setenv("HTTP_PROXY", "")
+	for _, tc := range []struct {
+		name                   string
+		deadline               time.Duration
+		minSeconds, maxSeconds int
+	}{
+		{"without deadline", 0, 600, 600},
+		{"longer turn", 30 * time.Minute, 601, 1800},
+		{"above sandbox cap", 3 * time.Hour, 7200, 7200},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			if tc.deadline > 0 {
+				withDeadline, cancelDeadline := context.WithTimeout(ctx, tc.deadline)
+				defer cancelDeadline()
+				ctx = withDeadline
+			}
+			stream := &fakeCLIStream{ctx: ctx}
+			if err := server.RunCLI(&agentv1.RunCLIRequest{Cli: "agy", Prompt: "fixture"}, stream); err != nil {
+				t.Fatal(err)
+			}
+			var output strings.Builder
+			for _, frame := range stream.frames {
+				if !frame.Stderr {
+					output.Write(frame.Data)
+				}
+			}
+			_, timeoutArg, found := strings.Cut(output.String(), "--print-timeout\n")
+			seconds, err := strconv.Atoi(strings.TrimSuffix(strings.TrimSpace(timeoutArg), "s"))
+			if !found || err != nil || seconds < tc.minSeconds || seconds > tc.maxSeconds {
+				t.Fatalf("agy arguments = %q, want print timeout in [%d, %d] seconds", output.String(), tc.minSeconds, tc.maxSeconds)
+			}
+		})
 	}
 }
 

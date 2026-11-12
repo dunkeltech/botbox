@@ -129,6 +129,8 @@ type AuthProvider interface {
 
 Each bot runs an agent CLI inside its computer. The sandbox agent starts the CLI and streams its output to the API over gRPC. Bot settings select a CLI and its model. The API uses `llmMode: cli` and derives the CLI from `llmProvider`. See [ADR-0034](docs/adr/0034-pi-openrouter-cli.md).
 
+Bot settings also set the maximum duration of each turn in whole minutes, from 1 to 120. The default is 10 minutes. The worker uses the current setting when it claims a turn and passes the deadline to the sandbox agent. Time spent queued or waiting for human input does not count toward an execution. A turn that reaches its deadline is interrupted. See [ADR-0036](docs/adr/0036-per-bot-turn-timeouts.md).
+
 ```go
 type AgentRunner interface {
     Start(ctx context.Context, session Session) error
@@ -515,6 +517,7 @@ CREATE TABLE bots (
     llm_model VARCHAR(100) NOT NULL,
     driver_type VARCHAR(20) NOT NULL DEFAULT 'docker' CHECK (driver_type IN ('docker','kubernetes')),
     reply_language VARCHAR(10) NOT NULL DEFAULT 'en',
+    turn_timeout_minutes INTEGER NOT NULL DEFAULT 10 CHECK (turn_timeout_minutes BETWEEN 1 AND 120),
     memory_auto_save BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()

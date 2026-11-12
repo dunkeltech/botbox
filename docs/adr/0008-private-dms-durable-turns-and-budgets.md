@@ -33,10 +33,10 @@ database. JetStream work-queue subjects include workspace and bot IDs and never
 contain message content. Per-bot database locks and a unique running-turn index
 prevent concurrent execution. Record the running marker before external actions.
 Running turns are not automatically replayed after process failure because their
-tool effects may already have happened. A later notification marks a running turn
-interrupted after 20 minutes, beyond the worker notification lifetime of 15
-minutes, before admitting queued work. Operators must inspect uncertain effects
-before explicitly sending the work again.
+tool effects may already have happened. A later notification may mark a running
+turn interrupted once its saved deadline and cleanup grace have passed, as
+specified in [ADR-0036](0036-per-bot-turn-timeouts.md). Operators must inspect
+uncertain effects before explicitly sending the work again.
 
 Serialize turn execution for each workspace while checking and settling spend.
 This conservative lock prevents different bots from independently spending the

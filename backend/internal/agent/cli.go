@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/url"
 	"os"
@@ -31,6 +32,15 @@ func (s *Server) RunCLI(req *agentv1.RunCLIRequest, stream grpc.ServerStreamingS
 	if req.ClaudeSubscription && req.Cli != "claude" {
 		return status.Error(codes.InvalidArgument, "subscription authentication requires Claude CLI")
 	}
+	timeout := bots.DefaultTurnTimeout
+	// gRPC carries the worker's per-turn deadline. Keep an agent-side cap
+	// for callers without one or with a deadline beyond the supported limit.
+	if deadline, ok := stream.Context().Deadline(); ok {
+		timeout = min(time.Until(deadline), bots.MaxTurnTimeout)
+	}
+	ctx, cancel := context.WithTimeout(stream.Context(), timeout)
+	defer cancel()
+
 	var args []string
 	input := []byte(req.Prompt)
 	switch req.Cli {
@@ -58,7 +68,8 @@ func (s *Server) RunCLI(req *agentv1.RunCLIRequest, stream grpc.ServerStreamingS
 			args = append(args, "--session-id", req.SessionId)
 		}
 	case "agy":
-		args = []string{"--input-format", "stream-json", "--output-format", "stream-json", "--print-timeout", "600s"}
+		seconds := max(1, (timeout+time.Second-1)/time.Second)
+		args = []string{"--input-format", "stream-json", "--output-format", "stream-json", "--print-timeout", fmt.Sprintf("%ds", seconds)}
 		if req.SessionId != "" {
 			args = append(args, "--conversation", req.SessionId)
 		}
@@ -70,7 +81,7 @@ func (s *Server) RunCLI(req *agentv1.RunCLIRequest, stream grpc.ServerStreamingS
 	proxy := strings.TrimSpace(os.Getenv("HTTP_PROXY"))
 	var assignedSlugs []string
 	if proxy != "" {
-		assignedSlugs = DiscoverAssignedMCPSlugs(stream.Context(), proxy)
+		assignedSlugs = DiscoverAssignedMCPSlugs(ctx, proxy)
 	}
 	piConfig := ""
 	if req.Cli == "pi" {
@@ -102,8 +113,6 @@ func (s *Server) RunCLI(req *agentv1.RunCLIRequest, stream grpc.ServerStreamingS
 	if configured := s.cliBinaries[req.Cli]; configured != "" {
 		binary = configured
 	}
-	ctx, cancel := context.WithTimeout(stream.Context(), 10*time.Minute)
-	defer cancel()
 	//nolint:gosec // only fixed CLI names or trusted server options select a binary
 	cmd := exec.CommandContext(ctx, binary, args...)
 	cmd.Dir = s.homeDir

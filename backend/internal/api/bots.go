@@ -13,7 +13,19 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+func (s *server) validateBotTurnTimeout(w http.ResponseWriter, minutes *api.BotTurnTimeoutMinutes) (pgtype.Int4, bool) {
+	if minutes == nil {
+		return pgtype.Int4{}, true
+	}
+	if !bots.ValidTurnTimeoutMinutes(*minutes) {
+		writeError(w, s.logger, http.StatusBadRequest, "validation_error", "turnTimeoutMinutes must be a whole number from 1 to 120")
+		return pgtype.Int4{}, false
+	}
+	return pgtype.Int4{Int32: *minutes, Valid: true}, true
+}
 
 func (s *server) handleListBots(w http.ResponseWriter, r *http.Request) {
 	wsRow, _, _, ok := s.loadWorkspaceMembership(w, r, workspaces.ActionViewWorkspace)
@@ -123,6 +135,10 @@ func (s *server) handleCreateBot(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.logger, http.StatusBadRequest, "validation_error", "replyLanguage must be at most 10 characters")
 		return
 	}
+	turnTimeout, ok := s.validateBotTurnTimeout(w, req.TurnTimeoutMinutes)
+	if !ok {
+		return
+	}
 
 	tx, err := s.pool.Begin(r.Context())
 	if err != nil {
@@ -134,16 +150,17 @@ func (s *server) handleCreateBot(w http.ResponseWriter, r *http.Request) {
 
 	txq := s.queries.WithTx(tx)
 	botRow, err := txq.CreateBot(r.Context(), db.CreateBotParams{
-		WorkspaceID:   wsRow.ID,
-		OwnerUserID:   toPGUUID(claims.Subject),
-		Name:          name,
-		Description:   desc,
-		AvatarSeed:    req.AvatarSeed,
-		LlmMode:       string(req.LlmMode),
-		LlmProvider:   provider,
-		LlmModel:      model,
-		DriverType:    string(driver),
-		ReplyLanguage: replyLang,
+		WorkspaceID:        wsRow.ID,
+		OwnerUserID:        toPGUUID(claims.Subject),
+		Name:               name,
+		Description:        desc,
+		AvatarSeed:         req.AvatarSeed,
+		LlmMode:            string(req.LlmMode),
+		LlmProvider:        provider,
+		LlmModel:           model,
+		DriverType:         string(driver),
+		ReplyLanguage:      replyLang,
+		TurnTimeoutMinutes: turnTimeout,
 	})
 	if err != nil {
 		s.logger.Error("create bot", "err", err)
@@ -279,18 +296,23 @@ func (s *server) handleUpdateBot(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.logger, http.StatusForbidden, "auth.forbidden", "insufficient permissions to update this bot")
 		return
 	}
+	turnTimeout, ok := s.validateBotTurnTimeout(w, req.TurnTimeoutMinutes)
+	if !ok {
+		return
+	}
 
 	params := db.UpdateBotByWorkspaceAndIDParams{
-		WorkspaceID:   wsRow.ID,
-		ID:            existing.ID,
-		Name:          existing.Name,
-		Description:   existing.Description,
-		AvatarSeed:    existing.AvatarSeed,
-		LlmMode:       existing.LlmMode,
-		LlmProvider:   existing.LlmProvider,
-		LlmModel:      existing.LlmModel,
-		DriverType:    existing.DriverType,
-		ReplyLanguage: existing.ReplyLanguage,
+		WorkspaceID:        wsRow.ID,
+		ID:                 existing.ID,
+		Name:               existing.Name,
+		Description:        existing.Description,
+		AvatarSeed:         existing.AvatarSeed,
+		LlmMode:            existing.LlmMode,
+		LlmProvider:        existing.LlmProvider,
+		LlmModel:           existing.LlmModel,
+		DriverType:         existing.DriverType,
+		ReplyLanguage:      existing.ReplyLanguage,
+		TurnTimeoutMinutes: turnTimeout,
 	}
 
 	if req.Name != nil {

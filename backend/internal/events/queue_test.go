@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dunkeltech/botbox/backend/internal/bots"
 	"github.com/dunkeltech/botbox/backend/internal/events"
 	"github.com/google/uuid"
 )
@@ -50,7 +51,14 @@ func TestJetStreamQueueAndInterrupt(t *testing.T) {
 	}
 	jobs := make(chan events.TurnNotification, 1)
 	interrupted := make(chan uuid.UUID, 1)
-	queue, err := events.OpenQueue(fmt.Sprintf("nats://127.0.0.1:%d", port), func(_ context.Context, job events.TurnNotification) error { jobs <- job; return nil }, func(_ uuid.UUID, bot uuid.UUID) { interrupted <- bot })
+	minimumDeadline := time.Now().Add(bots.MaxTurnTimeout)
+	queue, err := events.OpenQueue(fmt.Sprintf("nats://127.0.0.1:%d", port), func(ctx context.Context, job events.TurnNotification) error {
+		if deadline, ok := ctx.Deadline(); !ok || deadline.Before(minimumDeadline) {
+			t.Errorf("delivery deadline %s cannot fit a maximum-length turn", deadline)
+		}
+		jobs <- job
+		return nil
+	}, func(_ uuid.UUID, bot uuid.UUID) { interrupted <- bot })
 	if err != nil {
 		t.Fatal(err)
 	}

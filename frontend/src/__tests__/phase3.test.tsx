@@ -122,6 +122,7 @@ function makeBot(overrides: Partial<Bot> = {}): Bot {
     llmModel: 'claude-sonnet-4-20250514',
     driverType: 'docker',
     replyLanguage: 'en',
+    turnTimeoutMinutes: 10,
     status: 'idle',
     mood: 'idle',
     createdAt: '2026-11-14T12:00:00Z',
