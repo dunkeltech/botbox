@@ -79,7 +79,7 @@ Reorganized into a two-column workspace settings shell (`256 px` grouped left su
 ![Workspace settings — MCP servers and self-hosted GitLab](screens/workspace-settings-integrations.png)
 
 ### Bot workspace
-Viewport-filling split workspace (`projects/13598702750338265050`, screen `d1911041525e4599b16c7bcdb21737cd`) with a compact bot identity header (`// BOT WORKSPACE`), internally scrolling session chat on the left (`400 px`), and a live XFCE desktop over noVNC on the right with unified toolbar tabs (`Desktop`, `Actions`, `Terminal`, `Files`, `Tool calls`), `Take control` / hand-back bar, **Fullscreen** toggle, and a docked 4-cell resource telemetry strip (`Image`, `CPU`, `Memory`, `Home volume`).
+Viewport-filling split workspace (`projects/13598702750338265050`, screen `d1911041525e4599b16c7bcdb21737cd`, expandable tool trace screen `665c912d832e4fd28c1e792c13925aaa`) with a compact bot identity header (`// BOT WORKSPACE`), internally scrolling session chat on the left (`400 px`), and a live XFCE desktop over noVNC on the right with unified toolbar tabs (`Desktop`, `Actions`, `Terminal`, `Files`, `Tool calls`), `Take control` / hand-back bar, **Fullscreen** toggle, and a docked 4-cell resource telemetry strip (`Image`, `CPU`, `Memory`, `Home volume`).
 
 ![Bot workspace](screens/bot-workspace.png)
 
@@ -144,7 +144,7 @@ Inline `secret_request` cards inside bot DMs and group chats paired with write-o
 ![Secret input modal, CLI HTTPS adapter](screens/secret-input-modal-cli.png)
 
 ### Team chat
-Bots and humans (`Owner`, `Reviewer`, `Viewer`) appear as colleagues in a Slack-style sidebar next to direct messages, `@` mention autocomplete, group chats with inline approval cards (`new_host`), bot-to-bot turn limits, the Approvals inbox (`Pending`, `Approved`, `Denied`) and the new-group dialog for both bots and humans.
+Bots and humans (`Owner`, `Reviewer`, `Viewer`) appear as colleagues in a Slack-style sidebar next to direct messages, `@` mention autocomplete, group chats with inline approval cards (`new_host`), bot-to-bot turn limits, the Approvals inbox (`Pending`, `Approved`, `Denied`) and the new-group dialog for both bots and humans. The dedicated `Tool calls` inspector sidebar with expandable parameters and output tails is captured in Stitch screen `7f699aa9a10d4328ab2400328536a591`.
 
 ![Team chat, group](screens/team-group-chat.png)
 

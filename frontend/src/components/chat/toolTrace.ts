@@ -7,6 +7,17 @@ import type { components } from '@/types/openapi.gen';
 export type ToolChatMessage = components['schemas']['ChatMessage'];
 export type ToolChatTurn = components['schemas']['ChatTurn'];
 
+export interface ToolTraceParameter {
+  key: string;
+  value: string;
+}
+
+export interface ToolTraceOutputTail {
+  lines: string[];
+  hiddenLines: number;
+  totalLines: number;
+}
+
 export interface ToolTraceStep {
   id: string;
   turnKey: string;
@@ -14,6 +25,8 @@ export interface ToolTraceStep {
   botId?: string;
   callCopy: ToolCopy;
   resultCopy?: ToolCopy;
+  parameters?: ToolTraceParameter[];
+  outputTail?: ToolTraceOutputTail;
   status: 'running' | 'done' | 'error';
   errorCode?: string;
   startedAt: string;
@@ -47,6 +60,106 @@ export interface ToolTraceSummary {
 }
 
 const callNamePattern = /^[A-Za-z][\w-]*$/;
+const imageMarkerPattern = /\[Image:\s*source:[^\]]*\]/gi;
+const maxParameterValueLength = 400;
+const maxOutputLineLength = 1000;
+const defaultOutputTailLines = 5;
+
+function stripImageMarkers(content: string): string {
+  return content.replace(imageMarkerPattern, '').replace(/\r\n?/g, '\n');
+}
+
+function truncateText(text: string, maxLength: number): string {
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 1)}…`;
+}
+
+function formatParameterValue(value: unknown): string {
+  if (typeof value === 'string') {
+    return truncateText(
+      stripImageMarkers(value).trim(),
+      maxParameterValueLength,
+    );
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (value === null) {
+    return 'null';
+  }
+  try {
+    return truncateText(
+      stripImageMarkers(JSON.stringify(value)),
+      maxParameterValueLength,
+    );
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Extract structured key/value parameters from a stored tool-call message
+ * (`<ToolName>\n<JSON>`), returning an empty list for empty or non-object args.
+ */
+export function extractToolParameters(content: string): ToolTraceParameter[] {
+  const normalized = stripImageMarkers(content).trim();
+  const newline = normalized.indexOf('\n');
+  if (newline <= 0) return [];
+  const name = normalized.slice(0, newline).trim();
+  const rest = normalized.slice(newline + 1).trim();
+  if (!callNamePattern.test(name) || !rest.startsWith('{')) {
+    return [];
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rest);
+  } catch {
+    return [];
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return [];
+  }
+  const entries = Object.entries(parsed as Record<string, unknown>);
+  if (entries.length === 0) return [];
+  return entries.map(([key, value]) => ({
+    key,
+    value: formatParameterValue(value),
+  }));
+}
+
+/**
+ * Extract the last `maxLines` lines of a stored tool result after stripping
+ * image source markers so raw sandbox image paths are never exposed in text.
+ */
+export function extractToolOutputTail(
+  content: string,
+  maxLines = defaultOutputTailLines,
+): ToolTraceOutputTail | undefined {
+  const cleaned = stripImageMarkers(content);
+  const rawLines = cleaned.split('\n');
+  let start = 0;
+  let end = rawLines.length;
+  while (start < end && rawLines[start]?.trim() === '') {
+    start += 1;
+  }
+  while (end > start && rawLines[end - 1]?.trim() === '') {
+    end -= 1;
+  }
+  const nonEmptyBounded = rawLines.slice(start, end);
+  if (nonEmptyBounded.length === 0) {
+    return undefined;
+  }
+  const totalLines = nonEmptyBounded.length;
+  const tailCount = Math.max(1, maxLines);
+  const lines = nonEmptyBounded
+    .slice(-tailCount)
+    .map((line) => truncateText(line, maxOutputLineLength));
+  return {
+    lines,
+    hiddenLines: Math.max(0, totalLines - lines.length),
+    totalLines,
+  };
+}
 
 function isToolCallContent(content: string): boolean {
   const normalized = content.replace(/\r/g, '').trim();
@@ -246,12 +359,14 @@ export function buildToolTrace({
       : hasAnyActiveTurn;
 
     if (phase === 'call') {
+      const parameters = extractToolParameters(msg.content);
       turn.steps.push({
         id: msg.id,
         turnKey,
         toolCallId: msg.tool?.toolCallId,
         botId: msg.senderBotId,
         callCopy: copy,
+        ...(parameters.length > 0 ? { parameters } : {}),
         status: isTurnActive ? 'running' : 'done',
         startedAt: msg.createdAt,
         durationMs: null,
@@ -272,10 +387,14 @@ export function buildToolTrace({
 
     const stepError = Boolean(msg.tool?.isError);
     const imagePath = copy.image ? imagePathForMessage(msg.id) : undefined;
+    const outputTail = extractToolOutputTail(msg.content);
 
     if (targetStep) {
       targetStep.awaitedResult = false;
       targetStep.resultCopy = copy;
+      if (outputTail) {
+        targetStep.outputTail = outputTail;
+      }
       targetStep.status = stepError ? 'error' : 'done';
       targetStep.errorCode = msg.tool?.errorCode;
       targetStep.finishedAt = msg.createdAt;
@@ -293,6 +412,7 @@ export function buildToolTrace({
         toolCallId: targetCallId,
         botId: msg.senderBotId,
         callCopy: copy,
+        ...(outputTail ? { outputTail } : {}),
         status: stepError ? 'error' : 'done',
         errorCode: msg.tool?.errorCode,
         startedAt: msg.createdAt,

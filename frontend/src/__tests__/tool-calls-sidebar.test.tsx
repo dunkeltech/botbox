@@ -291,6 +291,27 @@ describe('Tool calls sidebar (Proposal 1)', () => {
     expect(
       within(toolAside).getByText('Preparing desktop tools'),
     ).toBeInTheDocument();
+
+    // Steps start collapsed by default; parameters and error details appear only after expanding.
+    expect(
+      within(toolAside).queryByText('curl -I https://gitlab.inovex.de'),
+    ).toBeNull();
+    expect(
+      within(toolAside).queryByText('Error code: egress.blocked'),
+    ).toBeNull();
+
+    const expandButtons = within(toolAside).getAllByRole('button', {
+      name: 'Show step details',
+    });
+    expect(expandButtons).toHaveLength(2);
+    fireEvent.click(expandButtons[0]!);
+    expect(within(toolAside).getByText('Parameters')).toBeInTheDocument();
+    expect(
+      within(toolAside).getByText('curl -I https://gitlab.inovex.de'),
+    ).toBeInTheDocument();
+    expect(within(toolAside).getByText('HTTP 200 OK')).toBeInTheDocument();
+
+    fireEvent.click(expandButtons[1]!);
     expect(
       within(toolAside).getByText('Error code: egress.blocked'),
     ).toBeInTheDocument();
@@ -302,6 +323,152 @@ describe('Tool calls sidebar (Proposal 1)', () => {
     expect(within(toolAside).queryByText('Using Bash')).toBeNull();
     expect(
       within(toolAside).getByText('Preparing desktop tools'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows parameters and the last 5 lines of tool output in BotWorkspaceView when expanded', async () => {
+    const maceBot = bots[0]!;
+    vi.mocked(getBot).mockResolvedValue(maceBot);
+    vi.mocked(getBotEnvironment).mockResolvedValue({
+      botId: 'bot-1',
+      workspaceId: 'ws-1',
+      envId: 'env-1',
+      driver: 'docker',
+      status: 'stopped',
+      controlHolder: null,
+      controlNote: '',
+      watchers: [],
+      stats: {
+        cpuPercent: 0,
+        memoryUsedMiB: 0,
+        memoryLimitMiB: 2048,
+        volumeUsedMiB: 0,
+        volumeLimitMiB: 10240,
+      },
+      image: 'botbox/desktop:dev',
+      cpuMillis: 2000,
+      memoryMiB: 2048,
+      volumeRef: 'vol-1',
+      startedAt: null,
+      updatedAt: '2026-11-15T00:00:00Z',
+    });
+    vi.mocked(listBotSecrets).mockResolvedValue({ secrets: [] });
+    vi.mocked(getWorkspaceGuardrails).mockResolvedValue(null as never);
+    vi.mocked(listDesktopActions).mockResolvedValue({
+      actions: [],
+      screenshotRetentionDays: 7,
+    });
+
+    const longMessages: ChatMessage[] = [
+      {
+        id: 'msg-u-long',
+        position: 1,
+        senderType: 'user',
+        senderUserId: 'user-1',
+        kind: 'text',
+        content: 'Run tests',
+        createdAt: '2026-11-19T09:00:00Z',
+      },
+      {
+        id: 'msg-tc-long',
+        position: 2,
+        senderType: 'bot',
+        senderBotId: 'bot-1',
+        kind: 'tool',
+        content:
+          'Bash\n{"command":"go test ./internal/api/...","workdir":"/workspace/botbox/backend"}',
+        createdAt: '2026-11-19T09:00:01Z',
+        tool: {
+          turnId: 'turn-long',
+          toolCallId: 'tc-long',
+          phase: 'call',
+          isError: false,
+        },
+      },
+      {
+        id: 'msg-tr-long',
+        position: 3,
+        senderType: 'bot',
+        senderBotId: 'bot-1',
+        kind: 'tool',
+        content: [
+          'hidden line 1',
+          'hidden line 2',
+          'hidden line 3',
+          '=== RUN TestOne',
+          '--- PASS: TestOne (0.12s)',
+          '=== RUN TestTwo',
+          '--- PASS: TestTwo (0.08s)',
+          'ok botbox/internal/api 0.40s',
+        ].join('\n'),
+        createdAt: '2026-11-19T09:00:02Z',
+        tool: {
+          turnId: 'turn-long',
+          toolCallId: 'tc-long',
+          phase: 'result',
+          isError: false,
+        },
+      },
+      {
+        id: 'msg-b-long',
+        position: 4,
+        senderType: 'bot',
+        senderBotId: 'bot-1',
+        kind: 'text',
+        content: 'All tests passed.',
+        createdAt: '2026-11-19T09:00:03Z',
+      },
+    ];
+
+    request.mockImplementation((path: string) => {
+      if (path.endsWith('/runtime')) return Promise.resolve({ paused: false });
+      if (path.endsWith('/dm')) {
+        return Promise.resolve({ id: 'conv-1', botId: 'bot-1' });
+      }
+      if (path.includes('/conversations/conv-1/messages')) {
+        return Promise.resolve({
+          messages: longMessages,
+          turns: [
+            {
+              id: 'turn-long',
+              status: 'completed',
+              queueAhead: 0,
+              errorCode: '',
+            },
+          ],
+        });
+      }
+      if (path.includes('/budgets')) {
+        return Promise.resolve({ spendTodayMicros: 0, budgets: [] });
+      }
+      return Promise.resolve({});
+    });
+
+    renderWithIntl(<BotWorkspaceView />);
+
+    const chip = await screen.findByRole('button', { name: /1 tool step/i });
+    fireEvent.click(chip);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: /Tool calls/i }),
+      ).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    // Collapsed initially.
+    expect(screen.queryByText('go test ./internal/api/...')).toBeNull();
+    expect(screen.queryByText('ok botbox/internal/api 0.40s')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show step details' }));
+
+    expect(screen.getByText('Parameters')).toBeInTheDocument();
+    expect(screen.getByText('go test ./internal/api/...')).toBeInTheDocument();
+    expect(screen.getByText('/workspace/botbox/backend')).toBeInTheDocument();
+    expect(screen.getByText('Output · Last 5 lines')).toBeInTheDocument();
+    expect(screen.getByText('… 3 earlier lines hidden')).toBeInTheDocument();
+    expect(screen.queryByText('hidden line 1')).toBeNull();
+    expect(
+      screen.getByText(/ok botbox\/internal\/api 0\.40s/),
     ).toBeInTheDocument();
   });
 

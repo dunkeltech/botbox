@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildToolTrace,
+  extractToolOutputTail,
+  extractToolParameters,
   formatToolDuration,
   type ToolChatMessage,
 } from '@/components/chat/toolTrace';
@@ -110,6 +112,14 @@ describe('buildToolTrace', () => {
       durationMs: 1200,
       callCopy: { key: 'usingTool', values: { name: 'Bash' } },
       resultCopy: { key: 'toolNote', values: { note: 'HTTP 200 OK' } },
+      parameters: [
+        { key: 'command', value: 'curl -I https://gitlab.inovex.de' },
+      ],
+      outputTail: {
+        lines: ['HTTP 200 OK'],
+        hiddenLines: 0,
+        totalLines: 1,
+      },
     });
     expect(attached?.steps[1]).toMatchObject({
       status: 'done',
@@ -117,7 +127,13 @@ describe('buildToolTrace', () => {
       callCopy: { key: 'screenshotPage' },
       resultCopy: { key: 'pageShot', image: true },
       imagePath: '/api/images/tr2',
+      outputTail: {
+        lines: ['browser screenshot'],
+        hiddenLines: 0,
+        totalLines: 1,
+      },
     });
+    expect(attached?.steps[1]?.parameters).toBeUndefined();
   });
 
   it('tracks active running steps and error steps with error codes', () => {
@@ -197,10 +213,49 @@ describe('buildToolTrace', () => {
     });
 
     expect(trace.turns[0]?.steps[0]?.imagePath).toBeUndefined();
+    expect(trace.turns[0]?.steps[0]?.outputTail).toBeUndefined();
     expect(trace.turns[0]?.steps[0]?.callCopy).toEqual({
       key: 'finished',
       image: false,
     });
+  });
+
+  it('extracts structured parameters and ignores empty or malformed JSON objects', () => {
+    expect(
+      extractToolParameters(
+        'Bash\n{"command":"pytest -q","timeout_s":30,"retry":false,"env":{"CI":true}}',
+      ),
+    ).toEqual([
+      { key: 'command', value: 'pytest -q' },
+      { key: 'timeout_s', value: '30' },
+      { key: 'retry', value: 'false' },
+      { key: 'env', value: '{"CI":true}' },
+    ]);
+    expect(extractToolParameters('ToolSearch\n{}')).toEqual([]);
+    expect(extractToolParameters('Bash\n{not-json')).toEqual([]);
+    expect(extractToolParameters('Bash\n["array"]')).toEqual([]);
+  });
+
+  it('keeps only the last 5 output lines and strips image source markers', () => {
+    const output = [
+      'line 1',
+      'line 2',
+      'line 3',
+      'line 4',
+      'line 5',
+      'line 6',
+      'line 7',
+      '[Image: source: /home/bot/.ssh/id_rsa]',
+    ].join('\n');
+
+    expect(extractToolOutputTail(output)).toEqual({
+      lines: ['line 3', 'line 4', 'line 5', 'line 6', 'line 7'],
+      hiddenLines: 2,
+      totalLines: 7,
+    });
+    expect(
+      extractToolOutputTail('[Image: source: /home/bot/.ssh/id_rsa]'),
+    ).toBeUndefined();
   });
 
   it('formats durations cleanly across milliseconds, seconds, and minutes', () => {

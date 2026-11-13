@@ -564,9 +564,14 @@ describe('tool lines in chat', () => {
     expect(
       await screen.findByText('Opening https://dunkel.tech/'),
     ).toBeInTheDocument();
-    // Completed steps without screenshots start collapsed; expand to inspect outcome.
-    fireEvent.click(screen.getByRole('button', { name: 'Show step details' }));
-    expect(screen.getByText('Opened the page')).toBeInTheDocument();
+    // All steps start collapsed; expand each step to inspect parameters, output, and screenshot.
+    for (const button of screen.getAllByRole('button', {
+      name: 'Show step details',
+    })) {
+      fireEvent.click(button);
+    }
+    expect(screen.getByText('https://dunkel.tech')).toBeInTheDocument();
+    expect(screen.getByText('navigated')).toBeInTheDocument();
     expect(screen.getByText('Browser screenshot')).toBeInTheDocument();
     expect(screen.getByText('Finished')).toBeInTheDocument();
     expect(screen.queryByText(/mcp__botbox/)).toBeNull();

@@ -54,8 +54,15 @@ function StepCard({
       : t(step.resultCopy.key)
     : null;
   const duration = formatToolDuration(step.durationMs);
+  const parameters = step.parameters ?? [];
+  const outputTail = step.outputTail;
   const hasDetails = Boolean(
-    resultText || step.errorCode || step.imagePath || step.guardrail,
+    parameters.length > 0 ||
+    outputTail ||
+    resultText ||
+    step.errorCode ||
+    step.imagePath ||
+    step.guardrail,
   );
 
   if (step.guardrail) {
@@ -237,7 +244,55 @@ function StepCard({
 
       {expanded && hasDetails ? (
         <div className="flex flex-col gap-2 border-t border-line px-3 py-2.5">
-          {resultText ? (
+          {parameters.length > 0 ? (
+            <div className="rounded-sm border border-line bg-paper-2 px-2.5 py-2">
+              <div className="mb-1 text-[10px] font-bold uppercase tracking-[0.06em] text-muted">
+                {t('toolParametersLabel')}
+              </div>
+              <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-2.5 gap-y-1 font-mono text-[11px] leading-[1.45]">
+                {parameters.map((param) => (
+                  <div key={param.key} className="contents">
+                    <dt className="truncate font-bold text-muted">
+                      {`${param.key}:`}
+                    </dt>
+                    <dd className="min-w-0 whitespace-pre-wrap break-words text-ink">
+                      {param.value}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          ) : null}
+
+          {outputTail ? (
+            <div className="rounded-sm bg-terminal px-2.5 py-2 text-on-dark">
+              <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-[0.06em] text-on-dark-muted">
+                <span>
+                  {outputTail.hiddenLines > 0
+                    ? t('toolOutputLastLines', {
+                        count: outputTail.lines.length,
+                      })
+                    : t('toolOutputLabel')}
+                </span>
+                {outputTail.hiddenLines > 0 ? (
+                  <span className="font-mono font-normal normal-case tracking-normal text-on-dark-muted">
+                    {t('toolOutputHiddenLines', {
+                      count: outputTail.hiddenLines,
+                    })}
+                  </span>
+                ) : null}
+              </div>
+              <pre
+                className={`overflow-x-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-[1.5] ${
+                  step.status === 'error'
+                    ? 'text-amber-on-dark'
+                    : 'text-on-dark'
+                }`}
+              >
+                {outputTail.lines.join('\n')}
+              </pre>
+            </div>
+          ) : resultText ? (
             <div className="flex flex-col gap-0.5">
               <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-muted">
                 {t('toolResultLabel')}
@@ -245,6 +300,7 @@ function StepCard({
               <p className="font-mono text-[12px] text-ink-2">{resultText}</p>
             </div>
           ) : null}
+
           {step.errorCode ? (
             <p className="rounded-xs border border-amber-line bg-amber-tint px-2 py-1 font-mono text-[11px] font-bold text-amber">
               {t('toolErrorCode', { code: step.errorCode })}
@@ -318,15 +374,7 @@ function TurnSection({
 
       <div className="flex flex-col gap-2">
         {turn.steps.map((step) => (
-          <StepCard
-            key={step.id}
-            step={step}
-            defaultExpanded={
-              step.status === 'running' ||
-              step.status === 'error' ||
-              Boolean(step.imagePath)
-            }
-          />
+          <StepCard key={step.id} step={step} defaultExpanded={false} />
         ))}
       </div>
     </section>
