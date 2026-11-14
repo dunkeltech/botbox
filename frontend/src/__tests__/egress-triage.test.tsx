@@ -480,6 +480,12 @@ describe('BotSecretsView egress activity triage', () => {
         'The saved policy updated to revision 2 while you have unsaved edits in this form.',
       ),
     ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Keep my draft' }));
+    expect(
+      screen.queryByRole('button', { name: 'Keep my draft' }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText('draft.blocked.example')).toBeInTheDocument();
+    expect(patchBodies).toHaveLength(1);
   });
 
   it('shows 202 pending enforcement separately from applied, reconciles lost responses, and locks writes on failed reload', async () => {

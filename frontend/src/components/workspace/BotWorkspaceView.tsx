@@ -3,12 +3,10 @@
 import {
   ArrowLeft,
   Folder,
-  FileText,
   Maximize2,
   MessageSquare,
   Minimize2,
   Play,
-  RefreshCw,
   RotateCcw,
   ShieldCheck,
   SlidersHorizontal,
@@ -21,13 +19,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import {
-  type FormEvent,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 
 import {
@@ -37,12 +29,12 @@ import {
   Card,
   type ChipStatus,
   Eyebrow,
-  Input,
   StatusChip,
-  Textarea,
 } from '@/components/ui';
 import { ActionTimeline } from '@/components/workspace/ActionTimeline';
 import { BotWorkspaceSkeleton } from '@/components/workspace/BotWorkspaceSkeleton';
+import { WorkspaceFiles } from '@/components/workspace/WorkspaceFiles';
+import { WorkspaceTerminal } from '@/components/workspace/WorkspaceTerminal';
 import { VncViewport } from '@/components/workspace/VncViewport';
 import { RunnerControl } from '@/components/chat/RunnerControl';
 import { ChatPanel } from '@/components/chat/ChatPanel';
@@ -52,20 +44,16 @@ import { useAuth } from '@/context/AuthContext';
 import {
   ApiClientError,
   createBotVncTicket,
-  execBotTerminal,
   getBot,
   getBotEnvironment,
-  listBotFiles,
   getWorkspaceGuardrails,
   listBotSecrets,
   listDesktopActions,
-  readBotFile,
   releaseBotControl,
   restartBotEnvironment,
   startBotEnvironment,
   stopBotEnvironment,
   takeBotControl,
-  writeBotFile,
 } from '@/lib/api-client';
 import { type ErrorTranslationKey, resolveErrorKey } from '@/lib/errors';
 import { canManageBot, canTakeDesktopControl } from '@/lib/rbac';
@@ -75,20 +63,10 @@ import type {
   DesktopAction,
   EnvironmentStateResponse,
   EnvironmentStatus,
-  FileEntry,
   StreamTicketResponse,
 } from '@/types/api';
 
 type WorkspaceTab = 'desktop' | 'terminal' | 'files' | 'actions' | 'toolCalls';
-
-interface TerminalEntry {
-  id: string;
-  command: string;
-  cwd: string;
-  stdout: string;
-  stderr: string;
-  exitCode: number;
-}
 
 function mapEnvStatusToChip(
   envStatus: EnvironmentStatus,
@@ -135,23 +113,67 @@ function buildVncWsUrl(wsPath: string): string {
   return `${proto}//${window.location.host}${wsPath}`;
 }
 
-function parentHomePath(path: string): string {
-  if (!path || path === '/home/bot') {
-    return '/home/bot';
-  }
-  const trimmed = path.replace(/\/+$/, '');
-  const idx = trimmed.lastIndexOf('/');
-  if (idx <= '/home/bot'.length) {
-    return '/home/bot';
-  }
-  return trimmed.slice(0, idx) || '/home/bot';
-}
-
 function percentOf(used: number, limit: number): number {
   if (limit <= 0) {
     return 0;
   }
   return Math.min(100, Math.max(0, Math.round((used / limit) * 100)));
+}
+
+function DesktopControlButton({
+  inControl,
+  busy,
+  canControl,
+  canTakeControl,
+  lockedBy,
+  onTake,
+  onRelease,
+  fullscreen = false,
+}: {
+  inControl: boolean;
+  busy: boolean;
+  canControl: boolean;
+  canTakeControl: boolean;
+  lockedBy?: string;
+  onTake: () => Promise<void>;
+  onRelease: () => Promise<void>;
+  fullscreen?: boolean;
+}) {
+  const t = useTranslations('workspace.computer');
+  const className = fullscreen ? 'whitespace-nowrap' : undefined;
+
+  if (inControl) {
+    return (
+      <Button
+        variant="primary"
+        aria-pressed={true}
+        disabled={busy}
+        className={className}
+        onClick={() => void onRelease()}
+      >
+        {t('releaseControl')}
+      </Button>
+    );
+  }
+
+  let label = t('takeControl');
+  if (!canControl) {
+    label = t('viewerReadonlyControl');
+  } else if (lockedBy !== undefined) {
+    label = t('lockedByOther', { holder: lockedBy });
+  }
+
+  return (
+    <Button
+      variant={fullscreen ? 'onDark' : 'secondary'}
+      aria-pressed={false}
+      disabled={!canTakeControl}
+      className={className}
+      onClick={() => void onTake()}
+    >
+      {label}
+    </Button>
+  );
 }
 
 /**
@@ -232,19 +254,6 @@ export function BotWorkspaceView() {
     [clearTicketRefresh],
   );
 
-  const [terminalEntries, setTerminalEntries] = useState<TerminalEntry[]>([]);
-  const [terminalCommand, setTerminalCommand] = useState('');
-  const [terminalWorkdir, setTerminalWorkdir] = useState('/home/bot');
-  const [terminalBusy, setTerminalBusy] = useState(false);
-
-  const [filesPath, setFilesPath] = useState('/home/bot');
-  const [fileEntries, setFileEntries] = useState<FileEntry[]>([]);
-  const [filesLoading, setFilesLoading] = useState(false);
-  const [pathInput, setPathInput] = useState('/home/bot/notes.txt');
-  const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
-  const [editorContent, setEditorContent] = useState('');
-  const [fileBusy, setFileBusy] = useState<'read' | 'write' | null>(null);
-  const [fileSavedPath, setFileSavedPath] = useState<string | null>(null);
   const [desktopActions, setDesktopActions] = useState<DesktopAction[]>([]);
   const [retentionDays, setRetentionDays] = useState(7);
 
@@ -358,32 +367,6 @@ export function BotWorkspaceView() {
     activeTab,
     ticketNonce,
   ]);
-
-  const loadDirectory = useCallback(
-    async (targetPath: string) => {
-      if (!activeWorkspace || !bot || envStatus !== 'running') {
-        return;
-      }
-      setFilesLoading(true);
-      setActionErrorKey(null);
-      try {
-        const res = await listBotFiles(activeWorkspace.id, bot.id, targetPath);
-        setFilesPath(res.path);
-        setFileEntries(res.entries);
-      } catch (err) {
-        setActionErrorKey(resolveErrorKey(err));
-      } finally {
-        setFilesLoading(false);
-      }
-    },
-    [activeWorkspace, bot, envStatus],
-  );
-
-  useEffect(() => {
-    if (activeTab === 'files' && envStatus === 'running') {
-      void loadDirectory(filesPath);
-    }
-  }, [activeTab, envStatus, filesPath, loadDirectory]);
 
   useEffect(() => {
     if (
@@ -583,100 +566,6 @@ export function BotWorkspaceView() {
       setActionErrorKey(resolveErrorKey(err));
     } finally {
       setControlBusy(false);
-    }
-  }
-
-  async function handleTerminalSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!bot || !canManage || envStatus !== 'running') {
-      return;
-    }
-    const cmd = terminalCommand.trim();
-    if (!cmd) {
-      return;
-    }
-
-    setActionErrorKey(null);
-    setTerminalBusy(true);
-    try {
-      const res = await execBotTerminal(workspaceId, bot.id, {
-        command: cmd,
-        workdir: terminalWorkdir,
-      });
-      setTerminalWorkdir(res.cwd);
-      setTerminalEntries((prev) => [
-        ...prev,
-        {
-          id: `${Date.now()}-${prev.length}`,
-          command: cmd,
-          cwd: res.cwd,
-          stdout: res.stdout,
-          stderr: res.stderr,
-          exitCode: res.exitCode,
-        },
-      ]);
-      setTerminalCommand('');
-    } catch (err) {
-      setActionErrorKey(resolveErrorKey(err));
-    } finally {
-      setTerminalBusy(false);
-    }
-  }
-
-  async function handleOpenFile(targetPath: string) {
-    if (!bot || envStatus !== 'running') {
-      return;
-    }
-    const normalized = targetPath.trim();
-    if (!normalized) {
-      return;
-    }
-    setActionErrorKey(null);
-    setFileSavedPath(null);
-    setFileBusy('read');
-    try {
-      const res = await readBotFile(workspaceId, bot.id, normalized);
-      setSelectedFilePath(res.path);
-      setPathInput(res.path);
-      setEditorContent(res.content);
-    } catch (err) {
-      if (err instanceof ApiClientError && err.code === 'file.not_found') {
-        setSelectedFilePath(normalized);
-        setPathInput(normalized);
-        setEditorContent('');
-      } else {
-        setActionErrorKey(resolveErrorKey(err));
-      }
-    } finally {
-      setFileBusy(null);
-    }
-  }
-
-  async function handleOpenPathForm(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    await handleOpenFile(pathInput);
-  }
-
-  async function handleSaveFile() {
-    if (!bot || !canManage || !selectedFilePath || envStatus !== 'running') {
-      return;
-    }
-    setActionErrorKey(null);
-    setFileSavedPath(null);
-    setFileBusy('write');
-    try {
-      const saved = await writeBotFile(workspaceId, bot.id, {
-        path: selectedFilePath,
-        content: editorContent,
-      });
-      setSelectedFilePath(saved.path);
-      setEditorContent(saved.content);
-      setFileSavedPath(saved.path);
-      await loadDirectory(filesPath);
-    } catch (err) {
-      setActionErrorKey(resolveErrorKey(err));
-    } finally {
-      setFileBusy(null);
     }
   }
 
@@ -1065,33 +954,18 @@ export function BotWorkspaceView() {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
-                  {userHoldsControl ? (
-                    <Button
-                      variant="primary"
-                      aria-pressed={true}
-                      disabled={controlBusy}
-                      className="whitespace-nowrap"
-                      onClick={() => void handleReleaseControl()}
-                    >
-                      {t('computer.releaseControl')}
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="onDark"
-                      aria-pressed={false}
-                      disabled={!canToggleControl}
-                      onClick={() => void handleTakeControl()}
-                      className="whitespace-nowrap"
-                    >
-                      {!canControl
-                        ? t('computer.viewerReadonlyControl')
-                        : lockedByOther && controlHolder
-                          ? t('computer.lockedByOther', {
-                              holder: controlHolder.displayName,
-                            })
-                          : t('computer.takeControl')}
-                    </Button>
-                  )}
+                  <DesktopControlButton
+                    inControl={userHoldsControl}
+                    busy={controlBusy}
+                    canControl={canControl}
+                    canTakeControl={canToggleControl}
+                    lockedBy={
+                      lockedByOther ? controlHolder?.displayName : undefined
+                    }
+                    onTake={handleTakeControl}
+                    onRelease={handleReleaseControl}
+                    fullscreen
+                  />
 
                   <button
                     type="button"
@@ -1249,31 +1123,17 @@ export function BotWorkspaceView() {
                     />
                   ) : null}
 
-                  {userHoldsControl ? (
-                    <Button
-                      variant="primary"
-                      aria-pressed={true}
-                      disabled={controlBusy}
-                      onClick={() => void handleReleaseControl()}
-                    >
-                      {t('computer.releaseControl')}
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="secondary"
-                      aria-pressed={false}
-                      disabled={!canToggleControl}
-                      onClick={() => void handleTakeControl()}
-                    >
-                      {!canControl
-                        ? t('computer.viewerReadonlyControl')
-                        : lockedByOther && controlHolder
-                          ? t('computer.lockedByOther', {
-                              holder: controlHolder.displayName,
-                            })
-                          : t('computer.takeControl')}
-                    </Button>
-                  )}
+                  <DesktopControlButton
+                    inControl={userHoldsControl}
+                    busy={controlBusy}
+                    canControl={canControl}
+                    canTakeControl={canToggleControl}
+                    lockedBy={
+                      lockedByOther ? controlHolder?.displayName : undefined
+                    }
+                    onTake={handleTakeControl}
+                    onRelease={handleReleaseControl}
+                  />
 
                   {activeTab === 'desktop' ? (
                     <Button
@@ -1412,88 +1272,6 @@ export function BotWorkspaceView() {
                   }
                 />
               </div>
-            ) : activeTab === 'terminal' ? (
-              <div className="flex flex-col">
-                <div className="min-h-[320px] max-h-[420px] overflow-auto bg-terminal p-4 font-mono text-[13px] leading-[1.7] text-on-dark">
-                  <p className="text-on-dark-muted">
-                    {t('terminal.header', { cwd: terminalWorkdir })}
-                  </p>
-                  {terminalEntries.length === 0 ? (
-                    <p className="mt-2 text-on-dark-muted">
-                      {t('terminal.emptyHint')}
-                    </p>
-                  ) : (
-                    <div className="mt-3 flex flex-col gap-3">
-                      {terminalEntries.map((entry) => (
-                        <div key={entry.id} className="flex flex-col gap-1">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="font-bold text-green-light">
-                              {`$ ${entry.command}`}
-                            </span>
-                            <span
-                              className={`text-[12px] font-bold ${
-                                entry.exitCode === 0
-                                  ? 'text-green-light'
-                                  : 'text-amber-on-dark'
-                              }`}
-                            >
-                              {t('terminal.exitCodeLabel', {
-                                code: entry.exitCode,
-                              })}
-                            </span>
-                          </div>
-                          {entry.stdout ? (
-                            <pre className="whitespace-pre-wrap break-words text-on-dark">
-                              {entry.stdout}
-                            </pre>
-                          ) : null}
-                          {entry.stderr ? (
-                            <pre className="whitespace-pre-wrap break-words text-amber-on-dark">
-                              {entry.stderr}
-                            </pre>
-                          ) : null}
-                          {!entry.stdout && !entry.stderr ? (
-                            <span className="text-on-dark-muted">
-                              {t('terminal.noOutput')}
-                            </span>
-                          ) : null}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <form
-                  onSubmit={(e) => void handleTerminalSubmit(e)}
-                  className="flex flex-col gap-3 border-t border-line bg-paper p-4"
-                >
-                  {!canManage ? (
-                    <Alert tone="info">{t('terminal.viewerNotice')}</Alert>
-                  ) : null}
-                  <div className="flex flex-wrap items-end gap-3">
-                    <div className="min-w-[220px] flex-1">
-                      <Input
-                        label={t('terminal.commandLabel')}
-                        mono
-                        value={terminalCommand}
-                        readOnly={!canManage}
-                        onChange={(e) => setTerminalCommand(e.target.value)}
-                        placeholder={t('terminal.commandPlaceholder')}
-                      />
-                    </div>
-                    <Button
-                      type="submit"
-                      disabled={
-                        !canManage || terminalBusy || !terminalCommand.trim()
-                      }
-                    >
-                      {terminalBusy
-                        ? t('terminal.runningButton')
-                        : t('terminal.runButton')}
-                    </Button>
-                  </div>
-                </form>
-              </div>
             ) : activeTab === 'actions' ? (
               <ActionTimeline
                 workspaceId={workspaceId}
@@ -1501,143 +1279,25 @@ export function BotWorkspaceView() {
                 actions={desktopActions}
                 retentionDays={retentionDays}
               />
-            ) : (
-              <div className="flex flex-col gap-4 p-4">
-                {!canManage ? (
-                  <Alert tone="info">{t('files.viewerReadonly')}</Alert>
-                ) : null}
+            ) : null}
 
-                {fileSavedPath ? (
-                  <Alert tone="success">
-                    {t('files.savedFile', { path: fileSavedPath })}
-                  </Alert>
-                ) : null}
-
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line pb-3">
-                  <p className="font-mono text-[13px] font-bold text-ink-2">
-                    {t('files.currentPath', { path: filesPath })}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      variant="secondary"
-                      disabled={filesPath === '/home/bot' || filesLoading}
-                      onClick={() => setFilesPath(parentHomePath(filesPath))}
-                    >
-                      {t('files.upOneLevel')}
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      disabled={filesLoading}
-                      onClick={() => void loadDirectory(filesPath)}
-                    >
-                      <RefreshCw className="h-4 w-4" aria-hidden="true" />
-                      <span>{t('files.refresh')}</span>
-                    </Button>
-                  </div>
-                </div>
-
-                <form
-                  onSubmit={(e) => void handleOpenPathForm(e)}
-                  className="flex flex-wrap items-end gap-3"
-                >
-                  <div className="min-w-[220px] flex-1">
-                    <Input
-                      label={t('files.newFileLabel')}
-                      mono
-                      value={pathInput}
-                      onChange={(e) => setPathInput(e.target.value)}
-                      placeholder={t('files.newFilePlaceholder')}
-                    />
-                  </div>
-                  <Button
-                    type="submit"
-                    variant="secondary"
-                    disabled={fileBusy !== null || !pathInput.trim()}
-                  >
-                    {t('files.openPathButton')}
-                  </Button>
-                </form>
-
-                <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
-                  <div className="flex flex-col divide-y divide-line overflow-hidden rounded-sm border border-line bg-paper-2">
-                    {fileEntries.length === 0 ? (
-                      <p className="p-4 text-[13px] text-muted">
-                        {t('files.emptyDir')}
-                      </p>
-                    ) : (
-                      fileEntries.map((entry) => (
-                        <button
-                          key={entry.path}
-                          type="button"
-                          onClick={() => {
-                            if (entry.isDir) {
-                              setFilesPath(entry.path);
-                            } else {
-                              void handleOpenFile(entry.path);
-                            }
-                          }}
-                          className={`flex min-h-[44px] items-center justify-between gap-2 px-3 py-2 text-left text-[13px] transition duration-150 hover:bg-mint-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-green ${
-                            selectedFilePath === entry.path
-                              ? 'bg-mint-soft font-bold text-green-600'
-                              : 'text-ink'
-                          }`}
-                        >
-                          <span className="flex min-w-0 items-center gap-2 font-mono">
-                            {entry.isDir ? (
-                              <Folder
-                                className="h-4 w-4 shrink-0 text-green-600"
-                                aria-hidden="true"
-                              />
-                            ) : (
-                              <FileText
-                                className="h-4 w-4 shrink-0 text-muted"
-                                aria-hidden="true"
-                              />
-                            )}
-                            <span className="truncate">{entry.name}</span>
-                          </span>
-                          <span className="shrink-0 font-mono text-[11px] text-muted">
-                            {entry.isDir
-                              ? t('files.dirBadge')
-                              : t('files.bytesLabel', {
-                                  bytes: entry.sizeBytes,
-                                })}
-                          </span>
-                        </button>
-                      ))
-                    )}
-                  </div>
-
-                  <div className="flex flex-col gap-3">
-                    <p className="font-mono text-[13px] font-bold text-ink">
-                      {selectedFilePath
-                        ? t('files.editorTitle', { path: selectedFilePath })
-                        : t('files.editorSelectPrompt')}
-                    </p>
-                    <Textarea
-                      label={t('files.editorContentLabel')}
-                      value={editorContent}
-                      readOnly={!canManage || !selectedFilePath}
-                      rows={10}
-                      className="font-mono text-[13px]"
-                      onChange={(e) => setEditorContent(e.target.value)}
-                    />
-                    <div className="flex justify-end">
-                      <Button
-                        disabled={
-                          !canManage || !selectedFilePath || fileBusy !== null
-                        }
-                        onClick={() => void handleSaveFile()}
-                      >
-                        {fileBusy === 'write'
-                          ? t('files.savingFile')
-                          : t('files.saveFile')}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+            {/* Keep the terminal and editor state when users switch tabs. */}
+            <WorkspaceTerminal
+              key={`terminal-${workspaceId}-${bot.id}`}
+              active={envStatus === 'running' && activeTab === 'terminal'}
+              workspaceId={workspaceId}
+              botId={bot.id}
+              canManage={canManage}
+              onActionError={setActionErrorKey}
+            />
+            <WorkspaceFiles
+              key={`files-${workspaceId}-${bot.id}`}
+              active={envStatus === 'running' && activeTab === 'files'}
+              workspaceId={workspaceId}
+              botId={bot.id}
+              canManage={canManage}
+              onActionError={setActionErrorKey}
+            />
 
             {isFullscreen ? (
               fullscreenChatOpen ? (

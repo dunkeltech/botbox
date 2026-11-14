@@ -4,6 +4,10 @@ import { ArrowLeftRight } from 'lucide-react';
 import { useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
+import {
+  ChatTranscriptRow,
+  UnattachedToolTurnRow,
+} from '@/components/chat/ChatTranscriptRow';
 import { ChatTurnToolChip } from '@/components/chat/ChatTurnToolChip';
 import { LiveToolStatusBar } from '@/components/chat/LiveToolStatusBar';
 import { StopTurnButton } from '@/components/chat/StopTurnButton';
@@ -13,10 +17,7 @@ import {
   type ToolTraceTurn,
 } from '@/components/chat/toolTrace';
 import { BrokerTakeoverModal } from '@/components/chat/BrokerTakeoverModal';
-import { GuardrailNoticeCard } from '@/components/chat/GuardrailNoticeCard';
 import { MarkdownMessage } from '@/components/chat/MarkdownMessage';
-import { MemorySavedCard } from '@/components/chat/MemorySavedCard';
-import { SecretRequestCard } from '@/components/chat/SecretRequestCard';
 import { SecretRequestModal } from '@/components/chat/SecretRequestModal';
 import { useSecretRequestControl } from '@/components/chat/useSecretRequestControl';
 import { useChatScroll } from '@/components/chat/useChatScroll';
@@ -135,11 +136,12 @@ export function GroupConversation({
     busyId,
     error: decisionError,
   } = useApprovalDecision(workspaceId);
-  const secretControl = useSecretRequestControl(workspaceId, async () => {
+  async function refreshHistory() {
     await client.invalidateQueries({
       queryKey: ['group-messages', workspaceId, group.id],
     });
-  });
+  }
+  const secretControl = useSecretRequestControl(workspaceId, refreshHistory);
   useEffect(() => {
     const token = getAccessToken();
     if (!token) return;
@@ -235,37 +237,142 @@ export function GroupConversation({
       !activeTurns.some((active) => active.id === turn.turnKey),
   );
 
-  function renderUnattachedToolTurns(turnsToShow: ToolTraceTurn[]) {
-    if (turnsToShow.length === 0) return null;
-    return turnsToShow.map((toolTurn) => {
-      const member = group.members.find((row) => row.id === toolTurn.botId);
-      const botName = member?.name || t('bot');
+  function renderUnattachedToolTurns(turns: ToolTraceTurn[]) {
+    return turns.map((turn) => {
+      const member = group.members.find((row) => row.id === turn.botId);
       return (
-        <div
-          key={`unattached-${toolTurn.turnKey}`}
-          className="flex gap-3 px-5 py-1"
-        >
+        <UnattachedToolTurnRow
+          key={turn.turnKey}
+          turn={turn}
+          name={member?.name || t('bot')}
+          avatarSeed={member?.id ?? turn.botId ?? group.leadBotId}
+          layout="group"
+          selected={selectedToolTurnKey === turn.turnKey}
+          onInspect={onInspectToolTurn}
+        />
+      );
+    });
+  }
+
+  function renderConversationMessage(message: ChatMessage) {
+    const who = speaker(
+      message,
+      group,
+      userId,
+      t('you'),
+      t('bot'),
+      t('human'),
+      t('system'),
+    );
+    // Kind approval is the ask-before card. System and card rows stay
+    // notices, including the deny line the API appends after a decision.
+    if (message.kind === 'approval') {
+      const matched = approvalForMessage(
+        approvalList.data?.approvals ?? [],
+        message.id,
+        group.id,
+      );
+      const bot = group.members.find((member) => member.id === matched?.botId);
+      return (
+        <ApprovalCard
+          className="mx-5"
+          approval={matched}
+          content={message.content}
+          botName={bot?.name}
+          where={matched ? group.name : undefined}
+          avatarSeed={bot?.id ?? matched?.botId}
+          canDecide={matched ? canDecideApproval(role, matched) : false}
+          busy={busyId === matched?.id}
+          errorKey={
+            matched && decisionError?.id === matched.id
+              ? decisionError.key
+              : null
+          }
+          onDecide={
+            matched
+              ? (decision) => void decide(matched.id, decision)
+              : undefined
+          }
+        />
+      );
+    }
+    if (
+      message.kind === 'system' ||
+      message.kind === 'card' ||
+      message.senderType === 'system'
+    ) {
+      return (
+        <div className="mx-5 flex items-center gap-2 rounded-sm border border-mint-line bg-mint-soft px-3.5 py-2 text-[13px] text-dark">
+          <ArrowLeftRight
+            className="h-4 w-4 shrink-0 text-green-600"
+            aria-hidden="true"
+          />
+          <span>{message.content}</span>
+        </div>
+      );
+    }
+    const botMember = group.members.find(
+      (member) => member.id === message.senderBotId,
+    );
+    const timeLabel = formatTime(message.createdAt);
+    const attachedTurn = trace.turnsByReplyId.get(message.id);
+    return (
+      <article data-message-id={message.id} className="flex gap-3 px-5 py-1">
+        {who.kind === 'bot' ? (
           <BotAvatar
-            seed={member?.id ?? toolTurn.botId ?? group.leadBotId}
+            seed={botMember?.id ?? message.senderBotId ?? group.leadBotId}
             size={36}
             decorative
           />
-          <div className="min-w-0 flex-1">
-            <p className="flex flex-wrap items-baseline gap-2">
-              <span className="text-[15px] font-black text-ink">{botName}</span>
-              <span className="rounded-xs bg-mint-soft px-1.5 py-0.5 text-[11px] font-black uppercase tracking-[0.06em] text-green-600">
-                {t('botBadge')}
-              </span>
-            </p>
+        ) : (
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-sm bg-dark text-[13px] font-black text-paper">
+            {initials(who.name)}
+          </span>
+        )}
+        <div className="min-w-0 flex-1">
+          <p className="flex flex-wrap items-baseline gap-2">
+            <span className="text-[15px] font-black text-ink">{who.name}</span>
+            <span
+              className={`rounded-xs px-1.5 py-0.5 text-[11px] font-black uppercase tracking-[0.06em] ${
+                who.kind === 'bot'
+                  ? 'bg-mint-soft text-green-600'
+                  : 'bg-blue-tint text-blue'
+              }`}
+            >
+              {message.kind === 'progress'
+                ? t(message.progressBlocker ? 'blockerBadge' : 'progressBadge')
+                : message.kind === 'team_status'
+                  ? t('statusCheckBadge')
+                  : who.kind === 'bot'
+                    ? t('botBadge')
+                    : t('humanBadge')}
+            </span>
+            {timeLabel ? (
+              <span className="text-[12px] text-muted">{timeLabel}</span>
+            ) : null}
+          </p>
+          {message.kind === 'team_status' && message.teamStatus ? (
+            <TeamStatusUpdate status={message.teamStatus} />
+          ) : (
+            <MarkdownMessage
+              content={message.content}
+              mentionNames={mentionNames}
+              className="mt-0.5 text-[15px] leading-[1.55] text-ink"
+            />
+          )}
+          {message.inputRequest ? (
+            <InputRequestProgress request={message.inputRequest} />
+          ) : null}
+          {attachedTurn ? (
             <ChatTurnToolChip
-              turn={toolTurn}
-              selected={selectedToolTurnKey === toolTurn.turnKey}
+              turn={attachedTurn}
+              selected={selectedToolTurnKey === attachedTurn.turnKey}
               onInspect={(turnKey) => onInspectToolTurn?.(turnKey)}
             />
-          </div>
+          ) : null}
         </div>
-      );
-    });
+      </article>
+    );
   }
 
   return (
@@ -288,211 +395,24 @@ export function GroupConversation({
           </div>
         ) : null}
         {renderUnattachedToolTurns(trace.leadingUnattachedTurns)}
-        {messages.map((message) => {
-          const unattachedAfter =
-            trace.unattachedTurnsByAnchor.get(message.id) ?? [];
-          const who = speaker(
-            message,
-            group,
-            userId,
-            t('you'),
-            t('bot'),
-            t('human'),
-            t('system'),
-          );
-          // Kind approval is the ask-before card. System and card rows stay
-          // notices, including the deny line the API appends after a decision.
-          if (message.kind === 'approval') {
-            const matched = approvalForMessage(
-              approvalList.data?.approvals ?? [],
-              message.id,
-              group.id,
-            );
-            const bot = group.members.find(
-              (member) => member.id === matched?.botId,
-            );
-            return (
-              <div key={message.id} className="flex flex-col gap-3">
-                <ApprovalCard
-                  className="mx-5"
-                  approval={matched}
-                  content={message.content}
-                  botName={bot?.name}
-                  where={matched ? group.name : undefined}
-                  avatarSeed={bot?.id ?? matched?.botId}
-                  canDecide={matched ? canDecideApproval(role, matched) : false}
-                  busy={busyId === matched?.id}
-                  errorKey={
-                    matched && decisionError?.id === matched.id
-                      ? decisionError.key
-                      : null
-                  }
-                  onDecide={
-                    matched
-                      ? (decision) => void decide(matched.id, decision)
-                      : undefined
-                  }
-                />
-                {renderUnattachedToolTurns(unattachedAfter)}
-              </div>
-            );
-          }
-          if (message.kind === 'secret_request' && message.secretRequest) {
-            const sr = message.secretRequest;
-            return (
-              <div key={message.id} className="flex flex-col gap-3">
-                <SecretRequestCard
-                  className="mx-5"
-                  summary={sr}
-                  role={role}
-                  busy={secretControl.busyRequestId === sr.secretRequestId}
-                  errorKey={
-                    secretControl.requestError?.id === sr.secretRequestId
-                      ? secretControl.requestError.key
-                      : null
-                  }
-                  onProvide={secretControl.openModal}
-                  onTakeover={secretControl.openTakeover}
-                  onDeny={(s) => void secretControl.deny(s)}
-                />
-                {renderUnattachedToolTurns(unattachedAfter)}
-              </div>
-            );
-          }
-          if (message.kind === 'guardrail' && message.guardrail) {
-            return (
-              <div key={message.id} className="flex flex-col gap-3">
-                <GuardrailNoticeCard
-                  className="mx-5"
-                  guardrail={message.guardrail}
-                  role={role}
-                  onInspect={onInspectToolTurn}
-                />
-                {renderUnattachedToolTurns(unattachedAfter)}
-              </div>
-            );
-          }
-
-          if (
-            message.kind === 'memory' &&
-            message.memory &&
-            message.senderBotId
-          ) {
-            return (
-              <div key={message.id} className="flex flex-col gap-3">
-                <MemorySavedCard
-                  className="mx-5"
-                  workspaceId={workspaceId}
-                  botId={message.senderBotId}
-                  memory={message.memory}
-                  canManage={canManageMemoryBot(message.senderBotId)}
-                  onUpdated={async () => {
-                    await client.invalidateQueries({
-                      queryKey: ['group-messages', workspaceId, group.id],
-                    });
-                  }}
-                />
-                {renderUnattachedToolTurns(unattachedAfter)}
-              </div>
-            );
-          }
-          if (
-            message.kind === 'system' ||
-            message.kind === 'card' ||
-            message.senderType === 'system'
-          ) {
-            return (
-              <div key={message.id} className="flex flex-col gap-3">
-                <div className="mx-5 flex items-center gap-2 rounded-sm border border-mint-line bg-mint-soft px-3.5 py-2 text-[13px] text-dark">
-                  <ArrowLeftRight
-                    className="h-4 w-4 shrink-0 text-green-600"
-                    aria-hidden="true"
-                  />
-                  <span>{message.content}</span>
-                </div>
-                {renderUnattachedToolTurns(unattachedAfter)}
-              </div>
-            );
-          }
-          const botMember = group.members.find(
-            (member) => member.id === message.senderBotId,
-          );
-          const timeLabel = formatTime(message.createdAt);
-          const attachedTurn = trace.turnsByReplyId.get(message.id);
-          return (
-            <div key={message.id} className="flex flex-col gap-3">
-              <article
-                data-message-id={message.id}
-                className="flex gap-3 px-5 py-1"
-              >
-                {who.kind === 'bot' ? (
-                  <BotAvatar
-                    seed={
-                      botMember?.id ?? message.senderBotId ?? group.leadBotId
-                    }
-                    size={36}
-                    decorative
-                  />
-                ) : (
-                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-sm bg-dark text-[13px] font-black text-paper">
-                    {initials(who.name)}
-                  </span>
-                )}
-                <div className="min-w-0 flex-1">
-                  <p className="flex flex-wrap items-baseline gap-2">
-                    <span className="text-[15px] font-black text-ink">
-                      {who.name}
-                    </span>
-                    <span
-                      className={`rounded-xs px-1.5 py-0.5 text-[11px] font-black uppercase tracking-[0.06em] ${
-                        who.kind === 'bot'
-                          ? 'bg-mint-soft text-green-600'
-                          : 'bg-blue-tint text-blue'
-                      }`}
-                    >
-                      {message.kind === 'progress'
-                        ? t(
-                            message.progressBlocker
-                              ? 'blockerBadge'
-                              : 'progressBadge',
-                          )
-                        : message.kind === 'team_status'
-                          ? t('statusCheckBadge')
-                          : who.kind === 'bot'
-                            ? t('botBadge')
-                            : t('humanBadge')}
-                    </span>
-                    {timeLabel ? (
-                      <span className="text-[12px] text-muted">
-                        {timeLabel}
-                      </span>
-                    ) : null}
-                  </p>
-                  {message.kind === 'team_status' && message.teamStatus ? (
-                    <TeamStatusUpdate status={message.teamStatus} />
-                  ) : (
-                    <MarkdownMessage
-                      content={message.content}
-                      mentionNames={mentionNames}
-                      className="mt-0.5 text-[15px] leading-[1.55] text-ink"
-                    />
-                  )}
-                  {message.inputRequest ? (
-                    <InputRequestProgress request={message.inputRequest} />
-                  ) : null}
-                  {attachedTurn ? (
-                    <ChatTurnToolChip
-                      turn={attachedTurn}
-                      selected={selectedToolTurnKey === attachedTurn.turnKey}
-                      onInspect={(turnKey) => onInspectToolTurn?.(turnKey)}
-                    />
-                  ) : null}
-                </div>
-              </article>
-              {renderUnattachedToolTurns(unattachedAfter)}
-            </div>
-          );
-        })}
+        {messages.map((message) => (
+          <ChatTranscriptRow
+            key={message.id}
+            message={message}
+            workspaceId={workspaceId}
+            role={role}
+            cardClassName="mx-5"
+            secretControl={secretControl}
+            memoryBotId={message.senderBotId}
+            canManageMemory={canManageMemoryBot}
+            refreshHistory={refreshHistory}
+            onInspectTurn={onInspectToolTurn}
+            toolTurnsAfter={renderUnattachedToolTurns(
+              trace.unattachedTurnsByAnchor.get(message.id) ?? [],
+            )}
+            renderMessage={() => renderConversationMessage(message)}
+          />
+        ))}
       </div>
       {failedTurns.length > 0 ? (
         <div className="max-h-40 shrink-0 space-y-2 overflow-y-auto px-5 pb-2">

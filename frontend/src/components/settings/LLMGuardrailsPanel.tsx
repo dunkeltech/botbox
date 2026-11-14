@@ -208,8 +208,9 @@ export function LLMGuardrailsPanel({
   const canManage = canManageMembers(role);
 
   const [data, setData] = useState<WorkspaceGuardrailsResponse | null>(null);
-  const [policyDraft, setPolicyDraft] =
+  const [localPolicyDraft, setLocalPolicyDraft] =
     useState<WorkspaceGuardrailPolicy | null>(null);
+  const policyDraft = localPolicyDraft ?? data?.policy ?? null;
   const [loading, setLoading] = useState(true);
   const [loadErrorKey, setLoadErrorKey] = useState<ErrorTranslationKey | null>(
     null,
@@ -274,7 +275,6 @@ export function LLMGuardrailsPanel({
         `/api/workspaces/${workspaceId}/guardrails`,
       );
       setData(res);
-      setPolicyDraft(res.policy);
     } catch (err) {
       setLoadErrorKey(resolveErrorKey(err));
     } finally {
@@ -302,6 +302,7 @@ export function LLMGuardrailsPanel({
 
   useEffect(() => {
     resetRuleForm();
+    setLocalPolicyDraft(null);
     void loadGuardrails();
   }, [loadGuardrails, resetRuleForm]);
 
@@ -328,7 +329,9 @@ export function LLMGuardrailsPanel({
           },
         },
       );
-      setPolicyDraft(updated);
+      setData((prev) => (prev ? { ...prev, policy: updated } : prev));
+      // Keep edits made while the submitted draft was being saved.
+      setLocalPolicyDraft((prev) => (prev === nextPolicy ? null : prev));
       setPolicyBanner(t('savedPolicy'));
       await loadGuardrails();
     } catch (err) {
@@ -341,7 +344,10 @@ export function LLMGuardrailsPanel({
   function updateDraft(
     updater: (prev: WorkspaceGuardrailPolicy) => WorkspaceGuardrailPolicy,
   ) {
-    setPolicyDraft((prev) => (prev ? updater(prev) : prev));
+    setLocalPolicyDraft((prev) => {
+      const current = prev ?? data?.policy;
+      return current ? updater(current) : null;
+    });
     setPolicyBanner(null);
   }
 
@@ -554,7 +560,7 @@ export function LLMGuardrailsPanel({
               ariaLabel={t('masterSwitchLabel')}
               onToggle={() => {
                 const next = { ...policyDraft, enabled: !policyDraft.enabled };
-                setPolicyDraft(next);
+                setLocalPolicyDraft(next);
                 void savePolicy(next);
               }}
             />

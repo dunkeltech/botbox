@@ -10,7 +10,6 @@ import {
   KeyRound,
   Lock,
   Pencil,
-  Plus,
   RefreshCw,
   RotateCcw,
   Search,
@@ -23,7 +22,6 @@ import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import {
   type FormEvent,
-  type KeyboardEvent,
   useCallback,
   useEffect,
   useId,
@@ -32,6 +30,8 @@ import {
   useState,
 } from 'react';
 
+import { BotEgressPolicyPanel } from '@/components/bots/BotEgressPolicyPanel';
+import { useBotEgressPolicy } from '@/components/bots/useBotEgressPolicy';
 import { CodexPlanPanel } from '@/components/bots/CodexPlanPanel';
 
 import {
@@ -45,7 +45,6 @@ import {
 } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
 import {
-  ApiClientError,
   createBotSecret,
   createWorkspaceSecret,
   deleteBotSecret,
@@ -53,27 +52,19 @@ import {
   getBotEgressPolicy,
   listBotEgressLogs,
   listBotSecrets,
-  updateBotEgressPolicy,
   updateBotSecret,
   updateWorkspaceSecret,
 } from '@/lib/api-client';
 import {
-  computeTriageMutation,
-  computeUndoMutation,
   evaluateHostInPolicy,
-  isPolicyDraftDirty,
   normalizeHostPattern,
-  type TriageUndoSpec,
 } from '@/lib/egress-policy';
 import { type ErrorTranslationKey, resolveErrorKey } from '@/lib/errors';
 import { canManageBot, canManageMembers } from '@/lib/rbac';
 import type {
   Bot,
-  EgressEnforcementStatus,
   EgressLogAction,
   EgressLogEntry,
-  EgressPolicyMode,
-  EgressPolicyResponse,
   SecretAuthScheme,
   SecretMetadata,
   SecretScope,
@@ -164,33 +155,6 @@ function formatTimestamp(iso: string): string {
   return parsed.toISOString().slice(0, 19).replace('T', ' ');
 }
 
-function normalizeHostEntry(raw: string): string {
-  return normalizeHostPattern(raw);
-}
-
-interface HostTriageFeedback {
-  host: string;
-  op: 'allow' | 'block';
-  status: EgressEnforcementStatus;
-  revision: number;
-  undo: TriageUndoSpec;
-}
-
-type PolicyStatusNotice =
-  | { kind: 'applied' }
-  | { kind: 'pending'; revision: number }
-  | { kind: 'not_running'; revision: number }
-  | { kind: 'reconciled'; revision: number }
-  | { kind: 'undo_complete'; host: string }
-  | { kind: 'undo_conflict'; host: string };
-
-function isUncertainWriteError(err: unknown): boolean {
-  if (!(err instanceof ApiClientError)) {
-    return true;
-  }
-  return err.status === 0 || err.status >= 500;
-}
-
 /**
  * Per-bot Secrets & Outbound Egress Network manager backed by workspace/bot
  * secrets endpoints, egress allowlist controls, and sanitized MITM audit logs.
@@ -225,7 +189,6 @@ export function BotSecretsView({
   );
 
   const [secrets, setSecrets] = useState<SecretMetadata[]>([]);
-  const [policy, setPolicy] = useState<EgressPolicyResponse | null>(null);
   const [logs, setLogs] = useState<EgressLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadErrorKey, setLoadErrorKey] = useState<ErrorTranslationKey | null>(
@@ -254,44 +217,22 @@ export function BotSecretsView({
   const [secretErrorKey, setSecretErrorKey] =
     useState<ErrorTranslationKey | null>(null);
 
-  // Outbound policy form draft state (kept separate from authoritative `policy`).
-  const [policyMode, setPolicyMode] = useState<EgressPolicyMode>('allowlist');
-  const [allowedHosts, setAllowedHosts] = useState<string[]>([]);
-  const [blockedHosts, setBlockedHosts] = useState<string[]>([]);
-  const [hostDraft, setHostDraft] = useState('');
-  const [blockedHostDraft, setBlockedHostDraft] = useState('');
-  const [savingPolicy, setSavingPolicy] = useState(false);
-  const [policyMutationInFlight, setPolicyMutationInFlight] = useState(false);
-  const [triagePendingHost, setTriagePendingHost] = useState<string | null>(
-    null,
+  const egressPolicy = useBotEgressPolicy(
+    workspace.id,
+    bot.id,
+    canEditBotSecrets,
   );
-  const [policyStatusNotice, setPolicyStatusNotice] =
-    useState<PolicyStatusNotice | null>(null);
-  const [policyErrorKey, setPolicyErrorKey] =
-    useState<ErrorTranslationKey | null>(null);
-  const [draftConflictPrompt, setDraftConflictPrompt] = useState(false);
-  const [policyStateUnknown, setPolicyStateUnknown] = useState(false);
-  const [reloadingPolicy, setReloadingPolicy] = useState(false);
-  const [triageFeedbackByHost, setTriageFeedbackByHost] = useState<
-    Record<string, HostTriageFeedback>
-  >({});
-  const [triageAnnouncement, setTriageAnnouncement] = useState<string | null>(
-    null,
-  );
-
-  const policyRef = useRef<EgressPolicyResponse | null>(policy);
-  policyRef.current = policy;
-  const draftStateRef = useRef({
-    mode: policyMode,
-    allowed: allowedHosts,
-    blocked: blockedHosts,
-  });
-  draftStateRef.current = {
-    mode: policyMode,
-    allowed: allowedHosts,
-    blocked: blockedHosts,
-  };
-  const mutatingPolicyRef = useRef(false);
+  const {
+    policy,
+    policyMutationInFlight,
+    triagePendingHost,
+    policyStateUnknown,
+    triageFeedbackByHost,
+    triageAnnouncement,
+    applyAuthoritativePolicy,
+    handleTriageHost,
+    handleUndoTriage,
+  } = egressPolicy;
   const blockedSectionRef = useRef<HTMLDivElement | null>(null);
 
   // Egress audit log filter, search, and pagination state.
@@ -319,57 +260,6 @@ export function BotSecretsView({
     setSecretErrorKey(null);
   }, []);
 
-  const applyAuthoritativePolicy = useCallback(
-    (
-      nextPolicy: EgressPolicyResponse,
-      options?: { preserveDraftIfDirty?: boolean },
-    ) => {
-      const currentSaved = policyRef.current;
-      const currentDraft = draftStateRef.current;
-      const dirty = isPolicyDraftDirty(
-        currentSaved,
-        currentDraft.mode,
-        currentDraft.allowed,
-        currentDraft.blocked,
-      );
-
-      policyRef.current = nextPolicy;
-      setPolicy(nextPolicy);
-      setPolicyStateUnknown(false);
-
-      if (!dirty || !options?.preserveDraftIfDirty) {
-        setPolicyMode(nextPolicy.policy);
-        setAllowedHosts(nextPolicy.allowedHosts);
-        setBlockedHosts(nextPolicy.blockedHosts ?? []);
-        setDraftConflictPrompt(false);
-      } else if (
-        currentSaved &&
-        currentSaved.revision !== nextPolicy.revision
-      ) {
-        setDraftConflictPrompt(true);
-      }
-
-      setTriageFeedbackByHost((prev) => {
-        let changed = false;
-        const next: Record<string, HostTriageFeedback> = {};
-        for (const [host, fb] of Object.entries(prev)) {
-          if (
-            fb.status === 'pending' &&
-            nextPolicy.enforcementStatus === 'applied' &&
-            nextPolicy.acknowledgedRevision >= fb.revision
-          ) {
-            next[host] = { ...fb, status: 'applied' };
-            changed = true;
-          } else {
-            next[host] = fb;
-          }
-        }
-        return changed ? next : prev;
-      });
-    },
-    [],
-  );
-
   const loadAll = useCallback(async () => {
     setLoading(true);
     setLoadErrorKey(null);
@@ -396,38 +286,6 @@ export function BotSecretsView({
   useEffect(() => {
     void loadAll();
   }, [loadAll]);
-
-  useEffect(() => {
-    if (policy?.enforcementStatus !== 'pending') {
-      return;
-    }
-    let active = true;
-    const timer = window.setTimeout(() => {
-      void getBotEgressPolicy(workspace.id, bot.id)
-        .then((latest) => {
-          if (!active) {
-            return;
-          }
-          applyAuthoritativePolicy(latest, { preserveDraftIfDirty: true });
-          if (latest.enforcementStatus === 'applied') {
-            setPolicyStatusNotice({ kind: 'applied' });
-          }
-        })
-        .catch(() => {
-          // Leave pending until next refresh or user reload.
-        });
-    }, 1000);
-    return () => {
-      active = false;
-      window.clearTimeout(timer);
-    };
-  }, [
-    applyAuthoritativePolicy,
-    bot.id,
-    policy?.enforcementStatus,
-    policy?.revision,
-    workspace.id,
-  ]);
 
   const fetchFilteredLogs = useCallback(
     async (filter: LogFilter) => {
@@ -636,356 +494,6 @@ export function BotSecretsView({
     }
   }
 
-  function handleAddAllowedHost() {
-    if (!canEditBotSecrets) {
-      return;
-    }
-    const normalized = normalizeHostEntry(hostDraft);
-    if (!normalized) {
-      return;
-    }
-    if (!allowedHosts.includes(normalized)) {
-      setAllowedHosts((prev) => [...prev, normalized]);
-    }
-    setBlockedHosts((prev) =>
-      prev.filter((item) => normalizeHostPattern(item) !== normalized),
-    );
-    setHostDraft('');
-    setPolicyStatusNotice(null);
-    setPolicyErrorKey(null);
-  }
-
-  function handleHostInputKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (!event.nativeEvent.isComposing && event.key === 'Enter') {
-      event.preventDefault();
-      handleAddAllowedHost();
-    }
-  }
-
-  function handleRemoveAllowedHost(host: string) {
-    if (!canEditBotSecrets) {
-      return;
-    }
-    setAllowedHosts((prev) => prev.filter((item) => item !== host));
-    setPolicyStatusNotice(null);
-  }
-
-  function handleAddBlockedHost() {
-    if (!canEditBotSecrets) {
-      return;
-    }
-    const normalized = normalizeHostEntry(blockedHostDraft);
-    if (!normalized) {
-      return;
-    }
-    if (!blockedHosts.includes(normalized)) {
-      setBlockedHosts((prev) => [...prev, normalized]);
-    }
-    setAllowedHosts((prev) =>
-      prev.filter((item) => normalizeHostPattern(item) !== normalized),
-    );
-    setBlockedHostDraft('');
-    setPolicyStatusNotice(null);
-    setPolicyErrorKey(null);
-  }
-
-  function handleBlockedHostInputKeyDown(
-    event: KeyboardEvent<HTMLInputElement>,
-  ) {
-    if (!event.nativeEvent.isComposing && event.key === 'Enter') {
-      event.preventDefault();
-      handleAddBlockedHost();
-    }
-  }
-
-  function handleRemoveBlockedHost(host: string) {
-    if (!canEditBotSecrets) {
-      return;
-    }
-    setBlockedHosts((prev) => prev.filter((item) => item !== host));
-    setPolicyStatusNotice(null);
-  }
-
-  function handleLoadSavedDraft() {
-    if (!policy) {
-      return;
-    }
-    setPolicyMode(policy.policy);
-    setAllowedHosts(policy.allowedHosts);
-    setBlockedHosts(policy.blockedHosts ?? []);
-    setDraftConflictPrompt(false);
-    setPolicyErrorKey(null);
-  }
-
-  async function handleReloadPolicy(): Promise<EgressPolicyResponse | null> {
-    if (reloadingPolicy) {
-      return null;
-    }
-    setReloadingPolicy(true);
-    setPolicyErrorKey(null);
-    try {
-      const latest = await getBotEgressPolicy(workspace.id, bot.id);
-      applyAuthoritativePolicy(latest, { preserveDraftIfDirty: true });
-      setPolicyStatusNotice({
-        kind: 'reconciled',
-        revision: latest.revision,
-      });
-      return latest;
-    } catch (err) {
-      setPolicyStateUnknown(true);
-      setPolicyErrorKey(resolveErrorKey(err));
-      return null;
-    } finally {
-      setReloadingPolicy(false);
-    }
-  }
-
-  async function reconcilePolicyFailure(err: unknown) {
-    if (
-      err instanceof ApiClientError &&
-      err.status === 409 &&
-      err.code === 'policy_conflict'
-    ) {
-      setPolicyErrorKey('policyConflict');
-      try {
-        const latest = await getBotEgressPolicy(workspace.id, bot.id);
-        applyAuthoritativePolicy(latest, { preserveDraftIfDirty: true });
-      } catch {
-        setPolicyStateUnknown(true);
-      }
-      return;
-    }
-
-    if (isUncertainWriteError(err)) {
-      try {
-        const authoritative = await getBotEgressPolicy(workspace.id, bot.id);
-        applyAuthoritativePolicy(authoritative, { preserveDraftIfDirty: true });
-        setPolicyStatusNotice({
-          kind: 'reconciled',
-          revision: authoritative.revision,
-        });
-      } catch {
-        setPolicyStateUnknown(true);
-        setPolicyErrorKey(resolveErrorKey(err));
-      }
-      return;
-    }
-
-    setPolicyErrorKey(resolveErrorKey(err));
-  }
-
-  function noticeForResponse(
-    updated: EgressPolicyResponse,
-  ): PolicyStatusNotice {
-    if (updated.enforcementStatus === 'pending') {
-      return { kind: 'pending', revision: updated.revision };
-    }
-    if (updated.enforcementStatus === 'not_running') {
-      return { kind: 'not_running', revision: updated.revision };
-    }
-    return { kind: 'applied' };
-  }
-
-  async function handleSavePolicy(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const currentSaved = policyRef.current;
-    if (
-      !currentSaved ||
-      !canEditBotSecrets ||
-      mutatingPolicyRef.current ||
-      policyStateUnknown
-    ) {
-      return;
-    }
-
-    mutatingPolicyRef.current = true;
-    setPolicyMutationInFlight(true);
-    setSavingPolicy(true);
-    setPolicyStatusNotice(null);
-    setPolicyErrorKey(null);
-
-    try {
-      const pendingAllowed = normalizeHostEntry(hostDraft);
-      const pendingBlocked = normalizeHostEntry(blockedHostDraft);
-
-      let nextAllowed = [...allowedHosts];
-      let nextBlocked = [...blockedHosts];
-
-      if (pendingAllowed && !nextAllowed.includes(pendingAllowed)) {
-        nextAllowed = [...nextAllowed, pendingAllowed];
-        nextBlocked = nextBlocked.filter(
-          (item) => normalizeHostPattern(item) !== pendingAllowed,
-        );
-      }
-      if (pendingBlocked && !nextBlocked.includes(pendingBlocked)) {
-        nextBlocked = [...nextBlocked, pendingBlocked];
-        nextAllowed = nextAllowed.filter(
-          (item) => normalizeHostPattern(item) !== pendingBlocked,
-        );
-      }
-
-      const updated = await updateBotEgressPolicy(workspace.id, bot.id, {
-        policy: policyMode,
-        allowedHosts: nextAllowed,
-        blockedHosts: nextBlocked,
-        expectedRevision: currentSaved.revision,
-      });
-      applyAuthoritativePolicy(updated, { preserveDraftIfDirty: false });
-      setHostDraft('');
-      setBlockedHostDraft('');
-      setPolicyStatusNotice(noticeForResponse(updated));
-    } catch (err) {
-      await reconcilePolicyFailure(err);
-    } finally {
-      mutatingPolicyRef.current = false;
-      setPolicyMutationInFlight(false);
-      setSavingPolicy(false);
-    }
-  }
-
-  async function handleTriageHost(rawHost: string, op: 'allow' | 'block') {
-    const currentSaved = policyRef.current;
-    const normHost = normalizeHostPattern(rawHost);
-    if (
-      !currentSaved ||
-      !normHost ||
-      !canEditBotSecrets ||
-      mutatingPolicyRef.current ||
-      policyStateUnknown
-    ) {
-      return;
-    }
-
-    mutatingPolicyRef.current = true;
-    setPolicyMutationInFlight(true);
-    setTriagePendingHost(normHost);
-    setPolicyErrorKey(null);
-    setTriageAnnouncement(null);
-
-    const mutation = computeTriageMutation(currentSaved, normHost, op);
-    try {
-      const updated = await updateBotEgressPolicy(workspace.id, bot.id, {
-        policy: currentSaved.policy,
-        allowedHosts: mutation.allowedHosts,
-        blockedHosts: mutation.blockedHosts,
-        expectedRevision: currentSaved.revision,
-      });
-      applyAuthoritativePolicy(updated, { preserveDraftIfDirty: true });
-      const feedback: HostTriageFeedback = {
-        host: normHost,
-        op,
-        status: updated.enforcementStatus,
-        revision: updated.revision,
-        undo: { ...mutation.undo, appliedRevision: updated.revision },
-      };
-      setTriageFeedbackByHost((prev) => ({ ...prev, [normHost]: feedback }));
-      const notice = noticeForResponse(updated);
-      setPolicyStatusNotice(notice);
-      setTriageAnnouncement(
-        updated.enforcementStatus === 'pending'
-          ? `${normHost}: ${t('triagePendingEnforcement')}`
-          : op === 'allow'
-            ? `${normHost}: ${t('triageAllowedFeedback')}`
-            : `${normHost}: ${t('triageBlockedFeedback')}`,
-      );
-    } catch (err) {
-      await reconcilePolicyFailure(err);
-    } finally {
-      mutatingPolicyRef.current = false;
-      setPolicyMutationInFlight(false);
-      setTriagePendingHost(null);
-    }
-  }
-
-  async function handleUndoTriage(rawHost: string) {
-    const currentSaved = policyRef.current;
-    const normHost = normalizeHostPattern(rawHost);
-    const fb = triageFeedbackByHost[normHost];
-    if (
-      !currentSaved ||
-      !fb ||
-      !canEditBotSecrets ||
-      mutatingPolicyRef.current ||
-      policyStateUnknown
-    ) {
-      return;
-    }
-
-    const firstAttempt = computeUndoMutation(currentSaved, fb.undo);
-    if (!firstAttempt) {
-      setTriageFeedbackByHost((prev) => {
-        const copy = { ...prev };
-        delete copy[normHost];
-        return copy;
-      });
-      setPolicyStatusNotice({ kind: 'undo_conflict', host: normHost });
-      return;
-    }
-
-    mutatingPolicyRef.current = true;
-    setPolicyMutationInFlight(true);
-    setTriagePendingHost(normHost);
-    setPolicyErrorKey(null);
-
-    try {
-      let updated: EgressPolicyResponse;
-      try {
-        updated = await updateBotEgressPolicy(workspace.id, bot.id, {
-          policy: currentSaved.policy,
-          allowedHosts: firstAttempt.allowedHosts,
-          blockedHosts: firstAttempt.blockedHosts,
-          expectedRevision: currentSaved.revision,
-        });
-      } catch (err) {
-        if (
-          err instanceof ApiClientError &&
-          err.status === 409 &&
-          err.code === 'policy_conflict'
-        ) {
-          const latest = await getBotEgressPolicy(workspace.id, bot.id);
-          applyAuthoritativePolicy(latest, { preserveDraftIfDirty: true });
-          const retryMutation = computeUndoMutation(latest, fb.undo);
-          if (!retryMutation) {
-            setTriageFeedbackByHost((prev) => {
-              const copy = { ...prev };
-              delete copy[normHost];
-              return copy;
-            });
-            setPolicyStatusNotice({ kind: 'undo_conflict', host: normHost });
-            return;
-          }
-          updated = await updateBotEgressPolicy(workspace.id, bot.id, {
-            policy: latest.policy,
-            allowedHosts: retryMutation.allowedHosts,
-            blockedHosts: retryMutation.blockedHosts,
-            expectedRevision: latest.revision,
-          });
-        } else {
-          throw err;
-        }
-      }
-
-      applyAuthoritativePolicy(updated, { preserveDraftIfDirty: true });
-      setTriageFeedbackByHost((prev) => {
-        const copy = { ...prev };
-        delete copy[normHost];
-        return copy;
-      });
-      if (updated.enforcementStatus === 'pending') {
-        setPolicyStatusNotice({ kind: 'pending', revision: updated.revision });
-      } else {
-        setPolicyStatusNotice({ kind: 'undo_complete', host: normHost });
-      }
-      setTriageAnnouncement(null);
-    } catch (err) {
-      await reconcilePolicyFailure(err);
-    } finally {
-      mutatingPolicyRef.current = false;
-      setPolicyMutationInFlight(false);
-      setTriagePendingHost(null);
-    }
-  }
-
   function handleJumpToBlockedRule() {
     blockedSectionRef.current?.scrollIntoView?.({
       behavior: 'smooth',
@@ -1064,7 +572,6 @@ export function BotSecretsView({
     effectiveScope === 'workspace'
       ? canEditWorkspaceSecrets
       : canEditBotSecrets;
-  const effectiveSecretHosts = policy?.effectiveSecretHosts ?? [];
 
   return (
     <div className="flex flex-col gap-6">
@@ -1734,345 +1241,11 @@ export function BotSecretsView({
               </p>
             </div>
 
-            <section
-              aria-labelledby="outbound-policy-heading"
-              className="flex min-w-0 flex-col gap-4"
-            >
-              <div className="flex flex-col gap-1">
-                <h3
-                  id="outbound-policy-heading"
-                  className="text-[18px] font-black tracking-[-0.01em] text-ink"
-                >
-                  {t('policyTitle')}
-                </h3>
-                <p className="text-[14px] leading-[1.55] text-ink-2">
-                  {t('policyLead')}
-                </p>
-              </div>
-
-              {policyStateUnknown ? (
-                <div role="alert" className="flex flex-col gap-3">
-                  <Alert tone="warning">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <span>{t('policyStateUnknownBanner')}</span>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        disabled={reloadingPolicy}
-                        onClick={() => void handleReloadPolicy()}
-                      >
-                        <RefreshCw className="h-4 w-4" aria-hidden="true" />
-                        <span>{t('policyReloadAction')}</span>
-                      </Button>
-                    </div>
-                  </Alert>
-                </div>
-              ) : null}
-
-              {policyStatusNotice ? (
-                <div role="status">
-                  <Alert
-                    tone={
-                      policyStatusNotice.kind === 'pending' ||
-                      policyStatusNotice.kind === 'reconciled' ||
-                      policyStatusNotice.kind === 'undo_conflict'
-                        ? 'warning'
-                        : 'success'
-                    }
-                  >
-                    {policyStatusNotice.kind === 'applied'
-                      ? t('policySavedBanner')
-                      : policyStatusNotice.kind === 'pending'
-                        ? t('policyPendingBanner', {
-                            revision: policyStatusNotice.revision,
-                          })
-                        : policyStatusNotice.kind === 'not_running'
-                          ? t('policyNotRunningBanner', {
-                              revision: policyStatusNotice.revision,
-                            })
-                          : policyStatusNotice.kind === 'reconciled'
-                            ? t('policyReconciledNotice', {
-                                revision: policyStatusNotice.revision,
-                              })
-                            : policyStatusNotice.kind === 'undo_complete'
-                              ? t('triageUndoComplete', {
-                                  host: policyStatusNotice.host,
-                                })
-                              : t('triageUndoConflict', {
-                                  host: policyStatusNotice.host,
-                                })}
-                  </Alert>
-                </div>
-              ) : null}
-
-              {policyErrorKey ? (
-                <div role="alert">
-                  <Alert tone="warning">{tErrors(policyErrorKey)}</Alert>
-                </div>
-              ) : null}
-
-              {draftConflictPrompt && policy ? (
-                <div role="status">
-                  <Alert tone="warning">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <span>
-                        {t('policyDraftConflictBanner', {
-                          revision: policy.revision,
-                        })}
-                      </span>
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          onClick={() => setDraftConflictPrompt(false)}
-                        >
-                          {t('policyDraftKeep')}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          onClick={handleLoadSavedDraft}
-                        >
-                          {t('policyDraftRebase')}
-                        </Button>
-                      </div>
-                    </div>
-                  </Alert>
-                </div>
-              ) : null}
-
-              <Card className="p-6">
-                <form
-                  aria-labelledby="outbound-policy-heading"
-                  onSubmit={(event) => void handleSavePolicy(event)}
-                  className="flex flex-col gap-6"
-                >
-                  <RadioCardGroup<EgressPolicyMode>
-                    legend={t('policyTitle')}
-                    name="egress-policy-mode"
-                    value={policyMode}
-                    onChange={(nextMode) => {
-                      setPolicyMode(nextMode);
-                      setPolicyStatusNotice(null);
-                    }}
-                    disabled={
-                      !canEditBotSecrets ||
-                      policyMutationInFlight ||
-                      policyStateUnknown
-                    }
-                    options={[
-                      {
-                        value: 'allowlist',
-                        title: t('policyAllowlistTitle'),
-                        description: t('policyAllowlistDesc'),
-                      },
-                      {
-                        value: 'open',
-                        title: t('policyOpenTitle'),
-                        description: t('policyOpenDesc'),
-                      },
-                    ]}
-                  />
-
-                  <div className="flex flex-col gap-3">
-                    <h4 className="text-[15px] font-bold text-ink">
-                      {t('allowedHostsTitle')}
-                    </h4>
-
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-                      <div className="flex-1">
-                        <Input
-                          name="allowedHostDraft"
-                          label={t('hostInputLabel')}
-                          placeholder={t('hostInputPlaceholder')}
-                          mono
-                          autoCorrect="off"
-                          autoCapitalize="none"
-                          spellCheck={false}
-                          value={hostDraft}
-                          disabled={
-                            !canEditBotSecrets ||
-                            policyMutationInFlight ||
-                            policyStateUnknown
-                          }
-                          onKeyDown={handleHostInputKeyDown}
-                          onChange={(event) => setHostDraft(event.target.value)}
-                        />
-                      </div>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        disabled={
-                          !canEditBotSecrets ||
-                          policyMutationInFlight ||
-                          policyStateUnknown ||
-                          !hostDraft.trim()
-                        }
-                        onClick={handleAddAllowedHost}
-                      >
-                        <Plus className="h-4 w-4" aria-hidden="true" />
-                        <span>{t('addHostAction')}</span>
-                      </Button>
-                    </div>
-
-                    {allowedHosts.length === 0 ? (
-                      <p className="text-[14px] text-muted">
-                        {t('emptyHosts')}
-                      </p>
-                    ) : (
-                      <ul className="flex flex-wrap gap-2">
-                        {allowedHosts.map((host) => (
-                          <li
-                            key={host}
-                            className="inline-flex min-h-[44px] items-center gap-1 rounded-sm border border-line bg-paper-2 pl-3 pr-0.5 font-mono text-[13px] text-ink"
-                          >
-                            <span>{host}</span>
-                            {canEditBotSecrets ? (
-                              <button
-                                type="button"
-                                aria-label={t('removeHostAria', { host })}
-                                disabled={
-                                  policyMutationInFlight || policyStateUnknown
-                                }
-                                onClick={() => handleRemoveAllowedHost(host)}
-                                className="inline-flex h-11 w-11 items-center justify-center rounded-xs text-ink-2 transition hover:bg-mint-soft hover:text-green-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
-                              >
-                                <X className="h-3.5 w-3.5" aria-hidden="true" />
-                              </button>
-                            ) : null}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-
-                  <div
-                    ref={blockedSectionRef}
-                    id="blocked-hosts-section"
-                    className="flex flex-col gap-3 border-t border-line pt-4"
-                  >
-                    <div className="flex flex-col gap-1">
-                      <h4 className="text-[15px] font-bold text-ink">
-                        {t('blockedHostsTitle')}
-                      </h4>
-                      <p className="text-[13px] leading-[1.45] text-muted">
-                        {t('blockedHostsDesc')}
-                      </p>
-                    </div>
-
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-                      <div className="flex-1">
-                        <Input
-                          name="blockedHostDraft"
-                          label={t('blockedHostInputLabel')}
-                          placeholder={t('blockedHostInputPlaceholder')}
-                          mono
-                          autoCorrect="off"
-                          autoCapitalize="none"
-                          spellCheck={false}
-                          value={blockedHostDraft}
-                          disabled={
-                            !canEditBotSecrets ||
-                            policyMutationInFlight ||
-                            policyStateUnknown
-                          }
-                          onKeyDown={handleBlockedHostInputKeyDown}
-                          onChange={(event) =>
-                            setBlockedHostDraft(event.target.value)
-                          }
-                        />
-                      </div>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        disabled={
-                          !canEditBotSecrets ||
-                          policyMutationInFlight ||
-                          policyStateUnknown ||
-                          !blockedHostDraft.trim()
-                        }
-                        onClick={handleAddBlockedHost}
-                      >
-                        <Ban className="h-4 w-4" aria-hidden="true" />
-                        <span>{t('blockHostAction')}</span>
-                      </Button>
-                    </div>
-
-                    {blockedHosts.length === 0 ? (
-                      <p className="text-[14px] text-muted">
-                        {t('emptyBlockedHosts')}
-                      </p>
-                    ) : (
-                      <ul className="flex flex-wrap gap-2">
-                        {blockedHosts.map((host) => (
-                          <li
-                            key={host}
-                            className="inline-flex min-h-[44px] items-center gap-1 rounded-sm border border-dashed border-amber-line bg-amber-tint pl-3 pr-0.5 font-mono text-[13px] font-bold text-amber"
-                          >
-                            <span>{host}</span>
-                            {canEditBotSecrets ? (
-                              <button
-                                type="button"
-                                aria-label={t('removeBlockedHostAria', {
-                                  host,
-                                })}
-                                disabled={
-                                  policyMutationInFlight || policyStateUnknown
-                                }
-                                onClick={() => handleRemoveBlockedHost(host)}
-                                className="inline-flex h-11 w-11 items-center justify-center rounded-xs text-amber transition hover:bg-paper/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green"
-                              >
-                                <X className="h-3.5 w-3.5" aria-hidden="true" />
-                              </button>
-                            ) : null}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-
-                  <div className="flex flex-col gap-2 border-t border-line pt-4">
-                    <h4 className="text-[14px] font-bold text-ink">
-                      {t('effectiveSecretHostsTitle')}
-                    </h4>
-                    {effectiveSecretHosts.length === 0 ? (
-                      <p className="text-[14px] text-muted">
-                        {t('effectiveSecretHostsEmpty')}
-                      </p>
-                    ) : (
-                      <ul className="flex flex-wrap gap-2">
-                        {effectiveSecretHosts.map((host) => (
-                          <li
-                            key={host}
-                            className="rounded-xs border border-mint-line bg-mint-soft px-2.5 py-1 font-mono text-[13px] font-bold text-green-600"
-                          >
-                            {host}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-
-                  {canEditBotSecrets ? (
-                    <div className="flex justify-end border-t border-line pt-4">
-                      <Button
-                        type="submit"
-                        arrow
-                        disabled={
-                          savingPolicy ||
-                          policyMutationInFlight ||
-                          policyStateUnknown
-                        }
-                      >
-                        {savingPolicy
-                          ? t('savingPolicy')
-                          : t('savePolicyAction')}
-                      </Button>
-                    </div>
-                  ) : null}
-                </form>
-              </Card>
-            </section>
+            <BotEgressPolicyPanel
+              editor={egressPolicy}
+              canEditBotSecrets={canEditBotSecrets}
+              blockedSectionRef={blockedSectionRef}
+            />
 
             <section
               aria-labelledby="egress-activity-heading"

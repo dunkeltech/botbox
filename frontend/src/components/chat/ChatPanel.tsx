@@ -19,6 +19,10 @@ import {
   type ToolTraceSummary,
   type ToolTraceTurn,
 } from '@/components/chat/toolTrace';
+import {
+  ChatTranscriptRow,
+  UnattachedToolTurnRow,
+} from '@/components/chat/ChatTranscriptRow';
 import { ChatTurnToolChip } from '@/components/chat/ChatTurnToolChip';
 import { DirectMessageComposer } from '@/components/chat/DirectMessageComposer';
 import { LiveToolStatusBar } from '@/components/chat/LiveToolStatusBar';
@@ -26,10 +30,7 @@ import { StopTurnButton } from '@/components/chat/StopTurnButton';
 import { ToolCallsSidebar } from '@/components/chat/ToolCallsSidebar';
 import { ToolImage } from '@/components/chat/ToolImage';
 import { BrokerTakeoverModal } from '@/components/chat/BrokerTakeoverModal';
-import { GuardrailNoticeCard } from '@/components/chat/GuardrailNoticeCard';
 import { MarkdownMessage } from '@/components/chat/MarkdownMessage';
-import { MemorySavedCard } from '@/components/chat/MemorySavedCard';
-import { SecretRequestCard } from '@/components/chat/SecretRequestCard';
 import { SecretRequestModal } from '@/components/chat/SecretRequestModal';
 import { useSecretRequestControl } from '@/components/chat/useSecretRequestControl';
 import { useChatScroll } from '@/components/chat/useChatScroll';
@@ -277,11 +278,12 @@ export function ChatPanel({
   const active = turn?.status === 'queued' || turn?.status === 'running';
   const waitingSecret = turn?.status === 'waiting_secret';
 
-  const secretControl = useSecretRequestControl(workspaceId, async () => {
+  async function refreshHistory() {
     await client.invalidateQueries({
       queryKey: ['chat', workspaceId, userId, conversationId],
     });
-  });
+  }
+  const secretControl = useSecretRequestControl(workspaceId, refreshHistory);
 
   const rawMessages = useMemo(
     () =>
@@ -350,36 +352,89 @@ export function ChatPanel({
     : localToolTurnKey;
   const liveToolTurn = trace.turns.find((item) => item.status === 'running');
 
-  function renderUnattachedToolTurns(turnsToShow: ToolTraceTurn[]) {
-    if (turnsToShow.length === 0) return null;
-    return turnsToShow.map((toolTurn) => (
-      <div
-        key={`unattached-${toolTurn.turnKey}`}
+  function renderUnattachedToolTurns(turns: ToolTraceTurn[]) {
+    return turns.map((turn) => (
+      <UnattachedToolTurnRow
+        key={turn.turnKey}
+        turn={turn}
+        name={name}
+        avatarSeed={avatarSeed}
+        layout={isSlack ? 'slack' : 'session'}
+        selected={effectiveSelectedTurnKey === turn.turnKey}
+        onInspect={handleInspectTurn}
+      />
+    ));
+  }
+
+  function renderConversationMessage(message: History['messages'][number]) {
+    const isUser = message.senderType === 'user';
+    const timeLabel = formatTime(message.createdAt);
+    const attachedTurn = trace.turnsByReplyId.get(message.id);
+
+    if (!isSlack && isUser) {
+      return (
+        // Keep sr-only's position: absolute contained within the scrollable log
+        // so off-viewport messages cannot inflate documentElement.scrollHeight.
+        <article
+          data-message-id={message.id}
+          className="relative flex flex-col items-end"
+        >
+          <span className="sr-only">{t('you')}</span>
+          <div className="max-w-[88%] rounded-[14px_14px_4px_14px] bg-dark px-3.5 py-2.5 text-[14px] leading-[1.5] text-paper">
+            <MarkdownMessage content={message.content} tone="dark" />
+          </div>
+          {timeLabel ? (
+            <span className="mt-1 text-[11px] text-muted">{timeLabel}</span>
+          ) : null}
+        </article>
+      );
+    }
+
+    return (
+      <article
+        data-message-id={message.id}
         className="flex items-start gap-2.5"
       >
-        <BotAvatar
-          seed={avatarSeed}
-          mood={toolTurn.status === 'running' ? 'thinking' : 'idle'}
-          size={isSlack ? 36 : 28}
-          decorative
-        />
+        {isUser ? (
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-sm bg-dark text-[12px] font-black text-paper">
+            {t('you').slice(0, 2).toUpperCase()}
+          </span>
+        ) : (
+          <BotAvatar
+            seed={avatarSeed}
+            mood={active ? 'thinking' : 'idle'}
+            size={isSlack ? 36 : 28}
+            decorative
+          />
+        )}
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline gap-2">
-            <span className="text-[14px] font-black text-ink">{name}</span>
-            {isSlack ? (
+            <span className="text-[14px] font-black text-ink">
+              {isUser ? t('you') : name}
+            </span>
+            {isSlack && !isUser ? (
               <span className="rounded-xs bg-mint-soft px-1.5 py-0.5 text-[11px] font-black uppercase tracking-[0.06em] text-green-600">
                 {tTeam('botBadge')}
               </span>
             ) : null}
+            {timeLabel ? (
+              <span className="text-[12px] text-muted">{timeLabel}</span>
+            ) : null}
           </div>
-          <ChatTurnToolChip
-            turn={toolTurn}
-            selected={effectiveSelectedTurnKey === toolTurn.turnKey}
-            onInspect={handleInspectTurn}
+          <MarkdownMessage
+            content={message.content || t('toolCall')}
+            className="mt-0.5 text-[15px] leading-[1.55] text-ink"
           />
+          {attachedTurn ? (
+            <ChatTurnToolChip
+              turn={attachedTurn}
+              selected={effectiveSelectedTurnKey === attachedTurn.turnKey}
+              onInspect={handleInspectTurn}
+            />
+          ) : null}
         </div>
-      </div>
-    ));
+      </article>
+    );
   }
 
   return (
@@ -446,143 +501,23 @@ export function ChatPanel({
 
         {renderUnattachedToolTurns(trace.leadingUnattachedTurns)}
 
-        {messages.map((message) => {
-          const unattachedAfter =
-            trace.unattachedTurnsByAnchor.get(message.id) ?? [];
-
-          if (message.kind === 'secret_request' && message.secretRequest) {
-            const sr = message.secretRequest;
-            return (
-              <div key={message.id} className="flex flex-col gap-3">
-                <SecretRequestCard
-                  summary={sr}
-                  role={effectiveRole}
-                  busy={secretControl.busyRequestId === sr.secretRequestId}
-                  errorKey={
-                    secretControl.requestError?.id === sr.secretRequestId
-                      ? secretControl.requestError.key
-                      : null
-                  }
-                  onProvide={secretControl.openModal}
-                  onTakeover={secretControl.openTakeover}
-                  onDeny={(s) => void secretControl.deny(s)}
-                />
-                {renderUnattachedToolTurns(unattachedAfter)}
-              </div>
-            );
-          }
-          if (message.kind === 'guardrail' && message.guardrail) {
-            return (
-              <div key={message.id} className="flex flex-col gap-3">
-                <GuardrailNoticeCard
-                  guardrail={message.guardrail}
-                  role={effectiveRole}
-                  onInspect={handleInspectTurn}
-                />
-                {renderUnattachedToolTurns(unattachedAfter)}
-              </div>
-            );
-          }
-
-          if (message.kind === 'memory' && message.memory) {
-            return (
-              <div key={message.id} className="flex flex-col gap-3">
-                <MemorySavedCard
-                  workspaceId={workspaceId}
-                  botId={botId}
-                  memory={message.memory}
-                  canManage={canManageMemory}
-                  onUpdated={async () => {
-                    await client.invalidateQueries({
-                      queryKey: ['chat', workspaceId, userId, conversationId],
-                    });
-                  }}
-                />
-                {renderUnattachedToolTurns(unattachedAfter)}
-              </div>
-            );
-          }
-          const isUser = message.senderType === 'user';
-          const timeLabel = formatTime(message.createdAt);
-          const attachedTurn = trace.turnsByReplyId.get(message.id);
-
-          if (!isSlack && isUser) {
-            return (
-              // Keep sr-only's position: absolute contained within the scrollable log
-              // so off-viewport messages cannot inflate documentElement.scrollHeight.
-              <div key={message.id} className="flex flex-col gap-3">
-                <article
-                  data-message-id={message.id}
-                  className="relative flex flex-col items-end"
-                >
-                  <span className="sr-only">{t('you')}</span>
-                  <div className="max-w-[88%] rounded-[14px_14px_4px_14px] bg-dark px-3.5 py-2.5 text-[14px] leading-[1.5] text-paper">
-                    <MarkdownMessage content={message.content} tone="dark" />
-                  </div>
-                  {timeLabel ? (
-                    <span className="mt-1 text-[11px] text-muted">
-                      {timeLabel}
-                    </span>
-                  ) : null}
-                </article>
-                {renderUnattachedToolTurns(unattachedAfter)}
-              </div>
-            );
-          }
-
-          return (
-            <div key={message.id} className="flex flex-col gap-3">
-              <article
-                data-message-id={message.id}
-                className="flex items-start gap-2.5"
-              >
-                {isUser ? (
-                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-sm bg-dark text-[12px] font-black text-paper">
-                    {t('you').slice(0, 2).toUpperCase()}
-                  </span>
-                ) : (
-                  <BotAvatar
-                    seed={avatarSeed}
-                    mood={active ? 'thinking' : 'idle'}
-                    size={isSlack ? 36 : 28}
-                    decorative
-                  />
-                )}
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-baseline gap-2">
-                    <span className="text-[14px] font-black text-ink">
-                      {isUser ? t('you') : name}
-                    </span>
-                    {isSlack && !isUser ? (
-                      <span className="rounded-xs bg-mint-soft px-1.5 py-0.5 text-[11px] font-black uppercase tracking-[0.06em] text-green-600">
-                        {tTeam('botBadge')}
-                      </span>
-                    ) : null}
-                    {timeLabel ? (
-                      <span className="text-[12px] text-muted">
-                        {timeLabel}
-                      </span>
-                    ) : null}
-                  </div>
-                  <MarkdownMessage
-                    content={message.content || t('toolCall')}
-                    className="mt-0.5 text-[15px] leading-[1.55] text-ink"
-                  />
-                  {attachedTurn ? (
-                    <ChatTurnToolChip
-                      turn={attachedTurn}
-                      selected={
-                        effectiveSelectedTurnKey === attachedTurn.turnKey
-                      }
-                      onInspect={handleInspectTurn}
-                    />
-                  ) : null}
-                </div>
-              </article>
-              {renderUnattachedToolTurns(unattachedAfter)}
-            </div>
-          );
-        })}
+        {messages.map((message) => (
+          <ChatTranscriptRow
+            key={message.id}
+            message={message}
+            workspaceId={workspaceId}
+            role={effectiveRole}
+            secretControl={secretControl}
+            memoryBotId={botId}
+            canManageMemory={() => canManageMemory}
+            refreshHistory={refreshHistory}
+            onInspectTurn={handleInspectTurn}
+            toolTurnsAfter={renderUnattachedToolTurns(
+              trace.unattachedTurnsByAnchor.get(message.id) ?? [],
+            )}
+            renderMessage={() => renderConversationMessage(message)}
+          />
+        ))}
 
         {live ? (
           <div

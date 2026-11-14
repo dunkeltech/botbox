@@ -194,39 +194,149 @@ export function formatToolDuration(durationMs: number | null): string | null {
   return `${minutes} m ${remSeconds} s`;
 }
 
-/**
- * Separate tool-call rows from conversational messages and pair each tool
- * invocation with its result, grouped by bot turn.
- */
-export function buildToolTrace({
-  messages,
-  turns = [],
-  imagePathForMessage,
-}: {
-  messages: ToolChatMessage[];
-  turns?: ToolChatTurn[];
-  imagePathForMessage: (messageId: string) => string;
-}): ToolTraceSummary {
-  const sorted = [...messages].sort((a, b) => a.position - b.position);
-  const activeTurnIds = new Set(
-    turns
-      .filter((t) => t.status === 'queued' || t.status === 'running')
-      .map((t) => t.id),
-  );
-  const hasAnyActiveTurn = activeTurnIds.size > 0;
+type MutableStep = ToolTraceStep & { awaitedResult?: boolean };
 
-  interface MutableTurn {
-    turnKey: string;
-    botId?: string;
-    startedAt: string;
-    minPosition: number;
-    maxPosition: number;
-    lastEventAt: string;
-    steps: Array<ToolTraceStep & { awaitedResult?: boolean }>;
-    replyMessageId?: string;
-    explicitTurnId: boolean;
+interface MutableTurn {
+  turnKey: string;
+  botId?: string;
+  startedAt: string;
+  minPosition: number;
+  maxPosition: number;
+  lastEventAt: string;
+  steps: MutableStep[];
+  replyMessageId?: string;
+  explicitTurnId: boolean;
+}
+
+function attachBotReply(
+  unlinkedTurns: MutableTurn[],
+  message: ToolChatMessage,
+) {
+  // Match the latest preceding tool turn from the same bot. Older history may omit the bot ID.
+  for (let index = unlinkedTurns.length - 1; index >= 0; index -= 1) {
+    const turn = unlinkedTurns[index];
+    if (!turn || turn.maxPosition >= message.position) continue;
+    if (message.senderBotId && turn.botId && turn.botId !== message.senderBotId)
+      continue;
+
+    turn.replyMessageId = message.id;
+    for (const step of turn.steps) {
+      if (step.status === 'running') step.status = 'done';
+    }
+    unlinkedTurns.splice(index, 1);
+    return;
+  }
+}
+
+function recordToolMessage(
+  turn: MutableTurn,
+  msg: ToolChatMessage,
+  isTurnActive: boolean,
+  imagePathForMessage: (messageId: string) => string,
+) {
+  const { turnKey } = turn;
+  const guardrail = msg.tool?.guardrail;
+  if (guardrail) {
+    const guardrailKey =
+      guardrail.action === 'blocked'
+        ? guardrail.direction === 'output'
+          ? 'guardrailTraceOutputBlocked'
+          : 'guardrailTraceInputBlocked'
+        : guardrail.direction === 'output'
+          ? 'guardrailTraceOutputRedacted'
+          : 'guardrailTraceInputRedacted';
+    turn.steps.push({
+      id: msg.id,
+      turnKey,
+      toolCallId: msg.tool?.toolCallId,
+      botId: msg.senderBotId,
+      callCopy: { key: guardrailKey, image: false },
+      status: guardrail.action === 'blocked' ? 'error' : 'done',
+      errorCode: msg.tool?.errorCode,
+      startedAt: msg.createdAt,
+      finishedAt: msg.createdAt,
+      durationMs: guardrail.latencyMs,
+      guardrail,
+      awaitedResult: false,
+    });
+    return;
   }
 
+  const phase: 'call' | 'result' =
+    msg.tool?.phase ?? (isToolCallContent(msg.content) ? 'call' : 'result');
+  const copy: ToolCopy = describeToolMessage('tool', msg.content) ?? {
+    key: 'finished',
+    image: false,
+  };
+
+  if (phase === 'call') {
+    const parameters = extractToolParameters(msg.content);
+    turn.steps.push({
+      id: msg.id,
+      turnKey,
+      toolCallId: msg.tool?.toolCallId,
+      botId: msg.senderBotId,
+      callCopy: copy,
+      ...(parameters.length > 0 ? { parameters } : {}),
+      status: isTurnActive ? 'running' : 'done',
+      startedAt: msg.createdAt,
+      durationMs: null,
+      awaitedResult: true,
+    });
+    return;
+  }
+
+  const targetCallId = msg.tool?.toolCallId;
+  let targetStep: MutableStep | undefined;
+  for (let i = turn.steps.length - 1; i >= 0; i -= 1) {
+    const candidate = turn.steps[i];
+    if (!candidate || !candidate.awaitedResult) continue;
+    if (targetCallId && candidate.toolCallId !== targetCallId) continue;
+    targetStep = candidate;
+    break;
+  }
+
+  const stepError = Boolean(msg.tool?.isError);
+  const imagePath = copy.image ? imagePathForMessage(msg.id) : undefined;
+  const outputTail = extractToolOutputTail(msg.content);
+
+  if (targetStep) {
+    targetStep.awaitedResult = false;
+    targetStep.resultCopy = copy;
+    if (outputTail) {
+      targetStep.outputTail = outputTail;
+    }
+    targetStep.status = stepError ? 'error' : 'done';
+    targetStep.errorCode = msg.tool?.errorCode;
+    targetStep.finishedAt = msg.createdAt;
+    targetStep.durationMs = safeDurationMs(targetStep.startedAt, msg.createdAt);
+    if (imagePath) {
+      targetStep.imagePath = imagePath;
+    }
+  } else {
+    turn.steps.push({
+      id: msg.id,
+      turnKey,
+      toolCallId: targetCallId,
+      botId: msg.senderBotId,
+      callCopy: copy,
+      ...(outputTail ? { outputTail } : {}),
+      status: stepError ? 'error' : 'done',
+      errorCode: msg.tool?.errorCode,
+      startedAt: msg.createdAt,
+      finishedAt: msg.createdAt,
+      durationMs: null,
+      imagePath,
+      awaitedResult: false,
+    });
+  }
+}
+
+function collectToolTurns(
+  messages: ToolChatMessage[],
+  activeTurnIds: ReadonlySet<string>,
+  imagePathForMessage: (messageId: string) => string,
+) {
   const chatMessages: ToolChatMessage[] = [];
   const turnMap = new Map<string, MutableTurn>();
   const turnOrder: MutableTurn[] = [];
@@ -263,7 +373,7 @@ export function buildToolTrace({
     return created;
   };
 
-  for (const msg of sorted) {
+  for (const msg of messages) {
     if (msg.kind !== 'tool') {
       chatMessages.push(msg);
 
@@ -273,35 +383,8 @@ export function buildToolTrace({
       }
 
       if (msg.kind === 'text' && msg.senderType === 'bot') {
-        const botKey = msg.senderBotId ?? '__bot__';
-        legacyKeyByBot.delete(botKey);
-
-        // Attach the most recent preceding unlinked tool turn from the same bot.
-        let matchIdx = -1;
-        for (let i = unlinkedTurns.length - 1; i >= 0; i -= 1) {
-          const candidate = unlinkedTurns[i];
-          if (!candidate || candidate.maxPosition >= msg.position) continue;
-          if (
-            !msg.senderBotId ||
-            !candidate.botId ||
-            candidate.botId === msg.senderBotId
-          ) {
-            matchIdx = i;
-            break;
-          }
-        }
-        if (matchIdx >= 0) {
-          const matched = unlinkedTurns[matchIdx];
-          if (matched) {
-            matched.replyMessageId = msg.id;
-            for (const step of matched.steps) {
-              if (step.status === 'running') {
-                step.status = 'done';
-              }
-            }
-            unlinkedTurns.splice(matchIdx, 1);
-          }
-        }
+        legacyKeyByBot.delete(msg.senderBotId ?? '__bot__');
+        attachBotReply(unlinkedTurns, msg);
       }
       continue;
     }
@@ -320,110 +403,77 @@ export function buildToolTrace({
 
     const turn = getOrCreateTurn(turnKey, msg, explicitTurnId);
 
-    const guardrail = msg.tool?.guardrail;
-    if (guardrail) {
-      const guardrailKey =
-        guardrail.action === 'blocked'
-          ? guardrail.direction === 'output'
-            ? 'guardrailTraceOutputBlocked'
-            : 'guardrailTraceInputBlocked'
-          : guardrail.direction === 'output'
-            ? 'guardrailTraceOutputRedacted'
-            : 'guardrailTraceInputRedacted';
-      turn.steps.push({
-        id: msg.id,
-        turnKey,
-        toolCallId: msg.tool?.toolCallId,
-        botId: msg.senderBotId,
-        callCopy: { key: guardrailKey, image: false },
-        status: guardrail.action === 'blocked' ? 'error' : 'done',
-        errorCode: msg.tool?.errorCode,
-        startedAt: msg.createdAt,
-        finishedAt: msg.createdAt,
-        durationMs: guardrail.latencyMs,
-        guardrail,
-        awaitedResult: false,
-      });
-      continue;
-    }
-
-    const phase: 'call' | 'result' =
-      msg.tool?.phase ?? (isToolCallContent(msg.content) ? 'call' : 'result');
-    const copy: ToolCopy = describeToolMessage('tool', msg.content) ?? {
-      key: 'finished',
-      image: false,
-    };
-
     const isTurnActive = explicitTurnId
       ? activeTurnIds.has(turnKey)
-      : hasAnyActiveTurn;
+      : activeTurnIds.size > 0;
+    recordToolMessage(turn, msg, isTurnActive, imagePathForMessage);
+  }
 
-    if (phase === 'call') {
-      const parameters = extractToolParameters(msg.content);
-      turn.steps.push({
-        id: msg.id,
-        turnKey,
-        toolCallId: msg.tool?.toolCallId,
-        botId: msg.senderBotId,
-        callCopy: copy,
-        ...(parameters.length > 0 ? { parameters } : {}),
-        status: isTurnActive ? 'running' : 'done',
-        startedAt: msg.createdAt,
-        durationMs: null,
-        awaitedResult: true,
-      });
-      continue;
-    }
+  return { chatMessages, turnOrder };
+}
 
-    const targetCallId = msg.tool?.toolCallId;
-    let targetStep: (ToolTraceStep & { awaitedResult?: boolean }) | undefined;
-    for (let i = turn.steps.length - 1; i >= 0; i -= 1) {
-      const candidate = turn.steps[i];
-      if (!candidate || !candidate.awaitedResult) continue;
-      if (targetCallId && candidate.toolCallId !== targetCallId) continue;
-      targetStep = candidate;
-      break;
-    }
-
-    const stepError = Boolean(msg.tool?.isError);
-    const imagePath = copy.image ? imagePathForMessage(msg.id) : undefined;
-    const outputTail = extractToolOutputTail(msg.content);
-
-    if (targetStep) {
-      targetStep.awaitedResult = false;
-      targetStep.resultCopy = copy;
-      if (outputTail) {
-        targetStep.outputTail = outputTail;
+function finalizeToolTurn(
+  raw: MutableTurn,
+  turnActive: boolean,
+  chatMessages: ToolChatMessage[],
+): ToolTraceTurn {
+  if (!turnActive) {
+    for (const step of raw.steps) {
+      if (step.status === 'running') {
+        step.status = 'done';
       }
-      targetStep.status = stepError ? 'error' : 'done';
-      targetStep.errorCode = msg.tool?.errorCode;
-      targetStep.finishedAt = msg.createdAt;
-      targetStep.durationMs = safeDurationMs(
-        targetStep.startedAt,
-        msg.createdAt,
-      );
-      if (imagePath) {
-        targetStep.imagePath = imagePath;
-      }
-    } else {
-      turn.steps.push({
-        id: msg.id,
-        turnKey,
-        toolCallId: targetCallId,
-        botId: msg.senderBotId,
-        callCopy: copy,
-        ...(outputTail ? { outputTail } : {}),
-        status: stepError ? 'error' : 'done',
-        errorCode: msg.tool?.errorCode,
-        startedAt: msg.createdAt,
-        finishedAt: msg.createdAt,
-        durationMs: null,
-        imagePath,
-        awaitedResult: false,
-      });
     }
   }
 
+  const hasRunning = raw.steps.some((s) => s.status === 'running');
+  const hasError = raw.steps.some((s) => s.status === 'error');
+  const turnStatus: ToolTraceTurn['status'] = hasError
+    ? 'error'
+    : hasRunning
+      ? 'running'
+      : 'done';
+
+  const spanMs = safeDurationMs(raw.startedAt, raw.lastEventAt);
+  const summedStepMs = raw.steps.reduce<number>(
+    (acc, s) => acc + (s.durationMs ?? 0),
+    0,
+  );
+  const hasAnyStepDuration = raw.steps.some((s) => s.durationMs !== null);
+  const durationMs =
+    spanMs !== null && spanMs > 0
+      ? spanMs
+      : hasAnyStepDuration
+        ? summedStepMs
+        : null;
+
+  let anchorAfterMessageId: string | undefined;
+  if (!raw.replyMessageId) {
+    for (let i = chatMessages.length - 1; i >= 0; i -= 1) {
+      const candidate = chatMessages[i];
+      if (candidate && candidate.position < raw.minPosition) {
+        anchorAfterMessageId = candidate.id;
+        break;
+      }
+    }
+  }
+
+  return {
+    turnKey: raw.turnKey,
+    botId: raw.botId,
+    startedAt: raw.startedAt,
+    durationMs,
+    status: turnStatus,
+    steps: raw.steps,
+    replyMessageId: raw.replyMessageId,
+    anchorAfterMessageId,
+  };
+}
+
+function summarizeToolTurns(
+  chatMessages: ToolChatMessage[],
+  turnOrder: MutableTurn[],
+  activeTurnIds: ReadonlySet<string>,
+): ToolTraceSummary {
   const turnsByReplyId = new Map<string, ToolTraceTurn>();
   const unattachedTurnsByAnchor = new Map<string, ToolTraceTurn[]>();
   const leadingUnattachedTurns: ToolTraceTurn[] = [];
@@ -433,61 +483,13 @@ export function buildToolTrace({
   let runningSteps = 0;
   let errorSteps = 0;
 
+  const lastTurn = turnOrder[turnOrder.length - 1];
   for (const raw of turnOrder) {
     const turnActive = raw.explicitTurnId
       ? activeTurnIds.has(raw.turnKey)
-      : hasAnyActiveTurn && raw === turnOrder[turnOrder.length - 1];
+      : activeTurnIds.size > 0 && raw === lastTurn;
 
-    if (!turnActive) {
-      for (const step of raw.steps) {
-        if (step.status === 'running') {
-          step.status = 'done';
-        }
-      }
-    }
-
-    const hasRunning = raw.steps.some((s) => s.status === 'running');
-    const hasError = raw.steps.some((s) => s.status === 'error');
-    const turnStatus: ToolTraceTurn['status'] = hasError
-      ? 'error'
-      : hasRunning
-        ? 'running'
-        : 'done';
-
-    const spanMs = safeDurationMs(raw.startedAt, raw.lastEventAt);
-    const summedStepMs = raw.steps.reduce<number>(
-      (acc, s) => acc + (s.durationMs ?? 0),
-      0,
-    );
-    const hasAnyStepDuration = raw.steps.some((s) => s.durationMs !== null);
-    const durationMs =
-      spanMs !== null && spanMs > 0
-        ? spanMs
-        : hasAnyStepDuration
-          ? summedStepMs
-          : null;
-
-    let anchorAfterMessageId: string | undefined;
-    if (!raw.replyMessageId) {
-      for (let i = chatMessages.length - 1; i >= 0; i -= 1) {
-        const candidate = chatMessages[i];
-        if (candidate && candidate.position < raw.minPosition) {
-          anchorAfterMessageId = candidate.id;
-          break;
-        }
-      }
-    }
-
-    const finalized: ToolTraceTurn = {
-      turnKey: raw.turnKey,
-      botId: raw.botId,
-      startedAt: raw.startedAt,
-      durationMs,
-      status: turnStatus,
-      steps: raw.steps,
-      replyMessageId: raw.replyMessageId,
-      anchorAfterMessageId,
-    };
+    const finalized = finalizeToolTurn(raw, turnActive, chatMessages);
 
     totalSteps += finalized.steps.length;
     runningSteps += finalized.steps.filter(
@@ -522,4 +524,31 @@ export function buildToolTrace({
     unattachedTurnsByAnchor,
     leadingUnattachedTurns,
   };
+}
+
+/**
+ * Separate tool-call rows from conversational messages and pair each tool
+ * invocation with its result, grouped by bot turn.
+ */
+export function buildToolTrace({
+  messages,
+  turns = [],
+  imagePathForMessage,
+}: {
+  messages: ToolChatMessage[];
+  turns?: ToolChatTurn[];
+  imagePathForMessage: (messageId: string) => string;
+}): ToolTraceSummary {
+  const activeTurnIds = new Set(
+    turns
+      .filter((t) => t.status === 'queued' || t.status === 'running')
+      .map((t) => t.id),
+  );
+  const sorted = [...messages].sort((a, b) => a.position - b.position);
+  const { chatMessages, turnOrder } = collectToolTurns(
+    sorted,
+    activeTurnIds,
+    imagePathForMessage,
+  );
+  return summarizeToolTurns(chatMessages, turnOrder, activeTurnIds);
 }

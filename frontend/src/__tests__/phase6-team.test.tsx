@@ -295,6 +295,90 @@ describe('Phase 6 team chat', () => {
     expect(screen.getByText('Babu Frik is thinking…')).toBeVisible();
   });
 
+  it.each(['owner', 'viewer'] as const)(
+    'uses the sending bot for group memory cards and anchors tool-only turns for a %s',
+    async (role) => {
+      groupRows = [
+        {
+          ...group,
+          members: [
+            ...group.members,
+            { type: 'bot', id: 'bot-2', roleText: '', name: 'Nova' },
+          ],
+        },
+      ];
+      const createdAt = '2026-11-16T00:00:02Z';
+      const memory = {
+        memoryId: 'memory-1',
+        title: 'Release checklist',
+        content: 'Run the smoke tests.',
+        mode: 'on_demand',
+        tags: [],
+        tokenEstimate: 5,
+        sourceLabel: 'Chat',
+        deleted: false,
+      } as const satisfies ChatMessage['memory'];
+      const saved: ChatMessage = {
+        id: 'saved',
+        position: 3,
+        senderType: 'bot',
+        senderBotId: 'bot-2',
+        kind: 'memory',
+        content: 'Memory saved',
+        createdAt,
+        memory,
+      };
+      request.mockImplementation((path, options) => {
+        if (!path.endsWith('/messages')) return handler(path, options);
+        return Promise.resolve({
+          messages: [
+            ...history,
+            saved,
+            {
+              id: 'tool',
+              position: 4,
+              senderType: 'bot',
+              senderBotId: 'bot-2',
+              kind: 'tool',
+              content: 'Bash\n{}',
+              createdAt,
+            },
+            {
+              ...saved,
+              id: 'without-bot',
+              position: 5,
+              senderBotId: undefined,
+              content: 'Legacy memory message',
+              memory: { ...memory, memoryId: 'memory-2' },
+            },
+          ] satisfies ChatMessage[],
+          turns: [],
+        });
+      });
+      show(role);
+
+      const title = await screen.findByText('Release checklist');
+      const card = title.closest('[data-memory-id]')!;
+      expect(
+        within(card as HTMLElement).getByRole('link', {
+          name: 'Open in Knowledge base',
+        }),
+      ).toHaveAttribute('href', '/bots/bot-2/settings/knowledge');
+      const undo = within(card as HTMLElement).queryByRole('button', {
+        name: 'Undo',
+      });
+      if (role === 'owner') expect(undo).toBeEnabled();
+      else expect(undo).not.toBeInTheDocument();
+      expect(
+        within(card.parentElement!).getByRole('button', {
+          name: '1 tool step',
+        }),
+      ).toBeVisible();
+      expect(screen.getByText('Legacy memory message')).toBeVisible();
+      expect(screen.getAllByText('Release checklist')).toHaveLength(1);
+    },
+  );
+
   it('names the requesting bot in both group secret dialogs', async () => {
     groupRows = [
       {

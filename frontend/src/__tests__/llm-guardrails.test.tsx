@@ -141,6 +141,67 @@ describe('WorkspaceSettingsShell guardrails link', () => {
 });
 
 describe('LLMGuardrailsPanel', () => {
+  it('preserves an unsaved policy draft when a custom rule refreshes the settings', async () => {
+    const path = '/api/workspaces/ws-1/guardrails';
+    let policy = makePolicy(true);
+    let rule = makeRule();
+    const reqMock = vi.mocked(requestJson).mockImplementation((url) => {
+      if (url === path) {
+        return Promise.resolve({
+          policy,
+          rules: [rule],
+          summary24h: {
+            totalEvaluations: 0,
+            redactedCount: 0,
+            blockedCount: 0,
+            auditedCount: 0,
+          },
+          activeRuleCount: rule.enabled ? 4 : 3,
+          coveredProviders: ['anthropic'],
+        } satisfies WorkspaceGuardrailsResponse);
+      }
+      if (url === `${path}/rules/${rule.id}`) {
+        rule = { ...rule, enabled: false };
+        return Promise.resolve(rule);
+      }
+      if (url === `${path}/policy`) {
+        policy = {
+          ...policy,
+          failureMode: 'fail_open',
+          revision: policy.revision + 1,
+        };
+        return Promise.resolve(policy);
+      }
+      return Promise.resolve({ events: [] });
+    });
+
+    renderWithIntl(<LLMGuardrailsPanel workspaceId="ws-1" role="owner" />);
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Fail open (Audit)' }),
+    );
+    const ruleSwitch = { name: 'Toggle Customer account IDs' };
+    fireEvent.click(screen.getByRole('switch', ruleSwitch));
+    await screen.findByRole('switch', { ...ruleSwitch, checked: false });
+
+    expect(
+      screen.getByRole('button', { name: 'Fail open (Audit)' }),
+    ).toHaveAttribute('aria-pressed', 'true');
+    expect(reqMock.mock.calls.some(([url]) => url === `${path}/policy`)).toBe(
+      false,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Save policy' }));
+    const save = reqMock.mock.calls.find(([url]) => url === `${path}/policy`);
+    expect(save?.[1]).toMatchObject({
+      method: 'PUT',
+      body: { failureMode: 'fail_open' },
+    });
+    await screen.findByText('Workspace guardrail policy updated.');
+    expect(
+      screen.getByRole('button', { name: 'Fail open (Audit)' }),
+    ).toHaveAttribute('aria-pressed', 'true');
+  });
+
   it('supports owner policy editing, PII selection, custom rule CRUD, Quick Test, activity filters, and API error messages', async () => {
     const reqMock = vi.mocked(requestJson);
     let currentPolicy = makePolicy(false);

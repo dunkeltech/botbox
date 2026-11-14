@@ -540,6 +540,23 @@ describe('Phase 2 Bot Workspace, Terminal, Files, Control Lock & Fleet controls'
     });
     fireEvent.click(
       screen.getByRole('button', {
+        name: enMessages.workspace.computer.tabs.terminal,
+      }),
+    );
+    expect(screen.getByText('hello')).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText(enMessages.workspace.files.editorContentLabel),
+    ).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: enMessages.workspace.computer.tabs.files,
+      }),
+    );
+    expect(
+      screen.getByLabelText(enMessages.workspace.files.editorContentLabel),
+    ).toHaveValue('updated from workspace editor');
+    fireEvent.click(
+      screen.getByRole('button', {
         name: enMessages.workspace.files.saveFile,
       }),
     );
