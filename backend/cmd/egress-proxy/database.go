@@ -76,6 +76,7 @@ func databaseHandlerWithLifecycle(
 		Logger:             logger,
 		Notify:             signal,
 		PolicyFreshnessMax: time.Second,
+		PublicOnly:         true,
 		OnPolicyAdopted: func(ackCtx context.Context, revision int64) error {
 			return q.AcknowledgeEgressPolicyRevision(ackCtx, db.AcknowledgeEgressPolicyRevisionParams{
 				WorkspaceID: wsPG,

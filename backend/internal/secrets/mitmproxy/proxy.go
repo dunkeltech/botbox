@@ -98,11 +98,14 @@ type Config struct {
 	UpstreamRootCAs    *x509.CertPool
 	DialContext        func(ctx context.Context, network, addr string) (net.Conn, error)
 	PublicResolver     netguard.Resolver
-	DialTimeout        time.Duration
-	Logger             *slog.Logger
-	OnAudit            func(AuditEvent)
-	AllowCustomPorts   bool
-	Now                func() time.Time
+	// PublicOnly prevents an internet policy from authorizing
+	// private infrastructure through either passthrough or TLS interception.
+	PublicOnly       bool
+	DialTimeout      time.Duration
+	Logger           *slog.Logger
+	OnAudit          func(AuditEvent)
+	AllowCustomPorts bool
+	Now              func() time.Time
 }
 
 type pendingDial struct {
@@ -577,6 +580,11 @@ func (h *Handler) handlePassthrough(w http.ResponseWriter, r *http.Request, host
 		return
 	}
 	if err != nil {
+		if errors.Is(err, netguard.ErrUnsafeDestination) {
+			h.emitAudit(AuditEvent{Host: host, Port: port, Method: r.Method, Action: ActionBlockedHost, Status: http.StatusForbidden})
+			http.Error(w, "destination address forbidden", http.StatusForbidden)
+			return
+		}
 		h.logger.Warn("passthrough dial failed", slog.String("host", host), slog.String("error", err.Error()))
 		http.Error(w, "upstream unavailable", http.StatusBadGateway)
 		return
@@ -774,6 +782,11 @@ func (h *Handler) forwardMITMRequest(
 	start := time.Now()
 	resp, err := transport.RoundTrip(outReq)
 	if err != nil {
+		if errors.Is(err, netguard.ErrUnsafeDestination) {
+			h.emitAudit(AuditEvent{Host: host, Port: port, Method: r.Method, Path: cleanPath, Action: ActionBlockedHost, Status: http.StatusForbidden})
+			http.Error(w, "destination address forbidden", http.StatusForbidden)
+			return
+		}
 		latencyMs := time.Since(start).Milliseconds()
 		msg := "upstream request failed: " + err.Error()
 		errLog := err.Error()
@@ -1244,7 +1257,7 @@ func (d dummyAddr) Network() string { return "tcp" }
 func (d dummyAddr) String() string  { return string(d) }
 
 func (h *Handler) dialUpstream(ctx context.Context, network, host, port string, public bool) (net.Conn, error) {
-	if public {
+	if h.cfg.PublicOnly || public {
 		return netguard.DialPublic(ctx, h.cfg.PublicResolver, h.cfg.DialContext, network, net.JoinHostPort(host, port))
 	}
 	return h.cfg.DialContext(ctx, network, net.JoinHostPort(host, port))

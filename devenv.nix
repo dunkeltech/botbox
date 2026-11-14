@@ -1,5 +1,26 @@
 { pkgs, lib, config, inputs, ... }:
 
+let
+  devBrokerToken = ''
+    broker_token="$(
+      set -eu
+      broker_state="$DEVENV_STATE/auth-broker"
+      umask 077
+      mkdir -p "$broker_state"
+      broker_token_file="$broker_state/token"
+      if [ ! -s "$broker_token_file" ]; then
+        broker_tmp="$(mktemp "$broker_state/token.XXXXXXXX")"
+        ${pkgs.openssl}/bin/openssl rand -hex 32 > "$broker_tmp"
+        # Both processes can start together. Publish only a complete token.
+        if ! ln "$broker_tmp" "$broker_token_file" 2>/dev/null; then
+          test -s "$broker_token_file"
+        fi
+        rm -f "$broker_tmp"
+      fi
+      cat "$broker_token_file"
+    )"
+  '';
+in
 {
   packages = [
     pkgs.git
@@ -47,11 +68,9 @@
     API_LISTEN_ADDR = "127.0.0.1:8080";
     FRONTEND_URL = "http://127.0.0.1:3000";
     PUBLIC_BASE_URL = "http://127.0.0.1:8000";
-    AUTH_BROKER_ADDR = "0.0.0.0:8085";
-    AUTH_BROKER_TOKEN = "botbox-local-dev-auth-broker-token-01";
+    AUTH_BROKER_ADDR = "127.0.0.1:8085";
     BOTBOX_AUTH_BROKER_URL = "http://127.0.0.1:8085";
     BOTBOX_AUTH_BROKER_PROXY_URL = "http://host.docker.internal:8085";
-    BOTBOX_AUTH_BROKER_TOKEN = "botbox-local-dev-auth-broker-token-01";
   };
 
   services.nats = {
@@ -75,8 +94,20 @@
   };
 
   processes = {
-    api.exec = "cd backend && exec air -c .air.toml";
-    auth-broker.exec = "cd backend && exec go run ./cmd/auth-broker";
+    api.exec = ''
+      set -eu
+      ${devBrokerToken}
+      export BOTBOX_AUTH_BROKER_TOKEN="$broker_token"
+      cd backend
+      exec air -c .air.toml
+    '';
+    auth-broker.exec = ''
+      set -eu
+      ${devBrokerToken}
+      export AUTH_BROKER_TOKEN="$broker_token"
+      cd backend
+      exec go run ./cmd/auth-broker
+    '';
     frontend.exec = "exec npm --prefix frontend run dev";
     caddy.exec = "exec caddy run --config Caddyfile --adapter caddyfile";
   };

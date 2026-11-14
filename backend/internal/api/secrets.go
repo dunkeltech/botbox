@@ -1133,6 +1133,7 @@ type BotEgressProxyDeps struct {
 	UpstreamRootCAs    *x509.CertPool
 	DialContext        func(ctx context.Context, network, addr string) (net.Conn, error)
 	PublicResolver     netguard.Resolver
+	PublicOnly         bool
 	Logger             *slog.Logger
 	Now                func() time.Time
 	PolicyFreshnessMax time.Duration
@@ -1175,6 +1176,7 @@ func NewBotEgressProxyHandler(deps BotEgressProxyDeps) (*mitmproxy.Handler, erro
 		UpstreamRootCAs:    deps.UpstreamRootCAs,
 		DialContext:        deps.DialContext,
 		PublicResolver:     deps.PublicResolver,
+		PublicOnly:         deps.PublicOnly,
 		Logger:             logger,
 		Now:                nowFn,
 		PolicyFreshnessMax: deps.PolicyFreshnessMax,

@@ -257,6 +257,24 @@ func TestPhase6GroupConversationAPI(t *testing.T) {
 	if group.Unread != 0 {
 		t.Fatalf("settings save cleared the read cursor, unread=%d", group.Unread)
 	}
+
+	removed := h.request(http.MethodDelete, base+"/members/"+member.User.Id.String(), nil, owner.AccessToken, nil, true)
+	if removed.status != http.StatusNoContent {
+		t.Fatalf("remove group author=%d %s", removed.status, removed.body)
+	}
+	if r := h.request(http.MethodGet, messages, nil, member.AccessToken, nil, false); r.status != http.StatusNotFound {
+		t.Fatalf("removed group author can read history: %d", r.status)
+	}
+	history = h.request(http.MethodGet, messages, nil, owner.AccessToken, nil, false)
+	history.decode(t, &chat)
+	if len(chat.Messages) != 2 || chat.Messages[1].SenderUserId == nil || *chat.Messages[1].SenderUserId != member.User.Id {
+		t.Fatalf("historical authorship lost: %s", history.body)
+	}
+	ownerView = h.request(http.MethodGet, path, nil, owner.AccessToken, nil, false)
+	ownerView.decode(t, &group)
+	if len(group.Members) != 2 {
+		t.Fatalf("membership removal left a group grant: %s", ownerView.body)
+	}
 }
 
 func TestPhase6GroupMessageRateLimit(t *testing.T) {

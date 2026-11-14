@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -35,6 +36,70 @@ func TestNewSignerRejectsShortSecret(t *testing.T) {
 
 	if _, err := vncrelay.NewSigner([]byte("too-short")); err == nil {
 		t.Fatal("expected error for short secret, got nil")
+	}
+}
+
+func TestRelayRechecksDesktopAccess(t *testing.T) {
+	now := time.Date(2026, 11, 19, 10, 0, 0, 0, time.UTC)
+	signer := testSigner(t)
+	ticket, err := signer.Sign(vncrelay.TicketClaims{
+		WorkspaceID: "ws", BotID: "bot", UserID: "user", ExpiresAt: now.Add(time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.CloseNow() }()
+		if err := conn.Write(r.Context(), websocket.MessageBinary, []byte("RFB 003.008\n")); err != nil {
+			return
+		}
+		_, _, _ = conn.Read(r.Context())
+	}))
+	defer upstream.Close()
+
+	var allowed atomic.Bool
+	allowed.Store(true)
+	relay := httptest.NewServer(vncrelay.NewRelayHandler(signer, func(context.Context, string, string) (string, error) {
+		return "ws" + strings.TrimPrefix(upstream.URL, "http"), nil
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)), &vncrelay.RelayOptions{
+		Now: func() time.Time { return now },
+		Authorize: func(_ context.Context, claims vncrelay.TicketClaims) error {
+			if !allowed.Load() || claims.UserID != "user" {
+				return vncrelay.ErrAccessRevoked
+			}
+			return nil
+		},
+	}))
+	defer relay.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	url := "ws" + strings.TrimPrefix(relay.URL, "http") + "?workspace_id=ws&bot_id=bot&ticket=" + ticket
+	conn, resp, err := websocket.Dial(ctx, url, nil)
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.CloseNow() }()
+	if _, _, err := conn.Read(ctx); err != nil {
+		t.Fatal(err)
+	}
+	allowed.Store(false)
+	if _, _, err := conn.Read(ctx); err == nil || ctx.Err() != nil {
+		t.Fatalf("revoked desktop socket must close promptly: %v", err)
+	}
+	_, resp, err = websocket.Dial(ctx, url, nil)
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	if err == nil || resp == nil || resp.StatusCode != http.StatusNotFound {
+		t.Fatal("desktop access was admitted after revocation")
 	}
 }
 
@@ -412,6 +477,16 @@ func TestRelayBidirectionalAndViewOnlyFiltering(t *testing.T) {
 				return
 			}
 
+			for i, response := range [][]byte{{1, 1}, {0, 0, 0, 0}, {0, 1, 0, 1}} {
+				_, data, err := conn.Read(r.Context())
+				if err != nil || (i == 0 && !bytes.Equal(data, serverBanner)) || (i > 0 && !bytes.Equal(data, []byte{1})) {
+					return
+				}
+				if err := conn.Write(r.Context(), websocket.MessageBinary, response); err != nil {
+					return
+				}
+			}
+
 			for {
 				_, data, err := conn.Read(r.Context())
 				if err != nil {
@@ -474,12 +549,24 @@ func TestRelayBidirectionalAndViewOnlyFiltering(t *testing.T) {
 		if !bytes.Equal(banner, serverBanner) {
 			t.Fatalf("banner = %q, want %q", banner, serverBanner)
 		}
+		for _, frame := range [][]byte{serverBanner, {1}, {1}} {
+			if err := conn.Write(ctx, websocket.MessageBinary, frame); err != nil {
+				t.Fatalf("write handshake: %v", err)
+			}
+			if _, _, err := conn.Read(ctx); err != nil {
+				t.Fatalf("read handshake: %v", err)
+			}
+		}
 
 		keyEvent := []byte{4, 1, 0, 0, 0, 0, 0, 65}
 		pointerEvent := []byte{5, 1, 0, 100, 0, 200}
 		fbUpdateReq := []byte{3, 1, 0, 0, 0, 0, 5, 0, 3, 32}
 
-		for _, frame := range [][]byte{keyEvent, pointerEvent, fbUpdateReq} {
+		frames := [][]byte{keyEvent, pointerEvent, fbUpdateReq}
+		if !canControl {
+			frames = [][]byte{keyEvent, pointerEvent, fbUpdateReq[:4], fbUpdateReq[4:]}
+		}
+		for _, frame := range frames {
 			if err := conn.Write(ctx, websocket.MessageBinary, frame); err != nil {
 				t.Fatalf("write frame: %v", err)
 			}

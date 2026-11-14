@@ -231,6 +231,7 @@ type ConversationMember struct {
 	LastReadPosition int64       `json:"last_read_position"`
 	RoleText         string      `json:"role_text"`
 	Notify           string      `json:"notify"`
+	WorkspaceUserID  pgtype.UUID `json:"workspace_user_id"`
 }
 
 type DesktopAction struct {
@@ -473,6 +474,11 @@ type RefreshToken struct {
 	RevokedAt  pgtype.Timestamptz `json:"revoked_at"`
 	ReplacedBy pgtype.UUID        `json:"replaced_by"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+type RefreshTokenFamily struct {
+	ID        pgtype.UUID        `json:"id"`
+	RevokedAt pgtype.Timestamptz `json:"revoked_at"`
 }
 
 type SecretLease struct {

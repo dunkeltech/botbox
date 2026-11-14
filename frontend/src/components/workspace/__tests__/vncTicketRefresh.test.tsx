@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const viewport = vi.hoisted(() => ({
   props: null as {
     ticket: string;
-    onConnectFailed?: () => void;
+    onConnectFailed?: (wasConnected?: boolean) => void;
     onConnectionChange?: (connected: boolean) => void;
   } | null,
 }));
@@ -21,7 +21,7 @@ const viewport = vi.hoisted(() => ({
 vi.mock('@/components/workspace/VncViewport', () => ({
   VncViewport: (props: {
     ticket: string;
-    onConnectFailed?: () => void;
+    onConnectFailed?: (wasConnected?: boolean) => void;
     onConnectionChange?: (connected: boolean) => void;
   }) => {
     viewport.props = props;
@@ -316,6 +316,22 @@ afterEach(() => {
 });
 
 describe('VNC ticket refresh while the desktop boots', () => {
+  it('requests a fresh authorization immediately after an established stream closes', async () => {
+    const { ticketPosts } = await openRunningDesktop();
+    act(() => viewport.props?.onConnectionChange?.(true));
+    act(() => {
+      viewport.props?.onConnectionChange?.(false);
+      viewport.props?.onConnectFailed?.(true);
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId('vnc-stage')).toHaveAttribute(
+        'data-ticket',
+        'ticket-2',
+      ),
+    );
+    expect(ticketPosts()).toHaveLength(2);
+  });
   it('mints one new ticket after the slow delay and does not show the close as an error', async () => {
     const { ticketPosts } = await openRunningDesktop();
     expect(ticketPosts()).toHaveLength(1);

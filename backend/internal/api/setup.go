@@ -251,8 +251,13 @@ func (s *server) issueRefreshTokenTx(ctx context.Context, txq *db.Queries, userI
 	if err != nil {
 		return "", db.RefreshToken{}, err
 	}
-	fam := uuid.New()
-	if familyID != nil {
+	var fam uuid.UUID
+	if familyID == nil {
+		fam = uuid.New()
+		if err := txq.CreateRefreshTokenFamily(ctx, toPGUUID(fam)); err != nil {
+			return "", db.RefreshToken{}, err
+		}
+	} else {
 		fam = *familyID
 	}
 	exp := s.now().UTC().Add(auth.DefaultRefreshTokenTTL)

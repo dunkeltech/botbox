@@ -18,6 +18,17 @@ JOIN bots b ON b.id = e.bot_id
 LEFT JOIN users u ON u.id = e.control_holder_user_id
 WHERE b.workspace_id = $1 AND b.id = $2;
 
+-- name: CanAccessDesktop :one
+SELECT EXISTS (
+    SELECT 1 FROM bots b
+    JOIN workspace_members wm ON wm.workspace_id = b.workspace_id
+    JOIN environments e ON e.bot_id = b.id
+    WHERE b.workspace_id = sqlc.arg(workspace_id) AND b.id = sqlc.arg(bot_id)
+      AND wm.user_id = sqlc.arg(user_id) AND e.status = 'running'
+      AND (NOT sqlc.arg(can_control)::boolean
+           OR (wm.role <> 'viewer' AND e.control_holder_user_id = wm.user_id))
+) AS allowed;
+
 -- name: ListEnvironmentsByWorkspace :many
 SELECT e.*
 FROM environments e

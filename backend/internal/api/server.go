@@ -107,6 +107,7 @@ func NewHandlerWithConfig(cfg Config) http.Handler {
 		relayOpts := &vncrelay.RelayOptions{
 			Now:            srv.now,
 			OriginPatterns: vncOriginPatterns(cfg.PublicBaseURL),
+			Authorize:      srv.authorizeVNC,
 		}
 		if _, ok := cfg.Compute.(compute.VNCDialer); ok {
 			// The browser reaches this process, not the container bridge.

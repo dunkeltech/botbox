@@ -131,6 +131,11 @@ func run(logger *slog.Logger) error {
 		if closeCompute != nil {
 			defer closeCompute()
 		}
+		if dockerDriver, ok := computeDrv.(*docker.Driver); ok {
+			if err := dockerDriver.UpgradeProxyIngress(ctx); err != nil {
+				return fmt.Errorf("upgrade bot proxy ingress: %w", err)
+			}
+		}
 		cfg.AuthBroker = authBroker
 		cfg.Compute = computeDrv
 		if natsURL := strings.TrimSpace(os.Getenv("NATS_URL")); natsURL != "" {

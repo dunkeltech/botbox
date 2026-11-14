@@ -15,15 +15,16 @@ import (
 )
 
 const (
-	rfbMsgKeyEvent      byte = 4
-	rfbMsgPointerEvent  byte = 5
-	rfbMsgClientCutText byte = 6
 	// websockify turns each TCP read into one WebSocket message. The library
 	// default is 32 KiB, and the first 1280×800 framebuffer is already larger,
 	// so the viewer socket closes and the UI stays on "Connecting…".
 	// A raw frame is 4 MiB; the cap leaves room for one update.
-	maxVNCMessage = 8 << 20
+	maxVNCMessage       = 8 << 20
+	accessCheckInterval = 500 * time.Millisecond
 )
+
+// ErrAccessRevoked indicates that the ticket's holder lost workspace or desktop access.
+var ErrAccessRevoked = errors.New("desktop access revoked")
 
 // UpstreamResolver returns the upstream websockify ws:// URL for a workspace bot.
 type UpstreamResolver func(ctx context.Context, workspaceID, botID string) (string, error)
@@ -40,6 +41,9 @@ type RelayOptions struct {
 	// process cannot route the sandbox bridge address. The relay still
 	// completes the WebSocket handshake on that connection.
 	DialUpstream func(ctx context.Context, workspaceID, botID string) (net.Conn, error)
+	// Authorize checks the current workspace membership and, for controllers,
+	// the current desktop holder. Errors terminate the connection.
+	Authorize func(ctx context.Context, claims TicketClaims) error
 }
 
 type jsonErrorEnvelope struct {
@@ -97,12 +101,30 @@ func NewRelayHandler(
 			}
 			return
 		}
+		ctx, cancel := context.WithTimeout(r.Context(), claims.ExpiresAt.Sub(nowFn()))
+		defer cancel()
+		var authorize func(context.Context) error
+		if opts != nil && opts.Authorize != nil {
+			authorize = func(checkCtx context.Context) error {
+				checkCtx, stop := context.WithTimeout(checkCtx, accessCheckInterval)
+				defer stop()
+				return opts.Authorize(checkCtx, *claims)
+			}
+			if err := authorize(ctx); err != nil {
+				if errors.Is(err, ErrAccessRevoked) {
+					writeRelayError(w, logger, http.StatusNotFound, "not_found", "bot not found")
+				} else {
+					writeRelayError(w, logger, http.StatusServiceUnavailable, "dependency_unavailable", "desktop authorization unavailable")
+				}
+				return
+			}
+		}
 
 		if resolveUpstream == nil {
 			writeRelayError(w, logger, http.StatusBadGateway, "upstream_unavailable", "VNC upstream resolver unavailable")
 			return
 		}
-		upstreamURL, err := resolveUpstream(r.Context(), workspaceID, botID)
+		upstreamURL, err := resolveUpstream(ctx, workspaceID, botID)
 		if err != nil || strings.TrimSpace(upstreamURL) == "" {
 			logger.Warn("failed to resolve VNC upstream",
 				slog.String("workspace_id", workspaceID),
@@ -119,7 +141,7 @@ func NewRelayHandler(
 		var upstreamConn *websocket.Conn
 		var resp *http.Response
 		if opts != nil && opts.DialUpstream != nil {
-			raw, dialErr := opts.DialUpstream(r.Context(), workspaceID, botID)
+			raw, dialErr := opts.DialUpstream(ctx, workspaceID, botID)
 			if dialErr != nil {
 				logger.Warn("failed to open VNC tunnel",
 					slog.String("workspace_id", workspaceID),
@@ -129,9 +151,9 @@ func NewRelayHandler(
 				writeRelayError(w, logger, http.StatusBadGateway, "upstream_unavailable", "sandbox desktop unreachable")
 				return
 			}
-			upstreamConn, resp, err = dialTunneled(r.Context(), raw)
+			upstreamConn, resp, err = dialTunneled(ctx, raw)
 		} else {
-			upstreamConn, resp, err = websocket.Dial(r.Context(), upstreamURL, &websocket.DialOptions{
+			upstreamConn, resp, err = websocket.Dial(ctx, upstreamURL, &websocket.DialOptions{
 				Subprotocols: []string{"binary"},
 			})
 		}
@@ -171,7 +193,7 @@ func NewRelayHandler(
 
 		upstreamConn.SetReadLimit(maxVNCMessage)
 		clientConn.SetReadLimit(maxVNCMessage)
-		pump(r.Context(), clientConn, upstreamConn, claims.CanControl, logger)
+		pump(ctx, clientConn, upstreamConn, claims.CanControl, authorize, logger)
 	}
 }
 
@@ -204,6 +226,7 @@ func pump(
 	clientConn *websocket.Conn,
 	upstreamConn *websocket.Conn,
 	canControl bool,
+	authorize func(context.Context) error,
 	logger *slog.Logger,
 ) {
 	ctx, cancel := context.WithCancel(ctx)
@@ -228,15 +251,27 @@ func pump(
 
 	// Client -> upstream (server-side input enforcement when canControl is false)
 	go func() {
+		if !canControl {
+			// RFB is a byte stream. NetConn joins the WebSocket payloads before
+			// the viewer allowlist inspects and forwards complete messages.
+			stream := websocket.NetConn(ctx, clientConn, websocket.MessageBinary)
+			clientConn.SetReadLimit(maxVNCMessage)
+			errCh <- forwardViewerMessages(stream, func(data []byte) error {
+				return upstreamConn.Write(ctx, websocket.MessageBinary, data)
+			})
+			return
+		}
 		for {
 			msgType, data, err := clientConn.Read(ctx)
 			if err != nil {
 				errCh <- err
 				return
 			}
-			if !canControl && isBlockedViewerInput(data) {
-				logger.Debug("dropped VNC viewer input frame because control lock is held elsewhere")
-				continue
+			if authorize != nil {
+				if err := authorize(ctx); err != nil {
+					errCh <- err
+					return
+				}
 			}
 			if err := upstreamConn.Write(ctx, msgType, data); err != nil {
 				errCh <- err
@@ -245,7 +280,7 @@ func pump(
 		}
 	}()
 
-	if err := <-errCh; err != nil {
+	if err := awaitRelayEnd(ctx, errCh, authorize); err != nil {
 		logger.Debug("vnc relay ended", slog.String("reason", err.Error()))
 	}
 	cancel()
@@ -253,22 +288,24 @@ func pump(
 	_ = upstreamConn.Close(websocket.StatusNormalClosure, "relay closed")
 }
 
-// isBlockedViewerInput drops RFB interactive messages (KeyEvent=4, PointerEvent=5,
-// ClientCutText=6) sent by a view-only client while keeping handshake and screen-update frames.
-func isBlockedViewerInput(frame []byte) bool {
-	if len(frame) < 6 {
-		return false
+func awaitRelayEnd(ctx context.Context, errCh <-chan error, authorize func(context.Context) error) error {
+	var recheck <-chan time.Time
+	if authorize != nil {
+		ticker := time.NewTicker(accessCheckInterval)
+		defer ticker.Stop()
+		recheck = ticker.C
 	}
-	// RFB protocol version strings start with ASCII "RFB ", never a raw 4/5/6 opcode.
-	switch frame[0] {
-	case rfbMsgKeyEvent:
-		return len(frame) >= 8
-	case rfbMsgPointerEvent:
-		return len(frame) >= 6
-	case rfbMsgClientCutText:
-		return len(frame) >= 8
-	default:
-		return false
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case err := <-errCh:
+			return err
+		case <-recheck:
+			if err := authorize(ctx); err != nil {
+				return err
+			}
+		}
 	}
 }
 

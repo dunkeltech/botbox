@@ -881,6 +881,28 @@ func (s *server) persistStoppedEnvironment(
 	return updated, nil
 }
 
+func (s *server) authorizeVNC(ctx context.Context, claims vncrelay.TicketClaims) error {
+	if s.queries == nil {
+		return errors.New("desktop authorization database unavailable")
+	}
+	wsID, wsErr := uuid.Parse(claims.WorkspaceID)
+	botID, botErr := uuid.Parse(claims.BotID)
+	userID, userErr := uuid.Parse(claims.UserID)
+	if wsErr != nil || botErr != nil || userErr != nil {
+		return vncrelay.ErrAccessRevoked
+	}
+	allowed, err := s.queries.CanAccessDesktop(ctx, db.CanAccessDesktopParams{
+		WorkspaceID: toPGUUID(wsID), BotID: toPGUUID(botID), UserID: toPGUUID(userID), CanControl: claims.CanControl,
+	})
+	if err != nil {
+		return fmt.Errorf("check desktop authorization: %w", err)
+	}
+	if !allowed {
+		return vncrelay.ErrAccessRevoked
+	}
+	return nil
+}
+
 func (s *server) resolveVNCUpstream(ctx context.Context, workspaceIDStr, botIDStr string) (string, error) {
 	row, err := s.runningEnvironment(ctx, workspaceIDStr, botIDStr)
 	if err != nil {

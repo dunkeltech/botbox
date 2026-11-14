@@ -108,7 +108,7 @@ type AuthProvider interface {
 - **Local provider (first):**
   - **First-run setup wizard:** when the database has zero users, the server generates a cryptographically random single-use setup secret on startup (or reads `BOTBOX_SETUP_SECRET` when explicitly configured), stores only its SHA-256 digest, and prints the secret once to server stdout. The browser redirects to `/setup` where an operator enters that secret (constant-time comparison, rate-limited per IP) to create the initial `owner` user and first workspace (`POST /api/setup/complete`). Once complete, the setup digest is cleared and `/api/setup/*` permanently returns `404`.
   - Passwords are hashed with Argon2id, and the hash is upgraded on login when the parameters change.
-  - JWT access token (EdDSA, 15 min) plus an opaque refresh token. The refresh token is rotated on every use, stored hashed, and **reuse revokes the whole token family**.
+  - JWT access token (EdDSA, 15 min) plus an opaque refresh token. Refresh tokens are stored hashed and rotated on use. Rotation, reuse detection and logout serialize on the session family. Reuse or logout revokes the whole family. Accepting an invitation as an existing user preserves the submitted access token and its expiry.
   - Cookies are `HttpOnly`, `Secure` and `SameSite=Lax`. Mutating requests are protected against CSRF.
   - Login and refresh are rate-limited, and failed logins go to the audit log.
 - **Later:** OpenID Connect / OAuth2, LDAP / Active Directory, SAML 2.0.
@@ -124,6 +124,7 @@ type AuthProvider interface {
 
 - **Invitations:** a link with a token and an expiry, sent by e-mail through SMTP if configured. Accepting adds the user with the invited role.
 - **Tenant isolation:** every query is scoped by `workspace_id`. Accessing another workspace's resources returns 404.
+- **Membership revocation:** role changes and removals serialize per workspace and recheck the actor's role while holding the lock. Removal revokes group access and preserves authorship of existing group messages. See [ADR-0037](docs/adr/0037-session-and-infrastructure-authorization.md).
 
 ### 4.2 Bot engine & LLM integration
 
@@ -291,7 +292,7 @@ Each bot gets its own isolated Debian-based container:
 - **Persistence:** a volume per bot for `/home/bot`. It survives stop, start and image upgrades.
 - **Control lock:** exactly one controller per desktop, the bot or one human.
   - "Take control" pauses the bot; "View only" releases the lock.
-  - Input from viewers is rejected server-side.
+  - The relay allows only view-related RFB messages from viewers. Each connection ends at ticket expiry. The relay rechecks workspace membership and control ownership during the session, including before forwarding controller input. The desktop requests a fresh ticket when an established stream ends.
   - The UI shows the presence of everyone watching.
 - **Network:** no direct route to the internet. The only way out is the bot's egress proxy (§4.5).
 
@@ -329,7 +330,8 @@ The **Secrets & egress** section of bot settings opens with a short overview of 
 **How the proxy works (one per bot):**
 1. All bot traffic must pass the proxy. On Docker, the sandbox is only attached to an internal network; on Kubernetes, see §4.4. The sandbox gets `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY`.
 2. **LLM base-URL mode:** the CLIs call plain-HTTP proxy endpoints (for example `/llm/anthropic/…`) with placeholder keys. The proxy forwards over TLS and swaps in the real key. No TLS interception is needed.
-3. **Forward mode:** `CONNECT` tunnels. Hosts without a secret are tunnelled without inspection, and only the allowlist is checked (CONNECT host and SNI).
+3. **Forward mode:** `CONNECT` tunnels. The proxy checks the requested host against its policy. Hosts without a secret are tunnelled without TLS interception.
+   The proxy validates DNS results and dials only public IP addresses for both passthrough and credentialed HTTPS. The bot-facing listener binds only to the bot's verified internal Docker interface and admits connections from that network.
 4. **Selective TLS interception** only for hosts with a configured secret:
    - Each bot has its own CA, with the key stored encrypted.
    - Leaf certificates are issued on the fly.

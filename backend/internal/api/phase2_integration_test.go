@@ -244,6 +244,10 @@ func TestPhase2EnvironmentLifecycleFilesTerminalControlAndRBAC(t *testing.T) {
 	if releasedEnv.ControlHolder != nil || releasedEnv.ControlNote != "logged into dashboard" {
 		t.Fatalf("after release env = %+v", releasedEnv)
 	}
+	revokedTicket := h.request(http.MethodGet, ownerTicket.WsPath+"?ticket="+ownerTicket.Ticket, nil, "", nil, false)
+	if revokedTicket.status != http.StatusNotFound {
+		t.Fatalf("desktop ticket accepted after hand-back: %d", revokedTicket.status)
+	}
 
 	// After release, member can now take control!
 	if r := h.request(http.MethodPost, baseURL+"/control/take", nil, member.AccessToken, nil, true); r.status != http.StatusOK {

@@ -399,8 +399,43 @@ func (s *server) handleListMembers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.logger, http.StatusOK, api.WorkspaceMemberListResponse{Members: out})
 }
 
+// lockMemberships serializes authorization and owner-count checks with other
+// membership changes in the same workspace.
+func (s *server) lockMemberships(w http.ResponseWriter, r *http.Request, q *db.Queries, workspaceID pgtype.UUID) bool {
+	_, err := q.GetWorkspaceForUpdate(r.Context(), workspaceID)
+	if err == nil {
+		return true
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, s.logger, http.StatusNotFound, "workspace.not_found", "workspace not found")
+		return false
+	}
+	s.logger.Error("lock workspace memberships", "err", err)
+	writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to lock workspace memberships")
+	return false
+}
+
+func (s *server) checkLockedActor(w http.ResponseWriter, r *http.Request, q *db.Queries, workspaceID pgtype.UUID, userID uuid.UUID, action workspaces.Action) (workspaces.Role, bool) {
+	member, err := q.GetWorkspaceMember(r.Context(), db.GetWorkspaceMemberParams{WorkspaceID: workspaceID, UserID: toPGUUID(userID)})
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, s.logger, http.StatusNotFound, "workspace.not_found", "workspace not found")
+		return "", false
+	}
+	if err != nil {
+		s.logger.Error("reload workspace actor", "err", err)
+		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to load workspace membership")
+		return "", false
+	}
+	role, valid := workspaces.ParseRole(member.Role)
+	if !valid || (action != "" && !workspaces.Can(role, action, false)) {
+		writeError(w, s.logger, http.StatusForbidden, "auth.forbidden", "insufficient workspace permissions")
+		return "", false
+	}
+	return role, true
+}
+
 func (s *server) handleUpdateMemberRole(w http.ResponseWriter, r *http.Request) {
-	wsRow, claims, actorRole, ok := s.loadWorkspaceMembership(w, r, workspaces.ActionManageMembers)
+	wsRow, claims, _, ok := s.loadWorkspaceMembership(w, r, workspaces.ActionManageMembers)
 	if !ok {
 		return
 	}
@@ -430,6 +465,13 @@ func (s *server) handleUpdateMemberRole(w http.ResponseWriter, r *http.Request) 
 	defer rollbackTx(r.Context(), tx)
 
 	txq := s.queries.WithTx(tx)
+	if !s.lockMemberships(w, r, txq, wsRow.ID) {
+		return
+	}
+	actorRole, ok := s.checkLockedActor(w, r, txq, wsRow.ID, claims.Subject, workspaces.ActionManageMembers)
+	if !ok {
+		return
+	}
 	target, err := txq.GetWorkspaceMember(r.Context(), db.GetWorkspaceMemberParams{
 		WorkspaceID: wsRow.ID,
 		UserID:      toPGUUID(targetUserID),
@@ -504,7 +546,7 @@ func (s *server) handleUpdateMemberRole(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *server) handleRemoveMember(w http.ResponseWriter, r *http.Request) {
-	wsRow, claims, actorRole, ok := s.loadWorkspaceMembership(w, r, "")
+	wsRow, claims, _, ok := s.loadWorkspaceMembership(w, r, "")
 	if !ok {
 		return
 	}
@@ -524,6 +566,13 @@ func (s *server) handleRemoveMember(w http.ResponseWriter, r *http.Request) {
 	defer rollbackTx(r.Context(), tx)
 
 	txq := s.queries.WithTx(tx)
+	if !s.lockMemberships(w, r, txq, wsRow.ID) {
+		return
+	}
+	actorRole, ok := s.checkLockedActor(w, r, txq, wsRow.ID, claims.Subject, "")
+	if !ok {
+		return
+	}
 	target, err := txq.GetWorkspaceMember(r.Context(), db.GetWorkspaceMemberParams{
 		WorkspaceID: wsRow.ID,
 		UserID:      toPGUUID(targetUserID),
@@ -666,6 +715,17 @@ func (s *server) handleCreateInvitation(w http.ResponseWriter, r *http.Request) 
 	defer rollbackTx(r.Context(), tx)
 
 	txq := s.queries.WithTx(tx)
+	if !s.lockMemberships(w, r, txq, wsRow.ID) {
+		return
+	}
+	actorRole, ok = s.checkLockedActor(w, r, txq, wsRow.ID, claims.Subject, workspaces.ActionManageInvitations)
+	if !ok {
+		return
+	}
+	if !workspaces.CanAssignRole(actorRole, role) {
+		writeError(w, s.logger, http.StatusForbidden, "auth.forbidden", "cannot invite a user above your role tier")
+		return
+	}
 	inv, err := txq.CreateInvitation(r.Context(), db.CreateInvitationParams{
 		WorkspaceID: wsRow.ID,
 		Email:       pgEmail,
@@ -813,6 +873,7 @@ func (s *server) handleAcceptInvitation(w http.ResponseWriter, r *http.Request) 
 	// If the caller supplied an Authorization header, validate it strictly rather than
 	// silently creating a duplicate unauthenticated signup flow.
 	var signedInClaims *auth.Claims
+	var existingAccessToken string
 	if authHeader := r.Header.Get("Authorization"); authHeader != "" {
 		tok, ok := extractBearerToken(authHeader)
 		if !ok || s.authProvider == nil {
@@ -825,6 +886,7 @@ func (s *server) handleAcceptInvitation(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		signedInClaims = claims
+		existingAccessToken = tok
 	}
 
 	var req api.AcceptInvitationRequest
@@ -926,6 +988,9 @@ func (s *server) handleAcceptInvitation(w http.ResponseWriter, r *http.Request) 
 	defer rollbackTx(r.Context(), tx)
 
 	txq := s.queries.WithTx(tx)
+	if !s.lockMemberships(w, r, txq, preview.WorkspaceID) {
+		return
+	}
 	inv, err := txq.GetInvitationByTokenHashForUpdate(r.Context(), digest)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -937,6 +1002,7 @@ func (s *server) handleAcceptInvitation(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	now = s.now().UTC()
 	if inv.AcceptedAt.Valid || !inv.ExpiresAt.Time.After(now) {
 		writeError(w, s.logger, http.StatusNotFound, "invitation.not_found", "invitation not found or expired")
 		return
@@ -1010,11 +1076,23 @@ func (s *server) handleAcceptInvitation(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	plainRefresh, _, err := s.issueRefreshTokenTx(r.Context(), txq, fromPGUUID(userRow.ID), nil)
-	if err != nil {
-		s.logger.Error("issue refresh token on accept", "err", err)
-		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to create session")
-		return
+	// Accepting an invitation with an access token must preserve that session's
+	// expiry and refresh family. Only signup authenticates a new session here.
+	accessToken := existingAccessToken
+	var plainRefresh string
+	if signedInClaims == nil {
+		plainRefresh, _, err = s.issueRefreshTokenTx(r.Context(), txq, fromPGUUID(userRow.ID), nil)
+		if err != nil {
+			s.logger.Error("issue refresh token on signup", "err", err)
+			writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to create session")
+			return
+		}
+		accessToken, err = s.issueAccessToken(userRow)
+		if err != nil {
+			s.logger.Error("issue access token on signup", "err", err)
+			writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to issue access token")
+			return
+		}
 	}
 
 	wsRows, err := txq.ListWorkspacesForUser(r.Context(), userRow.ID)
@@ -1041,13 +1119,6 @@ func (s *server) handleAcceptInvitation(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	accessToken, err := s.issueAccessToken(userRow)
-	if err != nil {
-		s.logger.Error("issue jwt after accept", "err", err)
-		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to issue access token")
-		return
-	}
-
 	wsList := toAPIWorkspaceList(wsRows)
 	var activeWS *api.WorkspaceSummary
 	for i := range wsList {
@@ -1058,7 +1129,9 @@ func (s *server) handleAcceptInvitation(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	s.setRefreshCookie(w, plainRefresh)
+	if plainRefresh != "" {
+		s.setRefreshCookie(w, plainRefresh)
+	}
 	writeJSON(w, s.logger, http.StatusOK, api.AuthSessionResponse{
 		User:            toAPIUser(userRow),
 		Workspaces:      wsList,

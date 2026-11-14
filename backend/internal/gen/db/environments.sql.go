@@ -11,6 +11,37 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const canAccessDesktop = `-- name: CanAccessDesktop :one
+SELECT EXISTS (
+    SELECT 1 FROM bots b
+    JOIN workspace_members wm ON wm.workspace_id = b.workspace_id
+    JOIN environments e ON e.bot_id = b.id
+    WHERE b.workspace_id = $1 AND b.id = $2
+      AND wm.user_id = $3 AND e.status = 'running'
+      AND (NOT $4::boolean
+           OR (wm.role <> 'viewer' AND e.control_holder_user_id = wm.user_id))
+) AS allowed
+`
+
+type CanAccessDesktopParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	BotID       pgtype.UUID `json:"bot_id"`
+	UserID      pgtype.UUID `json:"user_id"`
+	CanControl  bool        `json:"can_control"`
+}
+
+func (q *Queries) CanAccessDesktop(ctx context.Context, arg CanAccessDesktopParams) (bool, error) {
+	row := q.db.QueryRow(ctx, canAccessDesktop,
+		arg.WorkspaceID,
+		arg.BotID,
+		arg.UserID,
+		arg.CanControl,
+	)
+	var allowed bool
+	err := row.Scan(&allowed)
+	return allowed, err
+}
+
 const claimEnvironmentControl = `-- name: ClaimEnvironmentControl :one
 UPDATE environments
 SET control_holder_user_id = $2,

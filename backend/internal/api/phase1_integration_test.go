@@ -560,6 +560,10 @@ func TestAuthLoginUpgradeRefreshReuseFamilyRevocationAndLogout(t *testing.T) {
 		t.Fatalf("re-login failed: %d %s", loginAgain.status, loginAgain.body)
 	}
 	rFresh := loginAgain.cookie("botbox_refresh")
+	current := h2.request(http.MethodPost, "/api/auth/refresh", nil, "", []*http.Cookie{rFresh}, true)
+	if current.status != http.StatusOK || current.cookie("botbox_refresh") == nil {
+		t.Fatalf("refresh before logout = %d", current.status)
+	}
 	logoutResp := h2.request(http.MethodPost, "/api/auth/logout", nil, "", []*http.Cookie{rFresh}, true)
 	if logoutResp.status != http.StatusNoContent {
 		t.Fatalf("logout = %d, want 204", logoutResp.status)
@@ -568,7 +572,7 @@ func TestAuthLoginUpgradeRefreshReuseFamilyRevocationAndLogout(t *testing.T) {
 	if cleared == nil || cleared.MaxAge >= 0 {
 		t.Fatalf("expected MaxAge < 0 cookie clear on logout, got %+v", cleared)
 	}
-	afterLogout := h2.request(http.MethodPost, "/api/auth/refresh", nil, "", []*http.Cookie{rFresh}, true)
+	afterLogout := h2.request(http.MethodPost, "/api/auth/refresh", nil, "", []*http.Cookie{current.cookie("botbox_refresh")}, true)
 	if afterLogout.status != http.StatusUnauthorized {
 		t.Fatalf("refresh after logout = %d, want 401", afterLogout.status)
 	}
@@ -693,6 +697,9 @@ func TestInvitationsLifecycleAndEdgeCases(t *testing.T) {
 	}
 	var bobMulti apigen.AuthSessionResponse
 	bobBetaAccept.decode(h.t, &bobMulti)
+	if bobBetaAccept.cookie("botbox_refresh") != nil || bobMulti.AccessToken != bobSess.AccessToken {
+		t.Fatal("signed-in invitation acceptance must preserve the current session")
+	}
 	if len(bobMulti.Workspaces) != 2 {
 		t.Fatalf("expected Bob to belong to 2 workspaces, got %d", len(bobMulti.Workspaces))
 	}
@@ -725,6 +732,39 @@ func TestInvitationsLifecycleAndEdgeCases(t *testing.T) {
 	revokeResp := h.request(http.MethodDelete, "/api/workspaces/"+wsAlpha.String()+"/invitations/"+openCreated.Invitation.Id.String(), nil, freshToken, nil, true)
 	if revokeResp.status != http.StatusNoContent {
 		t.Fatalf("revoke invitation = %d %s, want 204", revokeResp.status, revokeResp.body)
+	}
+}
+
+func TestWorkspaceRetainsOwnerAcrossConcurrentMembershipUpdates(t *testing.T) {
+	h := newTestHarness(t, nil, harnessOpts{})
+	first, _ := h.completeSetup("first@example.com", "CorrectHorse123!", "First", "Workspace", "workspace")
+	ws := first.ActiveWorkspace.Id
+	second, _ := h.inviteAndAcceptNewUser(first.AccessToken, ws, "second@example.com", "owner", "Second", "CorrectHorse123!")
+	base := "/api/workspaces/" + ws.String() + "/members/"
+
+	start := make(chan struct{})
+	results := make(chan apiResponse, 2)
+	for _, owner := range []apigen.AuthSessionResponse{first, second} {
+		go func() {
+			<-start
+			results <- h.request(http.MethodPatch, base+owner.User.Id.String(), map[string]any{"role": "member"}, owner.AccessToken, nil, true)
+		}()
+	}
+	close(start)
+	var updated, rejected int
+	for range 2 {
+		r := <-results
+		switch {
+		case r.status == http.StatusOK:
+			updated++
+		case r.status == http.StatusBadRequest && r.errorCode(t) == "workspace.last_owner":
+			rejected++
+		default:
+			t.Fatalf("unexpected membership response %d %s", r.status, r.body)
+		}
+	}
+	if updated != 1 || rejected != 1 {
+		t.Fatalf("membership changes: %d updated, %d rejected", updated, rejected)
 	}
 }
 

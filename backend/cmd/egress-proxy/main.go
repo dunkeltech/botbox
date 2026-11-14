@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
 	"strings"
@@ -21,6 +22,20 @@ import (
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	addr := envOrDefault("EGRESS_PROXY_ADDR", "127.0.0.1:8081")
+	database := strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	var botNetwork netip.Prefix
+	if database != "" {
+		interfaces, err := net.InterfaceAddrs()
+		if err != nil {
+			logger.Error("inspect egress proxy interfaces failed")
+			os.Exit(1)
+		}
+		addr, botNetwork, err = botNetworkIngress(os.Getenv("EGRESS_PROXY_BOT_SUBNET"), interfaces)
+		if err != nil {
+			logger.Error("initialize egress proxy ingress", "error", err)
+			os.Exit(1)
+		}
+	}
 
 	ca, err := mitmproxy.NewBotCA("egress-proxy-standalone")
 	if err != nil {
@@ -46,6 +61,7 @@ func main() {
 		Policy:       policy,
 		AllowedHosts: allowed,
 		Logger:       logger,
+		PublicOnly:   true,
 	})
 	if err != nil {
 		logger.Error("init mitmproxy handler failed", slog.Any("error", err))
@@ -82,14 +98,14 @@ func main() {
 	})
 
 	var handler http.Handler = rootHandler
-	if database := strings.TrimSpace(os.Getenv("DATABASE_URL")); database != "" {
+	if database != "" {
 		bound, closeDB, err := openDatabaseProxy(context.Background(), database, os.Getenv("BOTBOX_SECRETS_KEK"), os.Getenv("BOTBOX_WORKSPACE_ID"), os.Getenv("BOTBOX_BOT_ID"), os.Getenv("NATS_URL"), ca, logger)
 		if err != nil {
 			logger.Error("database proxy initialization failed", "error", err)
 			os.Exit(1)
 		}
 		defer closeDB()
-		handler = bound
+		handler = restrictBotNetwork(botNetwork, bound)
 	}
 	srv := &http.Server{
 		Addr:              addr,

@@ -215,13 +215,22 @@ export function BotWorkspaceView() {
     }
   }, []);
 
-  const handleConnectFailed = useCallback(() => {
-    if (ticketRefreshTimer.current !== null) return;
-    ticketRefreshTimer.current = setTimeout(() => {
-      ticketRefreshTimer.current = null;
-      setTicketNonce((nonce) => nonce + 1);
-    }, VNC_TICKET_REFRESH_MS);
-  }, []);
+  const handleConnectFailed = useCallback(
+    (wasConnected: boolean) => {
+      if (wasConnected) {
+        // The relay may have ended an expired or revoked desktop session.
+        clearTicketRefresh();
+        setTicketNonce((nonce) => nonce + 1);
+        return;
+      }
+      if (ticketRefreshTimer.current !== null) return;
+      ticketRefreshTimer.current = setTimeout(() => {
+        ticketRefreshTimer.current = null;
+        setTicketNonce((nonce) => nonce + 1);
+      }, VNC_TICKET_REFRESH_MS);
+    },
+    [clearTicketRefresh],
+  );
 
   const [terminalEntries, setTerminalEntries] = useState<TerminalEntry[]>([]);
   const [terminalCommand, setTerminalCommand] = useState('');

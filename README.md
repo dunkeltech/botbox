@@ -54,6 +54,10 @@ Docker by default. `BOTBOX_COMPUTE_DRIVER=memory` explicitly selects the develop
 simulator, which cannot run CLI bots and is never exposed to model tools. Unknown
 driver names fail startup. Build both images with `make sandbox-image proxy-image`.
 
+When upgrading proxy ingress, build the new egress image before starting the
+updated API. Startup replaces legacy sidecars with bot-network-bound sidecars.
+Restart already-running sandboxes so their clients load the new sidecar CA.
+
 API-mode bots resolve write-only secrets named `llm-openrouter`, `llm-openai` or
 `llm-anthropic`, first in bot scope and then in workspace scope. The secret's domain
 must match the provider host; its path restriction is preserved. Configure model
@@ -163,6 +167,11 @@ Chromium (`AUTH_BROKER_CDP_URL` unset). These are service settings, configured o
 individual GitLab domains are read live from the database. The previous
 `AUTH_BROKER_GITLAB_TARGETS` setting is no longer used. Keep the broker database and
 control plane isolated from bot sandboxes.
+
+The development process listens on loopback and generates a per-project broker
+token under `DEVENV_STATE` for the API and broker. If the Docker engine cannot
+reach host loopback, configure a private broker interface reachable only by
+the API and the trusted egress sidecars.
 
 For every new connection, a broker-local proxy checks the domain's DNS answers and
 dials only a validated public IP, while Chromium verifies the HTTPS certificate.

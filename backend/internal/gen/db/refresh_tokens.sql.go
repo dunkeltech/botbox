@@ -45,6 +45,15 @@ func (q *Queries) CreateRefreshToken(ctx context.Context, arg CreateRefreshToken
 	return i, err
 }
 
+const createRefreshTokenFamily = `-- name: CreateRefreshTokenFamily :exec
+INSERT INTO refresh_token_families (id) VALUES ($1)
+`
+
+func (q *Queries) CreateRefreshTokenFamily(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, createRefreshTokenFamily, id)
+	return err
+}
+
 const getRefreshTokenByHash = `-- name: GetRefreshTokenByHash :one
 SELECT id, user_id, family_id, token_hash, expires_at, revoked_at, replaced_by, created_at FROM refresh_tokens
 WHERE token_hash = $1
@@ -66,25 +75,17 @@ func (q *Queries) GetRefreshTokenByHash(ctx context.Context, tokenHash []byte) (
 	return i, err
 }
 
-const getRefreshTokenByHashForUpdate = `-- name: GetRefreshTokenByHashForUpdate :one
-SELECT id, user_id, family_id, token_hash, expires_at, revoked_at, replaced_by, created_at FROM refresh_tokens
-WHERE token_hash = $1
-FOR UPDATE
+const lockRefreshTokenFamilyByHash = `-- name: LockRefreshTokenFamilyByHash :one
+SELECT f.id, f.revoked_at FROM refresh_token_families f
+JOIN refresh_tokens t ON t.family_id = f.id
+WHERE t.token_hash = $1
+FOR UPDATE OF f
 `
 
-func (q *Queries) GetRefreshTokenByHashForUpdate(ctx context.Context, tokenHash []byte) (RefreshToken, error) {
-	row := q.db.QueryRow(ctx, getRefreshTokenByHashForUpdate, tokenHash)
-	var i RefreshToken
-	err := row.Scan(
-		&i.ID,
-		&i.UserID,
-		&i.FamilyID,
-		&i.TokenHash,
-		&i.ExpiresAt,
-		&i.RevokedAt,
-		&i.ReplacedBy,
-		&i.CreatedAt,
-	)
+func (q *Queries) LockRefreshTokenFamilyByHash(ctx context.Context, tokenHash []byte) (RefreshTokenFamily, error) {
+	row := q.db.QueryRow(ctx, lockRefreshTokenFamilyByHash, tokenHash)
+	var i RefreshTokenFamily
+	err := row.Scan(&i.ID, &i.RevokedAt)
 	return i, err
 }
 
@@ -123,17 +124,17 @@ func (q *Queries) RevokeRefreshTokenByHash(ctx context.Context, arg RevokeRefres
 }
 
 const revokeRefreshTokenFamily = `-- name: RevokeRefreshTokenFamily :exec
-UPDATE refresh_tokens
+UPDATE refresh_token_families
 SET revoked_at = COALESCE(revoked_at, $2)
-WHERE family_id = $1
+WHERE id = $1
 `
 
 type RevokeRefreshTokenFamilyParams struct {
-	FamilyID  pgtype.UUID        `json:"family_id"`
+	ID        pgtype.UUID        `json:"id"`
 	RevokedAt pgtype.Timestamptz `json:"revoked_at"`
 }
 
 func (q *Queries) RevokeRefreshTokenFamily(ctx context.Context, arg RevokeRefreshTokenFamilyParams) error {
-	_, err := q.db.Exec(ctx, revokeRefreshTokenFamily, arg.FamilyID, arg.RevokedAt)
+	_, err := q.db.Exec(ctx, revokeRefreshTokenFamily, arg.ID, arg.RevokedAt)
 	return err
 }

@@ -2,9 +2,12 @@ package docker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
+	"net/netip"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/dunkeltech/botbox/backend/internal/compute"
@@ -21,7 +24,11 @@ type ProxyOptions struct {
 	AuthBrokerToken string
 }
 
-const proxyMarker = "metered-v1"
+const (
+	proxyMarker         = "metered-v1"
+	proxyIngressLabel   = "botbox.proxy_ingress"
+	proxyIngressVersion = "bot-network-v1"
+)
 
 func (d *Driver) ensureProxy(ctx context.Context, workspace, bot, network string) error {
 	if d.proxy == nil {
@@ -38,15 +45,31 @@ func (d *Driver) ensureProxy(ctx context.Context, workspace, bot, network string
 		if existing.Config.Labels["botbox.workspace_id"] != workspace || existing.Config.Labels["botbox.bot_id"] != bot || existing.Config.Labels["botbox.egress_proxy"] != proxyMarker {
 			return errors.New("proxy identity mismatch")
 		}
-		if existing.State.Running {
-			return nil
+		if existing.Config.Labels[proxyIngressLabel] == proxyIngressVersion {
+			if existing.State.Running {
+				return nil
+			}
+			return d.startProxy(ctx, existing.ID)
 		}
-		return d.startProxy(ctx, existing.ID)
+		// Legacy proxies listen on the shared egress bridge. Replace the
+		// verified sidecar before restoring access under the new boundary.
+		status, removeErr := d.doJSON(ctx, http.MethodDelete, "/containers/"+url.PathEscape(existing.ID)+"?force=true", nil, nil)
+		if removeErr != nil && status != http.StatusNotFound {
+			return errors.New("legacy proxy removal failed")
+		}
 	}
-	if !errors.Is(err, compute.ErrEnvironmentNotFound) {
+	if err != nil && !errors.Is(err, compute.ErrEnvironmentNotFound) {
 		return errors.New("proxy inspection failed")
 	}
-	env := []string{"EGRESS_PROXY_ADDR=0.0.0.0:8081", "DATABASE_URL=" + d.proxy.DatabaseURL, "BOTBOX_SECRETS_KEK=" + d.proxy.KeySpec, "BOTBOX_WORKSPACE_ID=" + workspace, "BOTBOX_BOT_ID=" + bot}
+	subnet, err := d.botProxySubnet(ctx, network, workspace, bot)
+	if err != nil {
+		return err
+	}
+	imageID, err := d.proxyIngressImage(ctx)
+	if err != nil {
+		return err
+	}
+	env := []string{"EGRESS_PROXY_BOT_SUBNET=" + subnet, "DATABASE_URL=" + d.proxy.DatabaseURL, "BOTBOX_SECRETS_KEK=" + d.proxy.KeySpec, "BOTBOX_WORKSPACE_ID=" + workspace, "BOTBOX_BOT_ID=" + bot}
 	if strings.TrimSpace(d.proxy.NATSURL) != "" {
 		env = append(env, "NATS_URL="+strings.TrimSpace(d.proxy.NATSURL))
 	}
@@ -57,10 +80,10 @@ func (d *Driver) ensureProxy(ctx context.Context, workspace, bot, network string
 		)
 	}
 	payload := map[string]any{
-		"Image":            d.proxy.Image,
+		"Image":            imageID,
 		"User":             "65532:65532",
 		"Env":              env,
-		"Labels":           map[string]string{"botbox.proxy": "true", "botbox.workspace_id": workspace, "botbox.bot_id": bot, "botbox.egress_proxy": proxyMarker},
+		"Labels":           map[string]string{"botbox.proxy": "true", "botbox.workspace_id": workspace, "botbox.bot_id": bot, "botbox.egress_proxy": proxyMarker, proxyIngressLabel: proxyIngressVersion},
 		"HostConfig":       map[string]any{"Privileged": false, "CapDrop": []string{"ALL"}, "SecurityOpt": []string{"no-new-privileges:true"}, "ReadonlyRootfs": true, "NetworkMode": "bridge", "Memory": int64(256 << 20), "NanoCPUs": int64(1000000000), "PidsLimit": 64, "Sysctls": map[string]string{"net.ipv4.ip_forward": "0"}},
 		"NetworkingConfig": map[string]any{"EndpointsConfig": map[string]any{"bridge": map[string]any{}}},
 	}
@@ -79,10 +102,98 @@ func (d *Driver) ensureProxy(ctx context.Context, workspace, bot, network string
 	return d.startProxy(ctx, created.ID)
 }
 
+func (d *Driver) proxyIngressImage(ctx context.Context) (string, error) {
+	var image struct {
+		ID     string `json:"Id"`
+		Config struct {
+			Labels map[string]string
+		}
+	}
+	if _, err := d.doJSON(ctx, http.MethodGet, "/images/"+url.PathEscape(d.proxy.Image)+"/json", nil, &image); err != nil {
+		return "", errors.New("egress proxy image unavailable")
+	}
+	if image.ID == "" || image.Config.Labels[proxyIngressLabel] != proxyIngressVersion {
+		return "", errors.New("egress proxy image requires a secure-ingress rebuild")
+	}
+	// Pin the inspected image so deployment cannot switch tags between the
+	// ingress-version check and container creation.
+	return image.ID, nil
+}
+
+func (d *Driver) botProxySubnet(ctx context.Context, name, workspace, bot string) (string, error) {
+	var network struct {
+		Internal bool
+		Labels   map[string]string
+		IPAM     struct {
+			Config []struct{ Subnet string }
+		}
+	}
+	if _, err := d.doJSON(ctx, http.MethodGet, "/networks/"+url.PathEscape(name), nil, &network); err != nil {
+		return "", errors.New("inspect bot network failed")
+	}
+	if !network.Internal || network.Labels["botbox.workspace_id"] != workspace || network.Labels["botbox.bot_id"] != bot {
+		return "", errors.New("bot network identity mismatch")
+	}
+	for _, config := range network.IPAM.Config {
+		prefix, err := netip.ParsePrefix(config.Subnet)
+		if err == nil && prefix.Addr().Is4() && prefix.Bits() > 0 {
+			return prefix.Masked().String(), nil
+		}
+	}
+	return "", errors.New("bot network IPv4 subnet unavailable")
+}
+
 func (d *Driver) startProxy(ctx context.Context, id string) error {
 	code, err := d.doJSON(ctx, http.MethodPost, "/containers/"+url.PathEscape(id)+"/start", nil, nil)
 	if err != nil && code != http.StatusNotModified {
 		return errors.New("proxy start failed")
+	}
+	return nil
+}
+
+// UpgradeProxyIngress removes legacy sidecars and restores secure ingress for
+// running sandboxes before the API starts accepting work.
+func (d *Driver) UpgradeProxyIngress(ctx context.Context) error {
+	if d.proxy == nil {
+		return nil
+	}
+	filters, err := json.Marshal(map[string][]string{"label": {"botbox.egress_proxy=" + proxyMarker}})
+	if err != nil {
+		return err
+	}
+	var containers []struct {
+		ID     string
+		Labels map[string]string
+		Names  []string
+		State  string
+	}
+	if _, err := d.doJSON(ctx, http.MethodGet, "/containers/json?all=true&filters="+url.QueryEscape(string(filters)), nil, &containers); err != nil {
+		return errors.New("list metered bot containers failed")
+	}
+	for _, proxy := range containers {
+		if proxy.Labels["botbox.proxy"] != "true" || proxy.Labels[proxyIngressLabel] == proxyIngressVersion {
+			continue
+		}
+		workspace, bot := proxy.Labels["botbox.workspace_id"], proxy.Labels["botbox.bot_id"]
+		if proxy.ID == "" || workspace == "" || bot == "" || !slices.Contains(proxy.Names, "/botbox-egress-"+sanitizeIdentifier(bot)) {
+			return errors.New("legacy proxy identity mismatch")
+		}
+		status, err := d.doJSON(ctx, http.MethodDelete, "/containers/"+url.PathEscape(proxy.ID)+"?force=true", nil, nil)
+		if err != nil && status != http.StatusNotFound {
+			return errors.New("legacy proxy removal failed")
+		}
+	}
+	for _, sandbox := range containers {
+		if sandbox.Labels["botbox.managed"] != "true" || sandbox.State != "running" {
+			continue
+		}
+		workspace, bot := sandbox.Labels["botbox.workspace_id"], sandbox.Labels["botbox.bot_id"]
+		if !slices.Contains(sandbox.Names, "/botbox-bot-"+sanitizeIdentifier(bot)) {
+			return errors.New("metered sandbox identity mismatch")
+		}
+		if err := d.ensureProxy(ctx, workspace, bot, "botbox-net-"+sanitizeIdentifier(bot)); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -102,7 +213,7 @@ func (d *Driver) CLIProxyReady(ctx context.Context, id compute.EnvID) error {
 		return errors.New("sandbox requires metered proxy recreation")
 	}
 	proxy, err := d.inspectContainer(ctx, "botbox-egress-"+sanitizeIdentifier(labels["botbox.bot_id"]))
-	if err != nil || !proxy.State.Running || proxy.Config.Labels["botbox.workspace_id"] != labels["botbox.workspace_id"] || proxy.Config.Labels["botbox.bot_id"] != labels["botbox.bot_id"] || proxy.Config.Labels["botbox.egress_proxy"] != proxyMarker {
+	if err != nil || !proxy.State.Running || proxy.Config.Labels["botbox.workspace_id"] != labels["botbox.workspace_id"] || proxy.Config.Labels["botbox.bot_id"] != labels["botbox.bot_id"] || proxy.Config.Labels["botbox.egress_proxy"] != proxyMarker || proxy.Config.Labels[proxyIngressLabel] != proxyIngressVersion {
 		return errors.New("metered proxy unavailable")
 	}
 	return nil

@@ -87,7 +87,7 @@ export interface VncViewportProps {
    * Not called for cleanup, so the parent can renew the ticket without
    * aborting the fast retries on every unmount.
    */
-  onConnectFailed?: () => void;
+  onConnectFailed?: (wasConnected: boolean) => void;
   /** Optional handler invoked instead of mutating local state in controlled mode. */
   onRequestControlToggle?: (nextControl: boolean) => void | Promise<void>;
   /** Bot pointer in desktop pixels. Shown only while the human does not hold the lock. */
@@ -189,9 +189,9 @@ export function VncViewport({
     // closes the socket (1006) and noVNC will not reuse that RFB object.
     // A new object on the same ticket covers the usual few seconds of boot.
     // Cleanup sets `cancelled` first so our own disconnect is not a failure.
-    const scheduleRetry = () => {
+    const scheduleRetry = (wasConnected = false) => {
       if (cancelled) return;
-      onConnectFailedRef.current?.();
+      onConnectFailedRef.current?.(wasConnected);
       if (retryTimer !== null) return;
       const delay = vncRetryDelayMs(failedAttempts);
       failedAttempts += 1;
@@ -213,18 +213,20 @@ export function VncViewport({
             releaseRfb(client);
             return;
           }
+          let wasConnected = false;
           client.addEventListener('disconnect', () => {
             // The socket is already gone. Cleanup must not call disconnect() again.
             if (clientRef.current === client) clientRef.current = null;
             if (cancelled) return;
             setConnected(false);
             onConnectionChangeRef.current?.(false);
-            scheduleRetry();
+            scheduleRetry(wasConnected);
           });
           client.viewOnly = !inControlRef.current;
           client.scaleViewport = true;
           client.addEventListener('connect', () => {
             if (cancelled || generation !== attempt) return;
+            wasConnected = true;
             failedAttempts = 0;
             clearRetry();
             setConnected(true);

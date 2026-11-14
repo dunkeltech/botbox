@@ -14,7 +14,7 @@ import (
 )
 
 func TestProxyProvisioningKeepsCredentialsOutsideSandbox(t *testing.T) {
-	for _, fail := range []string{"", "create", "network", "start", "external network"} {
+	for _, fail := range []string{"", "create", "network", "start", "external network", "legacy image"} {
 		t.Run(fail, func(t *testing.T) {
 			var mu sync.Mutex
 			configs := map[string]map[string]any{}
@@ -23,6 +23,10 @@ func TestProxyProvisioningKeepsCredentialsOutsideSandbox(t *testing.T) {
 				mu.Lock()
 				defer mu.Unlock()
 				path := strings.TrimPrefix(r.URL.Path, "/v1.45")
+				if r.Method == http.MethodGet && strings.HasPrefix(path, "/images/") {
+					writeProxyImage(w, fail != "legacy image")
+					return
+				}
 				if r.Method == "GET" && strings.HasSuffix(path, "/json") {
 					name := strings.TrimSuffix(strings.TrimPrefix(path, "/containers/"), "/json")
 					if config, ok := configs[name]; ok {
@@ -33,7 +37,7 @@ func TestProxyProvisioningKeepsCredentialsOutsideSandbox(t *testing.T) {
 					return
 				}
 				if r.Method == "GET" && strings.HasPrefix(path, "/networks/") {
-					_ = json.NewEncoder(w).Encode(map[string]bool{"Internal": fail != "external network"})
+					writeProxyNetwork(w, fail != "external network", "workspace", "bot")
 					return
 				}
 				if path == "/containers/create" {
@@ -102,6 +106,13 @@ func TestProxyProvisioningKeepsCredentialsOutsideSandbox(t *testing.T) {
 				t.Fatal("sandbox proxy configuration missing")
 			}
 			proxy := configs["botbox-egress-bot"]
+			if proxy["Image"] != "sha256:test-image" {
+				t.Fatal("proxy was not pinned to the inspected image")
+			}
+			proxyEnv, _ := json.Marshal(proxy["Env"])
+			if !strings.Contains(string(proxyEnv), "EGRESS_PROXY_BOT_SUBNET=172.28.0.0/16") || strings.Contains(string(proxyEnv), "EGRESS_PROXY_ADDR=") {
+				t.Fatal("proxy must bind to its bot network")
+			}
 			host := proxy["HostConfig"].(map[string]any)
 			if host["Privileged"] != false || host["ReadonlyRootfs"] != true || proxy["User"] != "65532:65532" || strings.Contains(string(raw), "docker.sock") {
 				t.Fatal("proxy isolation missing")
@@ -133,12 +144,16 @@ func TestBrokerTokenAndURLStayInProxyNeverInSandbox(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		path := strings.TrimPrefix(r.URL.Path, "/v1.45")
+		if r.Method == http.MethodGet && strings.HasPrefix(path, "/images/") {
+			writeProxyImage(w, true)
+			return
+		}
 		if r.Method == "GET" && strings.HasSuffix(path, "/json") {
 			http.Error(w, "missing", http.StatusNotFound)
 			return
 		}
 		if r.Method == "GET" && strings.HasPrefix(path, "/networks/") {
-			_ = json.NewEncoder(w).Encode(map[string]bool{"Internal": true})
+			writeProxyNetwork(w, true, "ws-b", "bot-b")
 			return
 		}
 		if path == "/containers/create" {
@@ -199,5 +214,76 @@ func TestBrokerTokenAndURLStayInProxyNeverInSandbox(t *testing.T) {
 		},
 	}); err == nil {
 		t.Fatal("expected ValidateContainerSpec to reject broker token env in sandbox")
+	}
+}
+
+func writeProxyNetwork(w http.ResponseWriter, internal bool, workspace, bot string) {
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"Internal": internal,
+		"Labels":   map[string]string{"botbox.workspace_id": workspace, "botbox.bot_id": bot},
+		"IPAM":     map[string]any{"Config": []map[string]string{{"Subnet": "172.28.0.0/16"}}},
+	})
+}
+
+func writeProxyImage(w http.ResponseWriter, secure bool) {
+	labels := map[string]string{}
+	if secure {
+		labels["botbox.proxy_ingress"] = "bot-network-v1"
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"Id": "sha256:test-image", "Config": map[string]any{"Labels": labels},
+	})
+}
+
+func TestUpgradeProxyIngressRemovesLegacySidecarBeforeCreatingReplacement(t *testing.T) {
+	var mu sync.Mutex
+	var removed, created bool
+	engine := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
+			_, _ = w.Write([]byte(`[
+				{"Id":"proxy-legacy","Names":["/botbox-egress-bot"],"Labels":{"botbox.proxy":"true","botbox.workspace_id":"ws","botbox.bot_id":"bot"}},
+				{"Id":"sandbox","State":"running","Names":["/botbox-bot-bot"],"Labels":{"botbox.managed":"true","botbox.workspace_id":"ws","botbox.bot_id":"bot"}}
+			]`))
+		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/containers/proxy-legacy"):
+			removed = true
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/networks/"):
+			writeProxyNetwork(w, true, "ws", "bot")
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/images/"):
+			writeProxyImage(w, true)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/botbox-egress-bot/json"):
+			w.WriteHeader(http.StatusNotFound)
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/create"):
+			if !removed {
+				t.Error("legacy sidecar still active when replacement was created")
+			}
+			created = true
+			_, _ = w.Write([]byte(`{"Id":"proxy-current"}`))
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/connect"),
+			r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/proxy-current/start"):
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Errorf("unexpected Docker call %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	defer engine.Close()
+
+	driver, err := docker.NewDriver(docker.Options{BaseURL: engine.URL, Proxy: &docker.ProxyOptions{
+		Image: "egress:dev", DatabaseURL: "postgres://db/botbox", KeySpec: "fixture-key",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.UpgradeProxyIngress(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if !removed || !created {
+		t.Fatal("legacy sidecar was not replaced")
 	}
 }

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -180,12 +181,26 @@ func (s *server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	defer rollbackTx(r.Context(), tx)
 
 	txq := s.queries.WithTx(tx)
-	tok, err := txq.GetRefreshTokenByHashForUpdate(r.Context(), digest)
+	family, err := txq.LockRefreshTokenFamilyByHash(r.Context(), digest)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, s.logger, http.StatusUnauthorized, "auth.invalid_refresh_token", "refresh token missing or invalid")
 			return
 		}
+		s.logger.Error("lock refresh token family", "err", err)
+		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to refresh session")
+		return
+	}
+
+	if family.RevokedAt.Valid {
+		s.clearRefreshCookie(w)
+		writeError(w, s.logger, http.StatusUnauthorized, "auth.refresh_token_reused", "session was revoked")
+		return
+	}
+	// Read the token after acquiring the family lock so a completed rotation
+	// is visible even when this request waited for another transaction.
+	tok, err := txq.GetRefreshTokenByHash(r.Context(), digest)
+	if err != nil {
 		s.logger.Error("load refresh token", "err", err)
 		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to refresh session")
 		return
@@ -195,7 +210,7 @@ func (s *server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	// revoke the entire token family immediately and commit before responding.
 	if tok.RevokedAt.Valid || tok.ReplacedBy.Valid {
 		if revErr := txq.RevokeRefreshTokenFamily(r.Context(), db.RevokeRefreshTokenFamilyParams{
-			FamilyID:  tok.FamilyID,
+			ID:        family.ID,
 			RevokedAt: pgNow,
 		}); revErr != nil {
 			s.logger.Error("revoke compromised refresh token family", "err", revErr)
@@ -300,18 +315,41 @@ func (s *server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if plainToken != "" && s.queries != nil {
-		digest := auth.HashToken(plainToken)
-		if err := s.queries.RevokeRefreshTokenByHash(r.Context(), db.RevokeRefreshTokenByHashParams{
-			TokenHash: digest,
-			RevokedAt: toPGTimestamptz(s.now().UTC()),
-		}); err != nil {
-			s.logger.Error("revoke refresh token on logout", "err", err)
+	if plainToken != "" {
+		if !s.ensureDB(w) {
+			return
+		}
+		if err := s.logoutSession(r.Context(), auth.HashToken(plainToken)); err != nil {
+			s.logger.Error("revoke refresh session on logout", "err", err)
+			writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to revoke session")
+			return
 		}
 	}
 
 	s.clearRefreshCookie(w)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *server) logoutSession(ctx context.Context, digest []byte) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer rollbackTx(ctx, tx)
+	q := s.queries.WithTx(tx)
+	family, err := q.LockRefreshTokenFamilyByHash(ctx, digest)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err := q.RevokeRefreshTokenFamily(ctx, db.RevokeRefreshTokenFamilyParams{
+		ID: family.ID, RevokedAt: toPGTimestamptz(s.now().UTC()),
+	}); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (s *server) handleGetMe(w http.ResponseWriter, r *http.Request) {

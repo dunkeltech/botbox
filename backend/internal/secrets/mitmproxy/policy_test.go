@@ -4,17 +4,100 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/dunkeltech/botbox/backend/internal/secrets/mitmproxy"
 )
+
+type fixedDestinationResolver []netip.Addr
+
+func (resolver fixedDestinationResolver) LookupNetIP(context.Context, string, string) ([]netip.Addr, error) {
+	return resolver, nil
+}
+
+func TestPublicEgressRejectsNonPublicDNSAnswers(t *testing.T) {
+	t.Parallel()
+	ca, err := mitmproxy.NewBotCA("public-egress")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name      string
+		addresses fixedDestinationResolver
+	}{
+		{"private", fixedDestinationResolver{netip.MustParseAddr("192.168.1.1")}},
+		{"mixed", fixedDestinationResolver{netip.MustParseAddr("1.1.1.1"), netip.MustParseAddr("127.0.0.1")}},
+		{"empty", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			handler, err := mitmproxy.NewHandler(mitmproxy.Config{
+				CA: ca, Policy: mitmproxy.PolicyOpen, PublicOnly: true, PublicResolver: tc.addresses,
+				DialContext: func(context.Context, string, string) (net.Conn, error) {
+					t.Fatal("unsafe destination reached the dialer")
+					return nil, nil
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodConnect, "test.example:443", nil)
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusForbidden {
+				t.Fatalf("private destination: got %d, want 403", w.Code)
+			}
+		})
+	}
+}
+
+func TestCredentialedEgressChecksPublicDestination(t *testing.T) {
+	t.Parallel()
+	ca, err := mitmproxy.NewBotCA("credentialed-egress")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var dialed atomic.Bool
+	handler, err := mitmproxy.NewHandler(mitmproxy.Config{
+		CA: ca, Policy: mitmproxy.PolicyOpen, PublicOnly: true,
+		PublicResolver: fixedDestinationResolver{netip.MustParseAddr("127.0.0.1")},
+		Rules: []mitmproxy.SecretRule{{
+			DomainMatch: "internal.test", HeaderName: "Authorization", Scheme: mitmproxy.SchemeBearer, Value: "fixture-value",
+		}},
+		DialContext: func(context.Context, string, string) (net.Conn, error) {
+			dialed.Store(true)
+			return nil, errors.New("unexpected outbound dial")
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy := httptest.NewServer(handler)
+	defer proxy.Close()
+	client := newProxiedClient(t, proxy, ca, nil)
+	defer client.CloseIdleConnections()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://internal.test/status", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusForbidden || dialed.Load() {
+		t.Fatalf("private credentialed destination: status=%d outbound dial=%v", resp.StatusCode, dialed.Load())
+	}
+}
 
 func dialLocalTestServer(t *testing.T, srv *httptest.Server) func(context.Context, string, string) (net.Conn, error) {
 	t.Helper()
