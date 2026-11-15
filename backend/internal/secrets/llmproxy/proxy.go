@@ -3,7 +3,6 @@
 package llmproxy
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,7 +10,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"strings"
 )
 
@@ -132,414 +130,164 @@ type errorEnvelope struct {
 	} `json:"error"`
 }
 
+type proxyHandler struct {
+	resolve SecretResolver
+	options Options
+}
+
+type proxyRoute struct {
+	botID    string
+	provider string
+	method   string
+	path     string
+}
+
 // NewHandler builds an HTTP handler routing /llm/{provider}/* to the real upstream
 // while stripping placeholder auth headers and injecting real secrets server-side.
 func NewHandler(resolve SecretResolver, opts *Options) http.Handler {
-	botHeader := "X-Botbox-Bot-ID"
-	client := http.DefaultClient
-	var exchange OAuthExchanger
-	var onAudit func(AuditEvent)
-	logger := slog.Default()
-
+	var options Options
 	if opts != nil {
-		if opts.BotIDHeader != "" {
-			botHeader = opts.BotIDHeader
-		}
-		if opts.Client != nil {
-			client = opts.Client
-		}
-		exchange = opts.OAuthExchanger
-		onAudit = opts.OnAudit
-		if opts.Logger != nil {
-			logger = opts.Logger
+		options = *opts
+	}
+	if options.BotIDHeader == "" {
+		options.BotIDHeader = "X-Botbox-Bot-ID"
+	}
+	if options.Client == nil {
+		options.Client = http.DefaultClient
+	}
+	if options.Logger == nil {
+		options.Logger = slog.Default()
+	}
+	return &proxyHandler{resolve: resolve, options: options}
+}
+
+func (h *proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	opts := &h.options
+	logger := opts.Logger
+	provider, upstreamPath, ok := parseLLMPath(r.URL.Path)
+	if !ok || !isSupportedProvider(provider) {
+		emitAudit(opts.OnAudit, r.Header.Get(opts.BotIDHeader), provider, r.Method, r.URL.Path, "blocked")
+		writeError(w, logger, http.StatusForbidden, "forbidden", "unsupported LLM provider")
+		return
+	}
+
+	plan := provider == ProviderOpenAIPlan
+	if plan && (opts.workspaceID == "" || opts.Admit == nil ||
+		r.Method != http.MethodPost || !meteredPath(provider, upstreamPath) ||
+		r.URL.RawQuery != "" || r.Header.Get("Upgrade") != "" || r.Header.Get("Authorization") != "Bearer botbox-placeholder") {
+		writeError(w, logger, http.StatusForbidden, "forbidden", "unsupported ChatGPT plan request")
+		return
+	}
+
+	if h.resolve == nil {
+		writeError(w, logger, http.StatusForbidden, "forbidden", "credential resolver unavailable")
+		return
+	}
+
+	botID := opts.botID
+	if botID == "" {
+		botID = r.Header.Get(opts.BotIDHeader)
+	}
+	if botID == "" {
+		botID = "default"
+	}
+	route := proxyRoute{botID: botID, provider: provider, method: r.Method, path: upstreamPath}
+	if opts.CheckBudget != nil {
+		if err := opts.CheckBudget(r.Context(), opts.workspaceID, botID); err != nil {
+			statusCode, code, message := http.StatusServiceUnavailable, "budget_unavailable", "budget service unavailable"
+			if errors.Is(err, ErrBudgetExceeded) {
+				statusCode, code, message = http.StatusTooManyRequests, "budget_exceeded", "budget exhausted"
+			}
+			h.audit(route, code)
+			writeError(w, logger, statusCode, code, message)
+			return
 		}
 	}
 
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		provider, upstreamPath, ok := parseLLMPath(r.URL.Path)
-		if !ok || !isSupportedProvider(provider) {
-			emitAudit(onAudit, r.Header.Get(botHeader), provider, r.Method, r.URL.Path, "blocked")
-			writeError(w, logger, http.StatusForbidden, "forbidden", "unsupported LLM provider")
-			return
-		}
+	cfg, targetURL := h.resolveUpstream(w, r, route)
+	if cfg == nil {
+		return
+	}
+	requestCtx := context.WithValue(r.Context(), subscriptionContextKey{}, cfg.AuthKind == AuthKindClaudeOAuth || plan)
+	if plan {
+		requestCtx = context.WithValue(requestCtx, planRevisionContextKey{}, cfg.PlanRevision)
+	}
+	outReq := h.buildUpstreamRequest(requestCtx, w, r, route, cfg, targetURL)
+	if outReq == nil {
+		return
+	}
+	model, body, ok := h.prepareModelBody(requestCtx, w, outReq, route)
+	if !ok {
+		return
+	}
 
-		plan := provider == ProviderOpenAIPlan
-		if plan && (opts == nil || opts.workspaceID == "" || opts.Admit == nil ||
-			r.Method != http.MethodPost || !meteredPath(provider, upstreamPath) ||
-			r.URL.RawQuery != "" || r.Header.Get("Upgrade") != "" || r.Header.Get("Authorization") != "Bearer botbox-placeholder") {
-			writeError(w, logger, http.StatusForbidden, "forbidden", "unsupported ChatGPT plan request")
-			return
-		}
-
-		if resolve == nil {
-			writeError(w, logger, http.StatusForbidden, "forbidden", "credential resolver unavailable")
-			return
-		}
-
-		botID := r.Header.Get(botHeader)
-		if opts != nil && opts.botID != "" {
-			botID = opts.botID
-		}
-		if botID == "" {
-			botID = "default"
-		}
-
-		if opts != nil && opts.CheckBudget != nil {
-			if err := opts.CheckBudget(r.Context(), opts.workspaceID, botID); err != nil {
-				statusCode, code, message := http.StatusServiceUnavailable, "budget_unavailable", "budget service unavailable"
-				if errors.Is(err, ErrBudgetExceeded) {
-					statusCode, code, message = http.StatusTooManyRequests, "budget_exceeded", "budget exhausted"
-				}
-				emitAudit(onAudit, botID, provider, r.Method, upstreamPath, code)
-				writeError(w, logger, statusCode, code, message)
-				return
-			}
-		}
-
-		cfg, err := resolve(r.Context(), botID, provider)
-		if plan && err != nil && !errors.Is(err, ErrSecretNotFound) {
-			status, code, message := http.StatusServiceUnavailable, "plan_unavailable", "ChatGPT plan is temporarily unavailable"
-			if errors.Is(err, ErrPlanReconnect) {
-				status, code, message = http.StatusUnauthorized, "plan_reconnect", "reconnect the ChatGPT plan in bot.Box"
-			}
-			writeError(w, logger, status, code, message)
-			return
-		}
-		if err != nil || cfg == nil || cfg.SecretValue == "" || plan != (cfg.AuthKind == AuthKindOpenAIPlan) {
-			emitAudit(onAudit, botID, provider, r.Method, upstreamPath, "blocked")
-			writeError(w, logger, http.StatusForbidden, "forbidden", "provider credential not configured")
-			return
-		}
-
-		targetBase, err := url.Parse(cfg.UpstreamURL)
-		if err != nil || targetBase.Scheme == "" || targetBase.Host == "" {
-			emitAudit(onAudit, botID, provider, r.Method, upstreamPath, "upstream_error")
-			writeError(w, logger, http.StatusBadGateway, "upstream_error", "invalid upstream configuration")
-			return
-		}
-
-		targetURL := *targetBase
-		targetURL.Path = strings.TrimRight(targetBase.Path, "/") + upstreamPath
-		targetURL.RawQuery = r.URL.RawQuery
-		if prefix := strings.TrimRight(cfg.PathPrefix, "/"); prefix != "" && targetURL.Path != prefix && !strings.HasPrefix(targetURL.Path, prefix+"/") {
-			writeError(w, logger, http.StatusForbidden, "forbidden", "credential does not allow this path")
-			return
-		}
-
-		if opts != nil && opts.Admit != nil && provider == ProviderAnthropic {
-			oauthPlaceholder := r.Header.Get("Authorization") == "Bearer botbox-placeholder" && r.Header.Get("x-api-key") == ""
-			if oauthPlaceholder != (cfg.AuthKind == AuthKindClaudeOAuth) {
-				// Credential rotation must not switch a running subscription CLI
-				// to paid API billing without starting it in the matching mode.
-				writeError(w, logger, 403, "auth_mode_changed", "provider authentication changed; start a new turn")
-				return
-			}
-		}
-		// Security invariant: copy headers and strip all sandbox placeholder auth headers
-		// before adding real credentials so placeholders never reach upstream providers.
-		requestCtx := context.WithValue(r.Context(), subscriptionContextKey{}, cfg.AuthKind == AuthKindClaudeOAuth || plan)
-		if plan {
-			requestCtx = context.WithValue(requestCtx, planRevisionContextKey{}, cfg.PlanRevision)
-		}
-		outReq, err := http.NewRequestWithContext(requestCtx, r.Method, targetURL.String(), r.Body)
-		if err != nil {
-			emitAudit(onAudit, botID, provider, r.Method, upstreamPath, "upstream_error")
-			writeError(w, logger, http.StatusBadGateway, "upstream_error", "failed to build upstream request")
-			return
-		}
-		if plan {
-			outReq.Header.Set("Content-Type", "application/json")
-			outReq.Header.Set("Accept", "text/event-stream")
-			outReq.Header.Set("User-Agent", "bot.Box")
-		} else {
-			copyHeaders(outReq.Header, r.Header)
-		}
-		stripSandboxAuthHeaders(outReq.Header)
-		outReq.Header.Del(botHeader)
-		// Claude Code asks for br and zstd. net/http only decompresses gzip
-		// when it selected the encoding. A copied Accept-Encoding leaves the
-		// body compressed, and the metered response keeps only Content-Type,
-		// so the CLI parses gzip bytes as JSON.
-		outReq.Header.Del("Accept-Encoding")
-
-		if err := injectCredential(r.Context(), outReq.Header, cfg, exchange); err != nil {
-			logger.Warn("credential preparation failed",
-				slog.String("bot_id", botID),
-				slog.String("provider", provider),
-				slog.String("path", upstreamPath),
-			)
-			emitAudit(onAudit, botID, provider, r.Method, upstreamPath, "upstream_error")
-			writeError(w, logger, http.StatusBadGateway, "upstream_error", "credential exchange failed")
-			return
-		}
-
-		var settle func(Usage) error
-		var requestModel string
-		if opts != nil && opts.Admit != nil {
-			if r.Method != http.MethodPost || !meteredPath(provider, upstreamPath) {
-				writeError(w, logger, 403, "forbidden", "unsupported metered endpoint")
-				return
-			}
-			body, bodyErr := io.ReadAll(io.LimitReader(outReq.Body, (8<<20)+1))
-			if bodyErr != nil || len(body) > 8<<20 {
-				writeError(w, logger, 400, "validation_error", "invalid model request")
-				return
-			}
-			var model struct {
-				Model string `json:"model"`
-			}
-			if json.Unmarshal(body, &model) != nil || model.Model == "" || len(model.Model) > 200 {
-				writeError(w, logger, 400, "validation_error", "model is required")
-				return
-			}
-			requestModel = model.Model
-			if plan {
-				body, bodyErr = planRequest(body, model.Model)
-				if bodyErr != nil {
-					writeError(w, logger, http.StatusBadRequest, "plan_request_unsupported", "Codex sent an unsupported ChatGPT plan request")
-					return
-				}
-			}
-			if opts.Guardrails != nil {
-				dec, gErr := opts.Guardrails.EvaluateInput(requestCtx, provider, requestModel, upstreamPath, body)
-				if gErr != nil {
-					emitAudit(onAudit, botID, provider, r.Method, upstreamPath, "guardrail_unavailable")
-					writeError(w, logger, http.StatusForbidden, "guardrail_unavailable", "LLM guardrail evaluation failed closed")
-					return
-				}
-				if dec.Action == "blocked" {
-					code := dec.Code
-					if code == "" {
-						code = "guardrail_blocked"
-					}
-					msg := dec.Message
-					if msg == "" {
-						msg = "LLM request blocked by workspace guardrail"
-					}
-					emitAudit(onAudit, botID, provider, r.Method, upstreamPath, "guardrail_blocked")
-					writeError(w, logger, http.StatusForbidden, code, msg)
-					return
-				}
-				if dec.Action == "redacted" && len(dec.Body) > 0 {
-					body = dec.Body
-				}
-			}
-			outReq.Body = io.NopCloser(bytes.NewReader(body))
-			outReq.ContentLength = int64(len(body))
-			requestCtx = boundedRequest(requestCtx, provider, upstreamPath, body)
-			settle, err = opts.Admit(requestCtx, provider, model.Model, upstreamPath)
-			if err != nil {
-				status := http.StatusServiceUnavailable
-				code := "budget_unavailable"
-				if errors.Is(err, ErrBudgetExceeded) {
-					status = http.StatusTooManyRequests
-					code = "budget_exceeded"
-				}
-				message := "model request is blocked"
-				if errors.Is(err, ErrModelPriceRequired) {
-					code, message = "model_price_required", "configure a price for the selected model"
-				}
-				if errors.Is(err, ErrPlanAccess) {
-					status, code, message = http.StatusForbidden, "plan_forbidden", "ChatGPT plan is unavailable for this desktop"
-				}
-				writeError(w, logger, status, code, message)
-				return
-			}
-			if settle == nil {
-				writeError(w, logger, 503, "budget_unavailable", "accounting unavailable")
-				return
-			}
-		} else if opts != nil && opts.Guardrails != nil && r.Method == http.MethodPost && outReq.Body != nil {
-			body, bodyErr := io.ReadAll(io.LimitReader(outReq.Body, (8<<20)+1))
-			if bodyErr != nil || len(body) > 8<<20 {
-				writeError(w, logger, 400, "validation_error", "invalid model request")
-				return
-			}
-			var model struct {
-				Model string `json:"model"`
-			}
-			_ = json.Unmarshal(body, &model)
-			requestModel = model.Model
-			dec, gErr := opts.Guardrails.EvaluateInput(requestCtx, provider, requestModel, upstreamPath, body)
-			if gErr != nil {
-				emitAudit(onAudit, botID, provider, r.Method, upstreamPath, "guardrail_unavailable")
-				writeError(w, logger, http.StatusForbidden, "guardrail_unavailable", "LLM guardrail evaluation failed closed")
-				return
-			}
-			if dec.Action == "blocked" {
-				code := dec.Code
-				if code == "" {
-					code = "guardrail_blocked"
-				}
-				msg := dec.Message
-				if msg == "" {
-					msg = "LLM request blocked by workspace guardrail"
-				}
-				emitAudit(onAudit, botID, provider, r.Method, upstreamPath, "guardrail_blocked")
-				writeError(w, logger, http.StatusForbidden, code, msg)
-				return
-			}
-			if dec.Action == "redacted" && len(dec.Body) > 0 {
-				body = dec.Body
-			}
-			outReq.Body = io.NopCloser(bytes.NewReader(body))
-			outReq.ContentLength = int64(len(body))
-		}
-		usage := Usage{}
-		if settle != nil {
-			defer func() {
-				if err := settle(usage); err != nil {
-					logger.Warn("request accounting incomplete", slog.String("bot_id", botID))
-				}
-			}()
-		}
-		if cfg.AuthKind == AuthKindClaudeOAuth && !strings.Contains(outReq.Header.Get("anthropic-beta"), "oauth-2025-04-20") {
-			beta := outReq.Header.Get("anthropic-beta")
-			if beta != "" {
-				beta += ","
-			}
-			outReq.Header.Set("anthropic-beta", beta+"oauth-2025-04-20")
-		}
-		upstreamClient := client
-		if plan {
-			withoutRedirects := *client
-			withoutRedirects.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-			upstreamClient = &withoutRedirects
-		}
-		resp, err := upstreamClient.Do(outReq) //nolint:gosec // target URL originates from verified server-side SecretConfig, not user input
-		if err != nil {
-			// Security invariant: never include err.Error() or headers in logs/response in case a driver embeds request metadata.
-			logger.Warn("upstream LLM call failed",
-				slog.String("bot_id", botID),
-				slog.String("provider", provider),
-				slog.String("path", upstreamPath),
-			)
-			emitAudit(onAudit, botID, provider, r.Method, upstreamPath, "upstream_error")
-			writeError(w, logger, http.StatusBadGateway, "upstream_error", "upstream LLM request failed")
+	var usage Usage
+	metered := opts.Admit != nil
+	if metered {
+		requestCtx = boundedRequest(requestCtx, provider, upstreamPath, body)
+		settle, ok := h.admitRequest(requestCtx, w, route, model)
+		if !ok {
 			return
 		}
 		defer func() {
-			_ = resp.Body.Close()
+			if err := settle(usage); err != nil {
+				logger.Warn("request accounting incomplete", slog.String("bot_id", botID))
+			}
 		}()
+	}
+	if cfg.AuthKind == AuthKindClaudeOAuth && !strings.Contains(outReq.Header.Get("anthropic-beta"), "oauth-2025-04-20") {
+		beta := outReq.Header.Get("anthropic-beta")
+		if beta != "" {
+			beta += ","
+		}
+		outReq.Header.Set("anthropic-beta", beta+"oauth-2025-04-20")
+	}
+	upstreamClient := opts.Client
+	if plan {
+		withoutRedirects := *opts.Client
+		withoutRedirects.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+		upstreamClient = &withoutRedirects
+	}
+	resp, err := upstreamClient.Do(outReq) //nolint:gosec // target URL originates from verified server-side SecretConfig, not user input
+	if err != nil {
+		// Security invariant: never include err.Error() or headers in logs/response in case a driver embeds request metadata.
+		logger.Warn("upstream LLM call failed",
+			slog.String("bot_id", botID),
+			slog.String("provider", provider),
+			slog.String("path", upstreamPath),
+		)
+		h.audit(route, "upstream_error")
+		writeError(w, logger, http.StatusBadGateway, "upstream_error", "upstream LLM request failed")
+		return
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+	usage = h.forwardResponse(requestCtx, w, resp, route, model, cfg, metered)
+}
 
-		if plan && (resp.StatusCode != http.StatusOK || !isEventStream(resp.Header.Get("Content-Type"))) {
-			usage = Usage{Known: resp.StatusCode >= 300 && resp.StatusCode < 500}
-			writePlanError(w, logger, resp, cfg.SecretValue)
-			return
-		}
-		if settle != nil && resp.StatusCode >= 400 {
-			// Provider error bodies may echo credentials or request headers.
-			// Return a fixed envelope instead of forwarding those details.
-			usage = Usage{Known: resp.StatusCode < 500}
-			writeError(w, logger, resp.StatusCode, "upstream_error", "model provider rejected request")
-			return
-		}
-		emitAudit(onAudit, botID, provider, r.Method, upstreamPath, "token_added")
+func (h *proxyHandler) audit(route proxyRoute, result string) {
+	emitAudit(h.options.OnAudit, route.botID, route.provider, route.method, route.path, result)
+}
 
-		if opts != nil && opts.Guardrails != nil && resp.StatusCode >= 200 && resp.StatusCode < 300 && !isEventStream(resp.Header.Get("Content-Type")) {
-			respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, (8<<20)+1))
-			if readErr != nil || len(respBody) > 8<<20 {
-				writeError(w, logger, http.StatusBadGateway, "upstream_error", "upstream response exceeds maximum size")
-				return
-			}
-			collector := newUsageCollector(resp.Header.Get("Content-Type"))
-			if settle != nil {
-				_, _ = collector.Write(respBody)
-			}
-			dec, gErr := opts.Guardrails.EvaluateOutputJSON(requestCtx, provider, requestModel, upstreamPath, respBody)
-			if gErr != nil {
-				if settle != nil {
-					usage = collector.finish(true)
-				}
-				emitAudit(onAudit, botID, provider, r.Method, upstreamPath, "guardrail_unavailable")
-				writeError(w, logger, http.StatusForbidden, "guardrail_unavailable", "LLM guardrail evaluation failed closed")
-				return
-			}
-			if dec.Action == "blocked" {
-				if settle != nil {
-					usage = collector.finish(true)
-				}
-				code := dec.Code
-				if code == "" {
-					code = "guardrail_blocked"
-				}
-				msg := dec.Message
-				if msg == "" {
-					msg = "LLM response blocked by workspace guardrail"
-				}
-				emitAudit(onAudit, botID, provider, r.Method, upstreamPath, "guardrail_blocked")
-				writeError(w, logger, http.StatusForbidden, code, msg)
-				return
-			}
-			if dec.Action == "redacted" && len(dec.Body) > 0 {
-				respBody = dec.Body
-			}
-			if settle != nil {
-				w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
-			} else {
-				copyHeaders(w.Header(), resp.Header)
-				w.Header().Del("Content-Length")
-			}
-			w.WriteHeader(resp.StatusCode)
-			_, copyErr := w.Write(respBody)
-			if settle != nil {
-				usage = collector.finish(copyErr == nil)
-				if copyErr == nil && upstreamPath == "/v1/messages/count_tokens" && resp.StatusCode == 200 {
-					usage = Usage{Known: true}
-				}
-			}
-			return
-		}
-
-		if settle != nil {
-			if plan {
-				w.Header().Set("Content-Type", "text/event-stream")
-			} else {
-				w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
-			}
-		} else {
-			copyHeaders(w.Header(), resp.Header)
-		}
-		w.WriteHeader(resp.StatusCode)
-		var destination io.Writer = w
-		if isEventStream(resp.Header.Get("Content-Type")) {
-			// net/http otherwise buffers small chunks until completion, hiding
-			// live CLI activity and delaying cancellation feedback in the UI.
-			destination = flushingWriter{w}
-		}
-		var guardCloser io.WriteCloser
-		if opts != nil && opts.Guardrails != nil && resp.StatusCode >= 200 && resp.StatusCode < 300 && isEventStream(resp.Header.Get("Content-Type")) {
-			guardCloser = opts.Guardrails.WrapSSEOutput(requestCtx, provider, requestModel, upstreamPath, destination)
-			if guardCloser != nil {
-				destination = guardCloser
-			}
-		}
-		var source io.Reader = resp.Body
-		collector := newUsageCollector(resp.Header.Get("Content-Type"))
-		if settle != nil {
-			source = io.TeeReader(resp.Body, collector)
-		}
-		var copyErr error
-		if plan {
-			copyErr = copyPlanStream(destination, source, cfg.SecretValue)
-		} else {
-			_, copyErr = io.Copy(destination, source)
-		}
-		if guardCloser != nil {
-			if closeErr := guardCloser.Close(); closeErr != nil && copyErr == nil {
-				copyErr = closeErr
-			}
-		}
-		if settle != nil {
-			usage = collector.finish(copyErr == nil && resp.StatusCode >= 200 && resp.StatusCode < 300)
-			if copyErr == nil && (resp.StatusCode >= 400 && resp.StatusCode < 500 || upstreamPath == "/v1/messages/count_tokens" && resp.StatusCode == 200) {
-				usage = Usage{Known: true}
-			}
-		}
-		if copyErr != nil {
-			logger.Debug("stream upstream response interrupted", slog.String("provider", provider))
-		}
-	})
+func (h *proxyHandler) allowGuardrailDecision(w http.ResponseWriter, route proxyRoute, action, code, message, defaultMessage string, err error) bool {
+	if err != nil {
+		h.audit(route, "guardrail_unavailable")
+		writeError(w, h.options.Logger, http.StatusForbidden, "guardrail_unavailable", "LLM guardrail evaluation failed closed")
+		return false
+	}
+	if action != "blocked" {
+		return true
+	}
+	if code == "" {
+		code = "guardrail_blocked"
+	}
+	if message == "" {
+		message = defaultMessage
+	}
+	h.audit(route, "guardrail_blocked")
+	writeError(w, h.options.Logger, http.StatusForbidden, code, message)
+	return false
 }
 
 func parseLLMPath(path string) (provider, upstreamPath string, ok bool) {

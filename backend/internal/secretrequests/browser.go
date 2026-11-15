@@ -256,7 +256,7 @@ func fulfillBrowserLoginRequest(
 	preRow db.SecretRequest,
 	in FulfillInput,
 	now time.Time,
-) (FulfillResult, error) {
+) (_ FulfillResult, resultErr error) {
 	if in.Broker == nil || !preRow.BrokerSessionID.Valid {
 		return FulfillResult{}, ErrUnsupportedCapability
 	}
@@ -283,30 +283,17 @@ func fulfillBrowserLoginRequest(
 		return FulfillResult{}, ErrConflict
 	}
 
-	opID := uuid.New()
-	claimed, err := db.New(pool).ClaimSecretRequestForFulfill(ctx, db.ClaimSecretRequestForFulfillParams{
-		WorkspaceID: wsPG,
-		ID:          reqPG,
-		OperationID: toPGUUID(opID),
-		AsOf:        pgtype.Timestamptz{Time: now, Valid: true},
-	})
-	if errors.Is(err, pgx.ErrNoRows) {
-		return FulfillResult{}, ErrConflict
-	}
+	claimed, err := claimFulfillment(ctx, pool, wsPG, reqPG, now)
 	if err != nil {
 		return FulfillResult{}, err
 	}
-
-	markFailed := func(code string) {
-		failCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-		defer cancel()
-		_, _ = db.New(pool).FailSecretRequestClaim(failCtx, db.FailSecretRequestClaimParams{
-			WorkspaceID: wsPG,
-			ID:          reqPG,
-			OperationID: toPGUUID(opID),
-			ErrorCode:   code,
-		})
-	}
+	failureCode := "secret_request.db_error"
+	defer func() {
+		if resultErr != nil {
+			recoverFulfillment(ctx, pool, in.Broker, claimed, failureCode, now)
+			resultErr = &fulfillmentFailure{code: failureCode, cause: resultErr}
+		}
+	}()
 
 	sessID := uuid.UUID(claimed.BrokerSessionID.Bytes)
 	botID := uuid.UUID(claimed.BotID.Bytes)
@@ -326,30 +313,23 @@ func fulfillBrowserLoginRequest(
 		Secret:   in.SecretValue,
 	})
 	if err != nil {
-		code := "secret_request.broker_error"
-		if errors.Is(err, authbroker.ErrBindingMismatch) {
-			code = "secret_request.binding_mismatch"
-		} else if errors.Is(err, authbroker.ErrSessionExpired) {
-			code = "secret_request.session_expired"
-		} else if errors.Is(err, authbroker.ErrTakeoverActive) {
-			code = "secret_request.takeover_active"
+		failureCode = "secret_request.broker_error"
+		switch {
+		case errors.Is(err, authbroker.ErrBindingMismatch):
+			failureCode = "secret_request.binding_mismatch"
+		case errors.Is(err, authbroker.ErrSessionExpired):
+			failureCode = "secret_request.session_expired"
+		case errors.Is(err, authbroker.ErrTakeoverActive):
+			failureCode = "secret_request.takeover_active"
 		}
-		markFailed(code)
-		_, _ = db.New(pool).RevokeBrokerSession(ctx, db.RevokeBrokerSessionParams{
-			WorkspaceID: wsPG,
-			ID:          claimed.BrokerSessionID,
-			RevokedAt:   pgtype.Timestamptz{Time: now, Valid: true},
-		})
-		_ = in.Broker.RevokeSession(context.WithoutCancel(ctx), in.WorkspaceID, sessID)
 		return FulfillResult{}, ErrConflict
 	}
 
 	tx, err := pool.Begin(ctx)
 	if err != nil {
-		markFailed("secret_request.db_error")
 		return FulfillResult{}, err
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
+	defer rollbackFulfillment(ctx, tx)
 	q := db.New(tx)
 
 	if _, err = q.UpdateBrokerSessionState(ctx, db.UpdateBrokerSessionStateParams{
@@ -370,7 +350,7 @@ func fulfillBrowserLoginRequest(
 		resetReq, rErr := q.ResetSecretRequestForMFA(ctx, db.ResetSecretRequestForMFAParams{
 			WorkspaceID:      wsPG,
 			ID:               reqPG,
-			OperationID:      toPGUUID(opID),
+			OperationID:      claimed.OperationID,
 			BrokerTargetID:   subRes.Session.Binding.TargetID,
 			BrokerFrameID:    subRes.Session.Binding.FrameID,
 			BrokerDocumentID: subRes.Session.Binding.DocumentID,
@@ -412,7 +392,7 @@ func fulfillBrowserLoginRequest(
 	completed, err := q.CompleteSecretRequestFulfill(ctx, db.CompleteSecretRequestFulfillParams{
 		WorkspaceID:  wsPG,
 		ID:           reqPG,
-		OperationID:  toPGUUID(opID),
+		OperationID:  claimed.OperationID,
 		GrantedScope: ScopeEphemeral,
 		DecidedBy:    actorPG,
 		DecidedAt:    pgtype.Timestamptz{Time: now, Valid: true},

@@ -1,8 +1,6 @@
 package engine
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -30,24 +28,18 @@ func Stream(ctx context.Context, cli string, stdout, stderr io.ReadCloser, emit 
 	if stdout == nil || emit == nil {
 		return errors.New("stdout and event sink are required")
 	}
-	var parse func(context.Context, io.Reader) ([]Event, error)
+	var decode func([]byte) ([]Event, error)
 	var pi piStream
 	switch cli {
 	case "claude":
-		parse = ParseClaudeStream
+		decode = decodeClaudeLine
 	case "codex":
-		parse = ParseCodexStream
+		decode = decodeCodexLine
 	case "pi":
-		// Pi needs turn state to distinguish a transient provider error from a failed run.
-		parse = func(_ context.Context, r io.Reader) ([]Event, error) {
-			line, err := io.ReadAll(r)
-			if err != nil {
-				return nil, err
-			}
-			return pi.parseLine(line)
-		}
+		// Keep Pi's state for the full turn to distinguish transient and terminal errors.
+		decode = pi.parseLine
 	case "agy":
-		parse = func(ctx context.Context, r io.Reader) ([]Event, error) { return ParseAgyStream(ctx, r, nil) }
+		decode = decodeAgyLine
 	default:
 		return errors.New("unsupported CLI")
 	}
@@ -64,53 +56,22 @@ func Stream(ctx context.Context, cli string, stdout, stderr io.ReadCloser, emit 
 		}
 		return emit(ev)
 	}
-	consume := func(r io.Reader, decode func(context.Context, io.Reader) ([]Event, error)) error {
-		reader := bufio.NewReaderSize(r, 64*1024)
-		for {
-			if err := ctx.Err(); err != nil {
-				return err
-			}
-			line, err := readBoundedLine(reader)
-			if err != nil && !errors.Is(err, io.EOF) {
-				if errors.Is(err, ErrLineTooLong) {
-					return WithFailureCode(FailureStreamFormat, err)
-				}
-				return err
-			}
-			if len(bytes.TrimSpace(line)) > 0 && decode != nil {
-				// Reuse fixture-tested decoders on one bounded record, never a whole turn.
-				events, decodeErr := decode(ctx, bytes.NewReader(line))
-				if decodeErr != nil {
-					return decodeErr
-				}
-				for _, ev := range events {
-					if emitErr := publish(ev); emitErr != nil {
-						return emitErr
-					}
-				}
-			}
-			if errors.Is(err, io.EOF) {
-				return nil
-			}
-		}
-	}
 	done := make(chan struct{}, 2)
-	run := func(r io.Reader, decode func(context.Context, io.Reader) ([]Event, error)) {
-		err := consume(r, decode)
-		if err != nil {
+	run := func(source string, r io.Reader, decodeLine func([]byte) ([]Event, error)) {
+		if err := consumeStreamLines(ctx, source, r, decodeLine, publish); err != nil {
 			cancel(err)
 		}
 		done <- struct{}{}
 	}
-	go run(stdout, parse)
+	go run(cli, stdout, decode)
 	count := 1
 	if stderr != nil {
 		count++
-		var decode func(context.Context, io.Reader) ([]Event, error)
+		var decodeStderr func([]byte) ([]Event, error)
 		if cli == "agy" {
-			decode = parseAgyStderr
+			decodeStderr = decodeAgyStderrLine
 		}
-		go run(stderr, decode)
+		go run(cli+" stderr", stderr, decodeStderr)
 	}
 	for range count {
 		<-done

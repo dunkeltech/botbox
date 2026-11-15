@@ -128,6 +128,24 @@ func TestLiveStreamFixtures(t *testing.T) {
 	}
 }
 
+func TestLiveAndBatchStreamsReportTheSameMalformedRecord(t *testing.T) {
+	const input = "{\"type\":\"turn.started\"}\r\n\r\n{\"type\":"
+	_, batchErr := engine.ParseCodexStream(t.Context(), strings.NewReader(input))
+	var emitted []engine.Event
+	liveErr := engine.Stream(t.Context(), "codex", io.NopCloser(strings.NewReader(input)), nil, func(ev engine.Event) error {
+		emitted = append(emitted, ev)
+		return nil
+	})
+	for _, err := range []error{batchErr, liveErr} {
+		if engine.TurnFailureCode(err) != engine.FailureStreamFormat || !strings.Contains(err.Error(), "codex stream line 2") {
+			t.Fatalf("expected a safe error for the second record, got %v", err)
+		}
+	}
+	if len(emitted) != 1 || emitted[0].Kind != engine.EventKindStatus {
+		t.Fatalf("valid record before malformed input was not delivered: %+v", emitted)
+	}
+}
+
 func TestClaudeAssistantTextWithoutPartialEvents(t *testing.T) {
 	input := `{"type":"assistant","message":{"content":[{"type":"text","text":"Tests passed"}]}}` + "\n"
 	var got []engine.Event

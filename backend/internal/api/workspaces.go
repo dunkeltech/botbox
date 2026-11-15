@@ -979,163 +979,62 @@ func (s *server) handleAcceptInvitation(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	tx, err := s.pool.Begin(r.Context())
-	if err != nil {
-		s.logger.Error("begin accept invitation tx", "err", err)
-		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to accept invitation")
-		return
-	}
-	defer rollbackTx(r.Context(), tx)
-
-	txq := s.queries.WithTx(tx)
-	if !s.lockMemberships(w, r, txq, preview.WorkspaceID) {
-		return
-	}
-	inv, err := txq.GetInvitationByTokenHashForUpdate(r.Context(), digest)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, s.logger, http.StatusNotFound, "invitation.not_found", "invitation not found or expired")
-			return
-		}
-		s.logger.Error("lock invitation on accept", "err", err)
-		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to accept invitation")
-		return
-	}
-
-	now = s.now().UTC()
-	if inv.AcceptedAt.Valid || !inv.ExpiresAt.Time.After(now) {
-		writeError(w, s.logger, http.StatusNotFound, "invitation.not_found", "invitation not found or expired")
-		return
-	}
-
-	var userRow db.User
+	var existingUser *uuid.UUID
 	if signedInClaims != nil {
-		userRow, err = txq.GetUserByID(r.Context(), toPGUUID(signedInClaims.Subject))
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				writeError(w, s.logger, http.StatusUnauthorized, "auth.unauthenticated", "user account not found")
-				return
-			}
-			s.logger.Error("load signed-in user on invitation accept", "err", err)
-			writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to load user")
-			return
-		}
-		if inv.Email.Valid && auth.NormalizeEmail(userRow.Email) != inv.Email.String {
-			writeError(w, s.logger, http.StatusForbidden, "invitation.email_mismatch", "signed-in account email does not match invitation")
-			return
-		}
-		if _, memberErr := txq.GetWorkspaceMember(r.Context(), db.GetWorkspaceMemberParams{
-			WorkspaceID: inv.WorkspaceID,
-			UserID:      userRow.ID,
-		}); memberErr == nil {
-			writeError(w, s.logger, http.StatusConflict, "workspace.already_member", "user is already a member of this workspace")
-			return
-		} else if !errors.Is(memberErr, pgx.ErrNoRows) {
-			s.logger.Error("check existing membership on accept", "err", memberErr)
-			writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to check workspace membership")
-			return
-		}
-	} else {
-		userRow, err = txq.CreateUser(r.Context(), db.CreateUserParams{
-			Email:        signupEmail,
-			PasswordHash: passwordHash,
-			DisplayName:  signupDisplayName,
-			Locale:       "en",
-		})
-		if err != nil {
-			if isUniqueViolation(err) {
-				writeError(w, s.logger, http.StatusConflict, "auth.account_exists", "an account with this email already exists; sign in first to accept this invitation")
-				return
-			}
-			s.logger.Error("create user on invitation accept", "err", err)
-			writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to create user account")
-			return
-		}
+		existingUser = &signedInClaims.Subject
 	}
-
-	if _, err := txq.AddWorkspaceMember(r.Context(), db.AddWorkspaceMemberParams{
-		WorkspaceID: inv.WorkspaceID,
-		UserID:      userRow.ID,
-		Role:        inv.Role,
-	}); err != nil {
-		if isUniqueViolation(err) {
-			writeError(w, s.logger, http.StatusConflict, "workspace.already_member", "user is already a member of this workspace")
-			return
-		}
-		s.logger.Error("add workspace member on accept", "err", err)
-		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to add workspace member")
-		return
-	}
-
-	if _, err := txq.MarkInvitationAccepted(r.Context(), db.MarkInvitationAcceptedParams{
-		ID:         inv.ID,
-		AcceptedAt: toPGTimestamptz(now),
-	}); err != nil {
-		s.logger.Error("mark invitation accepted", "err", err)
-		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to finalize invitation")
-		return
-	}
-
-	// Accepting an invitation with an access token must preserve that session's
-	// expiry and refresh family. Only signup authenticates a new session here.
-	accessToken := existingAccessToken
-	var plainRefresh string
-	if signedInClaims == nil {
-		plainRefresh, _, err = s.issueRefreshTokenTx(r.Context(), txq, fromPGUUID(userRow.ID), nil)
-		if err != nil {
-			s.logger.Error("issue refresh token on signup", "err", err)
-			writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to create session")
-			return
-		}
-		accessToken, err = s.issueAccessToken(userRow)
-		if err != nil {
-			s.logger.Error("issue access token on signup", "err", err)
-			writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to issue access token")
-			return
-		}
-	}
-
-	wsRows, err := txq.ListWorkspacesForUser(r.Context(), userRow.ID)
+	accepted, err := s.acceptInvitation(r.Context(), preview.WorkspaceID, digest, existingUser, db.CreateUserParams{
+		Email: signupEmail, DisplayName: signupDisplayName, PasswordHash: passwordHash, Locale: "en",
+	})
 	if err != nil {
-		s.logger.Error("list workspaces after accept", "err", err)
-		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to load workspaces")
+		var failure *invitationAcceptError
+		if !errors.As(err, &failure) {
+			s.logger.Error("accept invitation", "err", err)
+			writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to accept invitation")
+			return
+		}
+		if failure.cause != nil {
+			s.logger.Error("accept invitation", "err", failure.cause)
+		}
+		writeError(w, s.logger, invitationErrorStatus(failure.code), failure.code, failure.message)
 		return
 	}
 
-	wsUUID := fromPGUUID(inv.WorkspaceID)
-	userUUID := fromPGUUID(userRow.ID)
-	invUUID := fromPGUUID(inv.ID)
-	if err := recordAudit(r.Context(), txq, &wsUUID, &userUUID, "invitation.accepted", "invitation", &invUUID, map[string]any{
-		"role": inv.Role,
-	}); err != nil {
-		s.logger.Error("audit accept invitation", "err", err)
-		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to record audit log")
-		return
-	}
-
-	if err := tx.Commit(r.Context()); err != nil {
-		s.logger.Error("commit accept invitation", "err", err)
-		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to accept invitation")
-		return
-	}
-
-	wsList := toAPIWorkspaceList(wsRows)
+	wsList := toAPIWorkspaceList(accepted.workspaces)
 	var activeWS *api.WorkspaceSummary
 	for i := range wsList {
-		if wsList[i].Id == wsUUID {
+		if wsList[i].Id == accepted.workspaceID {
 			wsCopy := wsList[i]
 			activeWS = &wsCopy
 			break
 		}
 	}
 
-	if plainRefresh != "" {
-		s.setRefreshCookie(w, plainRefresh)
+	// Only signup opens a new session. Existing JWTs keep their expiry and refresh family.
+	accessToken := existingAccessToken
+	if accepted.refreshToken != "" {
+		s.setRefreshCookie(w, accepted.refreshToken)
+		accessToken = accepted.accessToken
 	}
 	writeJSON(w, s.logger, http.StatusOK, api.AuthSessionResponse{
-		User:            toAPIUser(userRow),
+		User:            toAPIUser(accepted.user),
 		Workspaces:      wsList,
 		ActiveWorkspace: activeWS,
 		AccessToken:     accessToken,
 	})
+}
+
+func invitationErrorStatus(code string) int {
+	switch code {
+	case "workspace.not_found", "invitation.not_found":
+		return http.StatusNotFound
+	case "auth.unauthenticated":
+		return http.StatusUnauthorized
+	case "invitation.email_mismatch":
+		return http.StatusForbidden
+	case "auth.account_exists", "workspace.already_member":
+		return http.StatusConflict
+	default:
+		return http.StatusInternalServerError
+	}
 }

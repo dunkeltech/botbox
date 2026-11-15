@@ -71,6 +71,11 @@ UPDATE bot_turns
 SET status='queued', continuation_prompt=$3, error_code='', updated_at=now()
 WHERE workspace_id=$1 AND id=$2 AND status='waiting_secret';
 
+-- name: FailWaitingSecretBotTurn :exec
+UPDATE bot_turns
+SET status='failed', error_code=$3, updated_at=now()
+WHERE workspace_id=$1 AND id=$2 AND status='waiting_secret';
+
 -- name: InterruptWaitingSecretTurnsForBot :execrows
 UPDATE bot_turns
 SET status='interrupted', error_code='engine.interrupted', updated_at=now()

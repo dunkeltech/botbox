@@ -275,3 +275,93 @@ func (r *replacingWriteCloser) Write(p []byte) (int, error) {
 }
 
 func (r *replacingWriteCloser) Close() error { return nil }
+
+func TestGuardrailInputIsConsistentWithAndWithoutMetering(t *testing.T) {
+	t.Parallel()
+	const input = `{"model":"model-fixture","input":"fixture-private-value"}`
+	for _, metered := range []bool{false, true} {
+		name := "unmetered"
+		if metered {
+			name = "metered"
+		}
+		t.Run(name, func(t *testing.T) {
+			for _, tc := range []struct {
+				name       string
+				decision   llmproxy.GuardrailInputDecision
+				err        error
+				wantStatus int
+				wantCode   string
+			}{
+				{"blocked", llmproxy.GuardrailInputDecision{Action: "blocked"}, nil, http.StatusForbidden, "guardrail_blocked"},
+				{"unavailable", llmproxy.GuardrailInputDecision{}, errors.New("fixture-private-value"), http.StatusForbidden, "guardrail_unavailable"},
+				{"redacted", llmproxy.GuardrailInputDecision{Action: "redacted", Body: []byte(`{"model":"model-fixture","input":"[REDACTED]"}`)}, nil, http.StatusOK, ""},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					var evaluated, admitted, forwarded, settled int
+					var order []string
+					opts := &llmproxy.Options{
+						Guardrails: &fakeGuardrailEnforcer{inputFn: func(_ context.Context, provider, model, path string, body []byte) (llmproxy.GuardrailInputDecision, error) {
+							evaluated++
+							order = append(order, "guardrails")
+							if provider != "openai" || model != "model-fixture" || path != "/v1/responses" || string(body) != input {
+								t.Fatal("guardrails received unexpected request metadata")
+							}
+							return tc.decision, tc.err
+						}},
+						Client: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+							forwarded++
+							order = append(order, "upstream")
+							body, err := io.ReadAll(r.Body)
+							closeErr := r.Body.Close()
+							if err != nil || closeErr != nil || !bytes.Equal(body, tc.decision.Body) || r.ContentLength != int64(len(body)) {
+								t.Fatal("upstream did not receive only the redacted request")
+							}
+							resp := httptest.NewRecorder()
+							resp.Header().Set("Content-Type", "application/json")
+							_, _ = resp.WriteString(`{"usage":{"input_tokens":1,"output_tokens":2}}`)
+							return resp.Result(), nil
+						})},
+					}
+					if metered {
+						opts.Admit = func(context.Context, string, string, string) (func(llmproxy.Usage) error, error) {
+							admitted++
+							order = append(order, "admit")
+							return func(usage llmproxy.Usage) error {
+								settled++
+								order = append(order, "settle")
+								if !usage.Known || usage.InputTokens != 1 || usage.OutputTokens != 2 {
+									t.Fatalf("incorrect settlement: %+v", usage)
+								}
+								return nil
+							}, nil
+						}
+					}
+					handler, err := llmproxy.NewScopedHandler("ws-1", "bot-1", func(context.Context, string, string) (*llmproxy.SecretConfig, error) {
+						return &llmproxy.SecretConfig{UpstreamURL: "https://provider.invalid", AuthKind: llmproxy.AuthKindBearer, SecretValue: "synthetic-value"}, nil
+					}, opts)
+					if err != nil {
+						t.Fatal(err)
+					}
+					response := httptest.NewRecorder()
+					handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/llm/openai/v1/responses", strings.NewReader(input)))
+					if response.Code != tc.wantStatus || evaluated != 1 || strings.Contains(response.Body.String(), "fixture-private-value") {
+						t.Fatalf("unexpected guardrail result: status=%d evaluations=%d body=%s", response.Code, evaluated, response.Body.String())
+					}
+					if tc.wantCode != "" {
+						if !strings.Contains(response.Body.String(), tc.wantCode) || admitted != 0 || forwarded != 0 || settled != 0 {
+							t.Fatal("blocked request reached admission or upstream")
+						}
+						return
+					}
+					wantOrder := "guardrails,upstream"
+					if metered {
+						wantOrder = "guardrails,admit,upstream,settle"
+					}
+					if strings.Join(order, ",") != wantOrder || forwarded != 1 {
+						t.Fatalf("wrong request lifecycle: %v", order)
+					}
+				})
+			}
+		})
+	}
+}

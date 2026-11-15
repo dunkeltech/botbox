@@ -150,276 +150,209 @@ func claudeBlockText(raw json.RawMessage) (string, error) {
 
 // ParseClaudeStream decodes NDJSON output from `claude -p --output-format stream-json`.
 func ParseClaudeStream(ctx context.Context, r io.Reader) ([]Event, error) {
-	return scanNDJSON(ctx, "claude", r, func(line []byte) ([]Event, error) {
-		var env struct {
-			Type string `json:"type"`
+	return scanNDJSON(ctx, "claude", r, decodeClaudeLine)
+}
+
+func decodeClaudeLine(line []byte) ([]Event, error) {
+	var env struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(line, &env); err != nil {
+		return nil, err
+	}
+	if env.Type == "" {
+		return nil, errors.New("claude event type is missing")
+	}
+
+	// Auxiliary events may use message as text. Decode only the fields
+	// required by each event type so new notices cannot interrupt a turn.
+	var out []Event
+	switch env.Type {
+	case "system":
+		var system struct {
+			SessionID string `json:"session_id"`
 		}
-		if err := json.Unmarshal(line, &env); err != nil {
+		if err := json.Unmarshal(line, &system); err != nil {
 			return nil, err
 		}
-		if env.Type == "" {
-			return nil, errors.New("claude event type is missing")
+		out = append(out, Event{Kind: EventKindStatus, Status: "thinking", SessionID: system.SessionID})
+	case "stream_event":
+		var stream struct {
+			Event struct {
+				Delta struct {
+					Type string `json:"type"`
+					Text string `json:"text"`
+				} `json:"delta"`
+			} `json:"event"`
 		}
-
-		// Auxiliary events may use message as text. Decode only the fields
-		// required by each event type so new notices cannot interrupt a turn.
-		var out []Event
-		switch env.Type {
-		case "system":
-			var system struct {
-				SessionID string `json:"session_id"`
-			}
-			if err := json.Unmarshal(line, &system); err != nil {
-				return nil, err
-			}
-			out = append(out, Event{Kind: EventKindStatus, Status: "thinking", SessionID: system.SessionID})
-		case "stream_event":
-			var stream struct {
-				Event struct {
-					Delta struct {
-						Type string `json:"type"`
-						Text string `json:"text"`
-					} `json:"delta"`
-				} `json:"event"`
-			}
-			if err := json.Unmarshal(line, &stream); err != nil {
-				return nil, err
-			}
-			if stream.Event.Delta.Type == "text_delta" && stream.Event.Delta.Text != "" {
-				out = append(out, Event{Kind: EventKindTextDelta, Text: stream.Event.Delta.Text})
-			}
-		case "assistant", "user":
-			var message struct {
-				Message *struct {
-					Content json.RawMessage `json:"content"`
-				} `json:"message"`
-			}
-			if err := json.Unmarshal(line, &message); err != nil {
-				return nil, err
-			}
-			if message.Message == nil {
-				return nil, errors.New("claude message is missing")
-			}
-			content := bytes.TrimSpace(message.Message.Content)
-			if len(content) == 0 || bytes.Equal(content, []byte("null")) {
-				return nil, errors.New("claude message content is missing")
-			}
-			if env.Type == "assistant" && content[0] != '[' {
-				return nil, errors.New("claude assistant content is not a block list")
-			}
-			blocks, err := claudeContentBlocks(content)
-			if err != nil {
-				return nil, err
-			}
-			var text strings.Builder
-			for _, item := range blocks {
-				if env.Type == "user" {
-					if item.Type == "tool_result" {
-						result, err := claudeBlockText(item.Content)
-						if err != nil {
-							return nil, err
-						}
-						out = append(out, Event{Kind: EventKindToolResult, ToolID: item.ToolUseID, Text: result, IsError: item.IsError})
+		if err := json.Unmarshal(line, &stream); err != nil {
+			return nil, err
+		}
+		if stream.Event.Delta.Type == "text_delta" && stream.Event.Delta.Text != "" {
+			out = append(out, Event{Kind: EventKindTextDelta, Text: stream.Event.Delta.Text})
+		}
+	case "assistant", "user":
+		var message struct {
+			Message *struct {
+				Content json.RawMessage `json:"content"`
+			} `json:"message"`
+		}
+		if err := json.Unmarshal(line, &message); err != nil {
+			return nil, err
+		}
+		if message.Message == nil {
+			return nil, errors.New("claude message is missing")
+		}
+		content := bytes.TrimSpace(message.Message.Content)
+		if len(content) == 0 || bytes.Equal(content, []byte("null")) {
+			return nil, errors.New("claude message content is missing")
+		}
+		if env.Type == "assistant" && content[0] != '[' {
+			return nil, errors.New("claude assistant content is not a block list")
+		}
+		blocks, err := claudeContentBlocks(content)
+		if err != nil {
+			return nil, err
+		}
+		var text strings.Builder
+		for _, item := range blocks {
+			if env.Type == "user" {
+				if item.Type == "tool_result" {
+					result, err := claudeBlockText(item.Content)
+					if err != nil {
+						return nil, err
 					}
-					continue
+					out = append(out, Event{Kind: EventKindToolResult, ToolID: item.ToolUseID, Text: result, IsError: item.IsError})
 				}
-				if item.Type == "text" {
-					piece := item.Text
-					if piece == "" {
-						piece, err = claudeBlockText(item.Content)
-						if err != nil {
-							return nil, err
-						}
+				continue
+			}
+			if item.Type == "text" {
+				piece := item.Text
+				if piece == "" {
+					piece, err = claudeBlockText(item.Content)
+					if err != nil {
+						return nil, err
 					}
-					text.WriteString(piece)
 				}
-				if item.Type == "tool_use" {
-					out = append(out, Event{
-						Kind:      EventKindToolCall,
-						ToolID:    item.ID,
-						ToolName:  item.Name,
-						ToolInput: item.Input,
-						Status:    "action",
-					})
-				}
+				text.WriteString(piece)
 			}
-			if text.Len() > 0 {
-				out = append(out, Event{Kind: EventKindMessage, Text: text.String()})
-			}
-		case "result":
-			var result struct {
-				IsError bool `json:"is_error"`
-				Usage   *struct {
-					InputTokens  int64 `json:"input_tokens"`
-					OutputTokens int64 `json:"output_tokens"`
-					CacheTokens  int64 `json:"cache_read_input_tokens"`
-				} `json:"usage"`
-			}
-			if err := json.Unmarshal(line, &result); err != nil {
-				return nil, err
-			}
-			if result.Usage != nil {
+			if item.Type == "tool_use" {
 				out = append(out, Event{
-					Kind:         EventKindUsage,
-					InputTokens:  result.Usage.InputTokens,
-					OutputTokens: result.Usage.OutputTokens,
-					CacheTokens:  result.Usage.CacheTokens,
+					Kind:      EventKindToolCall,
+					ToolID:    item.ID,
+					ToolName:  item.Name,
+					ToolInput: item.Input,
+					Status:    "action",
 				})
 			}
-			if result.IsError {
-				out = append(out, Event{Kind: EventKindError, ErrorCode: "cli_error", ErrorMessage: "claude reported error result"})
-			}
-			out = append(out, Event{Kind: EventKindStatus, Status: "idle"})
 		}
-		return out, nil
-	})
+		if text.Len() > 0 {
+			out = append(out, Event{Kind: EventKindMessage, Text: text.String()})
+		}
+	case "result":
+		var result struct {
+			IsError bool `json:"is_error"`
+			Usage   *struct {
+				InputTokens  int64 `json:"input_tokens"`
+				OutputTokens int64 `json:"output_tokens"`
+				CacheTokens  int64 `json:"cache_read_input_tokens"`
+			} `json:"usage"`
+		}
+		if err := json.Unmarshal(line, &result); err != nil {
+			return nil, err
+		}
+		if result.Usage != nil {
+			out = append(out, Event{
+				Kind:         EventKindUsage,
+				InputTokens:  result.Usage.InputTokens,
+				OutputTokens: result.Usage.OutputTokens,
+				CacheTokens:  result.Usage.CacheTokens,
+			})
+		}
+		if result.IsError {
+			out = append(out, Event{Kind: EventKindError, ErrorCode: "cli_error", ErrorMessage: "claude reported error result"})
+		}
+		out = append(out, Event{Kind: EventKindStatus, Status: "idle"})
+	}
+	return out, nil
 }
 
 // ParseCodexStream decodes NDJSON output from `codex exec --json`.
 func ParseCodexStream(ctx context.Context, r io.Reader) ([]Event, error) {
-	return scanNDJSON(ctx, "codex", r, func(line []byte) ([]Event, error) {
-		var env struct {
-			Type      string `json:"type"`
-			SessionID string `json:"thread_id"`
-			Item      *struct {
-				ID               string `json:"id"`
-				Type             string `json:"type"`
-				Command          string `json:"command"`
-				AggregatedOutput string `json:"aggregated_output"`
-				ExitCode         int    `json:"exit_code"`
-				Text             string `json:"text"`
-			} `json:"item"`
-			Usage *struct {
-				InputTokens  int64 `json:"input_tokens"`
-				OutputTokens int64 `json:"output_tokens"`
-				CacheTokens  int64 `json:"cached_input_tokens"`
-			} `json:"usage"`
-		}
-		if err := json.Unmarshal(line, &env); err != nil {
-			return nil, err
-		}
+	return scanNDJSON(ctx, "codex", r, decodeCodexLine)
+}
 
-		var out []Event
-		switch env.Type {
-		case "thread.started", "turn.started":
-			out = append(out, Event{Kind: EventKindStatus, Status: "thinking", SessionID: env.SessionID})
-		case "item.started":
-			if env.Item != nil && env.Item.Type == "command_execution" {
-				inputJSON, _ := json.Marshal(map[string]string{"command": env.Item.Command})
+func decodeCodexLine(line []byte) ([]Event, error) {
+	var env struct {
+		Type      string `json:"type"`
+		SessionID string `json:"thread_id"`
+		Item      *struct {
+			ID               string `json:"id"`
+			Type             string `json:"type"`
+			Command          string `json:"command"`
+			AggregatedOutput string `json:"aggregated_output"`
+			ExitCode         int    `json:"exit_code"`
+			Text             string `json:"text"`
+		} `json:"item"`
+		Usage *struct {
+			InputTokens  int64 `json:"input_tokens"`
+			OutputTokens int64 `json:"output_tokens"`
+			CacheTokens  int64 `json:"cached_input_tokens"`
+		} `json:"usage"`
+	}
+	if err := json.Unmarshal(line, &env); err != nil {
+		return nil, err
+	}
+
+	var out []Event
+	switch env.Type {
+	case "thread.started", "turn.started":
+		out = append(out, Event{Kind: EventKindStatus, Status: "thinking", SessionID: env.SessionID})
+	case "item.started":
+		if env.Item != nil && env.Item.Type == "command_execution" {
+			inputJSON, _ := json.Marshal(map[string]string{"command": env.Item.Command})
+			out = append(out, Event{
+				Kind:      EventKindToolCall,
+				ToolID:    env.Item.ID,
+				ToolName:  "shell",
+				ToolInput: inputJSON,
+				Status:    "action",
+			})
+		}
+	case "item.completed":
+		if env.Item != nil {
+			switch env.Item.Type {
+			case "command_execution":
 				out = append(out, Event{
-					Kind:      EventKindToolCall,
-					ToolID:    env.Item.ID,
-					ToolName:  "shell",
-					ToolInput: inputJSON,
-					Status:    "action",
+					Kind:    EventKindToolResult,
+					ToolID:  env.Item.ID,
+					Text:    env.Item.AggregatedOutput,
+					IsError: env.Item.ExitCode != 0,
 				})
-			}
-		case "item.completed":
-			if env.Item != nil {
-				switch env.Item.Type {
-				case "command_execution":
-					out = append(out, Event{
-						Kind:    EventKindToolResult,
-						ToolID:  env.Item.ID,
-						Text:    env.Item.AggregatedOutput,
-						IsError: env.Item.ExitCode != 0,
-					})
-				case "agent_message":
-					if env.Item.Text != "" {
-						out = append(out, Event{Kind: EventKindTextDelta, Text: env.Item.Text})
-					}
+			case "agent_message":
+				if env.Item.Text != "" {
+					out = append(out, Event{Kind: EventKindTextDelta, Text: env.Item.Text})
 				}
 			}
-		case "turn.completed":
-			if env.Usage != nil {
-				out = append(out, Event{
-					Kind:         EventKindUsage,
-					InputTokens:  env.Usage.InputTokens,
-					OutputTokens: env.Usage.OutputTokens,
-					CacheTokens:  env.Usage.CacheTokens,
-				})
-			}
-			out = append(out, Event{Kind: EventKindStatus, Status: "idle"})
 		}
-		return out, nil
-	})
+	case "turn.completed":
+		if env.Usage != nil {
+			out = append(out, Event{
+				Kind:         EventKindUsage,
+				InputTokens:  env.Usage.InputTokens,
+				OutputTokens: env.Usage.OutputTokens,
+				CacheTokens:  env.Usage.CacheTokens,
+			})
+		}
+		out = append(out, Event{Kind: EventKindStatus, Status: "idle"})
+	}
+	return out, nil
 }
 
 // ParseAgyStream decodes NDJSON stdout from `agy --output-format stream-json`
 // and captures stderr soft-denial notices (since agy exits 0 when tools are soft-denied).
 func ParseAgyStream(ctx context.Context, stdout, stderr io.Reader) ([]Event, error) {
-	events, err := scanNDJSON(ctx, "agy", stdout, func(line []byte) ([]Event, error) {
-		var env struct {
-			Type      string `json:"type"`
-			SessionID string `json:"conversation_id"`
-			TextDelta *struct {
-				Text string `json:"text"`
-			} `json:"text_delta"`
-			ToolInfo *struct {
-				ID      string          `json:"id"`
-				Name    string          `json:"name"`
-				Status  string          `json:"status"`
-				Input   json.RawMessage `json:"input"`
-				Output  string          `json:"output"`
-				IsError bool            `json:"is_error"`
-			} `json:"tool_info"`
-			SubagentInfo *struct {
-				Role   string `json:"role"`
-				Status string `json:"status"`
-			} `json:"subagent_info"`
-			Usage *struct {
-				InputTokens  int64 `json:"input_tokens"`
-				OutputTokens int64 `json:"output_tokens"`
-				CacheTokens  int64 `json:"cache_tokens"`
-			} `json:"usage"`
-		}
-		if err := json.Unmarshal(line, &env); err != nil {
-			return nil, err
-		}
-
-		var out []Event
-		switch env.Type {
-		case "init":
-			out = append(out, Event{Kind: EventKindStatus, Status: "thinking", SessionID: env.SessionID})
-		case "step_update":
-			if env.TextDelta != nil && env.TextDelta.Text != "" {
-				out = append(out, Event{Kind: EventKindTextDelta, Text: env.TextDelta.Text})
-			}
-			if env.ToolInfo != nil {
-				switch env.ToolInfo.Status {
-				case "running", "pending":
-					out = append(out, Event{
-						Kind:      EventKindToolCall,
-						ToolID:    env.ToolInfo.ID,
-						ToolName:  env.ToolInfo.Name,
-						ToolInput: env.ToolInfo.Input,
-						Status:    "action",
-					})
-				case "completed", "failed":
-					out = append(out, Event{
-						Kind:    EventKindToolResult,
-						ToolID:  env.ToolInfo.ID,
-						Text:    env.ToolInfo.Output,
-						IsError: env.ToolInfo.IsError || env.ToolInfo.Status == "failed",
-					})
-				}
-			}
-			if env.SubagentInfo != nil {
-				out = append(out, Event{Kind: EventKindStatus, Status: "thinking"})
-			}
-		case "result":
-			if env.Usage != nil {
-				out = append(out, Event{
-					Kind:         EventKindUsage,
-					InputTokens:  env.Usage.InputTokens,
-					OutputTokens: env.Usage.OutputTokens,
-					CacheTokens:  env.Usage.CacheTokens,
-				})
-			}
-			out = append(out, Event{Kind: EventKindStatus, Status: "idle"})
-		}
-		return out, nil
-	})
+	events, err := scanNDJSON(ctx, "agy", stdout, decodeAgyLine)
 	if err != nil {
 		return nil, err
 	}
@@ -434,72 +367,145 @@ func ParseAgyStream(ctx context.Context, stdout, stderr io.Reader) ([]Event, err
 	return events, nil
 }
 
-func parseAgyStderr(ctx context.Context, r io.Reader) ([]Event, error) {
-	reader := bufio.NewReaderSize(r, 64*1024)
+func decodeAgyLine(line []byte) ([]Event, error) {
+	var env struct {
+		Type      string `json:"type"`
+		SessionID string `json:"conversation_id"`
+		TextDelta *struct {
+			Text string `json:"text"`
+		} `json:"text_delta"`
+		ToolInfo *struct {
+			ID      string          `json:"id"`
+			Name    string          `json:"name"`
+			Status  string          `json:"status"`
+			Input   json.RawMessage `json:"input"`
+			Output  string          `json:"output"`
+			IsError bool            `json:"is_error"`
+		} `json:"tool_info"`
+		SubagentInfo *struct {
+			Role   string `json:"role"`
+			Status string `json:"status"`
+		} `json:"subagent_info"`
+		Usage *struct {
+			InputTokens  int64 `json:"input_tokens"`
+			OutputTokens int64 `json:"output_tokens"`
+			CacheTokens  int64 `json:"cache_tokens"`
+		} `json:"usage"`
+	}
+	if err := json.Unmarshal(line, &env); err != nil {
+		return nil, err
+	}
+
 	var out []Event
-	for {
-		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("agy stderr canceled: %w", err)
+	switch env.Type {
+	case "init":
+		out = append(out, Event{Kind: EventKindStatus, Status: "thinking", SessionID: env.SessionID})
+	case "step_update":
+		if env.TextDelta != nil && env.TextDelta.Text != "" {
+			out = append(out, Event{Kind: EventKindTextDelta, Text: env.TextDelta.Text})
 		}
-		line, err := readBoundedLine(reader)
-		if err != nil && !errors.Is(err, io.EOF) {
-			return nil, fmt.Errorf("agy stderr: %w", err)
-		}
-		trimmed := strings.TrimSpace(string(line))
-		if trimmed != "" {
-			lower := strings.ToLower(trimmed)
-			if strings.Contains(lower, "permission denied") || strings.Contains(lower, "denied") {
+		if env.ToolInfo != nil {
+			switch env.ToolInfo.Status {
+			case "running", "pending":
 				out = append(out, Event{
-					Kind:         EventKindError,
-					ErrorCode:    "tool_soft_denied",
-					ErrorMessage: trimmed,
+					Kind:      EventKindToolCall,
+					ToolID:    env.ToolInfo.ID,
+					ToolName:  env.ToolInfo.Name,
+					ToolInput: env.ToolInfo.Input,
+					Status:    "action",
+				})
+			case "completed", "failed":
+				out = append(out, Event{
+					Kind:    EventKindToolResult,
+					ToolID:  env.ToolInfo.ID,
+					Text:    env.ToolInfo.Output,
+					IsError: env.ToolInfo.IsError || env.ToolInfo.Status == "failed",
 				})
 			}
 		}
-		if errors.Is(err, io.EOF) {
-			break
+		if env.SubagentInfo != nil {
+			out = append(out, Event{Kind: EventKindStatus, Status: "thinking"})
 		}
+	case "result":
+		if env.Usage != nil {
+			out = append(out, Event{
+				Kind:         EventKindUsage,
+				InputTokens:  env.Usage.InputTokens,
+				OutputTokens: env.Usage.OutputTokens,
+				CacheTokens:  env.Usage.CacheTokens,
+			})
+		}
+		out = append(out, Event{Kind: EventKindStatus, Status: "idle"})
 	}
 	return out, nil
 }
 
-func scanNDJSON(
-	ctx context.Context,
-	source string,
-	r io.Reader,
-	parseLine func([]byte) ([]Event, error),
-) ([]Event, error) {
+func parseAgyStderr(ctx context.Context, r io.Reader) ([]Event, error) {
+	return scanNDJSON(ctx, "agy stderr", r, decodeAgyStderrLine)
+}
+
+func decodeAgyStderrLine(line []byte) ([]Event, error) {
+	text := string(line)
+	if !strings.Contains(strings.ToLower(text), "denied") {
+		return nil, nil
+	}
+	return []Event{{Kind: EventKindError, ErrorCode: "tool_soft_denied", ErrorMessage: text}}, nil
+}
+
+func scanNDJSON(ctx context.Context, source string, r io.Reader, decode func([]byte) ([]Event, error)) ([]Event, error) {
 	if r == nil {
 		return nil, fmt.Errorf("%s stream reader is nil", source)
 	}
+	var events []Event
+	err := consumeStreamLines(ctx, source, r, decode, func(event Event) error {
+		events = append(events, event)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return events, nil
+}
+
+func consumeStreamLines(
+	ctx context.Context,
+	source string,
+	r io.Reader,
+	decode func([]byte) ([]Event, error),
+	emit func(Event) error,
+) error {
 	reader := bufio.NewReaderSize(r, 64*1024)
-	var all []Event
-	lineNum := 0
+	record := 0
 	for {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("%s stream canceled: %w", source, err)
+			return fmt.Errorf("%s stream canceled: %w", source, err)
 		}
 		line, err := readBoundedLine(reader)
 		if err != nil && !errors.Is(err, io.EOF) {
 			if errors.Is(err, ErrLineTooLong) {
 				err = WithFailureCode(FailureStreamFormat, err)
 			}
-			return nil, fmt.Errorf("%s stream line %d: %w", source, lineNum+1, err)
+			return fmt.Errorf("%s stream line %d: %w", source, record+1, err)
 		}
-		trimmed := strings.TrimSpace(string(line))
-		if trimmed != "" {
-			lineNum++
-			parsed, parseErr := parseLine([]byte(trimmed))
-			if parseErr != nil {
-				return nil, fmt.Errorf("%s stream line %d: %w", source, lineNum, WithFailureCode(FailureStreamFormat, parseErr))
+		if trimmed := bytes.TrimSpace(line); len(trimmed) > 0 && decode != nil {
+			record++
+			events, decodeErr := decode(trimmed)
+			if decodeErr != nil {
+				if !errors.Is(decodeErr, context.Canceled) {
+					decodeErr = WithFailureCode(FailureStreamFormat, decodeErr)
+				}
+				return fmt.Errorf("%s stream line %d: %w", source, record, decodeErr)
 			}
-			all = append(all, parsed...)
+			for _, event := range events {
+				if emitErr := emit(event); emitErr != nil {
+					return emitErr
+				}
+			}
 		}
 		if errors.Is(err, io.EOF) {
-			break
+			return nil
 		}
 	}
-	return all, nil
 }
 
 func readBoundedLine(reader *bufio.Reader) ([]byte, error) {

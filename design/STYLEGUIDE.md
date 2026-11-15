@@ -391,6 +391,7 @@ The existing GitLab instance and bot-assignment panels cover browser, REST API a
 Git HTTPS access. Removing access explains that sessions, token grants and pending
 requests are revoked. Secret cards show the exact canonical origin and adapter.
 Group secret and broker dialogs name the bot that sent the selected request.
+When fulfillment fails after submission, the conversation shows a failed secret request and turn. A separate pending request keeps the group paused.
 Eligible saved GitLab credentials are tried without opening a secret card.
 Only non-secret placeholders may appear in CLI continuation guidance. Failed
 credential requests use specific next-intl messages for registration, assignment,

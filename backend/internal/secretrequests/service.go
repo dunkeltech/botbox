@@ -370,7 +370,7 @@ func CreateRequest(ctx context.Context, pool *pgxpool.Pool, in CreateInput) (Cre
 
 // FulfillRequest validates RBAC, capability, host allowlist, conflicts, encrypts the secret
 // outside the DB transaction after claiming the request, persists the grant, and marks the turn queued.
-func FulfillRequest(ctx context.Context, pool *pgxpool.Pool, ring *secrets.KeyRing, in FulfillInput) (FulfillResult, error) {
+func FulfillRequest(ctx context.Context, pool *pgxpool.Pool, ring *secrets.KeyRing, in FulfillInput) (_ FulfillResult, resultErr error) {
 	if pool == nil || ring == nil {
 		return FulfillResult{}, errors.New("database pool and key ring are required")
 	}
@@ -482,30 +482,17 @@ func FulfillRequest(ctx context.Context, pool *pgxpool.Pool, ring *secrets.KeyRi
 		}
 	}
 
-	opID := uuid.New()
-	claimed, err := db.New(pool).ClaimSecretRequestForFulfill(ctx, db.ClaimSecretRequestForFulfillParams{
-		WorkspaceID: wsPG,
-		ID:          reqPG,
-		OperationID: toPGUUID(opID),
-		AsOf:        pgtype.Timestamptz{Time: now, Valid: true},
-	})
-	if errors.Is(err, pgx.ErrNoRows) {
-		return FulfillResult{}, ErrConflict
-	}
+	claimed, err := claimFulfillment(ctx, pool, wsPG, reqPG, now)
 	if err != nil {
 		return FulfillResult{}, err
 	}
-
-	markFailed := func(code string) {
-		failCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-		defer cancel()
-		_, _ = db.New(pool).FailSecretRequestClaim(failCtx, db.FailSecretRequestClaimParams{
-			WorkspaceID: wsPG,
-			ID:          reqPG,
-			OperationID: toPGUUID(opID),
-			ErrorCode:   code,
-		})
-	}
+	failureCode := "secret_request.db_error"
+	defer func() {
+		if resultErr != nil {
+			recoverFulfillment(ctx, pool, in.Broker, claimed, failureCode, now)
+			resultErr = &fulfillmentFailure{code: failureCode, cause: resultErr}
+		}
+	}()
 
 	grantID := uuid.New()
 	aadScope := "lease"
@@ -518,7 +505,7 @@ func FulfillRequest(ctx context.Context, pool *pgxpool.Pool, ring *secrets.KeyRi
 	aad := secrets.SecretAAD(in.WorkspaceID, aadScope, grantID)
 	ct, err := ring.Encrypt(secretBytes, aad)
 	if err != nil {
-		markFailed("secret_request.encryption_failed")
+		failureCode = "secret_request.encryption_failed"
 		return FulfillResult{}, err
 	}
 
@@ -530,15 +517,14 @@ func FulfillRequest(ctx context.Context, pool *pgxpool.Pool, ring *secrets.KeyRi
 
 	tx, err := pool.Begin(ctx)
 	if err != nil {
-		markFailed("secret_request.db_error")
 		return FulfillResult{}, err
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
+	defer rollbackFulfillment(ctx, tx)
 	q := db.New(tx)
 
 	if mitmproxy.IsGitLabAdapter(adapter.ID) && adapter.Host != "gitlab.com" {
 		if err := gitlabaccess.Check(ctx, q, in.WorkspaceID, uuid.UUID(claimed.BotID.Bytes), adapter.CanonicalOrigin()); err != nil {
-			markFailed("secret_request.access_removed")
+			failureCode = "secret_request.access_removed"
 			return FulfillResult{}, err
 		}
 	}
@@ -570,7 +556,7 @@ func FulfillRequest(ctx context.Context, pool *pgxpool.Pool, ring *secrets.KeyRi
 			ExpiresAt:        pgtype.Timestamptz{Time: leaseExp, Valid: true},
 			CreatedBy:        actorPG,
 		}); err != nil {
-			markFailed("secret_request.lease_insert_failed")
+			failureCode = "secret_request.lease_insert_failed"
 			return FulfillResult{}, err
 		}
 
@@ -584,7 +570,7 @@ func FulfillRequest(ctx context.Context, pool *pgxpool.Pool, ring *secrets.KeyRi
 		})
 		if cErr == nil {
 			if !in.ReplaceExisting {
-				markFailed("secret_request.conflict")
+				failureCode = "secret_request.conflict"
 				return FulfillResult{}, ErrSecretRuleConflict
 			}
 			// Re-encrypt using existing secret ID so AAD stays bound to the primary key.
@@ -593,7 +579,7 @@ func FulfillRequest(ctx context.Context, pool *pgxpool.Pool, ring *secrets.KeyRi
 			repAAD := secrets.SecretAAD(in.WorkspaceID, "bot", existingUID)
 			repCT, repErr := ring.Encrypt(secretBytes, repAAD)
 			if repErr != nil {
-				markFailed("secret_request.encryption_failed")
+				failureCode = "secret_request.encryption_failed"
 				return FulfillResult{}, repErr
 			}
 			if _, err = q.UpdateBotSecretByWorkspaceBotAndID(ctx, db.UpdateBotSecretByWorkspaceBotAndIDParams{
@@ -612,7 +598,7 @@ func FulfillRequest(ctx context.Context, pool *pgxpool.Pool, ring *secrets.KeyRi
 				EncryptedValue:  repCT.Ciphertext,
 				MaskedPreview:   "••••••••",
 			}); err != nil {
-				markFailed("secret_request.secret_update_failed")
+				failureCode = "secret_request.secret_update_failed"
 				return FulfillResult{}, err
 			}
 		} else if errors.Is(cErr, pgx.ErrNoRows) {
@@ -634,11 +620,10 @@ func FulfillRequest(ctx context.Context, pool *pgxpool.Pool, ring *secrets.KeyRi
 				MaskedPreview:   "••••••••",
 				CreatedBy:       actorPG,
 			}); err != nil {
-				markFailed("secret_request.secret_insert_failed")
+				failureCode = "secret_request.secret_insert_failed"
 				return FulfillResult{}, err
 			}
 		} else {
-			markFailed("secret_request.db_error")
 			return FulfillResult{}, cErr
 		}
 
@@ -651,7 +636,7 @@ func FulfillRequest(ctx context.Context, pool *pgxpool.Pool, ring *secrets.KeyRi
 		})
 		if cErr == nil {
 			if !in.ReplaceExisting {
-				markFailed("secret_request.conflict")
+				failureCode = "secret_request.conflict"
 				return FulfillResult{}, ErrSecretRuleConflict
 			}
 			grantID = uuid.UUID(existingID.Bytes)
@@ -659,7 +644,7 @@ func FulfillRequest(ctx context.Context, pool *pgxpool.Pool, ring *secrets.KeyRi
 			repAAD := secrets.SecretAAD(in.WorkspaceID, "workspace", existingUID)
 			repCT, repErr := ring.Encrypt(secretBytes, repAAD)
 			if repErr != nil {
-				markFailed("secret_request.encryption_failed")
+				failureCode = "secret_request.encryption_failed"
 				return FulfillResult{}, repErr
 			}
 			if _, err = q.UpdateWorkspaceSecretByWorkspaceAndID(ctx, db.UpdateWorkspaceSecretByWorkspaceAndIDParams{
@@ -677,7 +662,7 @@ func FulfillRequest(ctx context.Context, pool *pgxpool.Pool, ring *secrets.KeyRi
 				EncryptedValue:  repCT.Ciphertext,
 				MaskedPreview:   "••••••••",
 			}); err != nil {
-				markFailed("secret_request.secret_update_failed")
+				failureCode = "secret_request.secret_update_failed"
 				return FulfillResult{}, err
 			}
 		} else if errors.Is(cErr, pgx.ErrNoRows) {
@@ -698,11 +683,10 @@ func FulfillRequest(ctx context.Context, pool *pgxpool.Pool, ring *secrets.KeyRi
 				MaskedPreview:   "••••••••",
 				CreatedBy:       actorPG,
 			}); err != nil {
-				markFailed("secret_request.secret_insert_failed")
+				failureCode = "secret_request.secret_insert_failed"
 				return FulfillResult{}, err
 			}
 		} else {
-			markFailed("secret_request.db_error")
 			return FulfillResult{}, cErr
 		}
 	}
@@ -724,7 +708,7 @@ func FulfillRequest(ctx context.Context, pool *pgxpool.Pool, ring *secrets.KeyRi
 	completed, err := q.CompleteSecretRequestFulfill(ctx, db.CompleteSecretRequestFulfillParams{
 		WorkspaceID:  wsPG,
 		ID:           reqPG,
-		OperationID:  toPGUUID(opID),
+		OperationID:  claimed.OperationID,
 		GrantedScope: in.Scope,
 		DecidedBy:    actorPG,
 		DecidedAt:    pgtype.Timestamptz{Time: now, Valid: true},
@@ -733,7 +717,6 @@ func FulfillRequest(ctx context.Context, pool *pgxpool.Pool, ring *secrets.KeyRi
 		return FulfillResult{}, ErrConflict
 	}
 	if err != nil {
-		markFailed("secret_request.db_error")
 		return FulfillResult{}, err
 	}
 

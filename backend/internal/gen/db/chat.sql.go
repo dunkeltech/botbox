@@ -152,6 +152,23 @@ func (q *Queries) ExpireStaleBotTurns(ctx context.Context, arg ExpireStaleBotTur
 	return err
 }
 
+const failWaitingSecretBotTurn = `-- name: FailWaitingSecretBotTurn :exec
+UPDATE bot_turns
+SET status='failed', error_code=$3, updated_at=now()
+WHERE workspace_id=$1 AND id=$2 AND status='waiting_secret'
+`
+
+type FailWaitingSecretBotTurnParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ID          pgtype.UUID `json:"id"`
+	ErrorCode   string      `json:"error_code"`
+}
+
+func (q *Queries) FailWaitingSecretBotTurn(ctx context.Context, arg FailWaitingSecretBotTurnParams) error {
+	_, err := q.db.Exec(ctx, failWaitingSecretBotTurn, arg.WorkspaceID, arg.ID, arg.ErrorCode)
+	return err
+}
+
 const finishRunningBotTurn = `-- name: FinishRunningBotTurn :exec
 UPDATE bot_turns SET
 status=CASE WHEN stop_requested THEN 'interrupted' ELSE $3::text END,

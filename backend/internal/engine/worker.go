@@ -4,10 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/dunkeltech/botbox/backend/internal/approvals"
@@ -17,11 +15,7 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/groups"
 	"github.com/dunkeltech/botbox/backend/internal/memory"
 	"github.com/dunkeltech/botbox/backend/internal/notify"
-	"github.com/dunkeltech/botbox/backend/internal/orchestrator"
-	"github.com/dunkeltech/botbox/backend/internal/secretrequests"
 	"github.com/dunkeltech/botbox/backend/internal/secrets"
-	"github.com/dunkeltech/botbox/backend/internal/secrets/llmproxy"
-	"github.com/dunkeltech/botbox/backend/internal/secrets/mitmproxy"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -176,18 +170,7 @@ func (w *Worker) executeClaimed(runCtx context.Context, cancel context.CancelFun
 		return err
 	}
 	q := db.New(w.Pool)
-	runID := uuid.NewString()
-	var sequence atomic.Uint64
-	publish := func(ctx context.Context, session Session, event Event) error {
-		event.RunID = runID
-		event.BotID = session.BotID.String()
-		event.TurnID = session.TurnID.String()
-		event.Sequence = sequence.Add(1)
-		if w.Publish != nil {
-			return w.Publish(ctx, session, event)
-		}
-		return nil
-	}
+	publish := newTurnPublisher(w.Publish)
 	// A failure after claim must not leave a healthy worker showing Thinking
 	// forever. Conditional finalization cannot overwrite a secret-wait state.
 	defer func() {
@@ -256,166 +239,11 @@ func (w *Worker) executeClaimed(runCtx context.Context, cancel context.CancelFun
 		}
 		return nil
 	}
-	var text replyText
-	var waitingSecret bool
-	savedCredentialTried := make(map[string]bool)
-	teamToolCalls := make(map[string]bool)
-	var savedCredentialPrompt string
-	useSavedCredential := errors.New("continue with saved GitLab credential")
-	emit := func(ev Event) error {
-		ctx := runCtx
-		ev.BotID = uuidID(turn.BotID).String()
-		ev.TurnID = uuidID(turn.ID).String()
-		// Provider completion is only a model step, not completion of the turn.
-		if ev.Kind == EventKindStatus && (ev.Status == "idle" || ev.Status == "offline") {
-			return nil
-		}
-		switch ev.Kind {
-		case EventKindTextDelta, EventKindMessage:
-			if err := text.Add(ev); err != nil {
-				return err
-			}
-		case EventKindToolCall, EventKindToolResult:
-			// Team tools persist their own bounded, scoped messages. In particular,
-			// rejected progress text must never reach chat through tool traces.
-			if ev.Kind == EventKindToolCall && session.TeamTool != nil && isTeamTool(ev.ToolName) {
-				teamToolCalls[ev.ToolID] = true
-				return nil
-			}
-			if ev.Kind == EventKindToolResult && teamToolCalls[ev.ToolID] {
-				delete(teamToolCalls, ev.ToolID)
-				return nil
-			}
-			if ev.Kind == EventKindToolCall && IsRequestSecretTool(ev.ToolName) {
-				var reqArgs struct {
-					Kind               string `json:"kind"`
-					AdapterID          string `json:"adapter_id"`
-					TargetOrigin       string `json:"target_origin"`
-					Reason             string `json:"reason"`
-					EnvPlaceholderName string `json:"env_placeholder_name"`
-					UsernameHint       string `json:"username_hint"`
-				}
-				if uErr := json.Unmarshal(ev.ToolInput, &reqArgs); uErr == nil {
-					canCreate := false
-					var adapter mitmproxy.HTTPSAdapter
-					switch reqArgs.Kind {
-					case secretrequests.KindCLIEgress:
-						var ok bool
-						adapter, ok = mitmproxy.LookupAdapter(reqArgs.AdapterID)
-						canCreate = ok && strings.TrimSpace(reqArgs.Reason) != "" && mitmproxy.ValidateEnvPlaceholderName(reqArgs.EnvPlaceholderName) == nil
-					case secretrequests.KindBrowserLogin:
-						_, ok := authbroker.LookupLoginAdapter(reqArgs.AdapterID)
-						canCreate = w.AuthBroker != nil && ok && strings.TrimSpace(reqArgs.Reason) != "" && strings.TrimSpace(reqArgs.EnvPlaceholderName) == ""
-					}
-					if canCreate {
-						res, srErr := secretrequests.CreateRequest(runCtx, w.Pool, secretrequests.CreateInput{
-							WorkspaceID:        session.WorkspaceID,
-							BotID:              session.BotID,
-							ConversationID:     session.ConversationID,
-							TurnID:             session.TurnID,
-							ToolCallID:         ev.ToolID,
-							Kind:               reqArgs.Kind,
-							AdapterID:          reqArgs.AdapterID,
-							TargetOrigin:       reqArgs.TargetOrigin,
-							Reason:             reqArgs.Reason,
-							EnvPlaceholderName: reqArgs.EnvPlaceholderName,
-							UsernameHint:       reqArgs.UsernameHint,
-							TrySavedGitLab:     !savedCredentialTried[adapter.ID],
-							Broker:             w.AuthBroker,
-							Now:                w.now(),
-						})
-						if srErr != nil {
-							if errors.Is(srErr, context.Canceled) {
-								return srErr
-							}
-							code := secretrequests.FailureCode(srErr)
-							failure := Event{Kind: EventKindToolResult, TurnID: ev.TurnID, ToolID: ev.ToolID, ToolName: ev.ToolName, IsError: true, ErrorCode: code, Text: secretrequests.FailureMessage(code)}
-							metadata, _ := json.Marshal(failure)
-							if _, err := q.CreateChatMessage(ctx, db.CreateChatMessageParams{ID: pgID(uuid.New()), WorkspaceID: turn.WorkspaceID, ConversationID: turn.ConversationID, SenderType: "bot", SenderBotID: turn.BotID, Kind: "tool", Content: failure.Text, Metadata: metadata}); err != nil {
-								return err
-							}
-							if w.Publish != nil {
-								_ = w.Publish(ctx, session, failure)
-							}
-							return WithFailureCode(code, srErr)
-						}
-						if res.SavedCredentialPrompt != "" {
-							savedCredentialTried[adapter.ID] = true
-							savedCredentialPrompt = res.SavedCredentialPrompt
-							return useSavedCredential
-						}
-						waitingSecret = true
-						if w.Publish != nil {
-							_ = publish(ctx, session, Event{Kind: EventKindCard, Text: res.Card.Reason, Metadata: res.Message.Metadata, TurnID: ev.TurnID})
-						}
-						return ErrTurnWaitingSecret
-					}
-				}
-			}
-			if ev.Kind == EventKindToolCall {
-				ev.Text = ev.ToolName + "\n" + string(ev.ToolInput)
-				// The card is the gate. bot.Box does not push; the git host still
-				// has to reject a protected branch (ADR-0015). Memory entries
-				// describe policies rather than shell actions, so skip approval scanning.
-				if !memory.IsMemoryTool(ev.ToolName) {
-					if err := approvals.NoteTool(ctx, w.Pool, turn, ev.Text, w.Signal); err != nil {
-						return err
-					}
-				}
-			}
-			data, marshalErr := json.Marshal(ev)
-			if marshalErr != nil {
-				return marshalErr
-			}
-			if _, e := q.CreateChatMessage(ctx, db.CreateChatMessageParams{ID: pgID(uuid.New()), WorkspaceID: turn.WorkspaceID, ConversationID: turn.ConversationID, SenderType: "bot", SenderBotID: turn.BotID, Kind: "tool", Content: ev.Text, Metadata: data}); e != nil {
-				return e
-			}
-		case EventKindCard:
-			if strings.TrimSpace(ev.Text) == "" {
-				return errors.New("card text is required")
-			}
-			data := []byte("{}")
-			if len(ev.Metadata) > 0 {
-				if !json.Valid(ev.Metadata) {
-					return errors.New("invalid card metadata")
-				}
-				data = ev.Metadata
-			}
-			if _, e := q.CreateChatMessage(ctx, db.CreateChatMessageParams{ID: pgID(uuid.New()), WorkspaceID: turn.WorkspaceID, ConversationID: turn.ConversationID, SenderType: "bot", SenderBotID: turn.BotID, Kind: "card", Content: ev.Text, Metadata: data}); e != nil {
-				return e
-			}
-		case EventKindError:
-			// Soft denial is valid exit-zero CLI output. Persist the notice so
-			// reconnecting clients see why the requested tool did not run.
-			data, marshalErr := json.Marshal(ev)
-			if marshalErr != nil {
-				return marshalErr
-			}
-			if _, e := q.CreateChatMessage(ctx, db.CreateChatMessageParams{ID: pgID(uuid.New()), WorkspaceID: turn.WorkspaceID, ConversationID: turn.ConversationID, SenderType: "system", Kind: "system", Content: ev.ErrorMessage, Metadata: data}); e != nil {
-				return e
-			}
-		case EventKindUsage:
-			{
-				metered, e := q.HasProxyTurnUsage(ctx, db.HasProxyTurnUsageParams{WorkspaceID: turn.WorkspaceID, TurnID: turn.ID})
-				if e != nil {
-					return e
-				}
-				if metered {
-					break
-				}
-			}
-			if ev.InputTokens < 0 || ev.OutputTokens < 0 || ev.CacheTokens < 0 {
-				return errors.New("invalid usage")
-			}
-			if e := q.RecordTurnUsage(ctx, db.RecordTurnUsageParams{WorkspaceID: turn.WorkspaceID, BotID: turn.BotID, TurnID: turn.ID, RequestID: pgID(uuid.New()), Source: "cli_result", CreatedAt: pgtype.Timestamptz{Time: w.now(), Valid: true}, Model: bot.LlmModel, InputTokens: ev.InputTokens, OutputTokens: ev.OutputTokens, CacheTokens: ev.CacheTokens}); e != nil {
-				return e
-			}
-		}
-		if w.Publish != nil {
-			return publish(ctx, session, ev)
-		}
-		return nil
+	events := turnEvents{
+		worker: w, queries: q, turn: turn, session: &session, publish: publish,
+		savedCredentialTried: make(map[string]bool), teamToolCalls: make(map[string]bool),
 	}
+	emit := func(ev Event) error { return events.emit(runCtx, ev) }
 	key := session.WorkspaceID.String() + "/" + session.BotID.String()
 	w.mu.Lock()
 	if w.active == nil {
@@ -449,11 +277,11 @@ func (w *Worker) executeClaimed(runCtx context.Context, cancel context.CancelFun
 		}
 		// Return only the placeholder through the same continuation path used
 		// after human fulfillment. Keep the original turn and time limit.
-		for errors.Is(runErr, useSavedCredential) && runCtx.Err() == nil {
-			session.ContinuationPrompt = strings.TrimSpace(session.ContinuationPrompt + "\n" + savedCredentialPrompt)
+		for errors.Is(runErr, errUseSavedCredential) && runCtx.Err() == nil {
+			session.ContinuationPrompt = strings.TrimSpace(session.ContinuationPrompt + "\n" + events.savedCredentialPrompt)
 			runErr = runWithLifecycle(runCtx, w.Execute, session, input, emit)
 		}
-		if errors.Is(runErr, useSavedCredential) {
+		if errors.Is(runErr, errUseSavedCredential) {
 			runErr = runCtx.Err()
 		}
 	}
@@ -461,64 +289,7 @@ func (w *Worker) executeClaimed(runCtx context.Context, cancel context.CancelFun
 		runErr = context.DeadlineExceeded
 	}
 	cancel()
-	status, code := "completed", ""
-	if waitingSecret || errors.Is(runErr, ErrTurnWaitingSecret) {
-		status = "waiting_secret"
-	} else if runErr != nil {
-		status, code = "failed", TurnFailureCode(runErr)
-		if errors.Is(runErr, llmproxy.ErrBudgetExceeded) {
-			status, code = "budget_exceeded", "budget_exceeded"
-		}
-		if errors.Is(runErr, context.Canceled) || errors.Is(runErr, context.DeadlineExceeded) {
-			status, code = "interrupted", "engine.interrupted"
-		}
-	}
-	finalCtx, finalCancel := context.WithTimeout(context.WithoutCancel(runCtx), 5*time.Second)
-	defer finalCancel()
-	kind, err := q.GetConversationType(finalCtx, db.GetConversationTypeParams{WorkspaceID: turn.WorkspaceID, ID: turn.ConversationID})
-	if err != nil {
-		return err
-	}
-	var reply db.Message
-	if text.Len() > 0 {
-		content := text.String()
-		if kind == "group" {
-			content, _, _ = orchestrator.SplitInputDirective(content)
-		}
-		reply, err = q.CreateChatMessage(finalCtx, db.CreateChatMessageParams{ID: pgID(uuid.New()), WorkspaceID: turn.WorkspaceID, ConversationID: turn.ConversationID, SenderType: "bot", SenderBotID: turn.BotID, Kind: "text", Content: content, Metadata: []byte("{}")})
-		if err != nil {
-			return fmt.Errorf("persist bot reply: %w", err)
-		}
-	}
-	if status == "waiting_secret" {
-		if w.Publish != nil {
-			return publish(finalCtx, session, Event{Kind: EventKindStatus, Status: "idle"})
-		}
-		return nil
-	}
-	// Terminal turn completion revokes ephemeral secret leases and cancels any dangling requests.
-	if _, revErr := q.RevokeSecretLeasesForTurn(finalCtx, db.RevokeSecretLeasesForTurnParams{
-		WorkspaceID: turn.WorkspaceID,
-		TurnID:      turn.ID,
-		RevokedAt:   pgtype.Timestamptz{Time: w.now(), Valid: true},
-		Reason:      "turn_" + status,
-	}); revErr != nil {
-		return revErr
-	}
-	if cancelErr := secretrequests.CancelForTurnWithBroker(finalCtx, w.Pool, w.AuthBroker, uuidID(turn.WorkspaceID), uuidID(turn.ID)); cancelErr != nil {
-		return cancelErr
-	}
-	if kind == "group" && text.Len() > 0 && status == "completed" {
-		if err = w.routeGroupReply(finalCtx, turn, reply, text.String(), inputReply); err != nil {
-			return err
-		}
-	} else if err = q.FinishRunningBotTurn(finalCtx, db.FinishRunningBotTurnParams{WorkspaceID: turn.WorkspaceID, ID: turn.ID, Status: status, ErrorCode: code}); err != nil {
-		return err
-	}
-	if w.Publish != nil {
-		return publish(finalCtx, session, Event{Kind: EventKindStatus, Status: "idle"})
-	}
-	return nil
+	return w.finalizeTurn(runCtx, q, &events, outcomeForTurn(runErr, events.waitingSecret), inputReply)
 }
 
 func isTeamTool(name string) bool {

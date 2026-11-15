@@ -140,6 +140,18 @@ SET paused = false, pause_reason = ''
 WHERE workspace_id = $1 AND id = $2 AND type = 'group'
   AND paused = true AND pause_reason = 'secret_required';
 
+-- name: ClearSecretPauseAfterFulfillmentFailure :exec
+UPDATE conversations AS c
+SET paused = false, pause_reason = ''
+WHERE c.workspace_id = $1 AND c.id = $2 AND c.type = 'group'
+  AND c.paused = true AND c.pause_reason = 'secret_required'
+  AND NOT EXISTS (
+      SELECT 1 FROM secret_requests AS sr
+      WHERE sr.workspace_id = $1 AND sr.conversation_id = $2
+        AND sr.status IN ('pending', 'fulfilling')
+        AND sr.expires_at > sqlc.arg(as_of)::timestamptz
+  );
+
 -- name: FindConflictingBotSecret :one
 SELECT id
 FROM bot_secrets

@@ -691,9 +691,22 @@ func TestInvitationsLifecycleAndEdgeCases(t *testing.T) {
 	var betaInvite apigen.CreatedInvitationResponse
 	betaInviteResp.decode(h.t, &betaInvite)
 
-	bobBetaAccept := h.request(http.MethodPost, "/api/invitations/"+betaInvite.Token+"/accept", nil, bobSess.AccessToken, nil, true)
-	if bobBetaAccept.status != http.StatusOK {
-		t.Fatalf("signed-in accept Beta = %d %s", bobBetaAccept.status, bobBetaAccept.body)
+	// Concurrent acceptance consumes the invitation once and preserves the winning session.
+	start := make(chan struct{})
+	results := make(chan apiResponse, 2)
+	for range 2 {
+		go func() {
+			<-start
+			results <- h.request(http.MethodPost, "/api/invitations/"+betaInvite.Token+"/accept", nil, bobSess.AccessToken, nil, true)
+		}()
+	}
+	close(start)
+	bobBetaAccept, duplicateAccept := <-results, <-results
+	if duplicateAccept.status == http.StatusOK {
+		bobBetaAccept, duplicateAccept = duplicateAccept, bobBetaAccept
+	}
+	if bobBetaAccept.status != http.StatusOK || duplicateAccept.status != http.StatusNotFound || duplicateAccept.errorCode(t) != "invitation.not_found" {
+		t.Fatalf("concurrent signed-in acceptance statuses = %d and %d, want 200 and 404", bobBetaAccept.status, duplicateAccept.status)
 	}
 	var bobMulti apigen.AuthSessionResponse
 	bobBetaAccept.decode(h.t, &bobMulti)

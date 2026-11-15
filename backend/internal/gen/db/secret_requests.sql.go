@@ -152,6 +152,30 @@ func (q *Queries) ClaimSecretRequestForFulfill(ctx context.Context, arg ClaimSec
 	return i, err
 }
 
+const clearSecretPauseAfterFulfillmentFailure = `-- name: ClearSecretPauseAfterFulfillmentFailure :exec
+UPDATE conversations AS c
+SET paused = false, pause_reason = ''
+WHERE c.workspace_id = $1 AND c.id = $2 AND c.type = 'group'
+  AND c.paused = true AND c.pause_reason = 'secret_required'
+  AND NOT EXISTS (
+      SELECT 1 FROM secret_requests AS sr
+      WHERE sr.workspace_id = $1 AND sr.conversation_id = $2
+        AND sr.status IN ('pending', 'fulfilling')
+        AND sr.expires_at > $3::timestamptz
+  )
+`
+
+type ClearSecretPauseAfterFulfillmentFailureParams struct {
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	ID          pgtype.UUID        `json:"id"`
+	AsOf        pgtype.Timestamptz `json:"as_of"`
+}
+
+func (q *Queries) ClearSecretPauseAfterFulfillmentFailure(ctx context.Context, arg ClearSecretPauseAfterFulfillmentFailureParams) error {
+	_, err := q.db.Exec(ctx, clearSecretPauseAfterFulfillmentFailure, arg.WorkspaceID, arg.ID, arg.AsOf)
+	return err
+}
+
 const clearSecretRequiredPause = `-- name: ClearSecretRequiredPause :execrows
 UPDATE conversations
 SET paused = false, pause_reason = ''
