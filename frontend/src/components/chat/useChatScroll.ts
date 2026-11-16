@@ -7,6 +7,7 @@ import {
 } from 'react';
 
 const BOTTOM_THRESHOLD_PX = 48;
+const TOP_THRESHOLD_PX = 16;
 
 function isNearBottom(element: HTMLElement): boolean {
   return (
@@ -20,10 +21,14 @@ export interface UseChatScrollOptions {
   conversationKey: string;
   /** Number of rendered messages in the log. */
   messageCount: number;
+  /** ID of the oldest rendered message, used to detect prepended pages. */
+  firstMessageId?: string;
   /** ID of the newest rendered message, used to detect appended items. */
   lastMessageId: string;
   /** Live streaming reply text, if any. */
   liveText?: string;
+  /** Called when the reader scrolls to the top of a scrollable history log. */
+  onReachTop?: () => void;
 }
 
 export interface UseChatScrollResult {
@@ -47,8 +52,10 @@ export interface UseChatScrollResult {
 export function useChatScroll({
   conversationKey,
   messageCount,
+  firstMessageId = '',
   lastMessageId,
   liveText = '',
+  onReachTop,
 }: UseChatScrollOptions): UseChatScrollResult {
   const logRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
@@ -57,6 +64,8 @@ export function useChatScroll({
     scrollHeight: number;
     scrollTop: number;
   } | null>(null);
+  const onReachTopRef = useRef(onReachTop);
+  onReachTopRef.current = onReachTop;
 
   useLayoutEffect(() => {
     if (prevConversationKeyRef.current !== conversationKey) {
@@ -80,7 +89,7 @@ export function useChatScroll({
     if (stickToBottomRef.current) {
       element.scrollTop = element.scrollHeight;
     }
-  }, [conversationKey, messageCount, lastMessageId, liveText]);
+  }, [conversationKey, messageCount, firstMessageId, lastMessageId, liveText]);
 
   useEffect(() => {
     const element = logRef.current;
@@ -100,7 +109,17 @@ export function useChatScroll({
   const onScroll = useCallback(() => {
     const element = logRef.current;
     if (!element) return;
-    stickToBottomRef.current = isNearBottom(element);
+    const nearBottom = isNearBottom(element);
+    stickToBottomRef.current = nearBottom;
+    // Only auto-load older messages when the log actually overflows and the
+    // reader intentionally scrolled up to the top edge.
+    if (
+      !nearBottom &&
+      element.scrollHeight > element.clientHeight &&
+      element.scrollTop <= TOP_THRESHOLD_PX
+    ) {
+      onReachTopRef.current?.();
+    }
   }, []);
 
   const onMediaLoad = useCallback(() => {

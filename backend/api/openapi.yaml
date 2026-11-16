@@ -3317,6 +3317,7 @@ components:
       properties:
         messages: {type: array, items: {$ref: '#/components/schemas/ChatMessage'}}
         turns: {type: array, items: {$ref: '#/components/schemas/ChatTurn'}}
+        hasMore: {type: boolean}
     SendChatMessageRequest:
       type: object
       required: [id, content]

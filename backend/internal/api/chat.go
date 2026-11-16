@@ -267,6 +267,8 @@ func (s *server) handleChatHistory(w http.ResponseWriter, r *http.Request) {
 	s.writeConversationHistory(w, r, c.WorkspaceID, c.ID, false)
 }
 
+const historyPageLimit = 50
+
 func (s *server) writeConversationHistory(w http.ResponseWriter, r *http.Request, workspaceID, conversationID pgtype.UUID, group bool) {
 	before := int64(math.MaxInt64)
 	if raw := r.URL.Query().Get("before"); raw != "" {
@@ -277,17 +279,21 @@ func (s *server) writeConversationHistory(w http.ResponseWriter, r *http.Request
 		}
 		before = n
 	}
-	rows, err := s.queries.ListChatMessages(r.Context(), db.ListChatMessagesParams{WorkspaceID: workspaceID, ConversationID: conversationID, BeforePosition: before, PageLimit: 50})
+	rows, err := s.queries.ListChatMessages(r.Context(), db.ListChatMessagesParams{WorkspaceID: workspaceID, ConversationID: conversationID, BeforePosition: before, PageLimit: historyPageLimit + 1})
 	if err != nil {
 		s.chatFailure(w)
 		return
+	}
+	hasMore := len(rows) > historyPageLimit
+	if hasMore {
+		rows = rows[:historyPageLimit]
 	}
 	turns, err := s.queries.ListConversationTurns(r.Context(), db.ListConversationTurnsParams{WorkspaceID: workspaceID, ConversationID: conversationID})
 	if err != nil {
 		s.chatFailure(w)
 		return
 	}
-	out := apigen.ChatHistory{Messages: make([]apigen.ChatMessage, 0, len(rows)), Turns: make([]apigen.ChatTurn, 0, len(turns))}
+	out := apigen.ChatHistory{Messages: make([]apigen.ChatMessage, 0, len(rows)), Turns: make([]apigen.ChatTurn, 0, len(turns)), HasMore: &hasMore}
 	var progress map[pgtype.UUID]*apigen.GroupInputRequest
 	if group {
 		progress, err = s.groupInputProgress(r.Context(), workspaceID, conversationID, rows)

@@ -5,11 +5,21 @@ import { connectConversation } from '@/lib/conversation-events';
 
 import { X } from 'lucide-react';
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { Alert, BotAvatar, Button } from '@/components/ui';
 import { getAccessToken, requestJson } from '@/lib/api-client';
+import { ChatDayDivider } from '@/components/chat/ChatDayDivider';
+import { ChatTimestamp } from '@/components/chat/ChatTimestamp';
+import { isDayBoundary, localDayKey } from '@/components/chat/chatDate';
 import {
   describeToolMessage,
   type ToolCopy,
@@ -34,6 +44,7 @@ import { MarkdownMessage } from '@/components/chat/MarkdownMessage';
 import { SecretRequestModal } from '@/components/chat/SecretRequestModal';
 import { useSecretRequestControl } from '@/components/chat/useSecretRequestControl';
 import { useChatScroll } from '@/components/chat/useChatScroll';
+import { useConversationHistory } from '@/components/chat/useConversationHistory';
 import { canManageBot } from '@/lib/rbac';
 import type { Bot, WorkspaceRole } from '@/types/api';
 import type { components } from '@/types/openapi.gen';
@@ -41,12 +52,6 @@ import type { components } from '@/types/openapi.gen';
 type Conversation = components['schemas']['ChatConversation'];
 type History = components['schemas']['ChatHistory'];
 type BudgetSummary = components['schemas']['BudgetSummary'];
-
-function formatTime(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
 
 export function ToolMessageView({
   workspaceId,
@@ -147,8 +152,6 @@ export function ChatPanel({
   const client = useQueryClient();
   const [error, setError] = useState(false);
   const [live, setLive] = useState('');
-  const [older, setOlder] = useState<History['messages']>([]);
-  const [loadingOlder, setLoadingOlder] = useState(false);
   const base = `/api/workspaces/${workspaceId}`;
   const effectiveRole: WorkspaceRole = role ?? (canChat ? 'member' : 'viewer');
 
@@ -249,25 +252,6 @@ export function ChatPanel({
     );
   }, [conversationId, workspaceId, userId, client]);
 
-  async function loadOlder() {
-    const first = older[0] ?? history.data?.messages[0];
-    if (!first || !conversationId) return;
-    setLoadingOlder(true);
-    try {
-      const page = await requestJson<History>(
-        `${base}/conversations/${conversationId}/messages?before=${first.position}`,
-      );
-      if (page.messages.length > 0) {
-        preparePrepend();
-      }
-      setOlder((previous) => [...page.messages, ...previous]);
-    } catch {
-      setError(true);
-    } finally {
-      setLoadingOlder(false);
-    }
-  }
-
   const [localToolTurnKey, setLocalToolTurnKey] = useState<string | null>(null);
   const [localDrawerOpen, setLocalDrawerOpen] = useState(false);
 
@@ -285,14 +269,22 @@ export function ChatPanel({
   }
   const secretControl = useSecretRequestControl(workspaceId, refreshHistory);
 
-  const rawMessages = useMemo(
-    () =>
-      [...older, ...(history.data?.messages ?? [])].filter(
-        (message, index, all) =>
-          all.findIndex((m) => m.id === message.id) === index,
+  const preparePrependRef = useRef<() => void>(() => {});
+  const fetchOlderPage = useCallback(
+    (beforePosition: number) =>
+      requestJson<History>(
+        `${base}/conversations/${conversationId}/messages?before=${beforePosition}`,
       ),
-    [older, history.data?.messages],
+    [base, conversationId],
   );
+  const { rawMessages, hasMore, loadingOlder, loadOlder } =
+    useConversationHistory({
+      conversationKey: conversationId ?? '',
+      latestPage: history.data,
+      fetchOlderPage,
+      preparePrepend: () => preparePrependRef.current(),
+      onError: () => setError(true),
+    });
 
   const trace = useMemo(
     () =>
@@ -324,9 +316,14 @@ export function ChatPanel({
     useChatScroll({
       conversationKey: conversationId ?? '',
       messageCount: messages.length,
+      firstMessageId: messages[0]?.id ?? '',
       lastMessageId: messages[messages.length - 1]?.id ?? '',
       liveText: live,
+      onReachTop: () => {
+        void loadOlder();
+      },
     });
+  preparePrependRef.current = preparePrepend;
 
   useEffect(() => {
     if (!scrollRequest?.messageId || !logRef.current) return;
@@ -368,7 +365,6 @@ export function ChatPanel({
 
   function renderConversationMessage(message: History['messages'][number]) {
     const isUser = message.senderType === 'user';
-    const timeLabel = formatTime(message.createdAt);
     const attachedTurn = trace.turnsByReplyId.get(message.id);
 
     if (!isSlack && isUser) {
@@ -383,9 +379,11 @@ export function ChatPanel({
           <div className="max-w-[88%] rounded-[14px_14px_4px_14px] bg-dark px-3.5 py-2.5 text-[14px] leading-[1.5] text-paper">
             <MarkdownMessage content={message.content} tone="dark" />
           </div>
-          {timeLabel ? (
-            <span className="mt-1 text-[11px] text-muted">{timeLabel}</span>
-          ) : null}
+          <ChatTimestamp
+            iso={message.createdAt}
+            align="end"
+            className="mt-1 text-[11px] text-muted"
+          />
         </article>
       );
     }
@@ -417,9 +415,10 @@ export function ChatPanel({
                 {tTeam('botBadge')}
               </span>
             ) : null}
-            {timeLabel ? (
-              <span className="text-[12px] text-muted">{timeLabel}</span>
-            ) : null}
+            <ChatTimestamp
+              iso={message.createdAt}
+              className="text-[12px] text-muted"
+            />
           </div>
           <MarkdownMessage
             content={message.content || t('toolCall')}
@@ -469,69 +468,82 @@ export function ChatPanel({
         </Alert>
       ) : null}
 
-      {history.data?.messages.length === 50 ? (
-        <Button
-          variant="secondary"
-          disabled={loadingOlder}
-          onClick={() => void loadOlder()}
-        >
-          {t('older')}
-        </Button>
-      ) : null}
-
-      <div
-        ref={logRef}
-        onScroll={onScroll}
-        onLoadCapture={onMediaLoad}
-        className={`relative flex min-h-[220px] flex-1 flex-col gap-3 overflow-y-auto pr-1 ${
-          isSlack ? '' : 'max-h-[480px]'
-        }`}
-        role="log"
-        aria-label={t('history')}
-      >
-        {isSlack && messages.length > 0 ? (
-          <div className="my-1 flex items-center gap-3">
-            <span className="h-px flex-1 bg-line" />
-            <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-muted">
-              {tTeam('todayDivider')}
-            </span>
-            <span className="h-px flex-1 bg-line" />
-          </div>
-        ) : null}
-
-        {renderUnattachedToolTurns(trace.leadingUnattachedTurns)}
-
-        {messages.map((message) => (
-          <ChatTranscriptRow
-            key={message.id}
-            message={message}
-            workspaceId={workspaceId}
-            role={effectiveRole}
-            secretControl={secretControl}
-            memoryBotId={botId}
-            canManageMemory={() => canManageMemory}
-            refreshHistory={refreshHistory}
-            onInspectTurn={handleInspectTurn}
-            toolTurnsAfter={renderUnattachedToolTurns(
-              trace.unattachedTurnsByAnchor.get(message.id) ?? [],
-            )}
-            renderMessage={() => renderConversationMessage(message)}
-          />
-        ))}
-
-        {live ? (
+      {(() => {
+        const leadingStartIso = trace.leadingUnattachedTurns[0]?.startedAt;
+        const leadingDayKey = leadingStartIso
+          ? localDayKey(leadingStartIso)
+          : '';
+        return (
           <div
-            className="flex items-start gap-2.5 rounded-sm border border-blue-line bg-blue-tint/40 p-2.5"
-            aria-live="polite"
+            ref={logRef}
+            onScroll={onScroll}
+            onLoadCapture={onMediaLoad}
+            className={`relative flex min-h-[220px] flex-1 flex-col gap-3 overflow-y-auto pr-1 ${
+              isSlack ? '' : 'max-h-[480px]'
+            }`}
+            role="log"
+            aria-label={t('history')}
           >
-            <BotAvatar seed={avatarSeed} mood="thinking" size={26} decorative />
-            <MarkdownMessage
-              content={live}
-              className="flex-1 text-[14px] leading-[1.55] text-ink"
-            />
+            {hasMore ? (
+              <div className="flex justify-center">
+                <Button
+                  variant="secondary"
+                  disabled={loadingOlder}
+                  onClick={() => void loadOlder()}
+                >
+                  {loadingOlder ? t('loadingOlder') : t('older')}
+                </Button>
+              </div>
+            ) : null}
+
+            {leadingStartIso ? (
+              <ChatDayDivider dateIso={leadingStartIso} />
+            ) : null}
+
+            {renderUnattachedToolTurns(trace.leadingUnattachedTurns)}
+
+            {messages.map((message, index) => (
+              <Fragment key={message.id}>
+                {isDayBoundary(messages, index, leadingDayKey) ? (
+                  <ChatDayDivider dateIso={message.createdAt} />
+                ) : null}
+                <ChatTranscriptRow
+                  message={message}
+                  workspaceId={workspaceId}
+                  role={effectiveRole}
+                  secretControl={secretControl}
+                  memoryBotId={botId}
+                  canManageMemory={() => canManageMemory}
+                  refreshHistory={refreshHistory}
+                  onInspectTurn={handleInspectTurn}
+                  toolTurnsAfter={renderUnattachedToolTurns(
+                    trace.unattachedTurnsByAnchor.get(message.id) ?? [],
+                  )}
+                  renderMessage={() => renderConversationMessage(message)}
+                />
+              </Fragment>
+            ))}
+
+            {live ? (
+              <div
+                className="flex items-start gap-2.5 rounded-sm border border-blue-line bg-blue-tint/40 p-2.5"
+                aria-live="polite"
+              >
+                <BotAvatar
+                  seed={avatarSeed}
+                  mood="thinking"
+                  size={26}
+                  decorative
+                />
+                <MarkdownMessage
+                  content={live}
+                  className="flex-1 text-[14px] leading-[1.55] text-ink"
+                />
+              </div>
+            ) : null}
           </div>
-        ) : null}
-      </div>
+        );
+      })()}
 
       {active && turn ? (
         <div className="flex flex-wrap items-center gap-2">

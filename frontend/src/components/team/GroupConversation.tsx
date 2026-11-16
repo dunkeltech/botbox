@@ -1,9 +1,23 @@
 'use client';
 
 import { ArrowLeftRight } from 'lucide-react';
-import { useEffect, useMemo } from 'react';
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
+import { ChatDayDivider } from '@/components/chat/ChatDayDivider';
+import { ChatTimestamp } from '@/components/chat/ChatTimestamp';
+import {
+  formatTimeLabel,
+  isDayBoundary,
+  localDayKey,
+} from '@/components/chat/chatDate';
 import {
   ChatTranscriptRow,
   UnattachedToolTurnRow,
@@ -21,6 +35,7 @@ import { MarkdownMessage } from '@/components/chat/MarkdownMessage';
 import { SecretRequestModal } from '@/components/chat/SecretRequestModal';
 import { useSecretRequestControl } from '@/components/chat/useSecretRequestControl';
 import { useChatScroll } from '@/components/chat/useChatScroll';
+import { useConversationHistory } from '@/components/chat/useConversationHistory';
 import { turnFailureKey } from '@/components/chat/turnFailure';
 import { activeBotTurns, failedBotTurns } from '@/components/team/activity';
 import { ApprovalCard } from '@/components/team/ApprovalCard';
@@ -33,7 +48,7 @@ import {
   useApprovalDecision,
   useApprovalList,
 } from '@/components/team/useApprovals';
-import { Alert, BotAvatar } from '@/components/ui';
+import { Alert, BotAvatar, Button } from '@/components/ui';
 import { connectConversation } from '@/lib/conversation-events';
 import { getAccessToken, requestJson } from '@/lib/api-client';
 import { canManageBot } from '@/lib/rbac';
@@ -44,12 +59,6 @@ import { initials, type MentionTarget } from '@/components/team/text';
 type Group = components['schemas']['Group'];
 type History = components['schemas']['ChatHistory'];
 type ChatMessage = components['schemas']['ChatMessage'];
-
-function formatTime(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
 
 function targets(members: Group['members']): MentionTarget[] {
   const named: MentionTarget[] = members.flatMap((member) => {
@@ -111,6 +120,7 @@ export function GroupConversation({
   const t = useTranslations('team');
   const tChat = useTranslations('chat');
   const client = useQueryClient();
+  const [historyError, setHistoryError] = useState(false);
   const base = `/api/workspaces/${workspaceId}`;
   const history = useQuery({
     queryKey: ['group-messages', workspaceId, group.id],
@@ -174,15 +184,32 @@ export function GroupConversation({
   }, [client, group.id, workspaceId]);
 
   const needle = query.trim().toLowerCase();
+  const preparePrependRef = useRef<() => void>(() => {});
+  const fetchOlderPage = useCallback(
+    (beforePosition: number) =>
+      requestJson<History>(
+        `${base}/groups/${group.id}/messages?before=${beforePosition}`,
+      ),
+    [base, group.id],
+  );
+  const { rawMessages, hasMore, loadingOlder, loadOlder } =
+    useConversationHistory({
+      conversationKey: group.id,
+      latestPage: history.data,
+      fetchOlderPage,
+      preparePrepend: () => preparePrependRef.current(),
+      onError: () => setHistoryError(true),
+    });
+
   const trace = useMemo(
     () =>
       buildToolTrace({
-        messages: history.data?.messages ?? [],
+        messages: rawMessages,
         turns: history.data?.turns,
         imagePathForMessage: (messageId) =>
           `${base}/groups/${group.id}/messages/${messageId}/tool-image`,
       }),
-    [history.data?.messages, history.data?.turns, base, group.id],
+    [rawMessages, history.data?.turns, base, group.id],
   );
   useEffect(() => {
     onToolTraceChange?.(trace);
@@ -213,11 +240,17 @@ export function GroupConversation({
     () => mentionTargets.map((target) => target.name),
     [mentionTargets],
   );
-  const { logRef, onScroll, onMediaLoad, scrollToBottom } = useChatScroll({
-    conversationKey: group.id,
-    messageCount: messages.length,
-    lastMessageId: messages[messages.length - 1]?.id ?? '',
-  });
+  const { logRef, onScroll, onMediaLoad, scrollToBottom, preparePrepend } =
+    useChatScroll({
+      conversationKey: group.id,
+      messageCount: messages.length,
+      firstMessageId: messages[0]?.id ?? '',
+      lastMessageId: messages[messages.length - 1]?.id ?? '',
+      onReachTop: () => {
+        void loadOlder();
+      },
+    });
+  preparePrependRef.current = preparePrepend;
 
   useEffect(() => {
     if (!scrollRequest?.messageId || !logRef.current) return;
@@ -314,7 +347,6 @@ export function GroupConversation({
     const botMember = group.members.find(
       (member) => member.id === message.senderBotId,
     );
-    const timeLabel = formatTime(message.createdAt);
     const attachedTurn = trace.turnsByReplyId.get(message.id);
     return (
       <article data-message-id={message.id} className="flex gap-3 px-5 py-1">
@@ -347,9 +379,10 @@ export function GroupConversation({
                     ? t('botBadge')
                     : t('humanBadge')}
             </span>
-            {timeLabel ? (
-              <span className="text-[12px] text-muted">{timeLabel}</span>
-            ) : null}
+            <ChatTimestamp
+              iso={message.createdAt}
+              className="text-[12px] text-muted"
+            />
           </p>
           {message.kind === 'team_status' && message.teamStatus ? (
             <TeamStatusUpdate status={message.teamStatus} />
@@ -375,8 +408,16 @@ export function GroupConversation({
     );
   }
 
+  const leadingStartIso = trace.leadingUnattachedTurns[0]?.startedAt;
+  const leadingDayKey = leadingStartIso ? localDayKey(leadingStartIso) : '';
+
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      {historyError || history.isError ? (
+        <div className="px-5 pt-3">
+          <Alert tone="warning">{t('loadFailed')}</Alert>
+        </div>
+      ) : null}
       <div
         ref={logRef}
         onScroll={onScroll}
@@ -385,33 +426,42 @@ export function GroupConversation({
         aria-label={t('messages')}
         className="flex min-h-[280px] flex-1 flex-col gap-3 overflow-y-auto py-4"
       >
-        {messages.length > 0 ? (
-          <div className="mx-5 my-1 flex items-center gap-3">
-            <span className="h-px flex-1 bg-line" />
-            <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-muted">
-              {t('todayDivider')}
-            </span>
-            <span className="h-px flex-1 bg-line" />
+        {hasMore ? (
+          <div className="mx-5 flex justify-center">
+            <Button
+              variant="secondary"
+              disabled={loadingOlder}
+              onClick={() => void loadOlder()}
+            >
+              {loadingOlder ? tChat('loadingOlder') : tChat('older')}
+            </Button>
           </div>
         ) : null}
+        {leadingStartIso ? (
+          <ChatDayDivider dateIso={leadingStartIso} className="mx-5" />
+        ) : null}
         {renderUnattachedToolTurns(trace.leadingUnattachedTurns)}
-        {messages.map((message) => (
-          <ChatTranscriptRow
-            key={message.id}
-            message={message}
-            workspaceId={workspaceId}
-            role={role}
-            cardClassName="mx-5"
-            secretControl={secretControl}
-            memoryBotId={message.senderBotId}
-            canManageMemory={canManageMemoryBot}
-            refreshHistory={refreshHistory}
-            onInspectTurn={onInspectToolTurn}
-            toolTurnsAfter={renderUnattachedToolTurns(
-              trace.unattachedTurnsByAnchor.get(message.id) ?? [],
-            )}
-            renderMessage={() => renderConversationMessage(message)}
-          />
+        {messages.map((message, index) => (
+          <Fragment key={message.id}>
+            {isDayBoundary(messages, index, leadingDayKey) ? (
+              <ChatDayDivider dateIso={message.createdAt} className="mx-5" />
+            ) : null}
+            <ChatTranscriptRow
+              message={message}
+              workspaceId={workspaceId}
+              role={role}
+              cardClassName="mx-5"
+              secretControl={secretControl}
+              memoryBotId={message.senderBotId}
+              canManageMemory={canManageMemoryBot}
+              refreshHistory={refreshHistory}
+              onInspectTurn={onInspectToolTurn}
+              toolTurnsAfter={renderUnattachedToolTurns(
+                trace.unattachedTurnsByAnchor.get(message.id) ?? [],
+              )}
+              renderMessage={() => renderConversationMessage(message)}
+            />
+          </Fragment>
         ))}
       </div>
       {failedTurns.length > 0 ? (
@@ -551,10 +601,13 @@ function TeamStatusUpdate({
   status: components['schemas']['TeamBotStatus'];
 }) {
   const t = useTranslations('team');
+  const locale = useLocale();
   const workingSince = status.workingSince
-    ? formatTime(status.workingSince)
+    ? formatTimeLabel(status.workingSince, locale)
     : null;
-  const progressAt = status.progressAt ? formatTime(status.progressAt) : null;
+  const progressAt = status.progressAt
+    ? formatTimeLabel(status.progressAt, locale)
+    : null;
   return (
     <div className="mt-0.5 text-[15px] leading-[1.55] text-ink">
       <p>

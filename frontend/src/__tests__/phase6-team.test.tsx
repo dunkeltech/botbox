@@ -11,6 +11,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { NextIntlClientProvider } from 'next-intl';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TeamScreen } from '@/components/team/TeamScreen';
+import {
+  formatDayDividerLabel,
+  formatFullDateTime,
+  formatTimeLabel,
+} from '@/components/chat/chatDate';
 import { QueryProvider } from '@/components/providers/QueryProvider';
 import { ApiClientError, getAccessToken, requestJson } from '@/lib/api-client';
 import type { Bot, WorkspaceMember } from '@/types/api';
@@ -1186,5 +1191,164 @@ describe('Phase 6 team chat', () => {
     expect(await screen.findByText('Ops latest')).toBeInTheDocument();
     expect(log.scrollTop).toBe(900);
     vi.unstubAllGlobals();
+  });
+
+  it('paginates group history to the beginning via button and scroll-to-top, backfills tool-heavy pages, renders day dividers, and shows date tooltips', async () => {
+    const oldIso = new Date(2026, 9, 12, 8, 15, 0).toISOString();
+    const today = new Date();
+    today.setHours(11, 5, 0, 0);
+    const todayIso = today.toISOString();
+
+    // Latest 50 rows contain 48 tool rows and only 2 visible messages -> triggers initial backfill.
+    const latestToolRows: ChatMessage[] = Array.from(
+      { length: 48 },
+      (_, index) => ({
+        id: `grp-tool-${index + 53}`,
+        position: index + 53,
+        senderType: 'bot',
+        senderBotId: 'bot-1',
+        kind: 'tool',
+        content: 'click\n{"x":10,"y":20}',
+        tool: {
+          phase: 'call',
+          isError: false,
+          turnId: 'turn-recent',
+          toolCallId: `tc-${index}`,
+        },
+        createdAt: todayIso,
+      }),
+    );
+    const latestVisible: ChatMessage[] = [
+      {
+        id: 'grp-101',
+        position: 101,
+        senderType: 'user',
+        senderUserId: 'user-1',
+        kind: 'text',
+        content: 'Latest human note',
+        createdAt: todayIso,
+      },
+      {
+        id: 'grp-102',
+        position: 102,
+        senderType: 'bot',
+        senderBotId: 'bot-1',
+        kind: 'text',
+        content: 'Latest bot reply',
+        createdAt: todayIso,
+      },
+    ];
+    const backfillPage: ChatMessage[] = Array.from({ length: 20 }, (_, i) => ({
+      id: `grp-mid-${i + 33}`,
+      position: i + 33,
+      senderType: 'bot',
+      senderBotId: 'bot-1',
+      kind: 'text',
+      content: `Backfilled message ${i + 33}`,
+      createdAt: todayIso,
+    }));
+    const oldestPage: ChatMessage[] = [
+      {
+        id: 'grp-001',
+        position: 1,
+        senderType: 'user',
+        senderUserId: 'user-2',
+        kind: 'text',
+        content: 'Very first group message',
+        createdAt: oldIso,
+      },
+    ];
+
+    let failOldest = false;
+    request.mockImplementation(
+      (path: string, options?: { method?: string }) => {
+        if (path.includes('/groups/group-1/messages?before=53')) {
+          return Promise.resolve({
+            messages: backfillPage,
+            turns: [],
+            hasMore: true,
+          });
+        }
+        if (path.includes('/groups/group-1/messages?before=33')) {
+          if (failOldest) {
+            return Promise.reject(new Error('history error'));
+          }
+          return Promise.resolve({
+            messages: oldestPage,
+            turns: [],
+            hasMore: false,
+          });
+        }
+        if (path.includes('/groups/group-1/messages')) {
+          return Promise.resolve({
+            messages: [...latestToolRows, ...latestVisible],
+            turns: [],
+            hasMore: true,
+          });
+        }
+        return handler(path, options);
+      },
+    );
+
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(
+      function (this: HTMLElement) {
+        return this.textContent?.includes('Very first group message')
+          ? 1800
+          : 1000;
+      },
+    );
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(400);
+
+    show();
+
+    const log = await screen.findByRole('log', {
+      name: messages.team.messages,
+    });
+    // Initial backfill automatically fetched before=53 so Backfilled message 33 is visible immediately.
+    expect(
+      await screen.findByText('Backfilled message 33'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Latest bot reply')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: messages.chat.older }),
+    ).toBeInTheDocument();
+
+    // Negative path: error loading oldest page shows loadFailed alert without losing current history.
+    failOldest = true;
+    fireEvent.click(screen.getByRole('button', { name: messages.chat.older }));
+    expect(
+      await screen.findByText(messages.team.loadFailed),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Backfilled message 33')).toBeInTheDocument();
+
+    // Scroll to top auto-loads the remaining oldest page and hides the button at the beginning.
+    failOldest = false;
+    log.scrollTop = 0;
+    fireEvent.scroll(log);
+
+    expect(
+      await screen.findByText('Very first group message'),
+    ).toBeInTheDocument();
+    expect(log.scrollTop).toBe(800);
+    expect(
+      screen.queryByRole('button', { name: messages.chat.older }),
+    ).not.toBeInTheDocument();
+
+    // Day dividers reflect both the older calendar date and Today.
+    const expectedOldDay = formatDayDividerLabel(oldIso, 'en', {
+      today: messages.chat.todayDivider,
+      yesterday: messages.chat.yesterdayDivider,
+    });
+    const separators = screen.getAllByRole('separator');
+    expect(separators).toHaveLength(2);
+    expect(separators[0]).toHaveTextContent(expectedOldDay);
+    expect(separators[1]).toHaveTextContent(messages.chat.todayDivider);
+
+    // Hovering over the oldest message's timestamp displays the full date/time tooltip.
+    const oldTimeEl = screen.getByText(formatTimeLabel(oldIso, 'en'));
+    fireEvent.mouseEnter(oldTimeEl);
+    expect(screen.getByRole('tooltip')).toHaveTextContent(
+      formatFullDateTime(oldIso, 'en'),
+    );
   });
 });

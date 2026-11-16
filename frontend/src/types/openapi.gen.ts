@@ -1766,6 +1766,7 @@ export interface components {
     ChatHistory: {
       messages: components['schemas']['ChatMessage'][];
       turns: components['schemas']['ChatTurn'][];
+      hasMore?: boolean;
     };
     SendChatMessageRequest: {
       /** Format: uuid */

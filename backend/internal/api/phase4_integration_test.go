@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"testing"
 	"time"
 
@@ -140,7 +141,7 @@ func TestPhase4PrivateDirectMessagesAndWorker(t *testing.T) {
 	history := h.request(http.MethodGet, path, nil, owner.AccessToken, nil, false)
 	var out apigen.ChatHistory
 	history.decode(t, &out)
-	if len(out.Messages) != 4 || out.Messages[3].Content != "Tests passed" || out.Turns[0].Status != "completed" {
+	if len(out.Messages) != 4 || out.Messages[3].Content != "Tests passed" || out.Turns[0].Status != "completed" || out.HasMore == nil || *out.HasMore {
 		t.Fatalf("history=%s", history.body)
 	}
 	queue.err = errors.New("NATS unavailable")
@@ -160,6 +161,52 @@ func TestPhase4PrivateDirectMessagesAndWorker(t *testing.T) {
 	other.decode(t, &otherWS)
 	if r := h.request(http.MethodGet, "/api/workspaces/"+otherWS.Id.String()+"/conversations/"+conversation.Id.String()+"/messages", nil, owner.AccessToken, nil, false); r.status != 404 {
 		t.Fatalf("cross workspace=%d", r.status)
+	}
+
+	// Verify exact-50 boundary and multi-page pagination to the start.
+	wsPG := pgtype.UUID{Bytes: ws, Valid: true}
+	convPG := pgtype.UUID{Bytes: conversation.Id, Valid: true}
+	userPG := pgtype.UUID{Bytes: owner.User.Id, Valid: true}
+	for i := 5; i <= 50; i++ {
+		if _, err := h.queries.CreateChatMessage(context.Background(), db.CreateChatMessageParams{
+			ID:             pgtype.UUID{Bytes: uuid.New(), Valid: true},
+			WorkspaceID:    wsPG,
+			ConversationID: convPG,
+			SenderType:     "user",
+			SenderUserID:   userPG,
+			Kind:           "text",
+			Content:        "seed",
+			Metadata:       []byte("{}"),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exact50 := h.request(http.MethodGet, path, nil, owner.AccessToken, nil, false)
+	exact50.decode(t, &out)
+	if len(out.Messages) != 50 || out.HasMore == nil || *out.HasMore {
+		t.Fatalf("exact 50 page hasMore=%v len=%d", out.HasMore, len(out.Messages))
+	}
+	if _, err := h.queries.CreateChatMessage(context.Background(), db.CreateChatMessageParams{
+		ID:             pgtype.UUID{Bytes: uuid.New(), Valid: true},
+		WorkspaceID:    wsPG,
+		ConversationID: convPG,
+		SenderType:     "user",
+		SenderUserID:   userPG,
+		Kind:           "text",
+		Content:        "message-51",
+		Metadata:       []byte("{}"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	page1 := h.request(http.MethodGet, path, nil, owner.AccessToken, nil, false)
+	page1.decode(t, &out)
+	if len(out.Messages) != 50 || out.HasMore == nil || !*out.HasMore || out.Messages[49].Content != "message-51" {
+		t.Fatalf("page1 hasMore=%v len=%d", out.HasMore, len(out.Messages))
+	}
+	page2 := h.request(http.MethodGet, path+"?before="+strconv.FormatInt(out.Messages[0].Position, 10), nil, owner.AccessToken, nil, false)
+	page2.decode(t, &out)
+	if len(out.Messages) != 1 || out.HasMore == nil || *out.HasMore || out.Messages[0].Content != "Run the fixture tests" {
+		t.Fatalf("page2 hasMore=%v len=%d body=%s", out.HasMore, len(out.Messages), page2.body)
 	}
 }
 

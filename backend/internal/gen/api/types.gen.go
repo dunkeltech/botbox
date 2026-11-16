@@ -1386,6 +1386,7 @@ type ChatConversation struct {
 
 // ChatHistory defines model for ChatHistory.
 type ChatHistory struct {
+	HasMore  *bool         `json:"hasMore,omitempty"`
 	Messages []ChatMessage `json:"messages"`
 	Turns    []ChatTurn    `json:"turns"`
 }

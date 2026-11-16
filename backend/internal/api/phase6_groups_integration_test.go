@@ -1,12 +1,17 @@
 package api_test
 
 import (
+	"context"
+	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 
 	apigen "github.com/dunkeltech/botbox/backend/internal/gen/api"
+	"github.com/dunkeltech/botbox/backend/internal/gen/db"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func TestPhase6GroupConversationAPI(t *testing.T) {
@@ -303,6 +308,100 @@ func TestPhase6GroupMessageRateLimit(t *testing.T) {
 	}
 	if len(queue.jobs) != 1 {
 		t.Fatalf("rate limit scheduled %#v", queue.jobs)
+	}
+}
+
+func TestPhase6GroupHistoryPaginationToBeginning(t *testing.T) {
+	queue := &fakeTurnQueue{}
+	h := newTestHarness(t, nil, harnessOpts{turnQueue: queue})
+	owner, _ := h.completeSetup("owner@example.com", "CorrectHorse123!", "Owner", "Workspace", "workspace")
+	ws := owner.ActiveWorkspace.Id
+	base := "/api/workspaces/" + ws.String()
+	atlas := createPiBot(t, h, base, owner.AccessToken, "Atlas", "atlas-seed")
+	outsider, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "outsider@example.com", "member", "Outsider", "CorrectHorse123!")
+
+	other := h.request(http.MethodPost, "/api/workspaces", map[string]any{"name": "Other", "slug": "other"}, owner.AccessToken, nil, true)
+	var otherWS apigen.WorkspaceSummary
+	other.decode(t, &otherWS)
+
+	groupID := uuid.New()
+	body := newGroupBody(groupID, "Launch", atlas.Id, []any{groupBot(atlas.Id, "lead")})
+	created := h.request(http.MethodPost, base+"/groups", body, owner.AccessToken, nil, true)
+	if created.status != http.StatusCreated {
+		t.Fatalf("create=%d %s", created.status, created.body)
+	}
+
+	wsPG := pgtype.UUID{Bytes: ws, Valid: true}
+	convPG := pgtype.UUID{Bytes: groupID, Valid: true}
+	userPG := pgtype.UUID{Bytes: owner.User.Id, Valid: true}
+	botPG := pgtype.UUID{Bytes: atlas.Id, Valid: true}
+	for i := 1; i <= 105; i++ {
+		params := db.CreateChatMessageParams{
+			ID:             pgtype.UUID{Bytes: uuid.New(), Valid: true},
+			WorkspaceID:    wsPG,
+			ConversationID: convPG,
+			Kind:           "text",
+			Content:        fmt.Sprintf("group-msg-%03d", i),
+			Metadata:       []byte("{}"),
+		}
+		if i%2 == 1 {
+			params.SenderType = "user"
+			params.SenderUserID = userPG
+		} else {
+			params.SenderType = "bot"
+			params.SenderBotID = botPG
+			if i%4 == 0 {
+				params.Kind = "tool"
+				params.Content = "tool output"
+				params.Metadata = []byte(`{"Kind":"tool_result"}`)
+			}
+		}
+		if _, err := h.queries.CreateChatMessage(context.Background(), params); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	messagesPath := base + "/groups/" + groupID.String() + "/messages"
+	if r := h.request(http.MethodGet, messagesPath+"?before=0", nil, owner.AccessToken, nil, false); r.status != http.StatusBadRequest {
+		t.Fatalf("invalid before=%d", r.status)
+	}
+	if r := h.request(http.MethodGet, messagesPath, nil, outsider.AccessToken, nil, false); r.status != http.StatusNotFound {
+		t.Fatalf("non-member=%d", r.status)
+	}
+	if r := h.request(http.MethodGet, "/api/workspaces/"+otherWS.Id.String()+"/groups/"+groupID.String()+"/messages", nil, owner.AccessToken, nil, false); r.status != http.StatusNotFound {
+		t.Fatalf("cross-workspace=%d", r.status)
+	}
+
+	var collected []apigen.ChatMessage
+	cursor := ""
+	for pageIdx := range 3 {
+		url := messagesPath
+		if cursor != "" {
+			url += "?before=" + cursor
+		}
+		res := h.request(http.MethodGet, url, nil, owner.AccessToken, nil, false)
+		if res.status != http.StatusOK {
+			t.Fatalf("page %d status=%d %s", pageIdx, res.status, res.body)
+		}
+		var page apigen.ChatHistory
+		res.decode(t, &page)
+		wantMore := pageIdx < 2
+		if page.HasMore == nil || *page.HasMore != wantMore {
+			t.Fatalf("page %d hasMore=%v want=%v", pageIdx, page.HasMore, wantMore)
+		}
+		collected = append(page.Messages, collected...)
+		cursor = strconv.FormatInt(page.Messages[0].Position, 10)
+	}
+	if len(collected) != 105 {
+		t.Fatalf("collected=%d want 105", len(collected))
+	}
+	if collected[0].Content != "group-msg-001" || collected[104].Content != "group-msg-105" {
+		t.Fatalf("bounds first=%q last=%q", collected[0].Content, collected[104].Content)
+	}
+	for i := 1; i < len(collected); i++ {
+		if collected[i].Position <= collected[i-1].Position {
+			t.Fatalf("out-of-order positions at %d: %d <= %d", i, collected[i].Position, collected[i-1].Position)
+		}
 	}
 }
 

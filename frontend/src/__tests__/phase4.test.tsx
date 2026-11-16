@@ -9,6 +9,11 @@ import {
 import { NextIntlClientProvider } from 'next-intl';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatPanel } from '@/components/chat/ChatPanel';
+import {
+  formatDayDividerLabel,
+  formatFullDateTime,
+  formatTimeLabel,
+} from '@/components/chat/chatDate';
 import { BudgetPanel } from '@/components/chat/BudgetPanel';
 import { QueryProvider } from '@/components/providers/QueryProvider';
 import { getAccessToken, requestBlob, requestJson } from '@/lib/api-client';
@@ -844,5 +849,230 @@ describe('chat scroll behavior', () => {
     const article = srLabel.closest('article');
     expect(article).not.toBeNull();
     expect(article).toHaveClass('relative');
+  });
+
+  it('renders day dividers across multiple days in session and slack modes and shows full date tooltips on timestamp hover', async () => {
+    const oldIso = new Date(2026, 9, 10, 14, 20, 0).toISOString();
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setHours(16, 5, 0, 0);
+    const yesterdayIso = yesterday.toISOString();
+    const today = new Date();
+    today.setHours(9, 30, 0, 0);
+    const todayIso = today.toISOString();
+
+    request.mockImplementation((path: string) => {
+      if (path.endsWith('/dm')) {
+        return Promise.resolve({ id: 'conversation-1', botId: 'bot-1' });
+      }
+      if (path.includes('/messages')) {
+        return Promise.resolve({
+          messages: [
+            {
+              id: 'm-1',
+              position: 1,
+              senderType: 'user',
+              kind: 'text',
+              content: 'First day message',
+              createdAt: oldIso,
+            },
+            {
+              id: 'm-2',
+              position: 2,
+              senderType: 'bot',
+              kind: 'text',
+              content: 'Yesterday reply',
+              createdAt: yesterdayIso,
+            },
+            {
+              id: 'm-3',
+              position: 3,
+              senderType: 'user',
+              kind: 'text',
+              content: 'Today question',
+              createdAt: todayIso,
+            },
+          ],
+          turns: [],
+          hasMore: false,
+        });
+      }
+      return Promise.resolve({ spendTodayMicros: 0, budgets: [] });
+    });
+
+    show(
+      <ChatPanel
+        workspaceId="ws-1"
+        userId="user-1"
+        botId="bot-1"
+        name="Atlas"
+        avatarSeed="atlas-seed"
+        variant="session"
+      />,
+    );
+
+    expect(await screen.findByText('First day message')).toBeInTheDocument();
+    const expectedOldDay = formatDayDividerLabel(oldIso, 'en', {
+      today: messages.chat.todayDivider,
+      yesterday: messages.chat.yesterdayDivider,
+    });
+    const separators = screen.getAllByRole('separator');
+    expect(separators).toHaveLength(3);
+    expect(separators[0]).toHaveTextContent(expectedOldDay);
+    expect(separators[1]).toHaveTextContent(messages.chat.yesterdayDivider);
+    expect(separators[2]).toHaveTextContent(messages.chat.todayDivider);
+
+    // Hovering over the timestamp on a user bubble shows exact date + time tooltip.
+    const timeLabel = formatTimeLabel(oldIso, 'en');
+    const fullLabel = formatFullDateTime(oldIso, 'en');
+    const timeEl = screen.getByText(timeLabel);
+    fireEvent.mouseEnter(timeEl);
+    expect(screen.getByRole('tooltip')).toHaveTextContent(fullLabel);
+  });
+
+  it('hides Load older messages when hasMore is false, auto-loads at scrollTop=0, skips tool-only pages, keeps sliding history, and surfaces errors', async () => {
+    const toolOnlyPage = Array.from({ length: 50 }, (_, index) => ({
+      id: `tool-${index + 1}`,
+      position: index + 51,
+      senderType: 'bot',
+      senderBotId: 'bot-1',
+      kind: 'tool',
+      content: 'click\n{"x":1,"y":2}',
+      tool: { phase: 'call', turnId: 'turn-old', toolCallId: `tc-${index}` },
+      createdAt: '2026-11-14T10:00:00Z',
+    }));
+    const earliestVisible = [
+      {
+        id: 'msg-earliest',
+        position: 50,
+        senderType: 'user',
+        kind: 'text',
+        content: 'Earliest user message',
+        createdAt: '2026-11-14T09:50:00Z',
+      },
+    ];
+    let latestWindow = Array.from({ length: 50 }, (_, index) => ({
+      id: `msg-${index + 101}`,
+      position: index + 101,
+      senderType: 'bot',
+      kind: 'text',
+      content: `Latest message ${index + 101}`,
+      createdAt: '2026-11-15T10:00:00Z',
+    }));
+
+    let failNextOlder = false;
+    request.mockImplementation((path: string) => {
+      if (path.endsWith('/dm')) {
+        return Promise.resolve({ id: 'conversation-1', botId: 'bot-1' });
+      }
+      if (path.includes('/messages?before=101')) {
+        if (failNextOlder) {
+          return Promise.reject(new Error('network down'));
+        }
+        return Promise.resolve({
+          messages: toolOnlyPage,
+          turns: [],
+          hasMore: true,
+        });
+      }
+      if (path.includes('/messages?before=51')) {
+        return Promise.resolve({
+          messages: earliestVisible,
+          turns: [],
+          hasMore: false,
+        });
+      }
+      if (path.includes('/messages')) {
+        return Promise.resolve({
+          messages: latestWindow,
+          turns: [],
+          hasMore: true,
+        });
+      }
+      return Promise.resolve({ spendTodayMicros: 0, budgets: [] });
+    });
+
+    class FakeSocket {
+      static current: FakeSocket;
+      onmessage: ((event: MessageEvent<string>) => void) | null = null;
+      close = vi.fn();
+      constructor() {
+        FakeSocket.current = this;
+      }
+      emit(data: unknown) {
+        this.onmessage?.({
+          data: JSON.stringify(data),
+        } as MessageEvent<string>);
+      }
+    }
+    vi.stubGlobal('WebSocket', FakeSocket);
+    vi.mocked(getAccessToken).mockReturnValue('fixture-token');
+
+    failNextOlder = true;
+    show(
+      <ChatPanel
+        workspaceId="ws-1"
+        userId="user-1"
+        botId="bot-1"
+        name="Atlas"
+        avatarSeed="atlas-seed"
+      />,
+    );
+
+    const log = screen.getByRole('log', { name: messages.chat.history });
+    let scrollH = 1200;
+    Object.defineProperty(log, 'scrollHeight', {
+      configurable: true,
+      get: () =>
+        log.textContent?.includes('Earliest user message') ? 1900 : scrollH,
+    });
+    Object.defineProperty(log, 'clientHeight', {
+      configurable: true,
+      get: () => 400,
+    });
+
+    expect(await screen.findByText('Latest message 150')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: messages.chat.older }),
+    ).toBeInTheDocument();
+
+    // Negative path: error while loading older shows error alert without losing loaded messages.
+    fireEvent.click(screen.getByRole('button', { name: messages.chat.older }));
+    expect(await screen.findByText(messages.chat.error)).toBeInTheDocument();
+    expect(screen.getByText('Latest message 150')).toBeInTheDocument();
+
+    // Scrolling to the very top triggers auto-load and skips the tool-only page to reveal Earliest user message.
+    failNextOlder = false;
+    log.scrollTop = 0;
+    fireEvent.scroll(log);
+
+    expect(
+      await screen.findByText('Earliest user message'),
+    ).toBeInTheDocument();
+    // Scroll position preserved relative to newly prepended content (0 + (1900 - 1200) = 700).
+    expect(log.scrollTop).toBe(700);
+    // Button disappears once the beginning of the conversation is reached (hasMore: false).
+    expect(
+      screen.queryByRole('button', { name: messages.chat.older }),
+    ).not.toBeInTheDocument();
+
+    // Sliding window update on new message must NOT drop message 101 that slid out of the newest 50 window.
+    latestWindow = [
+      ...latestWindow.slice(1),
+      {
+        id: 'msg-151',
+        position: 151,
+        senderType: 'bot',
+        kind: 'text',
+        content: 'Latest message 151',
+        createdAt: '2026-11-15T10:05:00Z',
+      },
+    ];
+    scrollH = 1950;
+    act(() => {
+      FakeSocket.current.emit({ conversationId: 'conversation-1' });
+    });
+    expect(await screen.findByText('Latest message 151')).toBeInTheDocument();
+    expect(screen.getByText('Latest message 101')).toBeInTheDocument();
   });
 });
