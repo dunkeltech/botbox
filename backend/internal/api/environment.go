@@ -350,15 +350,8 @@ func (s *server) handleReleaseBotControl(w http.ResponseWriter, r *http.Request)
 		note = trimmed
 	}
 
-	envRow, _, _, ok := s.loadOrInitEnvironment(w, r, botRow)
-	if !ok {
+	if _, _, _, ok := s.loadOrInitEnvironment(w, r, botRow); !ok {
 		return
-	}
-
-	canOverride := actorRole == workspaces.RoleOwner || actorRole == workspaces.RoleAdmin
-	if !envRow.ControlHolderUserID.Valid {
-		// Nobody currently holds control; record optional hand-back note if provided.
-		canOverride = true
 	}
 
 	tx, err := s.pool.Begin(r.Context())
@@ -374,6 +367,14 @@ func (s *server) handleReleaseBotControl(w http.ResponseWriter, r *http.Request)
 		s.chatFailure(w)
 		return
 	}
+	// Read the holder under the queue lock so a duplicate release cannot retry a failed turn.
+	envRow, err := txq.GetEnvironmentByWorkspaceAndBot(r.Context(), db.GetEnvironmentByWorkspaceAndBotParams{WorkspaceID: wsRow.ID, ID: botRow.ID})
+	if err != nil {
+		s.chatFailure(w)
+		return
+	}
+	controlWasHeld := envRow.ControlHolderUserID.Valid
+	canOverride := !controlWasHeld || actorRole == workspaces.RoleOwner || actorRole == workspaces.RoleAdmin
 	released, err := txq.ReleaseEnvironmentControl(r.Context(), db.ReleaseEnvironmentControlParams{
 		BotID:               envRow.BotID,
 		ControlHolderUserID: toPGUUID(claims.Subject),
@@ -400,7 +401,7 @@ func (s *server) handleReleaseBotControl(w http.ResponseWriter, r *http.Request)
 		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to record audit log")
 		return
 	}
-	turnID, err := s.queueHandback(r.Context(), txq, wsRow.ID, botRow.ID, note)
+	turnID, err := s.queueHandback(r.Context(), txq, wsRow.ID, botRow.ID, note, controlWasHeld)
 	if err != nil {
 		s.logger.Error("queue desktop handback", "bot_id", botUUID.String())
 		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to resume the bot")

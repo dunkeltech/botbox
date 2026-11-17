@@ -326,6 +326,7 @@ theme: {
 ### Bot workspace loading & fullscreen desktop
 - **Workspace loading state:** `/bots/:id` renders a structural zero-layout-shift skeleton matching the split chat + computer layout, paired with a centered `dark-2` loading card inside the 16:10 `terminal` (`#14201a`) viewport showing the `bot.Box` hexagon-robot emblem, accessible `role="status"` text, and progress indicator (static under `prefers-reduced-motion: reduce`).
 - **Desktop fullscreen overlay:** Expanding the live computer opens a full-viewport `terminal` (`#14201a`) overlay while keeping the active noVNC RFB session mounted (no socket reconnect when toggling). The pinned `dark-2` (`#1f2d1f`) toolbar exposes status, `Take control` / hand-back note + `Hand back`, a toggleable slide-over `Chat` drawer, optional browser `requestFullscreen()`, and `Exit fullscreen` (`Esc`), all with ≥ 44 px touch targets and `whitespace-nowrap` labels.
+- **Desktop hand-back:** `Hand back` resumes the bot with a request to take a fresh screenshot. After a failed hand-back, `Take control` followed by `Hand back` retries the request.
 - **Desktop reconnect:** After an established desktop stream closes, request a fresh ticket immediately and use the existing connection status while reconnecting. Boot retries reuse the current ticket and renew it on the slower retry schedule.
 
 ### Bot stop and pause controls

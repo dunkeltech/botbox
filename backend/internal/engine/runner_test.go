@@ -156,6 +156,52 @@ func TestRunnerAcceptsBotHandoff(t *testing.T) {
 	}
 }
 
+func TestRunnerAcceptsDesktopHandback(t *testing.T) {
+	session, input := runnerInput()
+	input.SenderType = "system"
+	input.Kind = "text"
+	input.Content = engine.HandbackNote + "\nChecked the form"
+	input.Metadata = []byte(`{"source":"desktop_handback"}`)
+	calls := 0
+	r := engine.NewFunctionRunner(func(_ context.Context, s engine.Session, _ func(engine.Event) error) error {
+		calls++
+		if len(s.Messages) != 1 || s.Messages[0].SenderType != "system" || s.Messages[0].Content != input.Content {
+			t.Errorf("hand-back context: %+v", s.Messages)
+		}
+		return nil
+	})
+	ctx := context.Background()
+	if err := r.Start(ctx, session); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = r.Stop() }()
+	for _, tt := range []struct {
+		name   string
+		change func(*db.Message)
+	}{
+		{"missing source", func(m *db.Message) { m.Metadata = nil }},
+		{"other source", func(m *db.Message) { m.Metadata = []byte(`{"source":"status","detail":"desktop_handback"}`) }},
+		{"malformed metadata", func(m *db.Message) { m.Metadata = []byte(`{"source":"desktop_handback"`) }},
+		{"non-text message", func(m *db.Message) { m.Kind = "tool" }},
+		{"foreign workspace", func(m *db.Message) { m.WorkspaceID.Bytes = uuid.New() }},
+		{"foreign conversation", func(m *db.Message) { m.ConversationID.Bytes = uuid.New() }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			invalid := input
+			tt.change(&invalid)
+			if err := r.Send(ctx, invalid); err == nil {
+				t.Fatal("invalid hand-back accepted")
+			}
+		})
+	}
+	if err := r.Send(ctx, input); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatalf("executor calls = %d, want 1", calls)
+	}
+}
+
 func TestRunnerRetainsConversationBetweenMessages(t *testing.T) {
 	session, input := runnerInput()
 	calls := 0

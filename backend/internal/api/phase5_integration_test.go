@@ -196,6 +196,55 @@ func TestPhase5HandbackResumesBot(t *testing.T) {
 	if again.status != http.StatusOK || len(queue.jobs) != 2 {
 		t.Fatalf("dedup release=%d jobs=%d", again.status, len(queue.jobs))
 	}
+
+	ctx := context.Background()
+	handbacks := 0
+	worker := &engine.Worker{Pool: h.pool, Now: h.clock.Now, Execute: func(_ context.Context, s engine.Session, emit func(engine.Event) error) error {
+		if s.TurnID == queue.jobs[0].TurnID {
+			return nil
+		}
+		handbacks++
+		input := s.Messages[0]
+		if input.SenderType != "system" || input.Content != want {
+			return errors.New("missing hand-back instruction")
+		}
+		if handbacks == 1 {
+			return errors.New("fixture screenshot failure")
+		}
+		return emit(engine.Event{Kind: engine.EventKindTextDelta, Text: "Screenshot captured"})
+	}}
+	for _, job := range queue.jobs {
+		if err := worker.Process(ctx, job); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if handbacks != 1 {
+		t.Fatalf("executed %d hand-backs, want 1", handbacks)
+	}
+	checkTurn := func(id uuid.UUID, status string) {
+		t.Helper()
+		turn, err := h.queries.GetBotTurn(ctx, db.GetBotTurnParams{WorkspaceID: asPG(ws), ID: asPG(id)})
+		if err != nil || turn.Status != status {
+			t.Fatalf("turn status = %q, want %q: %v", turn.Status, status, err)
+		}
+	}
+	checkTurn(queue.jobs[1].TurnID, "failed")
+	if r := h.request(http.MethodPost, botPath+"/control/release", nil, owner.AccessToken, nil, true); r.status != http.StatusOK || len(queue.jobs) != 2 {
+		t.Fatalf("duplicate release after failure=%d jobs=%d", r.status, len(queue.jobs))
+	}
+	if r := h.request(http.MethodPost, botPath+"/control/take", nil, owner.AccessToken, nil, true); r.status != http.StatusOK {
+		t.Fatalf("retake=%d %s", r.status, r.body)
+	}
+	if r := h.request(http.MethodPost, botPath+"/control/release", map[string]any{"note": note}, owner.AccessToken, nil, true); r.status != http.StatusOK || len(queue.jobs) != 3 {
+		t.Fatalf("fresh hand-back=%d jobs=%d body=%s", r.status, len(queue.jobs), r.body)
+	}
+	if err := worker.Process(ctx, queue.jobs[2]); err != nil {
+		t.Fatal(err)
+	}
+	checkTurn(queue.jobs[2].TurnID, "completed")
+	if handbacks != 2 {
+		t.Fatalf("executed %d hand-backs, want 2", handbacks)
+	}
 }
 
 func TestPhase5TakeFailsClosedWhenAgentRejectsLock(t *testing.T) {

@@ -373,7 +373,7 @@ Every bot gets a unique, animated robot avatar, generated deterministically from
 - **CLI interface:** the agent runs a local MCP server at `POST http://127.0.0.1:9091/mcp`. Desktop tools, including image-returning screenshots, are registered with the CLIs. Stdio is available as a `--mcp-stdio` fallback.
 - **Browser tool (recommended):** Chromium with remote debugging on `127.0.0.1:9222` only, driven via CDP. It is more reliable and cheaper than pixel clicks on web pages.
 - **Limits per turn:** screenshots, steps and tokens.
-- **Takeover:** a human taking control interrupts the bot within 1 s and pauses the turn. On hand-back the bot receives the exact system note `A human used the desktop; take a fresh screenshot.` and the turn resumes.
+- **Takeover:** a human taking control interrupts the bot within 1 s and pauses the turn. On hand-back the bot resumes with the system note `A human used the desktop; take a fresh screenshot.` If that turn fails, taking control again and handing it back starts a fresh turn.
 - **Transparency:**
   - The bot's labelled cursor is shown in the viewer.
   - An action timeline (`desktop_actions`) lists every desktop action.

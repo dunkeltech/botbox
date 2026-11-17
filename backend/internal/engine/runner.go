@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sync"
 
@@ -66,15 +67,14 @@ func (r *FunctionRunner) Start(ctx context.Context, s Session) error {
 }
 
 // Send appends the message that triggered this turn and runs one bounded turn.
-// A direct message is always a human post. A group handoff is another bot's
-// text, so both sender types are valid input (ADR-0015).
+// Human posts, group handoffs (ADR-0015), and desktop hand-backs (ADR-0014) can start a turn.
 func (r *FunctionRunner) Send(ctx context.Context, message db.Message) error {
 	r.mu.Lock()
 	if r.stopped || r.lifetime == nil || r.done != nil {
 		r.mu.Unlock()
 		return errors.New("runner is not ready")
 	}
-	if message.Content == "" || !message.WorkspaceID.Valid || !message.ConversationID.Valid || message.WorkspaceID.Bytes != r.session.WorkspaceID || message.ConversationID.Bytes != r.session.ConversationID || (message.SenderType != "user" && message.SenderType != "bot") {
+	if message.Content == "" || !message.WorkspaceID.Valid || !message.ConversationID.Valid || message.WorkspaceID.Bytes != r.session.WorkspaceID || message.ConversationID.Bytes != r.session.ConversationID || !canTriggerTurn(message) {
 		r.mu.Unlock()
 		return errors.New("invalid runner message")
 	}
@@ -133,6 +133,21 @@ func (r *FunctionRunner) Send(ctx context.Context, message db.Message) error {
 		return err
 	}
 	return runCtx.Err()
+}
+
+func canTriggerTurn(message db.Message) bool {
+	switch message.SenderType {
+	case "user", "bot":
+		return true
+	case "system":
+		// The hand-back source distinguishes the resume instruction from status messages.
+		var metadata struct {
+			Source string `json:"source"`
+		}
+		return message.Kind == "text" && json.Unmarshal(message.Metadata, &metadata) == nil && metadata.Source == handbackSource
+	default:
+		return false
+	}
 }
 
 // Events returns the session stream; Stop closes it after producers exit.

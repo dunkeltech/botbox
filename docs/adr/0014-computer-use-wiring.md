@@ -30,7 +30,7 @@ Keep Option A from ADR-0005 and wire it as follows:
 3. Screenshot bytes expire after `workspaces.screenshot_retention_days` (1..30, default 7). The action row stays. List responses omit the bytes; a separate authenticated GET returns the image. Bytes and typed text are not logged.
 4. Anthropic computer use sends tool version `computer_20251124` and beta `computer-use-2025-11-24`. OpenAI computer use is translated to the Responses API only when the computer marker is present. Other providers receive generic function tools whose image results are `image_url` data URLs.
 5. Coordinates on a downscaled screenshot are scaled back to the fixed 1280×800 desktop inside the agent, once.
-6. Hand-back inserts the exact text `A human used the desktop; take a fresh screenshot.` as a `kind=text` system message and enqueues a bot turn before the release commits. An optional note is a following line with control characters removed. A second release does not enqueue again while that note is still the latest message.
+6. Hand-back inserts the exact text `A human used the desktop; take a fresh screenshot.` as a `kind=text` system message and enqueues a bot turn before the release commits. An optional note is a following line with control characters removed. The `desktop_handback` source lets the runner accept the instruction while rejecting other system messages as turn inputs. A duplicate release is deduplicated while that note is still the latest message. After a failed hand-back, a fresh takeover and release can enqueue a new turn.
 7. If a running sandbox implements the desktop bridge and rejects the lock, take control returns 503 and releases the database claim.
 8. Chromium remote debugging listens on `127.0.0.1:9222` only.
 

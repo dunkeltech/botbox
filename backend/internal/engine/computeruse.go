@@ -37,6 +37,11 @@ func DesktopGuidanceFor(brokerEnabled bool) string {
 // HandbackNote is the system note sent when a person returns the desktop to the bot.
 const HandbackNote = "A human used the desktop; take a fresh screenshot."
 
+const handbackSource = "desktop_handback"
+
+// HandbackMetadata marks the system message that resumes a bot after desktop control is returned.
+const HandbackMetadata = `{"source":"` + handbackSource + `"}`
+
 // DesktopActionKind identifies the desktop primitive executed in one step.
 type DesktopActionKind = string
 

@@ -143,7 +143,7 @@ func (s *server) pushDesktopLock(ctx context.Context, envRow db.Environment, hum
 	return bridge.SetDesktopLock(ctx, compute.EnvID(envRow.EnvID), human)
 }
 
-func (s *server) queueHandback(ctx context.Context, q *db.Queries, wsID, botID pgtype.UUID, note string) (uuid.UUID, error) {
+func (s *server) queueHandback(ctx context.Context, q *db.Queries, wsID, botID pgtype.UUID, note string, controlWasHeld bool) (uuid.UUID, error) {
 	turn, err := q.LatestBotTurn(ctx, db.LatestBotTurnParams{WorkspaceID: wsID, BotID: botID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return uuid.Nil, nil
@@ -155,7 +155,9 @@ func (s *server) queueHandback(ctx context.Context, q *db.Queries, wsID, botID p
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return uuid.Nil, err
 	}
-	if err == nil && isHandbackMessage(latest.Content, latest.Metadata) {
+	// A fresh takeover lets the user recover from the previous failed hand-back.
+	retry := controlWasHeld && turn.Status == "failed" && turn.MessageID == latest.ID
+	if err == nil && isHandbackMessage(latest.Content, latest.Metadata) && !retry {
 		return uuid.Nil, nil
 	}
 	content := engine.HandbackNote
@@ -169,7 +171,7 @@ func (s *server) queueHandback(ctx context.Context, q *db.Queries, wsID, botID p
 		SenderType:     "system",
 		Kind:           "text",
 		Content:        content,
-		Metadata:       []byte(`{"source":"desktop_handback"}`),
+		Metadata:       []byte(engine.HandbackMetadata),
 	})
 	if err != nil {
 		return uuid.Nil, err
