@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Exercise the pinned interactive Codex CLI without external networking."""
 
 import errno

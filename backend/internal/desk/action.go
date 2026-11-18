@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Package desk is the shared computer-use action model.
 // The sandbox agent and the API runner both parse model tool calls into these
 // actions so coordinate rules and limits cannot drift between gRPC and MCP.

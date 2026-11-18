@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { type AvatarMood } from '@/types/api';
 
 export type AvatarHead = 'rect' | 'hex' | 'dome' | 'oct';

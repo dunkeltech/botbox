@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Package vncrelay implements short-lived HMAC-signed VNC stream tickets and an
 // authenticated WebSocket relay with server-side viewer input enforcement.
 package vncrelay

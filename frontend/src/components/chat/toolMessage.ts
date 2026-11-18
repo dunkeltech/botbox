@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Tool lines stored by the engine keep the CLI text, including tool names and
 // sandbox file paths. The chat shows a short sentence instead, and never the path.
 

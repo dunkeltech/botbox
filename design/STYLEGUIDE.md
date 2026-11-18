@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # bot.Box UI styleguide
 
 bot.Box is a dunkel.Tech project, and its interface inherits the dunkel.tech look: dark forest greens, mint, the blue hexagon trio from the logo, Lato, 14 px corners and the `//` eyebrow. This guide is the source of truth for the frontend. Machine-readable values live in [`tokens.json`](tokens.json); the screens are in [`README.md`](README.md).

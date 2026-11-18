@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: AGPL-3.0-only
+
 -- +goose Up
 ALTER TABLE bot_turns ADD COLUMN heartbeat_at timestamptz;
 CREATE INDEX bot_turns_team_peer ON bot_turns(workspace_id, conversation_id, bot_id, position DESC);

@@ -125,3 +125,5 @@ WHERE u.workspace_id = sqlc.arg(workspace_id)
       ELSE date_trunc(period.name, sqlc.arg(as_of)::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
   END
 GROUP BY period.name, u.model ORDER BY period.name, u.model;
+
+-- SPDX-License-Identifier: AGPL-3.0-only

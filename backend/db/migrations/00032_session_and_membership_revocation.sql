@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: AGPL-3.0-only
+
 -- +goose Up
 CREATE TABLE refresh_token_families (
     id UUID PRIMARY KEY,

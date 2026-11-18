@@ -94,3 +94,5 @@ RETURNING *;
 SELECT e.*, b.workspace_id
 FROM environments e
 JOIN bots b ON b.id = e.bot_id;
+
+-- SPDX-License-Identifier: AGPL-3.0-only

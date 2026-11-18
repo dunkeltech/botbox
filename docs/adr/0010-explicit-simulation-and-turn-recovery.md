@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # 0010. Explicit simulation and safe turn recovery
 
 - **Date:** 2026-11-15

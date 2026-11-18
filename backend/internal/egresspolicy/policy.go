@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Package egresspolicy provides shared validation, evaluation, and serialized
 // transactional persistence for per-bot egress allowlists, blocklists, and revisions.
 package egresspolicy

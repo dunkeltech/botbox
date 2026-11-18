@@ -110,3 +110,5 @@ WHERE workspace_id = $1
   AND status IN ('bound', 'authenticated', 'mfa_required', 'takeover')
   AND expires_at > sqlc.arg(as_of)::timestamptz
 ORDER BY created_at DESC;
+
+-- SPDX-License-Identifier: AGPL-3.0-only

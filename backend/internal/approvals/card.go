@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Package approvals records ask-before cards and applies a human decision.
 // The proxy, the worker, and the HTTP handler share Open so a turn-limit,
 // loop, or budget pause is never replaced by an approval pause (ADR-0015).

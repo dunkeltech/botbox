@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Contract tests for Chromium profile lock cleanup and crash recovery."""
 
 from __future__ import annotations

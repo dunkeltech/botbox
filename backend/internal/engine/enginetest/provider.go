@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Package enginetest provides deterministic local doubles for engine and
 // orchestrator tests. It never contacts a provider or starts a real agent CLI.
 package enginetest

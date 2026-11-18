@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # bot.Box: Software Requirements & Architecture Specification
 
 > Status: living document. It describes the target architecture. The implementation is planned in phases, which are tracked as GitHub issues (see [§6](#6-roadmap)). Decisions taken during implementation are recorded as ADRs in `docs/adr/` and reflected here.

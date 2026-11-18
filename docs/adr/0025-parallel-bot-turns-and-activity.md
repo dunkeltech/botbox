@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # 0025. Parallel bot turns and current activity
 
 - **Date:** 2026-11-17

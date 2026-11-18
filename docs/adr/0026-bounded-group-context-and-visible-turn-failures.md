@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # 0026. Bounded group context and visible turn failures
 
 - **Date:** 2026-11-17

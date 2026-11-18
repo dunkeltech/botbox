@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # 0006. Selective TLS Interception and Per-Bot CA
 
 - **Date:** 2026-11-14

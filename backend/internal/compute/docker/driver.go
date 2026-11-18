@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Package docker implements compute.Driver against the Docker Engine HTTP API.
 //
 // Only the control-plane API process communicates with the Docker socket; sandboxes

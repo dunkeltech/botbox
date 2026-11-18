@@ -48,3 +48,5 @@ SELECT * FROM messages
 WHERE workspace_id = $1 AND conversation_id = $2
 ORDER BY position DESC
 LIMIT 1;
+
+-- SPDX-License-Identifier: AGPL-3.0-only

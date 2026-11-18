@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: AGPL-3.0-only
+
 -- +goose Up
 -- Workspace-scoped LLM proxy guardrails: opt-in policies, custom regex/keyword
 -- rules, sanitized proxy audit events, and inline chat guardrail cards.

@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: AGPL-3.0-only
+
 -- +goose Up
 -- Screenshot bytes expire; the action row stays so the timeline remains readable.
 ALTER TABLE workspaces

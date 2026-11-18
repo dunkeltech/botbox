@@ -1,4 +1,6 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-only
+
 # Interactive Claude Code 2.1.323 checks api.anthropic.com and
 # platform.claude.com, then asks the person to trust the working directory.
 # Provider tunnels stay closed and nobody can answer that prompt in the

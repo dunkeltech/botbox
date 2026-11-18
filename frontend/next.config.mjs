@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import process from 'node:process';
 import { PHASE_DEVELOPMENT_SERVER } from 'next/constants.js';
 import createNextIntlPlugin from 'next-intl/plugin';

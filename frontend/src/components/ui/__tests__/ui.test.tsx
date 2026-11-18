@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { Bell } from 'lucide-react';
 import { NextIntlClientProvider } from 'next-intl';

@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # Run OpenRouter bots with Pi inside the sandbox
 
 ## Context

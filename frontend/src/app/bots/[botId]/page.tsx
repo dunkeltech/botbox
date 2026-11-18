@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 'use client';
 
 import { AppShell } from '@/components/shell/AppShell';

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Package migrations embeds SQL database migration files for goose.
 package migrations
 

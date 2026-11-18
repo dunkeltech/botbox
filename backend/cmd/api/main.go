@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Command api runs the bot.Box REST and WebSocket control plane server.
 package main
 

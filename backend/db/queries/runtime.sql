@@ -8,3 +8,5 @@ WHERE b.workspace_id=$1 AND b.id=$2;
 -- name: SetBotPaused :exec
 INSERT INTO bot_runtime(workspace_id,bot_id,paused) VALUES($1,$2,$3)
 ON CONFLICT(workspace_id,bot_id) DO UPDATE SET paused=EXCLUDED.paused;
+
+-- SPDX-License-Identifier: AGPL-3.0-only

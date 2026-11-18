@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
 openapi: 3.0.3
 info:
   title: bot.Box Control Plane API

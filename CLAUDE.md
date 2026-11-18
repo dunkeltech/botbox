@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # CLAUDE.md
 
 All project rules live in AGENTS.md, which is imported here so both files stay in sync:

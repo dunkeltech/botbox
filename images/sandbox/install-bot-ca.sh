@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-only
+
 set -euo pipefail
 
 CA_PATH="${1:-/etc/botbox/ca/bot-ca.crt}"

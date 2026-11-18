@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # 0005. Computer-Use Protocol and Local MCP Server
 
 - **Date:** 2026-11-14

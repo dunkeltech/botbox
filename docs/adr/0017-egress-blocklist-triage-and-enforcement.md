@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # 0017. Explicit Egress Blocklist, One-Click Activity Triage, and Reliable Enforcement
 
 - **Date:** 2026-11-17

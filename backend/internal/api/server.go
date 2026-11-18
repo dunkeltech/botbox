@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Package api provides the HTTP router, health probes, and JSON error handling
 // for the bot.Box control plane.
 package api

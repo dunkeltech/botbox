@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Package guardrails implements workspace-scoped LLM proxy guardrail policies,
 // deterministic built-in and custom detectors, sliding-window SSE filtering,
 // and privacy-preserving audit and chat feedback.

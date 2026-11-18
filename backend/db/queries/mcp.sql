@@ -229,3 +229,5 @@ WHERE workspace_id = $1 AND bot_id = $2;
 -- name: DeleteBotSessionsByWorkspace :exec
 DELETE FROM bot_sessions
 WHERE workspace_id = $1;
+
+-- SPDX-License-Identifier: AGPL-3.0-only

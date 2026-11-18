@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { ApiClientError } from '@/lib/api-client';
 
 export type ErrorTranslationKey =

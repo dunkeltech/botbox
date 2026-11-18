@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: AGPL-3.0-only
+
 -- +goose Up
 -- Phase 1 schema: local authentication, multi-user workspaces with roles,
 -- single-use invitations, refresh token families, bot configurations, and audit log.

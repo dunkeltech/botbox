@@ -1,4 +1,6 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/oapi-codegen/oapi-codegen/HEAD/configuration-schema.json
+# SPDX-License-Identifier: AGPL-3.0-only
+
 package: api
 output: internal/gen/api/types.gen.go
 generate:

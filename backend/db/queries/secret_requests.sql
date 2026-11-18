@@ -273,3 +273,5 @@ WHERE workspace_id = $1
   AND conversation_id = $2
 ORDER BY created_at DESC
 LIMIT 50;
+
+-- SPDX-License-Identifier: AGPL-3.0-only

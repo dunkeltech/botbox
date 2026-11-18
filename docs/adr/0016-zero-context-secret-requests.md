@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # 0016. Zero-context in-chat secret requests (CLI egress adapters and isolated browser broker)
 
 - **Date:** 2026-11-16 (updated 2026-11-17)

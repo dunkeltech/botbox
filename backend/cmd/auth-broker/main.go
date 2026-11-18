@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Package main runs the standalone bot.Box browser authentication broker outside
 // all bot sandboxes so credential-bearing Chromium profiles, cookies, and CDP
 // sockets never enter sandbox containers.

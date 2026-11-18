@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: AGPL-3.0-only
+
 -- +goose Up
 ALTER TABLE workspaces
     ADD COLUMN count_subscription_usage BOOLEAN NOT NULL DEFAULT FALSE;

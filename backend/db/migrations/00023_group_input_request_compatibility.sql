@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: AGPL-3.0-only
+
 -- +goose Up
 -- Early development databases recorded version 22 before these fields shipped.
 -- Existing requests from that schema collected advisory input.

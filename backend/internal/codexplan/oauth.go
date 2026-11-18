@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Package codexplan manages ChatGPT plan authorization in the control plane.
 package codexplan
 

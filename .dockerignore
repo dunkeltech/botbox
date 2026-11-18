@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
 # Keep credentials and host runtime artifacts out of every image build context.
 .git
 .devenv*

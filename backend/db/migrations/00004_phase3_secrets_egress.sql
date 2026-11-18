@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: AGPL-3.0-only
+
 -- +goose Up
 -- Phase 3 schema: envelope-encrypted bot/workspace secrets, per-bot egress policies,
 -- and non-sensitive egress audit logs.

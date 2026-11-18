@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: AGPL-3.0-only
+
 -- +goose Up
 -- GitLab.com retains its existing Bearer support, including OAuth access tokens.
 -- PRIVATE-TOKEN formatting applies only to the newly supported custom instances.

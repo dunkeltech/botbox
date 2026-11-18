@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Package memory implements per-bot persistent knowledge base storage,
 // zero-secret write guards, full-text search, and chat/MCP memory tools.
 package memory

@@ -114,3 +114,5 @@ SELECT bot_id FROM bot_gitlab_instances WHERE workspace_id=$1 AND origin=$2;
 
 -- name: ListKnownGitLabOrigins :many
 SELECT origin FROM gitlab_known_origins WHERE workspace_id=$1 ORDER BY origin;
+
+-- SPDX-License-Identifier: AGPL-3.0-only

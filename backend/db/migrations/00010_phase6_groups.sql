@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: AGPL-3.0-only
+
 -- +goose Up
 -- Groups share the conversation tables with direct messages. The old foreign
 -- key pinned every turn to the single DM bot, so a group could not schedule

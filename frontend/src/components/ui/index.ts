@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 export { BotAvatar, type BotAvatarProps } from './BotAvatar';
 export { BudgetMeter, type BudgetMeterProps } from './BudgetMeter';
 export { Button, type ButtonProps, type ButtonVariant } from './Button';

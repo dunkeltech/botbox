@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Package authbroker implements an isolated browser authentication broker that
 // owns credential-bearing browser profiles, targets, cookies, and login flows
 // outside bot sandboxes (ADR-0016, issue #30).

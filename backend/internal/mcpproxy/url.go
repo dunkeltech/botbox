@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Package mcpproxy implements control-plane MCP server discovery, credential
 // injection, per-bot command policy enforcement (allow/ask/deny), and audit logging.
 package mcpproxy

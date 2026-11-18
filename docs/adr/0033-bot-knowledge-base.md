@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # 0033. Per-bot knowledge base and zero-secret memory tools
 
 **Status** Accepted

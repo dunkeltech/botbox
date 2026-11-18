@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Package secrets manages encrypted credentials, LLM base-URL brokering,
 // and selective TLS-intercepting egress proxies outside bot sandboxes.
 package secrets

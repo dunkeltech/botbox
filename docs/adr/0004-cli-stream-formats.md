@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # 0004. Unified CLI Stream Event Model
 
 - **Date:** 2026-11-14

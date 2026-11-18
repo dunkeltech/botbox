@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { type InputHTMLAttributes, useId } from 'react';
 
 export interface InputProps extends Omit<

@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: AGPL-3.0-only
+
 -- +goose Up
 -- Isolated browser authentication broker session state and atomic target bindings (ADR-0016, issue #30).
 

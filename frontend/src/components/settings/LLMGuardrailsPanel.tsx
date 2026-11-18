@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 'use client';
 
 import { Lock, Pencil, Shield, Trash2 } from 'lucide-react';

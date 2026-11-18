@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: AGPL-3.0-only
+
 -- +goose Up
 -- Retain credential boundaries after an instance is removed, so legacy wildcard
 -- secrets cannot reactivate access when its registration or assignment disappears.

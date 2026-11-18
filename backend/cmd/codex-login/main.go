@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Command codex-login pairs a user's browser authorization with one bot.
 package main
 

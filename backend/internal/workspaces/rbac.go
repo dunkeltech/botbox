@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package workspaces
 
 // Role represents a member's authorization level inside a workspace.

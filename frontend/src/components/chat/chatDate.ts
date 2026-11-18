@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 function padTwo(value: number): string {
   return String(value).padStart(2, '0');
 }

@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # 0015. Group chat orchestration
 
 - **Date:** 2026-11-16

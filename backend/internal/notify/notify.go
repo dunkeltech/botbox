@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Package notify stores mention, approval, and budget rows for human members.
 // Routing still does not create a turn for a human. The row is the durable
 // notice; a missed NATS signal is recovered by reloading this list (issue #17).

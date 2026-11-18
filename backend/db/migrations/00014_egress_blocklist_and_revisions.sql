@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: AGPL-3.0-only
+
 -- +goose Up
 -- Explicit per-bot egress blocklist, monotonic concurrency revisions,
 -- proxy enforcement acknowledgements, and durable invalidation intents (#31).

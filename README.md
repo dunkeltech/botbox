@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # bot.Box
 
 Multi-user web application for creating and running bot computer agents. Each bot combines an LLM with its own isolated sandboxed Linux desktop that humans can watch, take over, and collaborate with in direct messages and team group chats.
@@ -6,6 +8,8 @@ Multi-user web application for creating and running bot computer agents. Each bo
 - **Design system & screens:** [`design/STYLEGUIDE.md`](design/STYLEGUIDE.md), [`design/tokens.json`](design/tokens.json), [`design/README.md`](design/README.md)
 - **Architecture decisions:** [`docs/adr/`](docs/adr/)
 - **Coding & security rules:** [`AGENTS.md`](AGENTS.md)
+- **Contributing:** [Contribution guide](CONTRIBUTING.md), [Contributor License Agreement](CLA.md), and [Code of Conduct](CODE_OF_CONDUCT.md)
+- **License:** [GNU Affero General Public License, version 3 only (AGPL-3.0-only)](LICENSE). Third-party materials retain their respective licenses.
 
 ## Prerequisites
 

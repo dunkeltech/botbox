@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Command agent runs inside each sandbox container to expose desktop,
 // command execution, and /home/bot file access to the control plane over gRPC.
 package main

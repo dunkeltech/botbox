@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # ADR-0028 · Stop running turns from chat
 
 ## Context

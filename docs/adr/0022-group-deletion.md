@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # 0022. Permanent group deletion with retained usage
 
 ## Status

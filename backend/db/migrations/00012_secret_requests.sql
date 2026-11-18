@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: AGPL-3.0-only
+
 -- +goose Up
 -- Zero-context in-chat secret requests and bounded ephemeral egress leases (ADR-0016, issue #30).
 

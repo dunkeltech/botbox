@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # 0008. Private DMs, Durable Turns and Budget Admission
 
 - **Date:** 2026-11-15

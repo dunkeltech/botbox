@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: AGPL-3.0-only
+
 -- +goose Up
 -- Composite keys prevent application mistakes from linking different tenants.
 ALTER TABLE bots ADD CONSTRAINT bots_workspace_id_id_key UNIQUE (workspace_id, id);

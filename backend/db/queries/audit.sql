@@ -9,3 +9,5 @@ FROM audit_log
 WHERE workspace_id = $1
 ORDER BY created_at DESC
 LIMIT $2;
+
+-- SPDX-License-Identifier: AGPL-3.0-only

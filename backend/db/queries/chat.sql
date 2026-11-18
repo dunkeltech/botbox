@@ -123,3 +123,5 @@ status=CASE WHEN stop_requested THEN 'interrupted' ELSE sqlc.arg(status)::text E
 error_code=CASE WHEN stop_requested THEN 'engine.interrupted' ELSE sqlc.arg(error_code)::text END,
 updated_at=now()
 WHERE workspace_id=$1 AND id=$2 AND status='running';
+
+-- SPDX-License-Identifier: AGPL-3.0-only

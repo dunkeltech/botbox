@@ -41,3 +41,5 @@ RETURNING owner_user_id;
 
 -- name: DeleteCodexPlanPairing :exec
 DELETE FROM codex_plan_pairings WHERE workspace_id = $1 AND bot_id = $2;
+
+-- SPDX-License-Identifier: AGPL-3.0-only

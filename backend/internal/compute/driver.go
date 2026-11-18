@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Package compute defines the sandbox compute driver interface and implementations
 // used to isolate, run, inspect, and control bot environments.
 package compute

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Package secretrequests implements durable, zero-context secret request
 // orchestration for CLI HTTPS credential adapters and gated browser capabilities.
 package secretrequests

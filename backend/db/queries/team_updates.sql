@@ -51,3 +51,5 @@ ORDER BY position DESC;
 -- name: CreateTeamUpdate :exec
 INSERT INTO messages(workspace_id, conversation_id, sender_type, sender_bot_id, kind, content, metadata, created_at)
 VALUES ($1, $2, 'bot', $3, $4, $5, $6, $7);
+
+-- SPDX-License-Identifier: AGPL-3.0-only

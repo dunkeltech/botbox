@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { mentionParts } from '@/components/team/text';
 
 interface MdastNode {

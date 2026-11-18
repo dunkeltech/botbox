@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 'use client';
 
 import { Bell, PenSquare, Plus, ShieldCheck, X } from 'lucide-react';

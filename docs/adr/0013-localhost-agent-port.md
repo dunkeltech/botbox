@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # 0013. Reach the sandbox agent on a loopback port
 
 - **Date:** 2026-11-16

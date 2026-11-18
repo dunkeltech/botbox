@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # 0029. MCP Proxy and Per-Bot Command Access Control
 
 - **Date:** 2026-11-18

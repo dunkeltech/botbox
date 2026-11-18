@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-only
+
 set -euo pipefail
 
 # Retrieve only the public CA over the isolated bot network. No private key or

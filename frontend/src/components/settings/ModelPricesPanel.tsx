@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 'use client';
 
 import { type FormEvent, useCallback, useEffect, useState } from 'react';

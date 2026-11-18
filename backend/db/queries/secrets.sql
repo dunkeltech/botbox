@@ -201,3 +201,5 @@ WHERE workspace_id = $1
   AND ($3::text = '' OR action = $3::text)
 ORDER BY created_at DESC, id DESC
 LIMIT $4 OFFSET $5;
+
+-- SPDX-License-Identifier: AGPL-3.0-only

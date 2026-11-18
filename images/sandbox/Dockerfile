@@ -1,5 +1,7 @@
 # syntax=docker/dockerfile:1
 
+# SPDX-License-Identifier: AGPL-3.0-only
+
 FROM node:24-bookworm-slim AS node-runtime
 
 FROM golang:1.26-bookworm AS agent-builder

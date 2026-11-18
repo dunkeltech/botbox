@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # 0001. Core Tech Stack and Development Environment
 
 - **Date:** 2026-11-14

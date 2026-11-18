@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # Implementation plan for Codex on the bot computer
 
 **Status** — Implemented. See [ADR 0030](../adr/0030-codex-desktop-chatgpt-plan.md) and the [setup guide](../guides/codex-desktop-setup.md).

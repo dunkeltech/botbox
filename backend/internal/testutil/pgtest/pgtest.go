@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Package pgtest launches isolated ephemeral PostgreSQL instances for backend integration tests.
 package pgtest
 

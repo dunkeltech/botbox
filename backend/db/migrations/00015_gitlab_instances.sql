@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: AGPL-3.0-only
+
 -- +goose Up
 -- Origins are immutable. Removing and re-adding an origin never restores old sessions.
 CREATE TABLE gitlab_instances (

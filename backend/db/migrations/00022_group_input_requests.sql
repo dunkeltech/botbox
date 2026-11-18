@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: AGPL-3.0-only
+
 -- +goose Up
 CREATE TABLE group_input_requests (
     workspace_id UUID NOT NULL,

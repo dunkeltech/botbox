@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Package gitlabaccess authorizes reviewed GitLab targets consistently across CLI, browser and proxy paths.
 package gitlabaccess
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Package netguard validates public DNS answers and dials their literal addresses.
 package netguard
 

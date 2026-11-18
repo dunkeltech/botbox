@@ -107,3 +107,5 @@ WHERE workspace_id = $1;
 -- name: DeleteWorkspaceByID :execrows
 DELETE FROM workspaces
 WHERE id = $1;
+
+-- SPDX-License-Identifier: AGPL-3.0-only

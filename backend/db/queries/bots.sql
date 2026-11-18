@@ -44,3 +44,5 @@ RETURNING *;
 -- name: DeleteBotByWorkspaceAndID :execrows
 DELETE FROM bots
 WHERE workspace_id = $1 AND id = $2;
+
+-- SPDX-License-Identifier: AGPL-3.0-only

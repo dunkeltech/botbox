@@ -45,3 +45,5 @@ WHERE workspace_id = $1 AND id = $2 AND user_id = $3;
 UPDATE notifications
 SET read_at = now()
 WHERE workspace_id = $1 AND user_id = $2 AND read_at IS NULL;
+
+-- SPDX-License-Identifier: AGPL-3.0-only

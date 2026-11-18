@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: AGPL-3.0-only
+
 -- +goose Up
 -- Workspace registration never grants every bot access implicitly.
 CREATE TABLE bot_gitlab_instances (

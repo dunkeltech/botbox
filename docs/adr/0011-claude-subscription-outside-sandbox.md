@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # 0011. Claude subscription authentication outside the sandbox
 
 - **Date:** 2026-11-15

@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # 0037. Session and infrastructure authorization
 
 - **Date** 2026-11-19

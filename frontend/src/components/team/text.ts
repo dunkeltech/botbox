@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import type { components } from '@/types/openapi.gen';
 
 type Group = components['schemas']['Group'];

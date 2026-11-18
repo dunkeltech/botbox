@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import type { Metadata } from 'next';
 import { Lato } from 'next/font/google';
 import { NextIntlClientProvider } from 'next-intl';

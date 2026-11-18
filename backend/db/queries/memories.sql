@@ -182,3 +182,5 @@ WHERE workspace_id = $1
 SELECT type, name
 FROM conversations
 WHERE workspace_id = $1 AND id = $2;
+
+-- SPDX-License-Identifier: AGPL-3.0-only

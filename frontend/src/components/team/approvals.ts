@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import type { WorkspaceRole } from '@/types/api';
 import type { components } from '@/types/openapi.gen';
 

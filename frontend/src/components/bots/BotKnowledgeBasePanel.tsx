@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 'use client';
 
 import { BookOpen, Pencil, Plus, ShieldCheck, Trash2 } from 'lucide-react';

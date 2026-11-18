@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 'use client';
 
 import { Eye, EyeOff, Lock, ShieldCheck, X } from 'lucide-react';

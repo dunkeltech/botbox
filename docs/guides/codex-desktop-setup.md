@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # Set up Codex in a bot computer with a ChatGPT plan
 
 ## Before you start

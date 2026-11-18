@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
 .PHONY: dev gen lint test build sandbox-image
 
 dev:

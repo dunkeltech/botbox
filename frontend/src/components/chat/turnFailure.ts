@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 const turnFailureKeys: Record<string, string> = {
   'secret_request.gitlab_not_registered': 'secretGitLabNotRegistered',
   'secret_request.gitlab_not_assigned': 'secretGitLabNotAssigned',

@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # 0021. Broadcast mentions and global bot roles
 
 [ADR-0027](0027-group-input-requests.md) updates how bots request input.

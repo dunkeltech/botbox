@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 module github.com/dunkeltech/botbox/backend
 
 go 1.26.10

@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # 0002. Desktop Streaming and Sandbox Host Capacity
 
 - **Date:** 2026-11-14

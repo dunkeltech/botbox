@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # 0020. Instance-bound GitLab CLI credentials and actionable request failures
 
 - **Date:** 2026-11-17

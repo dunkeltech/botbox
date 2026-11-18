@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+version = 1
+
+# These files cannot carry a license comment through parsing or regeneration.
+[[annotations]]
+path = [
+    "backend/go.sum",
+    "backend/internal/bots/testdata/*.json",
+    "backend/internal/engine/testdata/*.jsonl",
+    "backend/internal/engine/testdata/*.stderr",
+    "backend/internal/gen/api/*.go",
+    "backend/internal/gen/db/*.go",
+    "design/*.json",
+    "design/screens/*.png",
+    "design/source/*.json",
+    "devenv.lock",
+    "frontend/*.json",
+    "frontend/messages/*.json",
+    "frontend/src/types/openapi.gen.ts",
+    "images/sandbox/releases/*.json",
+    "images/sandbox/seccomp.json",
+]
+SPDX-License-Identifier = "AGPL-3.0-only"

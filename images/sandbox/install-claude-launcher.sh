@@ -1,4 +1,6 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-only
+
 # npm links /usr/local/bin/claude to the package binary (cli.js on 1.0.51,
 # bin/claude.exe on 2.1.323). Copying onto that path follows the link and
 # replaces the official CLI. Remove the link first and install a regular file.

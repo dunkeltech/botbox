@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /** Reconnect a private conversation and reconcile snapshots after every reconnect. */
 export function connectConversation(
   workspaceId: string,

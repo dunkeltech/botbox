@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 'use client';
 
 import { ArrowLeftRight, Info, Monitor, Terminal, X } from 'lucide-react';

@@ -1,4 +1,6 @@
 # yaml-language-server: $schema=https://devenv.sh/devenv.schema.json
+# SPDX-License-Identifier: AGPL-3.0-only
+
 # Fail when 15432 is taken instead of silently moving Postgres and caching
 # that fallback (cachix/devenv#2684).
 strict_ports: true

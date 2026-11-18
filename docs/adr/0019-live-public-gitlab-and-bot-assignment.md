@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # 0019. Live public GitLab domains and explicit bot assignments
 
 - **Date:** 2026-11-17

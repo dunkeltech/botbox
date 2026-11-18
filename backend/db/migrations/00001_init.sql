@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: AGPL-3.0-only
+
 -- +goose Up
 -- Baseline schema metadata table so sqlc compiles typed database helpers in
 -- Phase 0 before Phase 1 introduces the full multi-workspace schema.

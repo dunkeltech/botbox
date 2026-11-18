@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: AGPL-3.0-only
+
 -- +goose Up
 -- Per-bot exclusions preserve revocation of inherited credentials across reassignment.
 ALTER TABLE workspace_secrets ADD CONSTRAINT workspace_secrets_workspace_id_id_key UNIQUE (workspace_id, id);

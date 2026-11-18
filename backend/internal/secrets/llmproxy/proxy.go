@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Package llmproxy implements Spike S2: injecting real LLM credentials outside
 // the sandbox so CLIs (claude, codex, agy) only ever hold placeholder tokens.
 package llmproxy

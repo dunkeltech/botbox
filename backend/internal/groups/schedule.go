@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Package groups schedules bot turns for a group conversation.
 // Direct messages do not enter this package. The router stays pure; this
 // package is the only place that writes the pause, the counter, and the queue.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Slugifies a human-readable workspace name into a URL-safe lowercase slug.
  * Mirrors backend workspace slug constraints (lowercase ASCII letters, digits, hyphens).

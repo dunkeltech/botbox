@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: AGPL-3.0-only
+
 -- +goose Up
 -- Workspace-scoped MCP servers, discovered tools, per-bot command policies,
 -- one-time approval grants, and proxy audit logs (ADR-0029).

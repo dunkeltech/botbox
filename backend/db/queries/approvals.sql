@@ -84,3 +84,5 @@ LIMIT 1;
 
 -- name: GetBudgetForUpdate :one
 SELECT * FROM budgets WHERE workspace_id = $1 AND id = $2 FOR UPDATE;
+
+-- SPDX-License-Identifier: AGPL-3.0-only

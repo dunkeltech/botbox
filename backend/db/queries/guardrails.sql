@@ -148,3 +148,5 @@ SELECT EXISTS (
       AND turn_id = $2
       AND action = 'blocked'
 )::boolean;
+
+-- SPDX-License-Identifier: AGPL-3.0-only

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Install a manifest-pinned official agy binary during the image build."""
 import hashlib
 import json

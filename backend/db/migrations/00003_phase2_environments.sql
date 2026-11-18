@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: AGPL-3.0-only
+
 -- +goose Up
 CREATE TABLE environments (
     bot_id UUID PRIMARY KEY REFERENCES bots(id) ON DELETE CASCADE,

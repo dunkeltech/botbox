@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # NNNN. Title
 
 - **Date:** YYYY-MM-DD

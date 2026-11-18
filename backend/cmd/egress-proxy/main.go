@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Package main runs the bot.Box standalone egress proxy serving health checks,
 // LLM provider credential brokering, and selective MITM CONNECT tunneling.
 package main

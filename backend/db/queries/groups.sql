@@ -149,3 +149,5 @@ SET last_read_position = COALESCE((
     SELECT max(position) FROM messages WHERE messages.workspace_id = $1 AND messages.conversation_id = $2
 ), 0)
 WHERE workspace_id = $1 AND conversation_id = $2 AND member_type = 'user' AND member_id = $3;
+
+-- SPDX-License-Identifier: AGPL-3.0-only

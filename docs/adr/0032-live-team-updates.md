@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # 0032. Live team updates during a bot turn
 
 **Status** Accepted

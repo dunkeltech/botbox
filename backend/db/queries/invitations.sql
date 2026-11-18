@@ -31,3 +31,5 @@ RETURNING *;
 -- name: DeleteInvitationByWorkspaceAndID :execrows
 DELETE FROM invitations
 WHERE workspace_id = $1 AND id = $2;
+
+-- SPDX-License-Identifier: AGPL-3.0-only

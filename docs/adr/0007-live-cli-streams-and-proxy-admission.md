@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # 0007. Live CLI Streams and Scoped Proxy Admission
 
 - **Date:** 2026-11-15

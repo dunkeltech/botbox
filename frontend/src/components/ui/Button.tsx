@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { type ButtonHTMLAttributes, type ReactNode, type Ref } from 'react';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'onDark' | 'icon';

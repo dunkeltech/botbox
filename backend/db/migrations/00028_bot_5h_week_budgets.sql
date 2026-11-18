@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: AGPL-3.0-only
+
 -- +goose Up
 -- Allow 5-hour rolling and weekly UTC caps on bot budgets while keeping
 -- workspace-level budgets restricted to monthly via the existing table check.

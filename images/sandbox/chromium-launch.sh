@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-only
+
 set -euo pipefail
 
 # Clean stale Chromium singleton locks and crash flags when no live Chromium

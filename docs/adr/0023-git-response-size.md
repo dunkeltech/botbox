@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # 0023. Separate response size limits for Git and API credentials
 
 - **Date:** 2026-11-17

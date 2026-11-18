@@ -98,3 +98,5 @@ ORDER BY position DESC LIMIT 1;
 -- name: CreateGroupInputTurn :one
 INSERT INTO bot_turns (workspace_id, bot_id, conversation_id, message_id, continuation_prompt)
 VALUES ($1, $2, $3, $4, $5) RETURNING *;
+
+-- SPDX-License-Identifier: AGPL-3.0-only

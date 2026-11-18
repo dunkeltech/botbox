@@ -1,4 +1,7 @@
 # syntax=docker/dockerfile:1
+
+# SPDX-License-Identifier: AGPL-3.0-only
+
 FROM golang:1.26-bookworm AS builder
 WORKDIR /src/backend
 COPY backend/go.mod backend/go.sum ./

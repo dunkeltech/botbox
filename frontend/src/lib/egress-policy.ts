@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import type { EgressPolicyMode, EgressPolicyResponse } from '@/types/api';
 
 export type HostPolicyState = 'allowed' | 'blocked' | 'none';

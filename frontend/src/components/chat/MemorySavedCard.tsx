@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 'use client';
 
 import { ArrowRight, BookmarkCheck, Pencil, RotateCcw } from 'lucide-react';

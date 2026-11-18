@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: AGPL-3.0-only
+
 -- +goose Up
 -- Pause survives API restarts and applies to every conversation of this bot.
 CREATE TABLE bot_runtime (

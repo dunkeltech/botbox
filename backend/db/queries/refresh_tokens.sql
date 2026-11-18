@@ -31,3 +31,5 @@ WHERE id = $1;
 UPDATE refresh_tokens
 SET revoked_at = COALESCE(revoked_at, $2)
 WHERE token_hash = $1;
+
+-- SPDX-License-Identifier: AGPL-3.0-only

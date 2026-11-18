@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: AGPL-3.0-only
+
 -- +goose Up
 -- Per-bot knowledge base entries with strict workspace + bot isolation,
 -- full-text search indexes, auto-save policy, and inline chat memory cards.

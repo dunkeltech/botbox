@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # 0031. Keep chat draft state in the composer
 
 ## Context

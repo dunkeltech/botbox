@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Package mitmproxy implements per-bot selective TLS interception for egress secrets.
 package mitmproxy
 

@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: AGPL-3.0-only
+
 -- +goose Up
 -- Deleting a conversation must not erase spend and reopen a bot's budget.
 -- Keep the bot and workspace link when the turn's chat history is removed.

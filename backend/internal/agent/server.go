@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Package agent implements the gRPC service that runs inside each bot sandbox.
 package agent
 

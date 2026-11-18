@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
 # Workspace-scoped LLM proxy guardrails
 
 ## Context
