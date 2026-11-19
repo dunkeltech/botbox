@@ -3,9 +3,15 @@
 
 set -euo pipefail
 
-# Retrieve only the public CA over the isolated bot network. No private key or
-# provider credential is copied into the sandbox.
-if [[ -n "${BOTBOX_CA_URL:-}" ]]; then
+# The trusted egress worker publishes the public CA into a read-only
+# volume. It starts first, but Docker can open the desktop while it loads.
+if [[ "${BOTBOX_CA_CERT:-}" == "/run/botbox/egress-ca/ca.crt" ]]; then
+  for _ in $(seq 1 100); do
+    [[ -s "${BOTBOX_CA_CERT}" ]] && break
+    sleep 0.1
+  done
+  test -s "${BOTBOX_CA_CERT}"
+elif [[ -n "${BOTBOX_CA_URL:-}" ]]; then
   mkdir -p "${HOME:-/home/bot}/.local/share/botbox"
   curl --noproxy '*' --fail --silent --show-error --retry 8 --retry-connrefused --retry-delay 1 --max-time 5 "${BOTBOX_CA_URL}" -o "${BOTBOX_CA_CERT}"
 fi

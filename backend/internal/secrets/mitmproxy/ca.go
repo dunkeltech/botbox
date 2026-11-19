@@ -10,14 +10,19 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
 	"math/big"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dunkeltech/botbox/backend/internal/secrets"
 )
 
 const (
@@ -38,6 +43,10 @@ type BotCA struct {
 // NewBotCA mints an isolated ECDSA P-256 CA certificate for botID.
 // Each bot gets its own CA key pair so compromise or leak of one sandbox never crosses bots.
 func NewBotCA(botID string) (*BotCA, error) {
+	return newBotCA(botID, defaultCATTL)
+}
+
+func newBotCA(botID string, ttl time.Duration) (*BotCA, error) {
 	if strings.TrimSpace(botID) == "" {
 		return nil, errors.New("bot ID is required for CA generation")
 	}
@@ -58,7 +67,7 @@ func NewBotCA(botID string) (*BotCA, error) {
 			Organization: []string{"bot.Box Ephemeral Bot CA"},
 		},
 		NotBefore:             now.Add(-5 * time.Minute),
-		NotAfter:              now.Add(defaultCATTL),
+		NotAfter:              now.Add(ttl),
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
 		BasicConstraintsValid: true,
 		IsCA:                  true,
@@ -81,6 +90,121 @@ func NewBotCA(botID string) (*BotCA, error) {
 		key:     key,
 		cache:   make(map[string]*tls.Certificate),
 	}, nil
+}
+
+// LoadWorkerCA persists the worker's signing key independently of the relay
+// instance. Only the public certificate is published in the desktop's volume.
+func LoadWorkerCA(ring *secrets.KeyRing, workspace, botID, privateDir, publicDir string) (*BotCA, error) {
+	if ring == nil || workspace == "" || botID == "" {
+		return nil, errors.New("worker CA identity or key ring unavailable")
+	}
+	const keyFile = "ca.envelope"
+	keyPath := filepath.Join(privateDir, keyFile)
+	aad := []byte("botbox-egress-ca:" + workspace + ":" + botID)
+	var ca *BotCA
+	encoded, err := os.ReadFile(keyPath) //nolint:gosec // dedicated worker-owned CA volume
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		// A stable root avoids breaking desktop TLS when only the relay or
+		// worker is replaced. The desktop refreshes its trust bundle on restart.
+		ca, err = newBotCA(botID, 365*24*time.Hour)
+		if err != nil {
+			return nil, err
+		}
+		if err := storeWorkerCA(ca, ring, aad, privateDir, keyFile); err != nil {
+			return nil, err
+		}
+	case err != nil:
+		return nil, err
+	default:
+		ca, err = restoreWorkerCA(encoded, ring, aad, privateDir, keyFile)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if ca.cert.Subject.CommonName != "botbox-bot-ca-"+botID {
+		return nil, errors.New("worker CA belongs to a different bot")
+	}
+	if err := publishCAFile(publicDir, "ca.crt", ca.CertPEM(), 0o644); err != nil {
+		return nil, err
+	}
+	return ca, nil
+}
+
+func storeWorkerCA(ca *BotCA, ring *secrets.KeyRing, aad []byte, dir, name string) error {
+	key, err := x509.MarshalECPrivateKey(ca.key)
+	if err != nil {
+		return err
+	}
+	defer clear(key)
+	bundle := append(ca.CertPEM(), pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: key})...)
+	defer clear(bundle)
+	envelope, err := ring.Encrypt(bundle, aad)
+	if err != nil {
+		return err
+	}
+	return publishCAEnvelope(dir, name, envelope)
+}
+
+func restoreWorkerCA(encoded []byte, ring *secrets.KeyRing, aad []byte, dir, name string) (*BotCA, error) {
+	var envelope secrets.EnvelopeCiphertext
+	if err := json.Unmarshal(encoded, &envelope); err != nil {
+		return nil, errors.New("invalid worker CA envelope")
+	}
+	bundle, err := ring.Decrypt(envelope, aad)
+	if err != nil {
+		return nil, err
+	}
+	defer clear(bundle)
+	cert, key := pem.Decode(bundle)
+	if cert == nil || cert.Type != "CERTIFICATE" {
+		return nil, errors.New("invalid worker CA certificate")
+	}
+	certPEM := pem.EncodeToMemory(cert)
+	pair, err := tls.X509KeyPair(certPEM, key)
+	if err != nil {
+		return nil, errors.New("invalid worker CA key pair")
+	}
+	privateKey, ok := pair.PrivateKey.(*ecdsa.PrivateKey)
+	if !ok || pair.Leaf == nil || !pair.Leaf.IsCA || !time.Now().Before(pair.Leaf.NotAfter) {
+		return nil, errors.New("worker CA unavailable or expired")
+	}
+	if envelope.KeyID != ring.PrimaryID() {
+		rewrapped, err := ring.RewrapDataKey(envelope, aad)
+		if err != nil {
+			return nil, err
+		}
+		if err := publishCAEnvelope(dir, name, rewrapped); err != nil {
+			return nil, err
+		}
+	}
+	return &BotCA{cert: pair.Leaf, certPEM: certPEM, key: privateKey, cache: make(map[string]*tls.Certificate)}, nil
+}
+
+func publishCAEnvelope(dir, name string, envelope secrets.EnvelopeCiphertext) error {
+	encoded, err := json.Marshal(envelope)
+	if err != nil {
+		return err
+	}
+	return publishCAFile(dir, name, encoded, 0o600)
+}
+
+func publishCAFile(dir, name string, data []byte, mode os.FileMode) error {
+	file, err := os.CreateTemp(dir, ".ca-")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(file.Name()) //nolint:errcheck // best-effort cleanup after rename or error
+	if err = file.Chmod(mode); err == nil {
+		_, err = file.Write(data)
+	}
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	return os.Rename(file.Name(), filepath.Join(dir, name))
 }
 
 // CertPEM returns only the public CA certificate PEM to mount read-only into the bot sandbox.

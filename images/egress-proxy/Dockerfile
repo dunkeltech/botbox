@@ -9,8 +9,10 @@ RUN go mod download
 COPY backend/ ./
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/egress-proxy ./cmd/egress-proxy
 FROM debian:bookworm-slim
-LABEL botbox.proxy_ingress="bot-network-v1"
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+LABEL botbox.proxy_ingress="bot-network-v2"
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/* \
+    && install -d -m 0700 -o 65532 -g 65532 /var/lib/botbox/egress-private \
+    && install -d -m 0755 -o 65532 -g 65532 /var/lib/botbox/egress-public
 COPY --from=builder /out/egress-proxy /usr/local/bin/egress-proxy
 USER 65532:65532
 EXPOSE 8081

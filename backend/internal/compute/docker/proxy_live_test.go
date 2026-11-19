@@ -46,7 +46,9 @@ func TestProxyRealDockerIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := driver.CreateEnvironment(ctx, compute.BotConfig{WorkspaceID: workspace, BotID: bot})
+	id, err := driver.CreateEnvironment(ctx, compute.BotConfig{
+		WorkspaceID: workspace, BotID: bot, Image: os.Getenv("BOTBOX_DOCKER_SMOKE_SANDBOX_IMAGE"),
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +57,7 @@ func TestProxyRealDockerIsolation(t *testing.T) {
 		defer cancel()
 		_ = driver.DestroyEnvironment(cleanup, id)
 		// Only resources with this test's random identity are removed.
-		for _, args := range [][]string{{"network", "rm", "botbox-net-" + bot}, {"volume", "rm", "botbox-home-" + bot}} {
+		for _, args := range [][]string{{"network", "rm", "botbox-egress-net-" + bot}, {"volume", "rm", "botbox-home-" + bot, "botbox-egress-ca-public-" + bot, "botbox-egress-ca-private-" + bot}} {
 			_ = exec.CommandContext(cleanup, "docker", args...).Run() //nolint:gosec // fixed commands and random test-owned resource names
 		}
 	})
@@ -69,8 +71,8 @@ func TestProxyRealDockerIsolation(t *testing.T) {
 	if err := json.Unmarshal(networkJSON, &networkAddresses); err != nil {
 		t.Fatal(err)
 	}
-	internalIP := networkAddresses["botbox-net-"+bot].IPAddress
-	if internalIP == "" || internalIP == networkAddresses["bridge"].IPAddress {
+	internalIP := networkAddresses["botbox-egress-net-"+bot].IPAddress
+	if internalIP == "" || len(networkAddresses) != 1 {
 		t.Fatal("missing dedicated proxy interface")
 	}
 	waitContainerLog(t, ctx, proxyName, `"addr":"`+internalIP+`:8081"`)
@@ -79,6 +81,7 @@ func TestProxyRealDockerIsolation(t *testing.T) {
 	}
 	waitContainerLog(t, ctx, string(id), "agent entered RUNNING state")
 	waitContainerLog(t, ctx, string(id), "websockify entered RUNNING state")
+	waitContainerLog(t, ctx, string(id), "chromium entered RUNNING state")
 	checkDockerDesktopViewer(t, ctx, driver, id, workspace, bot)
 	agentCtx, agentCancel := context.WithTimeout(ctx, 8*time.Second)
 	data, readErr := driver.ReadFile(agentCtx, id, "/home/bot/.botbox-ca-env")
@@ -94,14 +97,25 @@ func TestProxyRealDockerIsolation(t *testing.T) {
 	if readErr != nil || len(data) == 0 {
 		t.Fatalf("agent token recovery after API restart: %v", readErr)
 	}
-	if err = driver.CLIProxyReady(ctx, id); err != nil {
-		t.Fatal(err)
+	ready := time.NewTicker(100 * time.Millisecond)
+	defer ready.Stop()
+	for driver.CLIProxyReady(ctx, id) != nil {
+		select {
+		case <-ctx.Done():
+			t.Fatal("authenticated proxy health check did not succeed")
+		case <-ready.C:
+		}
 	}
 	script := `set -euo pipefail
  test -z "${DATABASE_URL:-}" && test -z "${BOTBOX_SECRETS_KEK:-}"
  source /home/bot/.botbox-ca-env
  test -f "$SSL_CERT_FILE" && test -f "$NODE_EXTRA_CA_CERTS"
+ test -r /run/botbox/egress-ca/ca.crt
+ test ! -w /run/botbox/egress-ca
  curl --noproxy '*' --fail --silent http://egress:8081/healthz >/dev/null
+ if curl --noproxy '*' --silent --fail --max-time 2 --insecure https://egress-upstream:8081/healthz >/dev/null; then
+   exit 1
+ fi
  certutil -L -n botbox-bot-ca -d sql:/home/bot/.pki/nssdb >/dev/null
  status=$(curl --silent --proxy http://egress:8081 --connect-timeout 5 -o /dev/null -w '%{http_connect}' https://api.openai.com/ || true)
  test "$status" = 403

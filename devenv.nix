@@ -58,10 +58,8 @@ in
     BOTBOX_PLAYWRIGHT_MODULE = "${pkgs.playwright-driver}";
     PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
     BOTBOX_COMPUTE_DRIVER = "docker";
-    # Host tools use loopback. The egress proxy runs in Docker and reaches this
-    # same server through host.docker.internal. Both use 15432 so this project
-    # does not take the default port other local Postgres servers use. The
-    # proxy container keeps the URL it was created with.
+    # Host tools use loopback. Trusted egress workers and the auth broker
+    # reach Postgres through the Docker host address.
     BOTBOX_EGRESS_DATABASE_URL = "postgres://botbox:botbox@host.docker.internal:15432/botbox?sslmode=disable";
     DATABASE_URL = "postgres://botbox:botbox@127.0.0.1:15432/botbox?sslmode=disable";
     NATS_URL = "nats://127.0.0.1:4222";
@@ -70,7 +68,6 @@ in
     API_LISTEN_ADDR = "127.0.0.1:8080";
     FRONTEND_URL = "http://127.0.0.1:3000";
     PUBLIC_BASE_URL = "http://127.0.0.1:8000";
-    AUTH_BROKER_ADDR = "127.0.0.1:8085";
     BOTBOX_AUTH_BROKER_URL = "http://127.0.0.1:8085";
     BOTBOX_AUTH_BROKER_PROXY_URL = "http://host.docker.internal:8085";
   };
@@ -107,8 +104,10 @@ in
       set -eu
       ${devBrokerToken}
       export AUTH_BROKER_TOKEN="$broker_token"
-      cd backend
-      exec go run ./cmd/auth-broker
+      export DATABASE_URL="$BOTBOX_EGRESS_DATABASE_URL"
+      exec docker run --rm --init --cap-drop ALL --security-opt no-new-privileges \
+        --security-opt seccomp=backend/internal/compute/docker/chromium-seccomp.json \
+        --publish 127.0.0.1:8085:8085 --env AUTH_BROKER_ADDR=0.0.0.0:8085 --env AUTH_BROKER_TOKEN --env DATABASE_URL botbox/auth-broker:dev
     '';
     frontend.exec = "exec npm --prefix frontend run dev";
     caddy.exec = "exec caddy run --config Caddyfile --adapter caddyfile";

@@ -33,4 +33,4 @@ jobs:
         run: devenv shell -- npm --prefix frontend ci
 
       - name: Run codegen, lint, tests, build, and sandbox image
-        run: devenv shell -- make gen lint test build sandbox-image test-sandbox-codex test-sandbox-pi
+        run: devenv shell -- make gen lint test build sandbox-image proxy-image test-sandbox-codex test-sandbox-pi test-sandbox-chromium auth-broker-image test-auth-broker-sandbox

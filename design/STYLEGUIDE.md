@@ -330,6 +330,7 @@ theme: {
 - **Desktop fullscreen overlay:** Expanding the live computer opens a full-viewport `terminal` (`#14201a`) overlay while keeping the active noVNC RFB session mounted (no socket reconnect when toggling). The pinned `dark-2` (`#1f2d1f`) toolbar exposes status, `Take control` / hand-back note + `Hand back`, a toggleable slide-over `Chat` drawer, optional browser `requestFullscreen()`, and `Exit fullscreen` (`Esc`), all with ≥ 44 px touch targets and `whitespace-nowrap` labels.
 - **Desktop hand-back:** `Hand back` resumes the bot with a request to take a fresh screenshot. After a failed hand-back, `Take control` followed by `Hand back` retries the request.
 - **Desktop reconnect:** After an established desktop stream closes, request a fresh ticket immediately and use the existing connection status while reconnecting. Boot retries reuse the current ticket and renew it on the slower retry schedule.
+- **Browser availability:** Keep the desktop connection status tied to the desktop stream. Browser login failures use the existing secret request error state and sanitized copy.
 
 ### Bot stop and pause controls
 

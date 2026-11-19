@@ -147,7 +147,7 @@ for _ in $(seq 1 50); do
 done
 
 exec "${CHROMIUM_BIN}" \
-  --no-sandbox \
+  --disable-setuid-sandbox \
   --disable-gpu \
   --disable-dev-shm-usage \
   --no-first-run \

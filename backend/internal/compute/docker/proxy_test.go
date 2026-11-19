@@ -5,8 +5,10 @@ package docker_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -32,7 +34,7 @@ func TestProxyProvisioningKeepsCredentialsOutsideSandbox(t *testing.T) {
 				if r.Method == "GET" && strings.HasSuffix(path, "/json") {
 					name := strings.TrimSuffix(strings.TrimPrefix(path, "/containers/"), "/json")
 					if config, ok := configs[name]; ok {
-						_ = json.NewEncoder(w).Encode(map[string]any{"Id": name, "Config": config, "State": map[string]any{"Running": true}})
+						_ = json.NewEncoder(w).Encode(map[string]any{"Id": name, "Config": config, "State": map[string]any{"Running": true, "Health": map[string]string{"Status": "healthy"}}})
 						return
 					}
 					http.Error(w, "missing", 404)
@@ -104,7 +106,7 @@ func TestProxyProvisioningKeepsCredentialsOutsideSandbox(t *testing.T) {
 			if strings.Contains(string(raw), "fixture-key") || strings.Contains(string(raw), "fixture-db-password") {
 				t.Fatal("control-plane credentials entered sandbox")
 			}
-			if !strings.Contains(string(raw), "http://egress:8081") || !strings.Contains(string(raw), "BOTBOX_CA_URL=") {
+			if !strings.Contains(string(raw), "http://egress:8081") || !strings.Contains(string(raw), "botbox-egress-ca-public-bot:/run/botbox/egress-ca:ro") {
 				t.Fatal("sandbox proxy configuration missing")
 			}
 			proxy := configs["botbox-egress-bot"]
@@ -115,7 +117,19 @@ func TestProxyProvisioningKeepsCredentialsOutsideSandbox(t *testing.T) {
 			if !strings.Contains(string(proxyEnv), "EGRESS_PROXY_BOT_SUBNET=172.28.0.0/16") || strings.Contains(string(proxyEnv), "EGRESS_PROXY_ADDR=") {
 				t.Fatal("proxy must bind to its bot network")
 			}
+			for _, forbidden := range []string{"DATABASE_URL", "BOTBOX_SECRETS_KEK", "NATS_URL", "AUTH_BROKER_TOKEN", "fixture-key", "fixture-db-password"} {
+				if strings.Contains(string(proxyEnv), forbidden) {
+					t.Fatalf("relay received control-plane configuration %q", forbidden)
+				}
+			}
+			worker := configs["botbox-egress-worker-bot"]
+			if worker == nil || worker["HostConfig"].(map[string]any)["NetworkMode"] != "bridge" {
+				t.Fatal("trusted worker missing external network")
+			}
 			host := proxy["HostConfig"].(map[string]any)
+			if host["NetworkMode"] != "botbox-egress-net-bot" {
+				t.Fatal("relay has a route outside the isolated bot network")
+			}
 			if host["Privileged"] != false || host["ReadonlyRootfs"] != true || proxy["User"] != "65532:65532" || strings.Contains(string(raw), "docker.sock") {
 				t.Fatal("proxy isolation missing")
 			}
@@ -128,7 +142,7 @@ func TestProxyProvisioningKeepsCredentialsOutsideSandbox(t *testing.T) {
 			if err = d.DestroyEnvironment(context.Background(), id); err != nil {
 				t.Fatal(err)
 			}
-			if !deleted["botbox-bot-bot"] || !deleted["botbox-egress-bot"] {
+			if !deleted["botbox-bot-bot"] || !deleted["botbox-egress-bot"] || !deleted["botbox-egress-worker-bot"] {
 				t.Fatalf("cleanup=%v", deleted)
 			}
 		})
@@ -138,7 +152,7 @@ func TestProxyProvisioningKeepsCredentialsOutsideSandbox(t *testing.T) {
 	}
 }
 
-func TestBrokerTokenAndURLStayInProxyNeverInSandbox(t *testing.T) {
+func TestBrokerTokenAndURLStayInTrustedWorker(t *testing.T) {
 	t.Parallel()
 	var mu sync.Mutex
 	configs := map[string]map[string]any{}
@@ -202,9 +216,13 @@ func TestBrokerTokenAndURLStayInProxyNeverInSandbox(t *testing.T) {
 	}
 
 	proxyRaw, _ := json.Marshal(configs["botbox-egress-bot-b"]["Env"])
-	if !strings.Contains(string(proxyRaw), "EGRESS_PROXY_AUTH_BROKER_URL=http://host.docker.internal:8085") ||
-		!strings.Contains(string(proxyRaw), "EGRESS_PROXY_AUTH_BROKER_TOKEN="+secretBrokerToken) {
-		t.Fatalf("proxy missing isolated broker bridge env: %s", proxyRaw)
+	if strings.Contains(string(proxyRaw), secretBrokerToken) {
+		t.Fatal("browser broker token entered the relay")
+	}
+	workerRaw, _ := json.Marshal(configs["botbox-egress-worker-bot-b"]["Env"])
+	if !strings.Contains(string(workerRaw), "EGRESS_PROXY_AUTH_BROKER_URL=http://host.docker.internal:8085") ||
+		!strings.Contains(string(workerRaw), "EGRESS_PROXY_AUTH_BROKER_TOKEN="+secretBrokerToken) {
+		t.Fatal("worker missing isolated broker bridge configuration")
 	}
 
 	// ValidateContainerSpec rejects any manual broker token injection into sandbox containers.
@@ -222,6 +240,7 @@ func TestBrokerTokenAndURLStayInProxyNeverInSandbox(t *testing.T) {
 func writeProxyNetwork(w http.ResponseWriter, internal bool, workspace, bot string) {
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"Internal": internal,
+		"Options":  map[string]string{"com.docker.network.bridge.gateway_mode_ipv4": "isolated"},
 		"Labels":   map[string]string{"botbox.workspace_id": workspace, "botbox.bot_id": bot},
 		"IPAM":     map[string]any{"Config": []map[string]string{{"Subnet": "172.28.0.0/16"}}},
 	})
@@ -230,16 +249,16 @@ func writeProxyNetwork(w http.ResponseWriter, internal bool, workspace, bot stri
 func writeProxyImage(w http.ResponseWriter, secure bool) {
 	labels := map[string]string{}
 	if secure {
-		labels["botbox.proxy_ingress"] = "bot-network-v1"
+		labels["botbox.proxy_ingress"] = "bot-network-v2"
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"Id": "sha256:test-image", "Config": map[string]any{"Labels": labels},
 	})
 }
 
-func TestUpgradeProxyIngressRemovesLegacySidecarBeforeCreatingReplacement(t *testing.T) {
+func TestUpgradeProxyIngressStopsLegacyComputers(t *testing.T) {
 	var mu sync.Mutex
-	var removed, created bool
+	var removed, stopped bool
 	engine := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		defer mu.Unlock()
@@ -252,20 +271,11 @@ func TestUpgradeProxyIngressRemovesLegacySidecarBeforeCreatingReplacement(t *tes
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/containers/proxy-legacy"):
 			removed = true
 			w.WriteHeader(http.StatusNoContent)
-		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/networks/"):
-			writeProxyNetwork(w, true, "ws", "bot")
-		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/images/"):
-			writeProxyImage(w, true)
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/botbox-egress-bot/json"):
-			w.WriteHeader(http.StatusNotFound)
-		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/create"):
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/sandbox/stop"):
 			if !removed {
-				t.Error("legacy sidecar still active when replacement was created")
+				t.Error("legacy proxy still holds credentials")
 			}
-			created = true
-			_, _ = w.Write([]byte(`{"Id":"proxy-current"}`))
-		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/connect"),
-			r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/proxy-current/start"):
+			stopped = true
 			w.WriteHeader(http.StatusNoContent)
 		default:
 			t.Errorf("unexpected Docker call %s %s", r.Method, r.URL.Path)
@@ -285,7 +295,45 @@ func TestUpgradeProxyIngressRemovesLegacySidecarBeforeCreatingReplacement(t *tes
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if !removed || !created {
-		t.Fatal("legacy sidecar was not replaced")
+	if !removed || !stopped {
+		t.Fatal("legacy sidecar was not removed or legacy computer was not stopped")
+	}
+}
+
+func TestStartLegacyComputerRetainsStoppedFilesystem(t *testing.T) {
+	var steps []string
+	var lock sync.Mutex
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		lock.Lock()
+		defer lock.Unlock()
+		steps = append(steps, r.Method+" "+r.URL.Path)
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/legacy/json"):
+			_, _ = w.Write([]byte(`{"Id":"legacy","Name":"/botbox-bot-bot","State":{"Running":true},"Config":{"Labels":{"botbox.managed":"true","botbox.egress_proxy":"metered-v1","botbox.workspace_id":"workspace","botbox.bot_id":"bot"}}}`))
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/legacy/stop"):
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/legacy/rename") && r.URL.Query().Get("name") == "botbox-retired-legacy":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Errorf("unexpected Docker request %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	defer server.Close()
+
+	driver, err := docker.NewDriver(docker.Options{BaseURL: server.URL, Proxy: &docker.ProxyOptions{
+		Image: "egress:dev", DatabaseURL: "postgres://db/botbox", KeySpec: "fixture-key",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.StartEnvironment(t.Context(), "legacy"); !errors.Is(err, compute.ErrEnvironmentNotFound) {
+		t.Fatalf("legacy computer did not request safe reprovisioning: %v", err)
+	}
+	lock.Lock()
+	defer lock.Unlock()
+	want := []string{"GET /v1.45/containers/legacy/json", "POST /v1.45/containers/legacy/stop", "POST /v1.45/containers/legacy/rename"}
+	if !slices.Equal(steps, want) {
+		t.Fatalf("legacy upgrade requests = %v, want %v", steps, want)
 	}
 }

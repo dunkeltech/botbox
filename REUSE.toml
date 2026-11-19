@@ -22,3 +22,8 @@ path = [
     "images/sandbox/seccomp.json",
 ]
 SPDX-License-Identifier = "AGPL-3.0-only"
+
+# The Chromium profile is derived from Moby and keeps its upstream license.
+[[annotations]]
+path = "backend/internal/compute/docker/chromium-seccomp.json"
+SPDX-License-Identifier = "Apache-2.0"

@@ -129,8 +129,8 @@ def test_cleans_stale_locks_and_crash_prefs_on_launch() -> None:
         assert res.returncode == 0, f"launcher failed: {res.stderr}"
         invoked = json.loads(args_out.read_text(encoding="utf-8"))
         assert invoked["locks"] == [], f"locks still existed at exec: {invoked['locks']}"
+        assert "--no-sandbox" not in invoked["argv"]
         for flag in (
-            "--no-sandbox",
             "--disable-gpu",
             "--disable-dev-shm-usage",
             "--no-first-run",

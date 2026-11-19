@@ -22,11 +22,11 @@ func TestFindPlaywrightChromium(t *testing.T) {
 		t.Fatalf("expected non-executable file to be ignored, got %q", got)
 	}
 
-	execDir := filepath.Join(root, "chromium_headless_shell-1248", "chrome-headless-shell-mac-arm64")
+	execDir := filepath.Join(root, "chromium-1248", "chrome-mac-arm64")
 	if err := os.MkdirAll(execDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
-	want := filepath.Join(execDir, "chrome-headless-shell")
+	want := filepath.Join(execDir, "chrome")
 	if err := os.WriteFile(want, []byte("#!/bin/sh\n"), 0o700); err != nil { //nolint:gosec // test fixture binary
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func TestFindPlaywrightChromium(t *testing.T) {
 	if err := os.MkdirAll(targetSub, 0o750); err != nil {
 		t.Fatal(err)
 	}
-	symWant := filepath.Join(targetSub, "chrome-headless-shell")
+	symWant := filepath.Join(targetSub, "chrome")
 	if err := os.WriteFile(symWant, []byte("#!/bin/sh\n"), 0o700); err != nil { //nolint:gosec // test fixture binary
 		t.Fatal(err)
 	}
@@ -52,5 +52,25 @@ func TestFindPlaywrightChromium(t *testing.T) {
 	resolvedWant, _ := filepath.EvalSymlinks(symWant)
 	if gotSym != resolvedWant {
 		t.Fatalf("findPlaywrightChromium(symlink) = %q, want %q", gotSym, resolvedWant)
+	}
+}
+
+func TestCDPEndpointMustBePrivate(t *testing.T) {
+	for _, test := range []struct {
+		url  string
+		want bool
+	}{
+		{"http://127.0.0.1:9223", true},
+		{"http://[::1]:9223", true},
+		{"http://0.0.0.0:9223", false},
+		{"http://localhost:9223", false},
+		{"http://127.0.0.1", false},
+		{"http://127.0.0.1:9223/?credential=test", false},
+		{"http://user@127.0.0.1:9223", false},
+		{"http://127.0.0.1:9223/proxy", false},
+	} {
+		if got := validCDPEndpoint(test.url); got != test.want {
+			t.Errorf("validCDPEndpoint(%q) = %v, want %v", test.url, got, test.want)
+		}
 	}
 }

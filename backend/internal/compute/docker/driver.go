@@ -71,8 +71,9 @@ type Driver struct {
 	// timeout would cut a hijacked chat stream off.
 	daemonDial func(ctx context.Context) (net.Conn, error)
 
-	mu     sync.RWMutex
-	tokens map[compute.EnvID]string
+	proxyMu sync.Mutex
+	mu      sync.RWMutex
+	tokens  map[compute.EnvID]string
 }
 
 // PortBinding is one Docker host port mapping. HostIp stays loopback.
@@ -161,6 +162,11 @@ func NewDriver(opts Options) (*Driver, error) {
 		}
 	}
 
+	seccompProfile := strings.TrimSpace(opts.SeccompProfile)
+	if seccompProfile == "" {
+		seccompProfile = chromiumSeccompProfile
+	}
+
 	var proxy *ProxyOptions
 	if opts.Proxy != nil {
 		copy := *opts.Proxy
@@ -170,7 +176,7 @@ func NewDriver(opts Options) (*Driver, error) {
 		proxy:             proxy,
 		client:            client,
 		baseURL:           baseURL,
-		seccompProfile:    strings.TrimSpace(opts.SeccompProfile),
+		seccompProfile:    seccompProfile,
 		agentDialer:       opts.AgentDialer,
 		authBrokerEnabled: opts.AuthBrokerEnabled,
 		daemonDial:        daemonDial,
@@ -202,6 +208,9 @@ func BuildContainerSpec(cfg compute.BotConfig, seccompProfile string) (Container
 		volumeName = "botbox-home-" + sanitizeIdentifier(cfg.BotID)
 	}
 	netName := "botbox-net-" + sanitizeIdentifier(cfg.BotID)
+	if cfg.ProxyURL != "" {
+		netName = proxyNetworkName(cfg.BotID)
+	}
 	pidsLimit := int64(compute.DefaultPidsLimit)
 
 	secOpts := []string{"no-new-privileges:true"}
@@ -318,8 +327,9 @@ func ValidateContainerSpec(spec ContainerCreateSpec) error {
 			if trimmed != "" && !strings.EqualFold(trimmed, "botbox-placeholder") && !strings.EqualFold(trimmed, "placeholder") {
 				return fmt.Errorf("%w: raw secret env var %s is forbidden in sandbox", compute.ErrSecurityViolation, upperKey)
 			}
-		case "BOTBOX_AUTH_BROKER_URL", "BOTBOX_AUTH_BROKER_TOKEN", "AUTH_BROKER_TOKEN", "EGRESS_PROXY_AUTH_BROKER_URL", "EGRESS_PROXY_AUTH_BROKER_TOKEN":
-			return fmt.Errorf("%w: broker credential or control env var %s is forbidden in sandbox", compute.ErrSecurityViolation, upperKey)
+		case "BOTBOX_AUTH_BROKER_URL", "BOTBOX_AUTH_BROKER_TOKEN", "AUTH_BROKER_TOKEN", "EGRESS_PROXY_AUTH_BROKER_URL", "EGRESS_PROXY_AUTH_BROKER_TOKEN",
+			"DATABASE_URL", "NATS_URL", "BOTBOX_SECRETS_KEK", "EGRESS_LINK_SEED", "EGRESS_LINK_PEER", "EGRESS_LINK_MODE":
+			return fmt.Errorf("%w: control-plane env var %s is forbidden in sandbox", compute.ErrSecurityViolation, upperKey)
 		}
 	}
 	return nil
@@ -336,7 +346,7 @@ func (d *Driver) CreateEnvironment(ctx context.Context, cfg compute.BotConfig) (
 	}
 	if d.proxy != nil {
 		cfg.ProxyURL = "http://egress:8081"
-		cfg.CACertPath = "/home/bot/.local/share/botbox/proxy-ca.crt"
+		cfg.CACertPath = "/run/botbox/egress-ca/ca.crt"
 	}
 	spec, netName, volumeName, err := BuildContainerSpec(cfg, d.seccompProfile)
 	if err != nil {
@@ -355,7 +365,8 @@ func (d *Driver) CreateEnvironment(ctx context.Context, cfg compute.BotConfig) (
 			return "", err
 		}
 		spec.Labels["botbox.egress_proxy"] = proxyMarker
-		spec.Env = append(spec.Env, "BOTBOX_CA_URL=http://egress:8081/ca.crt")
+		spec.Labels[proxyIngressLabel] = proxyIngressVersion
+		spec.HostConfig.Binds = append(spec.HostConfig.Binds, proxyCAVolume(cfg.BotID, "public")+":/run/botbox/egress-ca:ro")
 	}
 	if d.authBrokerEnabled {
 		spec.Env = append(spec.Env, "BOTBOX_AUTH_BROKER_ENABLED=true")
@@ -373,7 +384,7 @@ func (d *Driver) CreateEnvironment(ctx context.Context, cfg compute.BotConfig) (
 			}
 			id := compute.EnvID(inspected.ID)
 			if d.proxy != nil {
-				if inspected.Config.Labels["botbox.egress_proxy"] != proxyMarker {
+				if inspected.Config.Labels["botbox.egress_proxy"] != proxyMarker || inspected.Config.Labels[proxyIngressLabel] != proxyIngressVersion {
 					return "", errors.New("sandbox requires metered proxy recreation")
 				}
 				cfg.AgentToken = inspectAgentToken(inspected)
@@ -408,7 +419,13 @@ func (d *Driver) StartEnvironment(ctx context.Context, id compute.EnvID) error {
 		if info.Config.Labels["botbox.egress_proxy"] != proxyMarker {
 			return errors.New("sandbox requires metered proxy recreation")
 		}
-		if err = d.ensureProxy(ctx, info.Config.Labels["botbox.workspace_id"], info.Config.Labels["botbox.bot_id"], "botbox-net-"+sanitizeIdentifier(info.Config.Labels["botbox.bot_id"])); err != nil {
+		if info.Config.Labels[proxyIngressLabel] != proxyIngressVersion {
+			return d.retireLegacySandbox(ctx, info)
+		}
+		if err = d.ensureProxy(ctx, info.Config.Labels["botbox.workspace_id"], info.Config.Labels["botbox.bot_id"], proxyNetworkName(info.Config.Labels["botbox.bot_id"])); err != nil {
+			return err
+		}
+		if err = d.waitProxyReady(ctx, id); err != nil {
 			return err
 		}
 	}
@@ -423,6 +440,30 @@ func (d *Driver) StartEnvironment(ctx context.Context, id compute.EnvID) error {
 		return err
 	}
 	return nil
+}
+
+func (d *Driver) retireLegacySandbox(ctx context.Context, info *containerInspectResponse) error {
+	bot := info.Config.Labels["botbox.bot_id"]
+	if info.ID == "" || info.Config.Labels["botbox.managed"] != "true" ||
+		info.Config.Labels["botbox.workspace_id"] == "" || bot == "" {
+		return errors.New("legacy sandbox identity mismatch")
+	}
+	retired := "botbox-retired-" + info.ID
+	if info.Name == "/"+retired && !info.State.Running {
+		return compute.ErrEnvironmentNotFound
+	}
+	if info.Name != "/botbox-bot-"+sanitizeIdentifier(bot) {
+		return errors.New("legacy sandbox name mismatch")
+	}
+	if err := d.StopEnvironment(ctx, compute.EnvID(info.ID)); err != nil {
+		return err
+	}
+	if _, err := d.doJSON(ctx, http.MethodPost, "/containers/"+url.PathEscape(info.ID)+"/rename?name="+url.QueryEscape(retired), nil, nil); err != nil {
+		return errors.New("retire legacy sandbox")
+	}
+	// The API recreates the computer from its stored configuration and home
+	// volume. Keep the old stopped filesystem available for recovery.
+	return compute.ErrEnvironmentNotFound
 }
 
 // StopEnvironment stops the sandbox container while retaining its /home/bot volume.
@@ -445,11 +486,11 @@ func (d *Driver) StopEnvironment(ctx context.Context, id compute.EnvID) error {
 
 // DestroyEnvironment removes the sandbox container cleanly.
 func (d *Driver) DestroyEnvironment(ctx context.Context, id compute.EnvID) error {
-	var proxyName string
+	var workspace, bot string
 	if d.proxy != nil {
 		info, err := d.inspectContainer(ctx, string(id))
 		if err == nil && info.Config.Labels["botbox.egress_proxy"] == proxyMarker {
-			proxyName = "botbox-egress-" + sanitizeIdentifier(info.Config.Labels["botbox.bot_id"])
+			workspace, bot = info.Config.Labels["botbox.workspace_id"], info.Config.Labels["botbox.bot_id"]
 		}
 	}
 	if strings.TrimSpace(string(id)) == "" {
@@ -465,10 +506,23 @@ func (d *Driver) DestroyEnvironment(ctx context.Context, id compute.EnvID) error
 	d.mu.Lock()
 	delete(d.tokens, id)
 	d.mu.Unlock()
-	if proxyName != "" {
-		code, err := d.doJSON(ctx, http.MethodDelete, "/containers/"+url.PathEscape(proxyName)+"?force=true", nil, nil)
-		if err != nil && code != http.StatusNotFound {
-			return errors.New("proxy cleanup failed")
+	if workspace != "" && bot != "" {
+		d.proxyMu.Lock()
+		defer d.proxyMu.Unlock()
+		for _, role := range []string{"worker", "relay"} {
+			name := "botbox-egress-" + sanitizeIdentifier(bot)
+			if role == "worker" {
+				name = "botbox-egress-worker-" + sanitizeIdentifier(bot)
+			}
+			proxy, err := d.inspectProxy(ctx, name, workspace, bot, role)
+			if err != nil {
+				return err
+			}
+			if proxy != nil {
+				if err := d.removeProxy(ctx, proxy.ID); err != nil {
+					return err
+				}
+			}
 		}
 	}
 	return nil
@@ -682,6 +736,10 @@ func (d *Driver) ensureInternalNetwork(ctx context.Context, name string, labels 
 		"Internal": true,
 		"Labels":   labels,
 	}
+	if d.proxy != nil {
+		payload["Options"] = map[string]string{"com.docker.network.bridge.gateway_mode_ipv4": "isolated"}
+		payload["EnableIPv6"] = false
+	}
 	code, createErr := d.doJSON(ctx, http.MethodPost, "/networks/create", payload, nil)
 	if createErr != nil && code == http.StatusConflict {
 		return nil
@@ -695,9 +753,13 @@ type containerInspectResponse struct {
 		Env    []string          `json:"Env"`
 	} `json:"Config"`
 	ID    string `json:"Id"`
+	Name  string `json:"Name"`
 	State struct {
 		Status  string `json:"Status"`
 		Running bool   `json:"Running"`
+		Health  struct {
+			Status string `json:"Status"`
+		} `json:"Health"`
 	} `json:"State"`
 	NetworkSettings struct {
 		Ports    map[string][]PortBinding `json:"Ports"`

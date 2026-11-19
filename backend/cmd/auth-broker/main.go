@@ -8,14 +8,19 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/netip"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -28,15 +33,25 @@ import (
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	if err := run(logger); err != nil {
+		logger.Error("auth-broker stopped", "err", err)
+		os.Exit(1)
+	}
+}
+
+func run(logger *slog.Logger) error {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	addr := envOrDefault("AUTH_BROKER_ADDR", "127.0.0.1:8085")
 	token := strings.TrimSpace(os.Getenv("AUTH_BROKER_TOKEN"))
 	cdpURL := strings.TrimSpace(os.Getenv("AUTH_BROKER_CDP_URL"))
 
+	checkOnly := len(os.Args) == 2 && os.Args[1] == "--check-sandbox"
 	var policyPool *pgxpool.Pool
 	var err error
 	// Database connectivity is service configuration; individual domains are managed live in the UI.
-	if strings.TrimSpace(os.Getenv("DATABASE_URL")) != "" && cdpURL == "" {
+	if !checkOnly && cdpURL == "" && strings.TrimSpace(os.Getenv("DATABASE_URL")) != "" {
 		connectCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		policyPool, err = pgxpool.New(connectCtx, os.Getenv("DATABASE_URL"))
 		if err == nil {
@@ -44,61 +59,65 @@ func main() {
 		}
 		cancel()
 		if err != nil {
-			logger.Error("GitLab policy database unavailable")
-			os.Exit(1)
+			return errors.New("GitLab policy database unavailable")
 		}
 		defer policyPool.Close()
 	}
 
-	var browserCmd *exec.Cmd
+	var browserDone <-chan struct{}
 	if cdpURL == "" {
-		cdpURL = "http://127.0.0.1:9223"
 		chromeBin := findChromiumBinary()
 		if chromeBin == "" {
-			logger.Error("no Chromium binary found and AUTH_BROKER_CDP_URL is empty")
-			os.Exit(1)
+			return errors.New("browser binary unavailable")
 		}
 		profileRoot := envOrDefault("AUTH_BROKER_PROFILE_DIR", filepath.Join(os.TempDir(), "botbox-auth-broker-profile"))
 		if err := os.MkdirAll(profileRoot, 0o700); err != nil {
-			logger.Error("create broker profile directory failed", slog.Any("error", err))
-			os.Exit(1)
+			return errors.New("create broker profile root")
 		}
-		args := []string{
-			"--no-sandbox",
-			"--disable-gpu",
-			"--disable-dev-shm-usage",
-			"--remote-debugging-address=127.0.0.1",
-			"--remote-debugging-port=9223",
-			"--user-data-dir=" + profileRoot,
+		profile, err := os.MkdirTemp(profileRoot, "browser-")
+		if err != nil {
+			return errors.New("create isolated browser profile")
 		}
-		args = append(args, "--disable-quic", "--force-webrtc-ip-handling-policy=disable_non_proxied_udp")
-		if filepath.Base(chromeBin) != "chrome-headless-shell" {
-			args = append([]string{"--headless=new"}, args...)
-		}
-		args = append(args, "about:blank")
-		// Keep DevTools bound strictly to loopback inside the isolated broker host/container.
-		browserCmd = exec.Command(chromeBin, args...) //nolint:gosec // controlled Chromium binary lookup for isolated broker
+		defer os.RemoveAll(profile) //nolint:errcheck // best-effort cleanup after stopping Chromium
+
+		browserCmd := exec.CommandContext(ctx, chromeBin, chromiumArgs(profile)...) //nolint:gosec // operator-configured Chromium
+		// The renderer and browser must not inherit DB or broker credentials.
+		browserCmd.Env = []string{"PATH=" + os.Getenv("PATH"), "LANG=en_US.UTF-8", "HOME=" + profile}
 		if err := browserCmd.Start(); err != nil {
-			logger.Error("failed to start isolated broker chromium", slog.Any("error", err))
-			os.Exit(1)
+			return errors.New("start isolated Chromium")
 		}
-		defer func() {
-			if browserCmd.Process != nil {
-				_ = browserCmd.Process.Kill()
-				_, _ = browserCmd.Process.Wait()
-			}
+		done := make(chan struct{})
+		go func() {
+			_ = browserCmd.Wait()
+			close(done)
 		}()
-		waitCtx, waitCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		waitErr := waitForCDP(waitCtx, cdpURL)
-		waitCancel()
-		if waitErr != nil {
-			logger.Warn("chromium devtools endpoint not ready before server listen", slog.Any("error", waitErr))
-		} else {
-			logger.Info("isolated broker chromium ready", slog.String("bin", filepath.Base(chromeBin)))
+		browserDone = done
+		defer func() {
+			_ = browserCmd.Process.Kill()
+			<-done
+		}()
+		waitCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		cdpURL, err = waitForBrowserPort(waitCtx, done, profile)
+		cancel()
+		if err != nil {
+			return err
 		}
+	}
+	if !validCDPEndpoint(cdpURL) {
+		return errors.New("browser CDP must use a private loopback endpoint")
 	}
 
 	engine := authbroker.NewCDPBrowsingEngine(cdpURL)
+	verifyCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	err = engine.VerifyRendererSandbox(verifyCtx)
+	cancel()
+	if err != nil {
+		return fmt.Errorf("verify Chromium renderer sandbox: %w", err)
+	}
+	if checkOnly {
+		logger.Info("Chromium renderer sandbox verified")
+		return nil
+	}
 	svc := authbroker.NewService(engine)
 	if policyPool != nil {
 		svc.SetGitLabPolicy(func(ctx context.Context, ws, bot, session uuid.UUID, origin string) error {
@@ -114,24 +133,30 @@ func main() {
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           handler,
+		BaseContext:       func(net.Listener) context.Context { return ctx },
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
+	serverDone := make(chan error, 1)
 	go func() {
-		logger.Info("auth-broker listening", slog.String("addr", addr))
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Error("auth-broker listen failed", slog.Any("error", err))
-			stop()
-		}
+		logger.Info("auth-broker listening", "addr", addr)
+		serverDone <- srv.ListenAndServe()
 	}()
 
-	<-ctx.Done()
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	_ = srv.Shutdown(shutdownCtx)
+	var failure error
+	select {
+	case <-ctx.Done():
+	case <-browserDone:
+		failure = errors.New("verified Chromium exited")
+	case failure = <-serverDone:
+	}
+	stop()
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		_ = srv.Close()
+	}
+	return failure
 }
 
 func envOrDefault(key, fallback string) string {
@@ -141,26 +166,42 @@ func envOrDefault(key, fallback string) string {
 	return fallback
 }
 
-func waitForCDP(ctx context.Context, cdpURL string) error {
-	client := &http.Client{Timeout: time.Second}
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
+func chromiumArgs(profile string) []string {
+	args := []string{
+		"--disable-setuid-sandbox", "--disable-gpu", "--disable-dev-shm-usage", "--lang=en-US",
+		"--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0",
+		"--user-data-dir=" + profile, "--disable-quic", "--allow-chrome-scheme-url",
+		"--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+	}
+	return append(args, "--headless=new", "about:blank")
+}
 
-	probe := strings.TrimRight(cdpURL, "/") + "/json/version"
+func validCDPEndpoint(raw string) bool {
+	endpoint, err := url.Parse(raw)
+	if err != nil || endpoint.Scheme != "http" || endpoint.User != nil || endpoint.RawQuery != "" ||
+		endpoint.Fragment != "" || (endpoint.Path != "" && endpoint.Path != "/") {
+		return false
+	}
+	host, err := netip.ParseAddr(endpoint.Hostname())
+	port, portErr := strconv.ParseUint(endpoint.Port(), 10, 16)
+	return err == nil && host.IsLoopback() && portErr == nil && port != 0
+}
+
+func waitForBrowserPort(ctx context.Context, done <-chan struct{}, profile string) (string, error) {
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
 	for {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, probe, nil)
-		if err == nil {
-			resp, doErr := client.Do(req) //nolint:gosec // local loopback Chromium DevTools endpoint
-			if doErr == nil {
-				_ = resp.Body.Close()
-				if resp.StatusCode == http.StatusOK {
-					return nil
-				}
+		if content, err := os.ReadFile(filepath.Join(profile, "DevToolsActivePort")); err == nil { //nolint:gosec // private Chromium profile
+			port, _, _ := strings.Cut(string(content), "\n")
+			if parsed, err := strconv.ParseUint(port, 10, 16); err == nil && parsed != 0 {
+				return "http://" + net.JoinHostPort("127.0.0.1", port), nil
 			}
 		}
 		select {
+		case <-done:
+			return "", errors.New("browser exited before opening its private CDP endpoint")
 		case <-ctx.Done():
-			return ctx.Err()
+			return "", errors.New("browser CDP startup timed out")
 		case <-ticker.C:
 		}
 	}
@@ -170,7 +211,7 @@ func findChromiumBinary() string {
 	if v := strings.TrimSpace(os.Getenv("AUTH_BROKER_CHROMIUM_BIN")); v != "" {
 		return v
 	}
-	for _, candidate := range []string{"chromium", "chromium-browser", "google-chrome", "chrome-headless-shell"} {
+	for _, candidate := range []string{"chromium", "chromium-browser", "google-chrome"} {
 		if path, err := exec.LookPath(candidate); err == nil {
 			return path
 		}
@@ -184,7 +225,7 @@ func findChromiumBinary() string {
 }
 
 func findPlaywrightChromium(root string) string {
-	names := []string{"chrome-headless-shell", "Google Chrome for Testing", "Chromium", "chrome", "chromium"}
+	names := []string{"Google Chrome for Testing", "Chromium", "chrome", "chromium"}
 	roots := []string{filepath.Clean(root)}
 	if entries, err := os.ReadDir(filepath.Clean(root)); err == nil { //nolint:gosec // scans configured PLAYWRIGHT_BROWSERS_PATH
 		for _, entry := range entries {
@@ -212,16 +253,10 @@ func findPlaywrightChromium(root string) string {
 			if iErr != nil || info.Mode()&0o111 == 0 {
 				return nil
 			}
-			if d.Name() == "chrome-headless-shell" {
-				best = path
-				return filepath.SkipAll
-			}
-			if best == "" {
-				best = path
-			}
-			return nil
+			best = path
+			return filepath.SkipAll
 		})
-		if best != "" && filepath.Base(best) == "chrome-headless-shell" {
+		if best != "" {
 			return best
 		}
 	}

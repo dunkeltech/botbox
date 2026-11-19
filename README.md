@@ -35,7 +35,7 @@ make gen              # generate sqlc queries and protobuf Go stubs
 make lint             # run golangci-lint, ESLint (incl. i18n check), tsc, and Prettier
 make test             # run Go (-race) and Vitest unit tests
 make build            # build backend binaries (api, agent, egress-proxy) and Next.js frontend
-make sandbox-image    # build local botbox/sandbox:dev Docker image
+make sandbox-image proxy-image auth-broker-image # build sandbox and control-plane images
 ```
 
 Local same-origin entry point when `devenv up` is running: <http://127.0.0.1:8000> (Caddy routes `/api/*` and `/ws/*` to the Go API on `:8080`, and all other paths to Next.js on `:3000`).
@@ -56,11 +56,15 @@ design/             Styleguide, tokens.json, 1440 px screen PNGs, canvas sources
 Set `NATS_URL` to enable durable DM scheduling. The executable and devenv use
 Docker by default. `BOTBOX_COMPUTE_DRIVER=memory` explicitly selects the development
 simulator, which cannot run CLI bots and is never exposed to model tools. Unknown
-driver names fail startup. Build both images with `make sandbox-image proxy-image`.
+driver names fail startup. Build the images with
+`make sandbox-image proxy-image auth-broker-image`.
 
-When upgrading proxy ingress, build the new egress image before starting the
-updated API. Startup replaces legacy sidecars with bot-network-bound sidecars.
-Restart already-running sandboxes so their clients load the new sidecar CA.
+The Docker engine must support isolated bridge gateway mode. When upgrading
+from the legacy egress proxy, build all three images before restarting the API.
+Startup removes legacy proxies and stops affected computers. Start each computer
+to provision its relay and trusted worker. The home volume is reused. The old
+container is retained stopped under a `botbox-retired-` name for recovering
+files outside the home volume. See [ADR-0038](docs/adr/0038-split-egress-and-chromium-isolation.md).
 
 API-mode bots resolve write-only secrets named `llm-openrouter`, `llm-openai` or
 `llm-anthropic`, first in bot scope and then in workspace scope. The secret's domain
@@ -172,10 +176,12 @@ individual GitLab domains are read live from the database. The previous
 `AUTH_BROKER_GITLAB_TARGETS` setting is no longer used. Keep the broker database and
 control plane isolated from bot sandboxes.
 
-The development process listens on loopback and generates a per-project broker
-token under `DEVENV_STATE` for the API and broker. If the Docker engine cannot
-reach host loopback, configure a private broker interface reachable only by
-the API and the trusted egress sidecars.
+The development broker runs in Docker with the Chromium Seccomp profile.
+It publishes the HTTP API on host loopback and keeps DevTools private inside
+the container. `devenv` generates a per-project broker token under `DEVENV_STATE`.
+If the Docker engine cannot reach host loopback, configure a private broker
+interface reachable by the API and the trusted egress workers. Run
+`make test-auth-broker-sandbox` to verify the Chromium sandbox on this engine.
 
 For every new connection, a broker-local proxy checks the domain's DNS answers and
 dials only a validated public IP, while Chromium verifies the HTTPS certificate.

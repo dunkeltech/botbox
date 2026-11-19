@@ -568,8 +568,9 @@ type CDPBrowsingEngine struct {
 	debugHTTPURL string
 	httpClient   *http.Client
 
-	mu       sync.Mutex
-	sessions map[uuid.UUID]*cdpSessionState
+	mu              sync.Mutex
+	sessions        map[uuid.UUID]*cdpSessionState
+	verifiedBrowser string
 }
 
 type cdpSessionState struct {
@@ -588,13 +589,14 @@ type cdpSessionState struct {
 func NewCDPBrowsingEngine(debugHTTPURL string) *CDPBrowsingEngine {
 	return &CDPBrowsingEngine{
 		debugHTTPURL: strings.TrimRight(debugHTTPURL, "/"),
-		httpClient:   &http.Client{Timeout: 10 * time.Second},
+		httpClient:   &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
 		sessions:     make(map[uuid.UUID]*cdpSessionState),
 	}
 }
 
 type cdpConn struct {
 	ws              *websocket.Conn
+	endpoint        string
 	seq             atomic.Int64
 	targetSessionID string
 }
@@ -609,6 +611,9 @@ func (e *CDPBrowsingEngine) dialBrowser(ctx context.Context) (*cdpConn, error) {
 		return nil, fmt.Errorf("cdp /json/version: %w", err)
 	}
 	defer resp.Body.Close() //nolint:errcheck // best-effort close after read
+	if resp.StatusCode != http.StatusOK {
+		return nil, errors.New("cdp discovery unavailable")
+	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 	if err != nil {
 		return nil, err
@@ -619,7 +624,20 @@ func (e *CDPBrowsingEngine) dialBrowser(ctx context.Context) (*cdpConn, error) {
 	if err := json.Unmarshal(body, &info); err != nil || info.WebSocketDebuggerURL == "" {
 		return nil, errors.New("cdp /json/version missing webSocketDebuggerUrl")
 	}
-	ws, wsResp, err := websocket.Dial(ctx, info.WebSocketDebuggerURL, nil)
+	endpoint, err := url.Parse(info.WebSocketDebuggerURL)
+	base, baseErr := url.Parse(e.debugHTTPURL)
+	if err != nil || baseErr != nil || endpoint.Host != base.Host || endpoint.Scheme != "ws" ||
+		endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" ||
+		!strings.HasPrefix(endpoint.Path, "/devtools/browser") {
+		return nil, errors.New("unexpected CDP browser endpoint")
+	}
+	e.mu.Lock()
+	verified := e.verifiedBrowser
+	e.mu.Unlock()
+	if verified != "" && verified != endpoint.String() {
+		return nil, errors.New("verified browser instance changed")
+	}
+	ws, wsResp, err := websocket.Dial(ctx, endpoint.String(), &websocket.DialOptions{HTTPClient: e.httpClient})
 	if wsResp != nil && wsResp.Body != nil {
 		_ = wsResp.Body.Close()
 	}
@@ -627,7 +645,7 @@ func (e *CDPBrowsingEngine) dialBrowser(ctx context.Context) (*cdpConn, error) {
 		return nil, fmt.Errorf("cdp dial: %w", err)
 	}
 	ws.SetReadLimit(16 << 20)
-	return &cdpConn{ws: ws}, nil
+	return &cdpConn{ws: ws, endpoint: endpoint.String()}, nil
 }
 
 // Flattened target sessions belong to one websocket. Reattach on each broker operation.

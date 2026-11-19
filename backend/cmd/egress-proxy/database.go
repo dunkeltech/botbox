@@ -431,7 +431,7 @@ func isLLMHost(host string) bool {
 	return false
 }
 
-func openDatabaseProxy(ctx context.Context, dsn, keySpec, workspace, bot, natsURL string, ca *mitmproxy.BotCA, logger *slog.Logger) (http.Handler, func(), error) {
+func openDatabaseProxy(ctx context.Context, dsn string, ring *secrets.KeyRing, workspace, bot, natsURL string, ca *mitmproxy.BotCA, logger *slog.Logger) (http.Handler, func(), error) {
 	ws, err := uuid.Parse(workspace)
 	if err != nil {
 		return nil, nil, errors.New("invalid proxy workspace identity")
@@ -439,10 +439,6 @@ func openDatabaseProxy(ctx context.Context, dsn, keySpec, workspace, bot, natsUR
 	botID, err := uuid.Parse(bot)
 	if err != nil {
 		return nil, nil, errors.New("invalid proxy bot identity")
-	}
-	ring, err := secrets.ParseKeyRing(keySpec)
-	if err != nil {
-		return nil, nil, errors.New("invalid proxy encryption configuration")
 	}
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {

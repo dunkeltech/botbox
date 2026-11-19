@@ -75,3 +75,14 @@ claude-login:
 .PHONY: test-e2e
 test-e2e:
 	npm --prefix frontend run test:e2e
+
+.PHONY: auth-broker-image test-auth-broker-sandbox
+auth-broker-image:
+	docker build -f images/auth-broker/Dockerfile -t botbox/auth-broker:dev .
+
+test-auth-broker-sandbox:
+	docker run --rm --init --network none --cap-drop ALL --security-opt no-new-privileges --security-opt seccomp=backend/internal/compute/docker/chromium-seccomp.json botbox/auth-broker:dev --check-sandbox
+	@status=0; docker run --rm --init --network none --cap-drop ALL --security-opt no-new-privileges \
+		--security-opt seccomp=backend/internal/compute/docker/chromium-seccomp.json --entrypoint /bin/sh botbox/auth-broker:dev \
+		-ec 'printf "%s\n" "#!/bin/sh" "exec chromium --no-sandbox \"\$$@\"" > /tmp/chromium-test; chmod 700 /tmp/chromium-test; AUTH_BROKER_CHROMIUM_BIN=/tmp/chromium-test exec auth-broker --check-sandbox' \
+		|| status=$$?; test "$$status" -eq 1
