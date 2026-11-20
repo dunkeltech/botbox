@@ -22,16 +22,17 @@ type Usage struct {
 // usageCollector bounds retained data to one SSE line or one JSON response.
 type usageCollector struct {
 	Usage
-	buffer    []byte
-	streaming bool
-	invalid   bool
-	terminal  bool
-	seen      bool
-	hasInput  bool
-	hasOutput bool
-	anthropic bool
-	uncached  int64
-	created   int64
+	buffer                 []byte
+	streaming              bool
+	invalid                bool
+	terminal               bool
+	responsesUsageComplete bool
+	seen                   bool
+	hasInput               bool
+	hasOutput              bool
+	anthropic              bool
+	uncached               int64
+	created                int64
 }
 
 func (c *usageCollector) Write(data []byte) (int, error) {
@@ -178,6 +179,9 @@ func (c *usageCollector) parse(data []byte) {
 	}
 	if c.InputTokens < 0 || c.OutputTokens < 0 || c.CacheTokens < 0 || c.CacheTokens > c.InputTokens {
 		c.invalid = true
+	}
+	if env.Type == "response.completed" && input != nil && output != nil && !c.invalid {
+		c.responsesUsageComplete = true
 	}
 }
 

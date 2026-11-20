@@ -41,6 +41,7 @@ Roles apply within a single workspace. This table covers common operations.
 | Create bots or groups and send chat messages | Yes | Yes | Yes | No |
 | Manage bots and their credentials | Any bot | Any bot | Own bots | No |
 | Manage workspace secrets, budgets, GitLab instances, MCP servers, and guardrails | Yes | Yes | No | No |
+| Reconcile unresolved subscription usage | Yes | Yes | No | No |
 | Manage members and invitations | All roles | Member and viewer roles | No | No |
 | Change workspace settings or delete the workspace | Yes | No | No | No |
 

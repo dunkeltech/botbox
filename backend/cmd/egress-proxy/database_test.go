@@ -9,6 +9,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/dunkeltech/botbox/backend/internal/codexplan"
 )
 
 func TestNativeProviderTunnelsCannotBypassMetering(t *testing.T) {
@@ -89,5 +91,44 @@ func TestAuthModeDoesNotLeakCredentialsOrOpenProviderTunnels(t *testing.T) {
 				t.Fatalf("invalid mode %q status=%d body=%q", mode, rec.Code, body)
 			}
 		}
+	}
+}
+
+func TestUnifiedOpenAIReadyAndAuthModeEndpoints(t *testing.T) {
+	//nolint:gosec // synthetic credential used to verify redaction
+	const secret = "oa-secret-leak-check"
+	handler := newEgressHandler(egressDeps{
+		OpenAIAuthMode: func(context.Context) (string, error) { return "oauth", nil },
+		OpenAIReady:    func(context.Context) error { return nil },
+	})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://egress:8081/llm/openai/auth-mode", nil))
+	if rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != "oauth" || rec.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("openai auth-mode status=%d body=%q", rec.Code, rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://egress:8081/llm/openai/ready", nil))
+	if rec.Code != http.StatusNoContent || rec.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("openai ready status=%d body=%q", rec.Code, rec.Body.String())
+	}
+
+	for _, tc := range []struct {
+		name string
+		err  error
+		want int
+	}{
+		{"forbidden", codexplan.ErrForbidden, http.StatusForbidden},
+		{"reconnect", codexplan.ErrReconnect, http.StatusForbidden},
+		{"unavailable", errors.New("db down " + secret), http.StatusServiceUnavailable},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newEgressHandler(egressDeps{OpenAIReady: func(context.Context) error { return tc.err }})
+			r := httptest.NewRecorder()
+			h.ServeHTTP(r, httptest.NewRequest(http.MethodGet, "http://egress:8081/llm/openai/ready", nil))
+			if r.Code != tc.want || strings.Contains(r.Body.String(), secret) {
+				t.Fatalf("status=%d want=%d body=%q", r.Code, tc.want, r.Body.String())
+			}
+		})
 	}
 }

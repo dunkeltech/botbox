@@ -20,7 +20,6 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Pinned agent CLIs. Claude Code 2.1.323 is the native package; its
 # postinstall must run or bin/claude.exe stays a text stub (ADR-0012).
 ARG CLAUDE_CLI_VERSION=2.1.323
-ARG CODEX_CLI_VERSION=0.155.0
 ARG PI_CLI_VERSION=1.5.2
 # agy release URLs and SHA-512 digests are pinned in releases/.
 
@@ -74,6 +73,7 @@ RUN mkdir -p /home/bot/.pki/nssdb /workspace /var/log/supervisor /var/run/superv
 # Install real pinned executables; version-only wrappers cannot execute bot turns.
 # Do not pass --ignore-scripts or --omit=optional: Claude's postinstall copies
 # the platform ELF over the text stub.
+ARG CODEX_CLI_VERSION=0.170.0
 RUN npm install --global --omit=dev \
         "@anthropic-ai/claude-code@${CLAUDE_CLI_VERSION}" \
         "@openai/codex@${CODEX_CLI_VERSION}" \
@@ -95,7 +95,7 @@ COPY --chmod=0755 images/sandbox/chromium-launch.sh /usr/local/bin/chromium-laun
 # Install the launcher as its own file. COPY onto the npm symlink would
 # overwrite cli.js, and the launcher would then ask Node to parse itself.
 RUN mv /usr/local/bin/codex /usr/local/bin/codex-real \
-    && /usr/local/bin/codex-real --version | grep -F "${CODEX_CLI_VERSION}"
+    && /usr/local/bin/codex-real --version | grep -Fx "codex-cli ${CODEX_CLI_VERSION}"
 COPY --chmod=0755 images/sandbox/codex-launch.sh /usr/local/bin/codex
 
 COPY images/sandbox/claude-launch.sh /tmp/claude-launch.sh

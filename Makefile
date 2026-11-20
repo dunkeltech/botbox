@@ -39,7 +39,7 @@ GIT_SHA := $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
 SANDBOX_IMAGE_MAX_BYTES ?= 2600000000
 
 sandbox-image:
-	docker build --build-arg CLAUDE_CLI_VERSION=$${CLAUDE_CLI_VERSION:-2.1.323} --build-arg CODEX_CLI_VERSION=$${CODEX_CLI_VERSION:-0.155.0} -f images/sandbox/Dockerfile -t botbox/sandbox:dev -t botbox/sandbox:$(GIT_SHA) .
+	docker build --build-arg CLAUDE_CLI_VERSION=$${CLAUDE_CLI_VERSION:-2.1.323} --build-arg CODEX_CLI_VERSION -f images/sandbox/Dockerfile -t botbox/sandbox:dev -t botbox/sandbox:$(GIT_SHA) .
 	@size=$$(docker image inspect botbox/sandbox:dev --format='{{.Size}}'); \
 	echo "botbox/sandbox:dev size=$${size} bytes (budget=$(SANDBOX_IMAGE_MAX_BYTES))"; \
 	test "$${size}" -le "$(SANDBOX_IMAGE_MAX_BYTES)"
@@ -54,7 +54,9 @@ test-sandbox-cli:
 
 .PHONY: test-sandbox-codex
 test-sandbox-codex:
-	docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges --user bot --entrypoint python3 --mount "type=bind,src=$(CURDIR)/images/sandbox/tests/codex_subscription_contract.py,dst=/tmp/codex_subscription_contract.py,readonly" botbox/sandbox:dev /tmp/codex_subscription_contract.py
+	@expected=$${CODEX_CLI_VERSION:-$$(sed -n 's/^ARG CODEX_CLI_VERSION=//p' images/sandbox/Dockerfile)}; \
+	test -n "$$expected" && \
+	docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges --user bot --entrypoint python3 --mount "type=bind,src=$(CURDIR)/images/sandbox/tests/codex_subscription_contract.py,dst=/tmp/codex_subscription_contract.py,readonly" botbox/sandbox:dev /tmp/codex_subscription_contract.py "$$expected"
 
 .PHONY: test-sandbox-pi
 test-sandbox-pi:

@@ -28,6 +28,9 @@ export type ErrorTranslationKey =
   | 'controlLocked'
   | 'environmentNotRunning'
   | 'environmentNotFound'
+  | 'environmentModelPriceRequired'
+  | 'subscriptionUsageNotFound'
+  | 'subscriptionModelPriceRequired'
   | 'fileNotFound'
   | 'secretNotFound'
   | 'secretAlreadyExists'
@@ -92,6 +95,9 @@ const ERROR_CODE_TO_KEY: Record<string, ErrorTranslationKey> = {
   'control.locked': 'controlLocked',
   'environment.not_running': 'environmentNotRunning',
   'environment.not_found': 'environmentNotFound',
+  'environment.model_price_required': 'environmentModelPriceRequired',
+  'budget.usage_not_found': 'subscriptionUsageNotFound',
+  'budget.model_price_required': 'subscriptionModelPriceRequired',
   'file.not_found': 'fileNotFound',
   'secret.not_found': 'secretNotFound',
   'secret.already_exists': 'secretAlreadyExists',

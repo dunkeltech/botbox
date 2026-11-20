@@ -421,6 +421,17 @@ describe('Phase 1 frontend workflows', () => {
       if (url === '/api/workspaces/ws-1/bots' && method === 'POST') {
         return jsonResponse(createdBot, 201);
       }
+      if (url === '/api/workspaces/ws-1/model-prices' && method === 'GET') {
+        return jsonResponse(
+          {
+            prices: [
+              { provider: 'openrouter', model: 'openrouter/auto' },
+              { provider: 'openai', model: 'gpt-fixture' },
+            ],
+          },
+          200,
+        );
+      }
       return jsonResponse({}, 404);
     });
 
@@ -441,9 +452,24 @@ describe('Phase 1 frontend workflows', () => {
         name: enMessages.builder.agents.openrouter,
       }),
     ).toHaveValue('openrouter');
+    fireEvent.change(agent, { target: { value: 'google' } });
+    expect(
+      await screen.findByText(enMessages.builder.modelPricesEmpty),
+    ).toBeVisible();
+    expect(
+      screen.getByRole('button', { name: enMessages.builder.createSubmit }),
+    ).toBeDisabled();
     fireEvent.change(agent, { target: { value: 'openrouter' } });
-    const model = screen.getByLabelText(enMessages.builder.modelLabel);
+    const model = screen.getByRole('combobox', {
+      name: enMessages.builder.modelLabel,
+    });
     expect(model).toHaveValue('');
+    expect(
+      screen.getByRole('option', { name: 'openrouter/auto' }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole('option', { name: 'gpt-fixture' }),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByText(enMessages.builder.openRouterHelp),
     ).toBeInTheDocument();

@@ -50,6 +50,34 @@ func (q *Queries) DeleteCodexPlanConnection(ctx context.Context, arg DeleteCodex
 	return err
 }
 
+const deleteCodexPlanConnectionByBotSecret = `-- name: DeleteCodexPlanConnectionByBotSecret :exec
+DELETE FROM codex_plan_connections WHERE workspace_id = $1 AND bot_secret_id = $2
+`
+
+type DeleteCodexPlanConnectionByBotSecretParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	BotSecretID pgtype.UUID `json:"bot_secret_id"`
+}
+
+func (q *Queries) DeleteCodexPlanConnectionByBotSecret(ctx context.Context, arg DeleteCodexPlanConnectionByBotSecretParams) error {
+	_, err := q.db.Exec(ctx, deleteCodexPlanConnectionByBotSecret, arg.WorkspaceID, arg.BotSecretID)
+	return err
+}
+
+const deleteCodexPlanConnectionByWorkspaceSecret = `-- name: DeleteCodexPlanConnectionByWorkspaceSecret :exec
+DELETE FROM codex_plan_connections WHERE workspace_id = $1 AND workspace_secret_id = $2
+`
+
+type DeleteCodexPlanConnectionByWorkspaceSecretParams struct {
+	WorkspaceID       pgtype.UUID `json:"workspace_id"`
+	WorkspaceSecretID pgtype.UUID `json:"workspace_secret_id"`
+}
+
+func (q *Queries) DeleteCodexPlanConnectionByWorkspaceSecret(ctx context.Context, arg DeleteCodexPlanConnectionByWorkspaceSecretParams) error {
+	_, err := q.db.Exec(ctx, deleteCodexPlanConnectionByWorkspaceSecret, arg.WorkspaceID, arg.WorkspaceSecretID)
+	return err
+}
+
 const deleteCodexPlanPairing = `-- name: DeleteCodexPlanPairing :exec
 DELETE FROM codex_plan_pairings WHERE workspace_id = $1 AND bot_id = $2
 `
@@ -67,7 +95,7 @@ func (q *Queries) DeleteCodexPlanPairing(ctx context.Context, arg DeleteCodexPla
 const finishCodexPlanPairing = `-- name: FinishCodexPlanPairing :one
 DELETE FROM codex_plan_pairings
 WHERE workspace_id = $1 AND bot_id = $2 AND code_hash = $3 AND claimed AND expires_at > $4
-RETURNING owner_user_id
+RETURNING owner_user_id, secret_scope
 `
 
 type FinishCodexPlanPairingParams struct {
@@ -77,20 +105,25 @@ type FinishCodexPlanPairingParams struct {
 	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
 }
 
-func (q *Queries) FinishCodexPlanPairing(ctx context.Context, arg FinishCodexPlanPairingParams) (pgtype.UUID, error) {
+type FinishCodexPlanPairingRow struct {
+	OwnerUserID pgtype.UUID `json:"owner_user_id"`
+	SecretScope string      `json:"secret_scope"`
+}
+
+func (q *Queries) FinishCodexPlanPairing(ctx context.Context, arg FinishCodexPlanPairingParams) (FinishCodexPlanPairingRow, error) {
 	row := q.db.QueryRow(ctx, finishCodexPlanPairing,
 		arg.WorkspaceID,
 		arg.BotID,
 		arg.CodeHash,
 		arg.ExpiresAt,
 	)
-	var owner_user_id pgtype.UUID
-	err := row.Scan(&owner_user_id)
-	return owner_user_id, err
+	var i FinishCodexPlanPairingRow
+	err := row.Scan(&i.OwnerUserID, &i.SecretScope)
+	return i, err
 }
 
 const getCodexPlanConnection = `-- name: GetCodexPlanConnection :one
-SELECT workspace_id, bot_id, owner_user_id, client_id, subject, revision, kek_id, wrapped_dek, encrypted_tokens FROM codex_plan_connections WHERE workspace_id = $1 AND bot_id = $2
+SELECT workspace_id, bot_id, owner_user_id, client_id, subject, revision, kek_id, wrapped_dek, encrypted_tokens, secret_scope, bot_secret_id, workspace_secret_id FROM codex_plan_connections WHERE workspace_id = $1 AND bot_id = $2
 `
 
 type GetCodexPlanConnectionParams struct {
@@ -111,12 +144,15 @@ func (q *Queries) GetCodexPlanConnection(ctx context.Context, arg GetCodexPlanCo
 		&i.KekID,
 		&i.WrappedDek,
 		&i.EncryptedTokens,
+		&i.SecretScope,
+		&i.BotSecretID,
+		&i.WorkspaceSecretID,
 	)
 	return i, err
 }
 
 const lockCodexPlanConnection = `-- name: LockCodexPlanConnection :one
-SELECT workspace_id, bot_id, owner_user_id, client_id, subject, revision, kek_id, wrapped_dek, encrypted_tokens FROM codex_plan_connections WHERE workspace_id = $1 AND bot_id = $2 FOR UPDATE
+SELECT workspace_id, bot_id, owner_user_id, client_id, subject, revision, kek_id, wrapped_dek, encrypted_tokens, secret_scope, bot_secret_id, workspace_secret_id FROM codex_plan_connections WHERE workspace_id = $1 AND bot_id = $2 FOR UPDATE
 `
 
 type LockCodexPlanConnectionParams struct {
@@ -137,31 +173,55 @@ func (q *Queries) LockCodexPlanConnection(ctx context.Context, arg LockCodexPlan
 		&i.KekID,
 		&i.WrappedDek,
 		&i.EncryptedTokens,
+		&i.SecretScope,
+		&i.BotSecretID,
+		&i.WorkspaceSecretID,
 	)
 	return i, err
 }
 
 const putCodexPlanConnection = `-- name: PutCodexPlanConnection :execrows
-INSERT INTO codex_plan_connections (workspace_id, bot_id, owner_user_id, client_id, subject, revision, kek_id, wrapped_dek, encrypted_tokens)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+INSERT INTO codex_plan_connections (
+    workspace_id,
+    bot_id,
+    owner_user_id,
+    client_id,
+    subject,
+    revision,
+    secret_scope,
+    bot_secret_id,
+    workspace_secret_id,
+    kek_id,
+    wrapped_dek,
+    encrypted_tokens
+)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
 ON CONFLICT (workspace_id, bot_id) DO UPDATE
-SET revision = EXCLUDED.revision, kek_id = EXCLUDED.kek_id,
-    wrapped_dek = EXCLUDED.wrapped_dek, encrypted_tokens = EXCLUDED.encrypted_tokens
+SET revision = EXCLUDED.revision,
+    secret_scope = EXCLUDED.secret_scope,
+    bot_secret_id = EXCLUDED.bot_secret_id,
+    workspace_secret_id = EXCLUDED.workspace_secret_id,
+    kek_id = EXCLUDED.kek_id,
+    wrapped_dek = EXCLUDED.wrapped_dek,
+    encrypted_tokens = EXCLUDED.encrypted_tokens
 WHERE codex_plan_connections.owner_user_id = EXCLUDED.owner_user_id
   AND codex_plan_connections.subject = EXCLUDED.subject
   AND codex_plan_connections.client_id = EXCLUDED.client_id
 `
 
 type PutCodexPlanConnectionParams struct {
-	WorkspaceID     pgtype.UUID `json:"workspace_id"`
-	BotID           pgtype.UUID `json:"bot_id"`
-	OwnerUserID     pgtype.UUID `json:"owner_user_id"`
-	ClientID        string      `json:"client_id"`
-	Subject         string      `json:"subject"`
-	Revision        pgtype.UUID `json:"revision"`
-	KekID           pgtype.Text `json:"kek_id"`
-	WrappedDek      []byte      `json:"wrapped_dek"`
-	EncryptedTokens []byte      `json:"encrypted_tokens"`
+	WorkspaceID       pgtype.UUID `json:"workspace_id"`
+	BotID             pgtype.UUID `json:"bot_id"`
+	OwnerUserID       pgtype.UUID `json:"owner_user_id"`
+	ClientID          string      `json:"client_id"`
+	Subject           string      `json:"subject"`
+	Revision          pgtype.UUID `json:"revision"`
+	SecretScope       string      `json:"secret_scope"`
+	BotSecretID       pgtype.UUID `json:"bot_secret_id"`
+	WorkspaceSecretID pgtype.UUID `json:"workspace_secret_id"`
+	KekID             pgtype.Text `json:"kek_id"`
+	WrappedDek        []byte      `json:"wrapped_dek"`
+	EncryptedTokens   []byte      `json:"encrypted_tokens"`
 }
 
 func (q *Queries) PutCodexPlanConnection(ctx context.Context, arg PutCodexPlanConnectionParams) (int64, error) {
@@ -172,6 +232,9 @@ func (q *Queries) PutCodexPlanConnection(ctx context.Context, arg PutCodexPlanCo
 		arg.ClientID,
 		arg.Subject,
 		arg.Revision,
+		arg.SecretScope,
+		arg.BotSecretID,
+		arg.WorkspaceSecretID,
 		arg.KekID,
 		arg.WrappedDek,
 		arg.EncryptedTokens,
@@ -183,12 +246,16 @@ func (q *Queries) PutCodexPlanConnection(ctx context.Context, arg PutCodexPlanCo
 }
 
 const putCodexPlanPairing = `-- name: PutCodexPlanPairing :execrows
-INSERT INTO codex_plan_pairings (workspace_id, bot_id, owner_user_id, code_hash, expires_at)
-VALUES ($1,$2,$3,$4,$5)
+INSERT INTO codex_plan_pairings (workspace_id, bot_id, owner_user_id, code_hash, expires_at, secret_scope)
+VALUES ($1,$2,$3,$4,$5,$6)
 ON CONFLICT (workspace_id, bot_id) DO UPDATE
-SET owner_user_id = EXCLUDED.owner_user_id, code_hash = EXCLUDED.code_hash, expires_at = EXCLUDED.expires_at, claimed = FALSE
+SET owner_user_id = EXCLUDED.owner_user_id,
+    code_hash = EXCLUDED.code_hash,
+    expires_at = EXCLUDED.expires_at,
+    secret_scope = EXCLUDED.secret_scope,
+    claimed = FALSE
 WHERE codex_plan_pairings.owner_user_id = EXCLUDED.owner_user_id
-   OR codex_plan_pairings.expires_at <= $6::timestamptz
+   OR codex_plan_pairings.expires_at <= $7::timestamptz
 `
 
 type PutCodexPlanPairingParams struct {
@@ -197,6 +264,7 @@ type PutCodexPlanPairingParams struct {
 	OwnerUserID pgtype.UUID        `json:"owner_user_id"`
 	CodeHash    []byte             `json:"code_hash"`
 	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
+	SecretScope string             `json:"secret_scope"`
 	AsOf        pgtype.Timestamptz `json:"as_of"`
 }
 
@@ -207,6 +275,7 @@ func (q *Queries) PutCodexPlanPairing(ctx context.Context, arg PutCodexPlanPairi
 		arg.OwnerUserID,
 		arg.CodeHash,
 		arg.ExpiresAt,
+		arg.SecretScope,
 		arg.AsOf,
 	)
 	if err != nil {

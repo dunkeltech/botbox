@@ -124,6 +124,7 @@ type BotSecret struct {
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 	AdapterID       string             `json:"adapter_id"`
+	AuthKind        string             `json:"auth_kind"`
 }
 
 type BotSession struct {
@@ -181,15 +182,18 @@ type Budget struct {
 }
 
 type CodexPlanConnection struct {
-	WorkspaceID     pgtype.UUID `json:"workspace_id"`
-	BotID           pgtype.UUID `json:"bot_id"`
-	OwnerUserID     pgtype.UUID `json:"owner_user_id"`
-	ClientID        string      `json:"client_id"`
-	Subject         string      `json:"subject"`
-	Revision        pgtype.UUID `json:"revision"`
-	KekID           pgtype.Text `json:"kek_id"`
-	WrappedDek      []byte      `json:"wrapped_dek"`
-	EncryptedTokens []byte      `json:"encrypted_tokens"`
+	WorkspaceID       pgtype.UUID `json:"workspace_id"`
+	BotID             pgtype.UUID `json:"bot_id"`
+	OwnerUserID       pgtype.UUID `json:"owner_user_id"`
+	ClientID          string      `json:"client_id"`
+	Subject           string      `json:"subject"`
+	Revision          pgtype.UUID `json:"revision"`
+	KekID             pgtype.Text `json:"kek_id"`
+	WrappedDek        []byte      `json:"wrapped_dek"`
+	EncryptedTokens   []byte      `json:"encrypted_tokens"`
+	SecretScope       string      `json:"secret_scope"`
+	BotSecretID       pgtype.UUID `json:"bot_secret_id"`
+	WorkspaceSecretID pgtype.UUID `json:"workspace_secret_id"`
 }
 
 type CodexPlanPairing struct {
@@ -199,6 +203,7 @@ type CodexPlanPairing struct {
 	CodeHash    []byte             `json:"code_hash"`
 	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
 	Claimed     bool               `json:"claimed"`
+	SecretScope string             `json:"secret_scope"`
 }
 
 type Conversation struct {
@@ -644,4 +649,5 @@ type WorkspaceSecret struct {
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 	AdapterID       string             `json:"adapter_id"`
+	AuthKind        string             `json:"auth_kind"`
 }

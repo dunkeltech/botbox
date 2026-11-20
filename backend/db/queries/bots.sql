@@ -26,6 +26,12 @@ SELECT *
 FROM bots
 WHERE workspace_id = $1 AND id = $2;
 
+-- name: LockBotByWorkspaceAndID :one
+SELECT *
+FROM bots
+WHERE workspace_id = $1 AND id = $2
+FOR NO KEY UPDATE;
+
 -- name: UpdateBotByWorkspaceAndID :one
 UPDATE bots
 SET name = $3,

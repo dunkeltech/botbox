@@ -173,6 +173,41 @@ func (q *Queries) ListBotsByWorkspace(ctx context.Context, workspaceID pgtype.UU
 	return items, nil
 }
 
+const lockBotByWorkspaceAndID = `-- name: LockBotByWorkspaceAndID :one
+SELECT id, workspace_id, owner_user_id, name, description, avatar_seed, llm_mode, llm_provider, llm_model, driver_type, reply_language, created_at, updated_at, memory_auto_save, turn_timeout_minutes
+FROM bots
+WHERE workspace_id = $1 AND id = $2
+FOR NO KEY UPDATE
+`
+
+type LockBotByWorkspaceAndIDParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ID          pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) LockBotByWorkspaceAndID(ctx context.Context, arg LockBotByWorkspaceAndIDParams) (Bot, error) {
+	row := q.db.QueryRow(ctx, lockBotByWorkspaceAndID, arg.WorkspaceID, arg.ID)
+	var i Bot
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.OwnerUserID,
+		&i.Name,
+		&i.Description,
+		&i.AvatarSeed,
+		&i.LlmMode,
+		&i.LlmProvider,
+		&i.LlmModel,
+		&i.DriverType,
+		&i.ReplyLanguage,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.MemoryAutoSave,
+		&i.TurnTimeoutMinutes,
+	)
+	return i, err
+}
+
 const updateBotByWorkspaceAndID = `-- name: UpdateBotByWorkspaceAndID :one
 UPDATE bots
 SET name = $3,

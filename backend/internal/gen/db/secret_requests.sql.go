@@ -344,7 +344,7 @@ INSERT INTO bot_secrets (
     created_by
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-RETURNING id, workspace_id, bot_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at, adapter_id
+RETURNING id, workspace_id, bot_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at, adapter_id, auth_kind
 `
 
 type CreateBotSecretWithAdapterParams struct {
@@ -407,6 +407,7 @@ func (q *Queries) CreateBotSecretWithAdapter(ctx context.Context, arg CreateBotS
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.AdapterID,
+		&i.AuthKind,
 	)
 	return i, err
 }
@@ -625,7 +626,7 @@ INSERT INTO workspace_secrets (
     created_by
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-RETURNING id, workspace_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at, adapter_id
+RETURNING id, workspace_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at, adapter_id, auth_kind
 `
 
 type CreateWorkspaceSecretWithAdapterParams struct {
@@ -685,6 +686,7 @@ func (q *Queries) CreateWorkspaceSecretWithAdapter(ctx context.Context, arg Crea
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.AdapterID,
+		&i.AuthKind,
 	)
 	return i, err
 }

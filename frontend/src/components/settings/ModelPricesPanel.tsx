@@ -126,7 +126,7 @@ export function ModelPricesPanel({
   }
 
   return (
-    <Card className="flex flex-col gap-5 p-6">
+    <Card id="model-prices" className="flex flex-col gap-5 p-6">
       <div className="flex flex-col gap-1">
         <Eyebrow>{t('eyebrow')}</Eyebrow>
         <h2 className="text-[20px] font-black text-ink">{t('title')}</h2>

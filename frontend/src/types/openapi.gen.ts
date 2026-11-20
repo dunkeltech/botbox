@@ -4,6 +4,40 @@
  */
 
 export interface paths {
+  '/api/workspaces/{workspaceID}/subscription-usage/unresolved': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List up to 100 unresolved budgeted subscription requests for an owner or admin */
+    get: operations['listUnresolvedSubscriptionUsage'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/workspaces/{workspaceID}/subscription-usage/{requestID}/reconcile': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Record an audited manual token adjustment for an unresolved subscription request */
+    post: operations['reconcileSubscriptionUsage'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/workspaces/{workspaceID}/subscription-budget-policy': {
     parameters: {
       query?: never;
@@ -1445,6 +1479,29 @@ export interface components {
     BotRuntime: {
       paused: boolean;
     };
+    UnresolvedSubscriptionUsage: {
+      /** Format: uuid */
+      requestId: string;
+      botName: string;
+      model: string;
+      /** Format: date-time */
+      createdAt: string;
+    };
+    ReconcileSubscriptionUsageRequest: {
+      /** @enum {string} */
+      provider: 'openai' | 'anthropic';
+      /** @enum {string} */
+      basis: 'provider_report' | 'operator_estimate';
+      /**
+       * Format: int64
+       * @description Total input tokens, including cached input.
+       */
+      inputTokens: number;
+      /** Format: int64 */
+      outputTokens: number;
+      /** Format: int64 */
+      cacheTokens: number;
+    };
     SubscriptionBudgetPolicy: {
       enabled: boolean;
     };
@@ -1467,6 +1524,10 @@ export interface components {
       /** @enum {string} */
       status: 'disconnected' | 'connected' | 'reconnect';
       ownedByYou: boolean;
+      secretScope?: components['schemas']['SecretScope'];
+    };
+    StartCodexPlanRequest: {
+      secretScope?: components['schemas']['SecretScope'];
     };
     CodexPlanPairing: {
       code: string;
@@ -2022,6 +2083,7 @@ export interface components {
       password?: string;
     };
     Bot: {
+      missingModelPrice?: components['schemas']['MissingModelPrice'];
       /** Format: uuid */
       id: string;
       /** Format: uuid */
@@ -2107,18 +2169,24 @@ export interface components {
       driver: string;
       envId: string;
       status: components['schemas']['EnvironmentStatus'];
+      /** @description Workspace model price required before the bot computer can run. */
+      missingModelPrice?: components['schemas']['MissingModelPrice'];
       image: string;
       cpuMillis: number;
       memoryMiB: number;
       volumeRef: string;
-      controlHolder?: components['schemas']['ControlHolder'] | null;
+      controlHolder: components['schemas']['ControlHolder'] | null;
       controlNote: string;
       stats: components['schemas']['EnvironmentStats'];
       watchers: components['schemas']['WatcherUser'][];
       /** Format: date-time */
-      startedAt?: string | null;
+      startedAt: string | null;
       /** Format: date-time */
       updatedAt: string;
+    };
+    MissingModelPrice: {
+      provider: string;
+      model: string;
     };
     ReleaseControlRequest: {
       note?: string;
@@ -2646,6 +2714,125 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  listUnresolvedSubscriptionUsage: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Unresolved requests, newest first */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['UnresolvedSubscriptionUsage'][];
+        };
+      };
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Workspace owner or admin required */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Workspace not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  reconcileSubscriptionUsage: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+        requestID: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ReconcileSubscriptionUsageRequest'];
+      };
+    };
+    responses: {
+      /** @description Usage reconciled */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Invalid token counts */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Workspace owner or admin required */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Workspace or unresolved request not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Applicable model price missing */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
   setSubscriptionBudgetPolicy: {
     parameters: {
       query?: never;
@@ -2796,7 +2983,11 @@ export interface operations {
       };
       cookie?: never;
     };
-    requestBody?: never;
+    requestBody?: {
+      content: {
+        'application/json': components['schemas']['StartCodexPlanRequest'];
+      };
+    };
     responses: {
       /** @description One-use workstation pairing code */
       200: {
@@ -6230,6 +6421,15 @@ export interface operations {
           'application/json': components['schemas']['ErrorEnvelope'];
         };
       };
+      /** @description Model price missing for the configured model */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
     };
   };
   stopBotEnvironment: {
@@ -6323,6 +6523,15 @@ export interface operations {
       };
       /** @description Workspace or bot not found */
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Model price missing for the configured model */
+      409: {
         headers: {
           [name: string]: unknown;
         };

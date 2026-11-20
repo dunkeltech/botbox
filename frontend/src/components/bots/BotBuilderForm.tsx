@@ -7,7 +7,9 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { useQuery } from '@tanstack/react-query';
 
+import { MissingModelPriceNotice } from '@/components/bots/MissingModelPriceNotice';
 import {
   Alert,
   BotAvatar,
@@ -20,10 +22,15 @@ import {
   Textarea,
 } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
-import { createBot, deleteBot, updateBot } from '@/lib/api-client';
+import {
+  createBot,
+  deleteBot,
+  listModelPrices,
+  updateBot,
+} from '@/lib/api-client';
 import { generateRandomAvatarSeed } from '@/lib/avatar';
 import { type ErrorTranslationKey, resolveErrorKey } from '@/lib/errors';
-import { canCreateBot, canManageBot } from '@/lib/rbac';
+import { canCreateBot, canManageBot, canManageMembers } from '@/lib/rbac';
 import type {
   AvatarMood,
   Bot,
@@ -32,15 +39,8 @@ import type {
 } from '@/types/api';
 
 const MOOD_OPTIONS: AvatarMood[] = ['idle', 'thinking', 'action', 'offline'];
-const AGENT_MODELS = {
-  anthropic: 'claude-sonnet-4-20250514',
-  openai: 'gpt-5.4',
-  google: 'gemini-2.5-pro',
-  openrouter: '',
-} as const;
-
-const AGENTS = Object.keys(AGENT_MODELS) as (keyof typeof AGENT_MODELS)[];
-const AGENT_ALIASES: Record<string, keyof typeof AGENT_MODELS> = {
+const AGENTS = ['anthropic', 'openai', 'google', 'openrouter'] as const;
+const AGENT_ALIASES: Record<string, string> = {
   claude: 'anthropic',
   codex: 'openai',
   agy: 'google',
@@ -84,12 +84,14 @@ export function BotBuilderForm({
   const [previewMood, setPreviewMood] = useState<AvatarMood>(
     bot?.mood ?? 'idle',
   );
-  const [llmProvider, setLlmProvider] = useState(
-    bot ? (AGENT_ALIASES[bot.llmProvider] ?? bot.llmProvider) : 'anthropic',
-  );
-  const [llmModel, setLlmModel] = useState(
-    bot?.llmModel ?? AGENT_MODELS.anthropic,
-  );
+  const [savedModel, setSavedModel] = useState({
+    provider: bot
+      ? (AGENT_ALIASES[bot.llmProvider] ?? bot.llmProvider)
+      : 'anthropic',
+    model: bot?.llmModel ?? '',
+  });
+  const [llmProvider, setLlmProvider] = useState(savedModel.provider);
+  const [llmModel, setLlmModel] = useState(savedModel.model);
   const [driverType, setDriverType] = useState<DriverType>(
     bot?.driverType ?? workspace.defaultDriver,
   );
@@ -103,8 +105,42 @@ export function BotBuilderForm({
   const [submitting, setSubmitting] = useState(false);
   const [errorKey, setErrorKey] = useState<ErrorTranslationKey | null>(null);
   const [savedBanner, setSavedBanner] = useState(false);
+  const [missingModelPrice, setMissingModelPrice] = useState(
+    bot?.missingModelPrice,
+  );
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  const priceQuery = useQuery({
+    queryKey: ['bot-builder-model-prices', workspace.id],
+    queryFn: () => listModelPrices(workspace.id),
+    enabled: canEdit,
+    retry: false,
+  });
+  const pricedModels = (priceQuery.data?.prices ?? [])
+    .filter(
+      (price) =>
+        price.provider === llmProvider && price.model === price.model.trim(),
+    )
+    .map((price) => price.model)
+    .sort((a, b) => a.localeCompare(b));
+  const keepsSavedModel =
+    mode === 'edit' &&
+    llmProvider === savedModel.provider &&
+    llmModel === savedModel.model;
+  const modelIsPriced = pricedModels.includes(llmModel);
+  const canSaveModel = keepsSavedModel || modelIsPriced;
+  const hasNoPricedModels =
+    canEdit && priceQuery.isSuccess && pricedModels.length === 0;
+  const modelHelp = !canEdit
+    ? undefined
+    : priceQuery.isPending
+      ? t('modelPricesLoading')
+      : priceQuery.isError
+        ? t('modelPricesError')
+        : hasNoPricedModels
+          ? t('modelPricesEmpty')
+          : undefined;
 
   const hasCustomLanguage = !STANDARD_LANGUAGES.includes(
     replyLanguage as (typeof STANDARD_LANGUAGES)[number],
@@ -112,7 +148,7 @@ export function BotBuilderForm({
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!canEdit) {
+    if (!canEdit || !canSaveModel) {
       return;
     }
     setErrorKey(null);
@@ -127,7 +163,7 @@ export function BotBuilderForm({
           avatarSeed: avatarSeed.trim(),
           llmMode: 'cli',
           llmProvider,
-          llmModel: llmModel.trim(),
+          llmModel,
           driverType,
           replyLanguage,
           turnTimeoutMinutes: Number(turnTimeoutMinutes),
@@ -139,8 +175,7 @@ export function BotBuilderForm({
           description: description.trim(),
           avatarSeed: avatarSeed.trim(),
           llmMode: 'cli',
-          llmProvider,
-          llmModel: llmModel.trim(),
+          ...(!keepsSavedModel ? { llmProvider, llmModel } : {}),
           driverType,
           replyLanguage,
           turnTimeoutMinutes: Number(turnTimeoutMinutes),
@@ -149,6 +184,11 @@ export function BotBuilderForm({
         setDescription(updated.description);
         setAvatarSeed(updated.avatarSeed);
         setTurnTimeoutMinutes(String(updated.turnTimeoutMinutes));
+        setSavedModel({
+          provider: AGENT_ALIASES[updated.llmProvider] ?? updated.llmProvider,
+          model: updated.llmModel,
+        });
+        setMissingModelPrice(updated.missingModelPrice);
         setSavedBanner(true);
       }
     } catch (err) {
@@ -344,9 +384,11 @@ export function BotBuilderForm({
             value={llmProvider}
             disabled={!canEdit}
             onChange={(event) => {
-              const selected = event.target.value as keyof typeof AGENT_MODELS;
+              const selected = event.target.value;
               setLlmProvider(selected);
-              setLlmModel(AGENT_MODELS[selected]);
+              setLlmModel(
+                selected === savedModel.provider ? savedModel.model : '',
+              );
             }}
           >
             {AGENTS.map((provider) => (
@@ -356,23 +398,40 @@ export function BotBuilderForm({
             ))}
           </Select>
 
-          <Input
+          <Select
             label={t('modelLabel')}
-            placeholder={
-              llmProvider === 'openrouter'
-                ? t('openRouterModelPlaceholder')
-                : t('modelPlaceholder')
-            }
+            helperText={modelHelp}
             mono
-            autoCorrect="off"
-            autoCapitalize="none"
-            spellCheck={false}
             value={llmModel}
-            disabled={!canEdit}
-            required
+            disabled={!canEdit || pricedModels.length === 0}
+            required={!keepsSavedModel}
             onChange={(event) => setLlmModel(event.target.value)}
-          />
+          >
+            <option value="" disabled>
+              {t('choosePricedModel')}
+            </option>
+            {keepsSavedModel && llmModel && !modelIsPriced ? (
+              <option value={llmModel} disabled>
+                {llmModel}
+              </option>
+            ) : null}
+            {pricedModels.map((model) => (
+              <option key={model} value={model}>
+                {model}
+              </option>
+            ))}
+          </Select>
         </div>
+        {hasNoPricedModels &&
+        !missingModelPrice &&
+        canManageMembers(workspace.role) ? (
+          <Link
+            href="/settings/budgets#model-prices"
+            className="inline-flex min-h-[44px] w-fit items-center text-[14px] font-bold text-green-600 underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-green"
+          >
+            {t('openModelPrices')}
+          </Link>
+        ) : null}
         {llmProvider === 'openrouter' && (
           <p className="text-sm text-ink">{t('openRouterHelp')}</p>
         )}
@@ -446,7 +505,7 @@ export function BotBuilderForm({
             >
               {tActions('cancel')}
             </Link>
-            <Button type="submit" arrow disabled={submitting}>
+            <Button type="submit" arrow disabled={submitting || !canSaveModel}>
               {submitting
                 ? mode === 'create'
                   ? t('creating')
@@ -466,6 +525,12 @@ export function BotBuilderForm({
       {!canEdit ? <Alert tone="info">{tErrors('authForbidden')}</Alert> : null}
       {errorKey ? <Alert tone="warning">{tErrors(errorKey)}</Alert> : null}
       {savedBanner ? <Alert tone="success">{t('savedBanner')}</Alert> : null}
+      {missingModelPrice ? (
+        <MissingModelPriceNotice
+          price={missingModelPrice}
+          canManagePrices={canManageMembers(workspace.role)}
+        />
+      ) : null}
     </>
   );
 

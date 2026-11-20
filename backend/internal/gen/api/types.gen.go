@@ -825,6 +825,42 @@ func (e NotificationKind) Valid() bool {
 	}
 }
 
+// Defines values for ReconcileSubscriptionUsageRequestBasis.
+const (
+	OperatorEstimate ReconcileSubscriptionUsageRequestBasis = "operator_estimate"
+	ProviderReport   ReconcileSubscriptionUsageRequestBasis = "provider_report"
+)
+
+// Valid indicates whether the value is a known member of the ReconcileSubscriptionUsageRequestBasis enum.
+func (e ReconcileSubscriptionUsageRequestBasis) Valid() bool {
+	switch e {
+	case OperatorEstimate:
+		return true
+	case ProviderReport:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReconcileSubscriptionUsageRequestProvider.
+const (
+	Anthropic ReconcileSubscriptionUsageRequestProvider = "anthropic"
+	Openai    ReconcileSubscriptionUsageRequestProvider = "openai"
+)
+
+// Valid indicates whether the value is a known member of the ReconcileSubscriptionUsageRequestProvider enum.
+func (e ReconcileSubscriptionUsageRequestProvider) Valid() bool {
+	switch e {
+	case Anthropic:
+		return true
+	case Openai:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SecretAuthScheme.
 const (
 	SecretAuthSchemeBasic  SecretAuthScheme = "basic"
@@ -1228,12 +1264,13 @@ type Bot struct {
 	LlmModel    string             `json:"llmModel"`
 
 	// LlmProvider Selects the sandbox CLI. OpenRouter uses Pi, OpenAI uses Codex, Anthropic uses Claude Code, and Google uses agy.
-	LlmProvider   string              `json:"llmProvider"`
-	Mood          AvatarMood          `json:"mood"`
-	Name          string              `json:"name"`
-	OwnerUserId   *openapi_types.UUID `json:"ownerUserId,omitempty"`
-	ReplyLanguage string              `json:"replyLanguage"`
-	Status        BotStatus           `json:"status"`
+	LlmProvider       string              `json:"llmProvider"`
+	MissingModelPrice *MissingModelPrice  `json:"missingModelPrice,omitempty"`
+	Mood              AvatarMood          `json:"mood"`
+	Name              string              `json:"name"`
+	OwnerUserId       *openapi_types.UUID `json:"ownerUserId,omitempty"`
+	ReplyLanguage     string              `json:"replyLanguage"`
+	Status            BotStatus           `json:"status"`
 
 	// TurnTimeoutMinutes Maximum execution time in minutes for each bot turn. New bots default to 10 when omitted.
 	TurnTimeoutMinutes BotTurnTimeoutMinutes `json:"turnTimeoutMinutes"`
@@ -1475,8 +1512,9 @@ type CodexPlanPairing struct {
 
 // CodexPlanStatus defines model for CodexPlanStatus.
 type CodexPlanStatus struct {
-	OwnedByYou bool                  `json:"ownedByYou"`
-	Status     CodexPlanStatusStatus `json:"status"`
+	OwnedByYou  bool                  `json:"ownedByYou"`
+	SecretScope *SecretScope          `json:"secretScope,omitempty"`
+	Status      CodexPlanStatusStatus `json:"status"`
 }
 
 // CodexPlanStatusStatus defines model for CodexPlanStatus.Status.
@@ -1675,21 +1713,22 @@ type EgressPolicyResponse struct {
 
 // EnvironmentStateResponse defines model for EnvironmentStateResponse.
 type EnvironmentStateResponse struct {
-	BotId         openapi_types.UUID `json:"botId"`
-	ControlHolder *ControlHolder     `json:"controlHolder"`
-	ControlNote   string             `json:"controlNote"`
-	CpuMillis     int                `json:"cpuMillis"`
-	Driver        string             `json:"driver"`
-	EnvId         string             `json:"envId"`
-	Image         string             `json:"image"`
-	MemoryMiB     int                `json:"memoryMiB"`
-	StartedAt     *time.Time         `json:"startedAt"`
-	Stats         EnvironmentStats   `json:"stats"`
-	Status        EnvironmentStatus  `json:"status"`
-	UpdatedAt     time.Time          `json:"updatedAt"`
-	VolumeRef     string             `json:"volumeRef"`
-	Watchers      []WatcherUser      `json:"watchers"`
-	WorkspaceId   openapi_types.UUID `json:"workspaceId"`
+	BotId             openapi_types.UUID `json:"botId"`
+	ControlHolder     *ControlHolder     `json:"controlHolder"`
+	ControlNote       string             `json:"controlNote"`
+	CpuMillis         int                `json:"cpuMillis"`
+	Driver            string             `json:"driver"`
+	EnvId             string             `json:"envId"`
+	Image             string             `json:"image"`
+	MemoryMiB         int                `json:"memoryMiB"`
+	MissingModelPrice *MissingModelPrice `json:"missingModelPrice,omitempty"`
+	StartedAt         *time.Time         `json:"startedAt"`
+	Stats             EnvironmentStats   `json:"stats"`
+	Status            EnvironmentStatus  `json:"status"`
+	UpdatedAt         time.Time          `json:"updatedAt"`
+	VolumeRef         string             `json:"volumeRef"`
+	Watchers          []WatcherUser      `json:"watchers"`
+	WorkspaceId       openapi_types.UUID `json:"workspaceId"`
 }
 
 // EnvironmentStats defines model for EnvironmentStats.
@@ -1998,6 +2037,12 @@ type MeResponse struct {
 	Workspaces []WorkspaceSummary `json:"workspaces"`
 }
 
+// MissingModelPrice defines model for MissingModelPrice.
+type MissingModelPrice struct {
+	Model    string `json:"model"`
+	Provider string `json:"provider"`
+}
+
 // ModelPrice defines model for ModelPrice.
 type ModelPrice struct {
 	CacheMicrosPerMillion  int64  `json:"cacheMicrosPerMillion"`
@@ -2040,6 +2085,23 @@ type NotificationList struct {
 	NextCursor    *string        `json:"nextCursor,omitempty"`
 	Notifications []Notification `json:"notifications"`
 }
+
+// ReconcileSubscriptionUsageRequest defines model for ReconcileSubscriptionUsageRequest.
+type ReconcileSubscriptionUsageRequest struct {
+	Basis       ReconcileSubscriptionUsageRequestBasis `json:"basis"`
+	CacheTokens int64                                  `json:"cacheTokens"`
+
+	// InputTokens Total input tokens, including cached input.
+	InputTokens  int64                                     `json:"inputTokens"`
+	OutputTokens int64                                     `json:"outputTokens"`
+	Provider     ReconcileSubscriptionUsageRequestProvider `json:"provider"`
+}
+
+// ReconcileSubscriptionUsageRequestBasis defines model for ReconcileSubscriptionUsageRequest.Basis.
+type ReconcileSubscriptionUsageRequestBasis string
+
+// ReconcileSubscriptionUsageRequestProvider defines model for ReconcileSubscriptionUsageRequest.Provider.
+type ReconcileSubscriptionUsageRequestProvider string
 
 // RefreshRequest defines model for RefreshRequest.
 type RefreshRequest struct {
@@ -2150,6 +2212,11 @@ type SetupStatusResponse struct {
 	SetupRequired bool `json:"setupRequired"`
 }
 
+// StartCodexPlanRequest defines model for StartCodexPlanRequest.
+type StartCodexPlanRequest struct {
+	SecretScope *SecretScope `json:"secretScope,omitempty"`
+}
+
 // StreamTicketResponse defines model for StreamTicketResponse.
 type StreamTicketResponse struct {
 	CanControl bool      `json:"canControl"`
@@ -2232,6 +2299,14 @@ type ToolCallMeta struct {
 
 // ToolCallPhase defines model for ToolCallPhase.
 type ToolCallPhase string
+
+// UnresolvedSubscriptionUsage defines model for UnresolvedSubscriptionUsage.
+type UnresolvedSubscriptionUsage struct {
+	BotName   string             `json:"botName"`
+	CreatedAt time.Time          `json:"createdAt"`
+	Model     string             `json:"model"`
+	RequestId openapi_types.UUID `json:"requestId"`
+}
 
 // UpdateBotMCPServerPolicyRequest defines model for UpdateBotMCPServerPolicyRequest.
 type UpdateBotMCPServerPolicyRequest struct {
@@ -2587,6 +2662,9 @@ type CreateBotJSONRequestBody = CreateBotRequest
 // UpdateBotJSONRequestBody defines body for UpdateBot for application/json ContentType.
 type UpdateBotJSONRequestBody = UpdateBotRequest
 
+// StartCodexPlanPairingJSONRequestBody defines body for StartCodexPlanPairing for application/json ContentType.
+type StartCodexPlanPairingJSONRequestBody = StartCodexPlanRequest
+
 // ReleaseBotControlJSONRequestBody defines body for ReleaseBotControl for application/json ContentType.
 type ReleaseBotControlJSONRequestBody = ReleaseControlRequest
 
@@ -2685,3 +2763,6 @@ type UpdateWorkspaceSecretJSONRequestBody = UpdateSecretRequest
 
 // SetSubscriptionBudgetPolicyJSONRequestBody defines body for SetSubscriptionBudgetPolicy for application/json ContentType.
 type SetSubscriptionBudgetPolicyJSONRequestBody = SubscriptionBudgetPolicy
+
+// ReconcileSubscriptionUsageJSONRequestBody defines body for ReconcileSubscriptionUsage for application/json ContentType.
+type ReconcileSubscriptionUsageJSONRequestBody = ReconcileSubscriptionUsageRequest

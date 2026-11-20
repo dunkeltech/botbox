@@ -745,6 +745,8 @@ export function BotSecretsView({
                   workspaceId={workspace.id}
                   botId={bot.id}
                   embedded
+                  canManageWorkspaceSecrets={canEditWorkspaceSecrets}
+                  onSecretsChanged={() => void refreshSecretsAndPolicy()}
                 />
               ) : (
                 <Alert tone="info">{t('cliToolsReadOnly')}</Alert>

@@ -19,20 +19,37 @@ const maxModelBodyBytes = 8 << 20
 func (h *proxyHandler) resolveUpstream(w http.ResponseWriter, r *http.Request, route proxyRoute) (*SecretConfig, *url.URL) {
 	botID, provider, upstreamPath := route.botID, route.provider, route.path
 	logger := h.options.Logger
-	plan := provider == ProviderOpenAIPlan
+	planRoute := provider == ProviderOpenAIPlan
 	cfg, err := h.resolve(r.Context(), botID, provider)
-	if plan && err != nil && !errors.Is(err, ErrSecretNotFound) {
-		status, code, message := http.StatusServiceUnavailable, "plan_unavailable", "ChatGPT plan is temporarily unavailable"
-		if errors.Is(err, ErrPlanReconnect) {
-			status, code, message = http.StatusUnauthorized, "plan_reconnect", "reconnect the ChatGPT plan in bot.Box"
-		}
-		writeError(w, logger, status, code, message)
+	if errors.Is(err, ErrPlanReconnect) && (planRoute || provider == ProviderOpenAI) {
+		writeError(w, logger, http.StatusUnauthorized, "plan_reconnect", "reconnect the ChatGPT plan in bot.Box")
 		return nil, nil
 	}
-	if err != nil || cfg == nil || cfg.SecretValue == "" || plan != (cfg.AuthKind == AuthKindOpenAIPlan) {
+	if planRoute && err != nil && !errors.Is(err, ErrSecretNotFound) {
+		writeError(w, logger, http.StatusServiceUnavailable, "plan_unavailable", "ChatGPT plan is temporarily unavailable")
+		return nil, nil
+	}
+	if err != nil || cfg == nil || cfg.SecretValue == "" {
 		h.audit(route, "blocked")
 		writeError(w, logger, http.StatusForbidden, "forbidden", "provider credential not configured")
 		return nil, nil
+	}
+	if planRoute && cfg.AuthKind != AuthKindOpenAIPlan {
+		h.audit(route, "blocked")
+		writeError(w, logger, http.StatusForbidden, "forbidden", "provider credential not configured")
+		return nil, nil
+	}
+	if !planRoute && cfg.AuthKind == AuthKindOpenAIPlan {
+		if provider != ProviderOpenAI {
+			h.audit(route, "blocked")
+			writeError(w, logger, http.StatusForbidden, "forbidden", "provider credential not configured")
+			return nil, nil
+		}
+		if h.options.Admit != nil && (r.Method != http.MethodPost || upstreamPath != "/v1/responses" ||
+			r.URL.RawQuery != "" || r.Header.Get("Upgrade") != "" || r.Header.Get("Authorization") != "Bearer botbox-placeholder") {
+			writeError(w, logger, http.StatusForbidden, "forbidden", "unsupported ChatGPT plan request")
+			return nil, nil
+		}
 	}
 
 	targetBase, err := url.Parse(cfg.UpstreamURL)
@@ -70,7 +87,7 @@ func (h *proxyHandler) buildUpstreamRequest(ctx context.Context, w http.Response
 		writeError(w, logger, http.StatusBadGateway, "upstream_error", "failed to build upstream request")
 		return nil
 	}
-	if route.provider == ProviderOpenAIPlan {
+	if route.provider == ProviderOpenAIPlan || cfg.AuthKind == AuthKindOpenAIPlan {
 		outReq.Header.Set("Content-Type", "application/json")
 		outReq.Header.Set("Accept", "text/event-stream")
 		outReq.Header.Set("User-Agent", "bot.Box")
@@ -99,7 +116,7 @@ func (h *proxyHandler) buildUpstreamRequest(ctx context.Context, w http.Response
 	return outReq
 }
 
-func (h *proxyHandler) prepareModelBody(ctx context.Context, w http.ResponseWriter, outReq *http.Request, route proxyRoute) (string, []byte, bool) {
+func (h *proxyHandler) prepareModelBody(ctx context.Context, w http.ResponseWriter, outReq *http.Request, route proxyRoute, planProtocol bool) (string, []byte, bool) {
 	metered := h.options.Admit != nil
 	guardrails := h.options.Guardrails
 	if metered && (route.method != http.MethodPost || !meteredPath(route.provider, route.path)) {
@@ -126,7 +143,7 @@ func (h *proxyHandler) prepareModelBody(ctx context.Context, w http.ResponseWrit
 		writeError(w, h.options.Logger, http.StatusBadRequest, "validation_error", "model is required")
 		return "", nil, false
 	}
-	if route.provider == ProviderOpenAIPlan {
+	if planProtocol {
 		body, err = planRequest(body, model.Model)
 		if err != nil {
 			writeError(w, h.options.Logger, http.StatusBadRequest, "plan_request_unsupported", "Codex sent an unsupported ChatGPT plan request")

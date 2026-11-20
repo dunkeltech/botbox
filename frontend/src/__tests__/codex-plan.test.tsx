@@ -14,6 +14,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 
 import { CodexPlanPanel } from '@/components/bots/CodexPlanPanel';
 import { BudgetPanel } from '@/components/chat/BudgetPanel';
+import { SubscriptionReconciliationPanel } from '@/components/settings/SubscriptionReconciliationPanel';
 import enMessages from '../../messages/en.json';
 
 function renderPanel(children: ReactNode) {
@@ -36,6 +37,83 @@ function json(body: unknown) {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+});
+
+it('validates cached input and reconciles a request with an explicitly estimated token count', async () => {
+  let settled = false;
+  const fetch = vi.fn((path: string, init?: RequestInit) => {
+    if (path.endsWith('/unresolved')) {
+      return Promise.resolve(
+        json(
+          settled
+            ? []
+            : [
+                {
+                  requestId: 'request-1',
+                  botName: 'Mace Windu',
+                  model: 'gpt-fixture',
+                  createdAt: '2026-11-19T19:46:47Z',
+                },
+              ],
+        ),
+      );
+    }
+    if (path.endsWith('/reconcile') && init?.method === 'POST') {
+      settled = true;
+      return Promise.resolve(new Response(null, { status: 204 }));
+    }
+    return Promise.resolve(json({}));
+  });
+  vi.stubGlobal('fetch', fetch);
+  renderPanel(<SubscriptionReconciliationPanel workspaceId="ws" />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Reconcile' }));
+  fireEvent.change(screen.getByLabelText('Provider'), {
+    target: { value: 'openai' },
+  });
+  fireEvent.change(screen.getByLabelText('Basis'), {
+    target: { value: 'operator_estimate' },
+  });
+  fireEvent.change(screen.getByLabelText('Input tokens (including cached)'), {
+    target: { value: '1' },
+  });
+  fireEvent.change(screen.getByLabelText('Output tokens'), {
+    target: { value: '0' },
+  });
+  fireEvent.change(screen.getByLabelText('Cached input tokens'), {
+    target: { value: '2' },
+  });
+  const save = screen.getByRole('button', { name: 'Save adjustment' });
+  fireEvent.click(save);
+  expect(
+    await screen.findByText(
+      enMessages.workspaceSettings.subscriptionReconciliation.invalid,
+    ),
+  ).toBeVisible();
+  expect(settled).toBe(false);
+
+  fireEvent.change(screen.getByLabelText('Cached input tokens'), {
+    target: { value: '0' },
+  });
+  fireEvent.click(save);
+  expect(
+    await screen.findByText('Subscription usage reconciled.'),
+  ).toBeVisible();
+  expect(
+    await screen.findByText('No unresolved subscription requests.'),
+  ).toBeVisible();
+  expect(fetch).toHaveBeenCalledWith(
+    '/api/workspaces/ws/subscription-usage/request-1/reconcile',
+    expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({
+        provider: 'openai',
+        basis: 'operator_estimate',
+        inputTokens: 1,
+        outputTokens: 0,
+        cacheTokens: 0,
+      }),
+    }),
+  );
 });
 
 it('reveals only a workstation pairing code and refreshes connection status', async () => {
@@ -66,6 +144,61 @@ it('reveals only a workstation pairing code and refreshes connection status', as
     await screen.findByRole('button', { name: 'Disconnect' }),
   ).toBeVisible();
   expect(screen.queryByDisplayValue('one-use-fixture')).not.toBeInTheDocument();
+});
+
+it('allows workspace admins to choose workspace scope and notifies secret listeners', async () => {
+  let connected = false;
+  const onSecretsChanged = vi.fn();
+  const fetch = vi.fn((path: string, init?: RequestInit) => {
+    if (path.endsWith('/pairing') && init?.method === 'POST') {
+      expect(init.body).toBe(JSON.stringify({ secretScope: 'workspace' }));
+      connected = true;
+      return Promise.resolve(json({ code: 'workspace-pair-code' }));
+    }
+    if (path.endsWith('/codex-plan') && init?.method === 'DELETE') {
+      connected = false;
+      return Promise.resolve(json({ revocationConfirmed: true }));
+    }
+    return Promise.resolve(
+      json({
+        status: connected ? 'connected' : 'disconnected',
+        ownedByYou: connected,
+        secretScope: connected ? 'workspace' : undefined,
+      }),
+    );
+  });
+  vi.stubGlobal('fetch', fetch);
+  renderPanel(
+    <CodexPlanPanel
+      workspaceId="ws"
+      botId="bot"
+      canManageWorkspaceSecrets
+      onSecretsChanged={onSecretsChanged}
+    />,
+  );
+  const scopeSelect = await screen.findByLabelText(
+    enMessages.codexPlan.secretScopeLabel,
+  );
+  fireEvent.change(scopeSelect, { target: { value: 'workspace' } });
+  fireEvent.click(
+    screen.getByRole('button', { name: enMessages.codexPlan.connect }),
+  );
+  expect(await screen.findByDisplayValue('workspace-pair-code')).toBeVisible();
+  fireEvent.click(
+    screen.getByRole('button', { name: enMessages.codexPlan.check }),
+  );
+  expect(
+    await screen.findByText(enMessages.codexPlan.connectedWorkspace),
+  ).toBeVisible();
+  expect(onSecretsChanged).toHaveBeenCalledTimes(1);
+
+  fireEvent.click(
+    screen.getByRole('button', { name: enMessages.codexPlan.disconnect }),
+  );
+  await waitFor(() =>
+    expect(screen.getByText(enMessages.codexPlan.disconnected)).toBeVisible(),
+  );
+  expect(onSecretsChanged).toHaveBeenCalledTimes(2);
 });
 
 it('keeps another user’s connection from being reassigned through the pairing form', async () => {

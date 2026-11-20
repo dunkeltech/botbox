@@ -14,6 +14,7 @@ import select
 import signal
 import struct
 import subprocess
+import sys
 import tempfile
 import termios
 import threading
@@ -25,6 +26,7 @@ REPLY = "DESKTOP_CONTRACT_OK"
 RESUME_REPLY = "RESUME_CONTRACT_OK"
 requests = queue.Queue()
 output_token_counts = {"input_tokens": 8, "output_tokens": 3, "total_tokens": 11}
+tool_output_types = {"function_call_output", "custom_tool_call_output"}
 
 
 def event(kind, **fields):
@@ -43,6 +45,31 @@ def reply_events(rid, text):
     ]
 
 
+def fixture_tool_call(body):
+    # Codex can advertise local tools inside an incremental declaration.
+    specs = list(body.get("tools", []))
+    for item in body["input"]:
+        if item.get("type") == "additional_tools":
+            specs.extend(item["tools"])
+
+    for spec in specs:
+        namespace = spec["name"] if spec["type"] == "namespace" else None
+        for tool in spec["tools"] if namespace else [spec]:
+            name = tool.get("name")
+            item = {"id": "fc_fixture", "call_id": "call_fixture", "name": name}
+            if namespace:
+                item["namespace"] = namespace
+            if tool["type"] == "custom" and namespace == "functions" and name == "exec":
+                # Code mode executes the same fixture command through the broker.
+                code = 'text((await tools.exec_command({cmd: "cat fixture.txt"})).output);'
+                return {**item, "type": "custom_tool_call", "input": code}, "input"
+            if tool["type"] == "function" and name in ("shell_command", "exec_command"):
+                key = "command" if name == "shell_command" else "cmd"
+                return {**item, "type": "function_call",
+                        "arguments": json.dumps({key: "cat fixture.txt"})}, "arguments"
+    raise ValueError("no supported fixture shell tool")
+
+
 class Fixture(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -51,35 +78,44 @@ class Fixture(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         requests.put((self.command, self.path, None))
-        self.send_response(204 if self.path == "/llm/openai-plan/ready" else 404)
+        if self.path == "/llm/openai/ready":
+            self.send_response(204)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        if self.path == "/llm/openai/auth-mode":
+            payload = b"oauth\n"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+            return
+        self.send_response(404)
         self.send_header("Content-Length", "0")
         self.end_headers()
 
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         requests.put((self.command, self.path, body))
-        if (self.path not in ("/llm/openai-plan/v1/responses", "/llm/openai/v1/responses")
+        if (self.path != "/llm/openai/v1/responses"
                 or self.headers.get("Authorization") != "Bearer botbox-placeholder"):
             self.send_error(403)
             return
         flattened = json.dumps(body["input"])
         is_resume = "Continue with the resume fixture." in flattened
-        has_output = any(item.get("type") == "function_call_output" for item in body["input"])
+        has_output = any(item.get("type") in tool_output_types for item in body["input"])
         rid = "resp_resume" if is_resume else "resp_reply" if has_output else "resp_tool"
         data = [event("response.created", response={"id": rid, "object": "response", "status": "in_progress"})]
         if is_resume or has_output:
             data.extend(reply_events(rid, RESUME_REPLY if is_resume else REPLY))
         else:
-            tool = next((tool for tool in body.get("tools", []) if tool.get("name") == "shell_command"), None)
-            if tool is None:
-                tool = next((tool for tool in body.get("tools", []) if tool.get("name") == "exec_command"), None)
-            if tool is None:
-                self.send_error(422, "no fixture shell tool")
+            try:
+                command, field = fixture_tool_call(body)
+            except ValueError as error:
+                self.send_error(422, str(error))
                 return
-            command = {"type": "function_call", "id": "fc_fixture", "call_id": "call_fixture",
-                       "name": tool["name"], "arguments": json.dumps({"command" if tool["name"] == "shell_command"
-                                                                    else "cmd": "cat fixture.txt"})}
-            data.extend([event("response.output_item.added", output_index=0, item={**command, "arguments": ""}),
+            data.extend([event("response.output_item.added", output_index=0, item={**command, field: ""}),
                          event("response.output_item.done", output_index=0, item=command)])
         data.append(event("response.completed", response={"id": rid, "status": "completed", "usage": output_token_counts}))
         payload = "".join(data).encode()
@@ -126,6 +162,8 @@ def run_terminal(args, expected, env, directory):
 
 
 def main():
+    actual_version = subprocess.check_output(["/usr/local/bin/codex", "--version"], text=True).strip()
+    assert actual_version == f"codex-cli {sys.argv[1]}", actual_version
     with tempfile.TemporaryDirectory() as home, http.server.ThreadingHTTPServer(("127.0.0.1", 0), Fixture) as server:
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
@@ -147,11 +185,11 @@ def main():
             calls = []
             while not requests.empty():
                 calls.append(requests.get_nowait())
-            inference = [body for method, path, body in calls if method == "POST" and path == "/llm/openai-plan/v1/responses"]
+            inference = [body for method, path, body in calls if method == "POST" and path == "/llm/openai/v1/responses"]
             assert len(inference) >= 3, [(method, path) for method, path, _ in calls]
             assert all(body.get("store") is False and body.get("stream") is True for body in inference)
             outputs = [item.get("output", "") for body in inference for item in body["input"]
-                       if item.get("type") == "function_call_output"]
+                       if item.get("type") in tool_output_types]
             assert any("LOCAL_TOOL_FIXTURE" in str(output) for output in outputs), outputs
             forbidden = {"background", "conversation", "max_output_tokens", "max_tool_calls", "moderation",
                          "multi_agent", "prompt", "previous_response_id", "temperature", "top_logprobs",

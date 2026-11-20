@@ -47,13 +47,14 @@ func ProxyAdmission(pool *pgxpool.Pool, workspaceID, botID uuid.UUID, now func()
 		var turn db.BotTurn
 		var turnID pgtype.UUID
 		priceProvider := provider
+		subscription := llmproxy.SubscriptionRequest(ctx)
 		if provider == llmproxy.ProviderOpenAIPlan {
 			revision := llmproxy.PlanRevision(ctx)
 			if revision == "" {
 				return nil, llmproxy.ErrPlanAccess
 			}
-			if err = codexplan.CheckDesktop(ctx, q, ws, bot, revision); err != nil {
-				if errors.Is(err, codexplan.ErrForbidden) {
+			if err = codexplan.CheckDesktopOpenAI(ctx, q, ws, bot, revision); err != nil {
+				if errors.Is(err, codexplan.ErrForbidden) || errors.Is(err, codexplan.ErrReconnect) {
 					return nil, llmproxy.ErrPlanAccess
 				}
 				return nil, err
@@ -68,14 +69,23 @@ func ProxyAdmission(pool *pgxpool.Pool, workspaceID, botID uuid.UUID, now func()
 			} else if !errors.Is(turnErr, pgx.ErrNoRows) {
 				return nil, turnErr
 			}
-			config, cfgErr := q.GetBotByWorkspaceAndID(ctx, db.GetBotByWorkspaceAndIDParams{WorkspaceID: ws, ID: bot})
-			_, configured := bots.RunnerForProvider(config.LlmProvider)
-			if cfgErr != nil || configured != provider {
-				return nil, errors.New("provider is not configured for bot")
-			}
-			if provider == llmproxy.ProviderOpenRouter && model != config.LlmModel {
-				// Pi can resolve model patterns fuzzily. Meter only the exact saved OpenRouter ID.
-				return nil, errors.New("OpenRouter model is not configured for bot")
+			if provider == llmproxy.ProviderOpenAI && !turnID.Valid && subscription {
+				if err = codexplan.CheckDesktopOpenAI(ctx, q, ws, bot, llmproxy.PlanRevision(ctx)); err != nil {
+					if errors.Is(err, codexplan.ErrForbidden) || errors.Is(err, codexplan.ErrReconnect) {
+						return nil, llmproxy.ErrPlanAccess
+					}
+					return nil, err
+				}
+			} else {
+				config, cfgErr := q.GetBotByWorkspaceAndID(ctx, db.GetBotByWorkspaceAndIDParams{WorkspaceID: ws, ID: bot})
+				_, configured := bots.RunnerForProvider(config.LlmProvider)
+				if cfgErr != nil || configured != provider {
+					return nil, errors.New("provider is not configured for bot")
+				}
+				if provider == llmproxy.ProviderOpenRouter && model != config.LlmModel {
+					// Pi can resolve model patterns fuzzily. Meter only the exact saved OpenRouter ID.
+					return nil, errors.New("OpenRouter model is not configured for bot")
+				}
 			}
 		}
 
@@ -109,7 +119,6 @@ func ProxyAdmission(pool *pgxpool.Pool, workspaceID, botID uuid.UUID, now func()
 			}
 		}
 		limited := len(limits) > 0 || groupLimit != nil
-		subscription := llmproxy.SubscriptionRequest(ctx)
 		var subscriptionBudgeted bool
 		if subscription {
 			subscriptionBudgeted, err = q.GetSubscriptionBudgetPolicy(ctx, ws)

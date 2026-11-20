@@ -30,6 +30,10 @@ botbox_codex() {
     -c 'features.remote_models=false' "$@"
 }
 
+botbox_openai_auth_mode() {
+  curl --noproxy '*' --silent --fail --max-time 5 "$proxy/llm/openai/auth-mode" 2>/dev/null | tr -d '[:space:]' || true
+}
+
 if [[ -z "$proxy" ]]; then
   exec "$codex_real" "$@"
 fi
@@ -37,6 +41,11 @@ case "${1:-}" in
   exec|e)
     if [[ "${OPENAI_API_KEY:-}" == botbox-placeholder &&
           "${OPENAI_BASE_URL:-}" == "$proxy/llm/openai/v1" ]]; then
+      if [[ "$(botbox_openai_auth_mode)" == "oauth" ]]; then
+        botbox_codex botbox_api OPENAI_API_KEY "$OPENAI_BASE_URL" \
+          -c 'features.tool_search=false' \
+          -c 'web_search="disabled"' "$@"
+      fi
       botbox_codex botbox_api OPENAI_API_KEY "$OPENAI_BASE_URL" "$@"
     fi
     exec "$codex_real" "$@"
@@ -49,16 +58,21 @@ case "${1:-}" in
     exit 1
     ;;
 esac
-if ! curl --noproxy '*' --silent --fail --max-time 5 "$proxy/llm/openai-plan/ready" >/dev/null; then
-  echo "Connect a ChatGPT plan in bot.Box and take control of this bot computer." >&2
+if ! curl --noproxy '*' --silent --fail --max-time 5 "$proxy/llm/openai/ready" >/dev/null; then
+  echo "Connect a ChatGPT plan or OpenAI key in bot.Box and take control of this bot computer." >&2
   exit 1
 fi
 
-# The proxy checks desktop ownership. This placeholder carries no credentials.
-export BOTBOX_CODEX_PLAN_PLACEHOLDER=botbox-placeholder
+# Both interactive desktop and chat turns share the unified /llm/openai/v1 route.
+export BOTBOX_CODEX_PLACEHOLDER=botbox-placeholder
 # Docker provides the filesystem and network boundary. The nested bubblewrap
 # sandbox needs user namespaces that the bot container does not allow.
-botbox_codex botbox_plan BOTBOX_CODEX_PLAN_PLACEHOLDER "$proxy/llm/openai-plan/v1" \
+if [[ "$(botbox_openai_auth_mode)" == "api_key" ]]; then
+  botbox_codex botbox_openai BOTBOX_CODEX_PLACEHOLDER "$proxy/llm/openai/v1" \
+    --sandbox danger-full-access \
+    --ask-for-approval on-request "$@"
+fi
+botbox_codex botbox_openai BOTBOX_CODEX_PLACEHOLDER "$proxy/llm/openai/v1" \
   --sandbox danger-full-access \
   --ask-for-approval on-request \
   -c 'model="gpt-6.1-sol"' \

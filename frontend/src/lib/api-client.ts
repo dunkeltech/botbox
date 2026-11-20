@@ -389,6 +389,25 @@ export function setModelPrice(
   );
 }
 
+/** Lists unresolved subscription requests that a workspace administrator can reconcile. */
+export function listUnresolvedSubscriptionUsage(workspaceId: string) {
+  return requestJson<components['schemas']['UnresolvedSubscriptionUsage'][]>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/subscription-usage/unresolved`,
+  );
+}
+
+/** Records a manual, audited token adjustment for an unresolved request. */
+export function reconcileSubscriptionUsage(
+  workspaceId: string,
+  requestId: string,
+  body: components['schemas']['ReconcileSubscriptionUsageRequest'],
+) {
+  return requestJson<void>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/subscription-usage/${encodeURIComponent(requestId)}/reconcile`,
+    { method: 'POST', body },
+  );
+}
+
 /** Lists all members of a workspace. */
 export function listMembers(
   workspaceId: string,

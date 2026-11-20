@@ -173,8 +173,8 @@ func (h *proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	plan := provider == ProviderOpenAIPlan
-	if plan && (opts.workspaceID == "" || opts.Admit == nil ||
+	planRoute := provider == ProviderOpenAIPlan
+	if planRoute && (opts.workspaceID == "" || opts.Admit == nil ||
 		r.Method != http.MethodPost || !meteredPath(provider, upstreamPath) ||
 		r.URL.RawQuery != "" || r.Header.Get("Upgrade") != "" || r.Header.Get("Authorization") != "Bearer botbox-placeholder") {
 		writeError(w, logger, http.StatusForbidden, "forbidden", "unsupported ChatGPT plan request")
@@ -210,15 +210,16 @@ func (h *proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if cfg == nil {
 		return
 	}
-	requestCtx := context.WithValue(r.Context(), subscriptionContextKey{}, cfg.AuthKind == AuthKindClaudeOAuth || plan)
-	if plan {
+	planProtocol := provider == ProviderOpenAIPlan || cfg.AuthKind == AuthKindOpenAIPlan
+	requestCtx := context.WithValue(r.Context(), subscriptionContextKey{}, cfg.AuthKind == AuthKindClaudeOAuth || planProtocol)
+	if cfg.PlanRevision != "" {
 		requestCtx = context.WithValue(requestCtx, planRevisionContextKey{}, cfg.PlanRevision)
 	}
 	outReq := h.buildUpstreamRequest(requestCtx, w, r, route, cfg, targetURL)
 	if outReq == nil {
 		return
 	}
-	model, body, ok := h.prepareModelBody(requestCtx, w, outReq, route)
+	model, body, ok := h.prepareModelBody(requestCtx, w, outReq, route, planProtocol)
 	if !ok {
 		return
 	}
@@ -245,7 +246,7 @@ func (h *proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		outReq.Header.Set("anthropic-beta", beta+"oauth-2025-04-20")
 	}
 	upstreamClient := opts.Client
-	if plan {
+	if planProtocol {
 		withoutRedirects := *opts.Client
 		withoutRedirects.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 		upstreamClient = &withoutRedirects

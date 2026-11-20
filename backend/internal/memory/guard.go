@@ -84,7 +84,7 @@ func collectStoredSecrets(ctx context.Context, q *db.Queries, ring *secrets.KeyR
 				Ciphertext: s.EncryptedValue,
 			}, secrets.SecretAAD(workspaceID, "bot", uuid.UUID(s.ID.Bytes)))
 			if decErr == nil && len(plain) > 0 {
-				values = append(values, string(plain))
+				values = append(values, secrets.ExtractSecretMatchValues(s.AuthKind, plain)...)
 			}
 		}
 	}
@@ -100,7 +100,7 @@ func collectStoredSecrets(ctx context.Context, q *db.Queries, ring *secrets.KeyR
 			Ciphertext: s.EncryptedValue,
 		}, secrets.SecretAAD(workspaceID, "workspace", uuid.UUID(s.ID.Bytes)))
 		if decErr == nil && len(plain) > 0 {
-			values = append(values, string(plain))
+			values = append(values, secrets.ExtractSecretMatchValues(s.AuthKind, plain)...)
 		}
 	}
 

@@ -193,6 +193,7 @@ func TestBrowserBrokerEndToEndTakeoverRBACAndIsolation(t *testing.T) {
 	}
 
 	// Cross-domain sandbox VNC ticket (and missing ticket) cannot authorize broker takeover frame.
+	setEnvironmentModelPrice(t, h, base, owner.AccessToken, atlas.LlmProvider, atlas.LlmModel)
 	if r := h.request(http.MethodPost, base+"/bots/"+atlas.Id.String()+"/environment/start", nil, owner.AccessToken, nil, true); r.status != http.StatusOK {
 		t.Fatalf("expected 200 starting sandbox environment, got %d (%s)", r.status, r.body)
 	}

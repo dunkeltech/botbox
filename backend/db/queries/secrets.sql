@@ -30,6 +30,11 @@ SELECT *
 FROM bot_secrets
 WHERE workspace_id = $1 AND bot_id = $2 AND id = $3;
 
+-- name: GetBotSecretByWorkspaceBotAndName :one
+SELECT *
+FROM bot_secrets
+WHERE workspace_id = $1 AND bot_id = $2 AND name = $3;
+
 -- name: UpdateBotSecretByWorkspaceBotAndID :one
 UPDATE bot_secrets
 SET name = $4,
@@ -50,6 +55,67 @@ RETURNING *;
 -- name: DeleteBotSecretByWorkspaceBotAndID :execrows
 DELETE FROM bot_secrets
 WHERE workspace_id = $1 AND bot_id = $2 AND id = $3;
+
+-- name: LockBotSecretByWorkspaceBotAndID :one
+SELECT *
+FROM bot_secrets
+WHERE workspace_id = $1 AND bot_id = $2 AND id = $3
+FOR UPDATE;
+
+-- name: UpsertCodexPlanBotSecret :one
+INSERT INTO bot_secrets (
+    id,
+    workspace_id,
+    bot_id,
+    name,
+    domain_match,
+    match_subdomains,
+    path_prefix,
+    auth_scheme,
+    header_name,
+    username,
+    auth_kind,
+    kek_id,
+    wrapped_dek,
+    encrypted_value,
+    masked_preview,
+    created_by
+)
+VALUES ($1, $2, $3, 'llm-openai', 'api.openai.com', false, '/v1/responses', 'bearer', 'Authorization', '', 'openai_plan', $4, $5, $6, $7, $8)
+ON CONFLICT (bot_id, name) DO UPDATE SET
+    domain_match = EXCLUDED.domain_match,
+    match_subdomains = EXCLUDED.match_subdomains,
+    path_prefix = EXCLUDED.path_prefix,
+    auth_scheme = EXCLUDED.auth_scheme,
+    header_name = EXCLUDED.header_name,
+    username = EXCLUDED.username,
+    auth_kind = 'openai_plan',
+    kek_id = EXCLUDED.kek_id,
+    wrapped_dek = EXCLUDED.wrapped_dek,
+    encrypted_value = EXCLUDED.encrypted_value,
+    masked_preview = EXCLUDED.masked_preview,
+    updated_at = now()
+RETURNING *;
+
+-- name: UpdateBotSecretOpenAIPlanTokens :execrows
+UPDATE bot_secrets
+SET auth_kind = $4,
+    kek_id = $5,
+    wrapped_dek = $6,
+    encrypted_value = $7,
+    masked_preview = $8,
+    updated_at = now()
+WHERE workspace_id = $1 AND bot_id = $2 AND id = $3 AND auth_kind IN ('openai_plan', 'openai_plan_reconnect');
+
+-- name: ResetBotSecretAuthKind :exec
+UPDATE bot_secrets
+SET auth_kind = '',
+    updated_at = now()
+WHERE workspace_id = $1 AND bot_id = $2 AND id = $3;
+
+-- name: DeleteOpenAIPlanBotSecret :execrows
+DELETE FROM bot_secrets
+WHERE workspace_id = $1 AND bot_id = $2 AND id = $3 AND auth_kind IN ('openai_plan', 'openai_plan_reconnect');
 
 -- name: RecordBotSecretUsage :exec
 UPDATE bot_secrets
@@ -88,6 +154,11 @@ SELECT *
 FROM workspace_secrets
 WHERE workspace_id = $1 AND id = $2;
 
+-- name: GetWorkspaceSecretByWorkspaceAndName :one
+SELECT *
+FROM workspace_secrets
+WHERE workspace_id = $1 AND name = $2;
+
 -- name: UpdateWorkspaceSecretByWorkspaceAndID :one
 UPDATE workspace_secrets
 SET name = $3,
@@ -108,6 +179,71 @@ RETURNING *;
 -- name: DeleteWorkspaceSecretByWorkspaceAndID :execrows
 DELETE FROM workspace_secrets
 WHERE workspace_id = $1 AND id = $2;
+
+-- name: LockWorkspaceSecretByWorkspaceAndID :one
+SELECT *
+FROM workspace_secrets
+WHERE workspace_id = $1 AND id = $2
+FOR UPDATE;
+
+-- name: GetWorkspaceOpenAIPlanSecret :one
+SELECT *
+FROM workspace_secrets
+WHERE workspace_id = $1 AND name = 'llm-openai' AND auth_kind IN ('openai_plan', 'openai_plan_reconnect');
+
+-- name: UpsertCodexPlanWorkspaceSecret :one
+INSERT INTO workspace_secrets (
+    id,
+    workspace_id,
+    name,
+    domain_match,
+    match_subdomains,
+    path_prefix,
+    auth_scheme,
+    header_name,
+    username,
+    auth_kind,
+    kek_id,
+    wrapped_dek,
+    encrypted_value,
+    masked_preview,
+    created_by
+)
+VALUES ($1, $2, 'llm-openai', 'api.openai.com', false, '/v1/responses', 'bearer', 'Authorization', '', 'openai_plan', $3, $4, $5, $6, $7)
+ON CONFLICT (workspace_id, name) DO UPDATE SET
+    domain_match = EXCLUDED.domain_match,
+    match_subdomains = EXCLUDED.match_subdomains,
+    path_prefix = EXCLUDED.path_prefix,
+    auth_scheme = EXCLUDED.auth_scheme,
+    header_name = EXCLUDED.header_name,
+    username = EXCLUDED.username,
+    auth_kind = 'openai_plan',
+    kek_id = EXCLUDED.kek_id,
+    wrapped_dek = EXCLUDED.wrapped_dek,
+    encrypted_value = EXCLUDED.encrypted_value,
+    masked_preview = EXCLUDED.masked_preview,
+    updated_at = now()
+RETURNING *;
+
+-- name: UpdateWorkspaceSecretOpenAIPlanTokens :execrows
+UPDATE workspace_secrets
+SET auth_kind = $3,
+    kek_id = $4,
+    wrapped_dek = $5,
+    encrypted_value = $6,
+    masked_preview = $7,
+    updated_at = now()
+WHERE workspace_id = $1 AND id = $2 AND auth_kind IN ('openai_plan', 'openai_plan_reconnect');
+
+-- name: ResetWorkspaceSecretAuthKind :exec
+UPDATE workspace_secrets
+SET auth_kind = '',
+    updated_at = now()
+WHERE workspace_id = $1 AND id = $2;
+
+-- name: DeleteOpenAIPlanWorkspaceSecret :execrows
+DELETE FROM workspace_secrets
+WHERE workspace_id = $1 AND id = $2 AND auth_kind IN ('openai_plan', 'openai_plan_reconnect');
 
 -- name: RecordWorkspaceSecretUsage :exec
 UPDATE workspace_secrets

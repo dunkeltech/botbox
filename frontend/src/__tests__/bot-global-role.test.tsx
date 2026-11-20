@@ -8,9 +8,11 @@ import {
   waitFor,
 } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BotBuilderForm } from '@/components/bots/BotBuilderForm';
-import { createBot, updateBot } from '@/lib/api-client';
+import { createBot, listModelPrices, updateBot } from '@/lib/api-client';
 import type { Bot, WorkspaceSummary } from '@/types/api';
 import messages from '../../messages/en.json';
 
@@ -20,6 +22,7 @@ vi.mock('@/context/AuthContext', () => ({
 }));
 vi.mock('@/lib/api-client', () => ({
   createBot: vi.fn(),
+  listModelPrices: vi.fn(),
   updateBot: vi.fn(),
   deleteBot: vi.fn(),
 }));
@@ -52,6 +55,30 @@ const bot: Bot = {
   updatedAt: '',
 };
 
+function renderBuilder(children: ReactNode) {
+  return render(
+    <NextIntlClientProvider locale="en" messages={messages}>
+      <QueryClientProvider client={new QueryClient()}>
+        {children}
+      </QueryClientProvider>
+    </NextIntlClientProvider>,
+  );
+}
+
+beforeEach(() => {
+  vi.mocked(listModelPrices).mockResolvedValue({
+    prices: [
+      {
+        provider: 'openai',
+        model: 'fixture',
+        inputMicrosPerMillion: 0,
+        outputMicrosPerMillion: 0,
+        cacheMicrosPerMillion: 0,
+      },
+    ],
+  });
+});
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -63,10 +90,8 @@ describe('global bot role', () => {
     async (mode) => {
       vi.mocked(createBot).mockResolvedValue(bot);
       vi.mocked(updateBot).mockResolvedValue(bot);
-      render(
-        <NextIntlClientProvider locale="en" messages={messages}>
-          <BotBuilderForm mode={mode} workspace={workspace} bot={bot} />
-        </NextIntlClientProvider>,
+      renderBuilder(
+        <BotBuilderForm mode={mode} workspace={workspace} bot={bot} />,
       );
       const role = screen.getByLabelText(messages.builder.descriptionLabel);
       expect(role).toHaveValue(bot.description);
@@ -80,6 +105,11 @@ describe('global bot role', () => {
             'Check GDPR compliance.\nSuggest privacy-preserving alternatives.',
         },
       });
+      if (mode === 'create') {
+        await waitFor(() =>
+          expect(screen.getByRole('option', { name: 'fixture' })).toBeEnabled(),
+        );
+      }
       fireEvent.submit(role.closest('form') as HTMLFormElement);
       await waitFor(() => {
         const save = mode === 'create' ? createBot : updateBot;
@@ -102,19 +132,67 @@ describe('global bot role', () => {
   );
 
   it('keeps the global role read-only for viewers', () => {
-    render(
-      <NextIntlClientProvider locale="en" messages={messages}>
-        <BotBuilderForm
-          mode="edit"
-          workspace={{ ...workspace, role: 'viewer' }}
-          bot={bot}
-        />
-      </NextIntlClientProvider>,
+    renderBuilder(
+      <BotBuilderForm
+        mode="edit"
+        workspace={{ ...workspace, role: 'viewer' }}
+        bot={bot}
+      />,
     );
     expect(
       screen.getByLabelText(messages.builder.descriptionLabel),
     ).toBeDisabled();
     expect(updateBot).not.toHaveBeenCalled();
+  });
+
+  it('shows a saved unpriced model as unavailable and only lets an owner select a priced replacement', async () => {
+    vi.mocked(listModelPrices).mockResolvedValue({
+      prices: [
+        {
+          provider: 'openai',
+          model: 'replacement',
+          inputMicrosPerMillion: 0,
+          outputMicrosPerMillion: 0,
+          cacheMicrosPerMillion: 0,
+        },
+      ],
+    });
+    vi.mocked(updateBot).mockResolvedValue({ ...bot, llmModel: 'replacement' });
+    renderBuilder(
+      <BotBuilderForm
+        mode="edit"
+        workspace={workspace}
+        bot={{
+          ...bot,
+          missingModelPrice: { provider: 'openai', model: 'fixture' },
+        }}
+      />,
+    );
+    const model = screen.getByRole('combobox', {
+      name: messages.builder.modelLabel,
+    });
+    expect(
+      await screen.findByRole('option', { name: 'replacement' }),
+    ).toBeEnabled();
+    expect(screen.getByRole('option', { name: 'fixture' })).toBeDisabled();
+    expect(model).toHaveValue('fixture');
+    expect(
+      screen.getByText(/requires a model price for openai \/ fixture/),
+    ).toBeVisible();
+    fireEvent.change(model, { target: { value: 'replacement' } });
+    fireEvent.click(
+      screen.getByRole('button', { name: messages.builder.saveSubmit }),
+    );
+    await waitFor(() =>
+      expect(updateBot).toHaveBeenCalledWith(
+        workspace.id,
+        bot.id,
+        expect.objectContaining({
+          llmProvider: 'openai',
+          llmModel: 'replacement',
+        }),
+      ),
+    );
   });
 });
 
@@ -125,10 +203,8 @@ describe('maximum bot turn duration', () => {
       ...configuredBot,
       turnTimeoutMinutes: 45,
     });
-    render(
-      <NextIntlClientProvider locale="en" messages={messages}>
-        <BotBuilderForm mode="edit" workspace={workspace} bot={configuredBot} />
-      </NextIntlClientProvider>,
+    renderBuilder(
+      <BotBuilderForm mode="edit" workspace={workspace} bot={configuredBot} />,
     );
     const duration = screen.getByRole('spinbutton', {
       name: messages.builder.turnTimeoutLabel,
@@ -152,11 +228,7 @@ describe('maximum bot turn duration', () => {
   });
 
   it('defaults new bots to ten minutes and prevents invalid submissions', () => {
-    render(
-      <NextIntlClientProvider locale="en" messages={messages}>
-        <BotBuilderForm mode="create" workspace={workspace} />
-      </NextIntlClientProvider>,
-    );
+    renderBuilder(<BotBuilderForm mode="create" workspace={workspace} />);
     fireEvent.change(screen.getByLabelText(messages.builder.nameLabel), {
       target: { value: 'New bot' },
     });
@@ -176,14 +248,12 @@ describe('maximum bot turn duration', () => {
   });
 
   it('disables the duration for viewers', () => {
-    render(
-      <NextIntlClientProvider locale="en" messages={messages}>
-        <BotBuilderForm
-          mode="edit"
-          workspace={{ ...workspace, role: 'viewer' }}
-          bot={bot}
-        />
-      </NextIntlClientProvider>,
+    renderBuilder(
+      <BotBuilderForm
+        mode="edit"
+        workspace={{ ...workspace, role: 'viewer' }}
+        bot={bot}
+      />,
     );
     expect(
       screen.getByRole('spinbutton', {

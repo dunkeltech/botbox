@@ -16,14 +16,14 @@ make sandbox-image proxy-image
 
 ## Connect your ChatGPT account
 
-1. Open the target bot and select **Secrets & network → ChatGPT plan for Codex → Continue with ChatGPT**. Keep the page open and copy the one-time pairing code.
+1. Open the target bot and select **Secrets & network → ChatGPT plan for Codex → Continue with ChatGPT** (owners and admins can optionally save the resulting `llm-openai` secret at workspace scope instead of bot scope). Keep the page open and copy the one-time pairing code.
 2. On your **workstation**, open the updated bot.Box checkout in a `devenv` shell and run the following command. Select the bot.Box URL shown on the connection page and enter the pairing code when prompted.
 
    ```sh
    make codex-login
    ```
 
-3. In the browser opened by the helper, select your ChatGPT account, choose the workspace if prompted, and approve use of your plan. If the helper prints a sign-in link, open it in the browser on the same workstation. Return to the bot page and confirm that the card shows **Connected**. bot.Box stores the authorization outside the bot computer.
+3. The helper prints a one-time sign-in link and tries to open the default browser. To use a different browser, copy the link into it on the same workstation and keep the command running. Select your ChatGPT account, choose the workspace if prompted, and approve use of your plan. Return to the bot page and confirm that the card shows **Connected**. bot.Box stores the encrypted OAuth credentials outside the bot computer and synchronizes the `llm-openai` secret in the chosen bot or workspace scope so both Codex chat turns and interactive desktop sessions use the subscription.
 
 ## Start Codex
 

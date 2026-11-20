@@ -210,23 +210,8 @@ export interface WatcherUser {
   displayName: string;
 }
 
-export interface EnvironmentStateResponse {
-  botId: string;
-  workspaceId: string;
-  driver: string;
-  envId: string;
-  status: EnvironmentStatus;
-  image: string;
-  cpuMillis: number;
-  memoryMiB: number;
-  volumeRef: string;
-  controlHolder: ControlHolder | null;
-  controlNote: string;
-  stats: EnvironmentStats;
-  watchers: WatcherUser[];
-  startedAt: string | null;
-  updatedAt: string;
-}
+export type EnvironmentStateResponse =
+  components['schemas']['EnvironmentStateResponse'];
 
 export interface ReleaseControlRequest {
   note?: string;

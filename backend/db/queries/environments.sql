@@ -35,6 +35,22 @@ FROM environments e
 JOIN bots b ON b.id = e.bot_id
 WHERE b.workspace_id = $1;
 
+-- name: InitializeEnvironment :one
+INSERT INTO environments (bot_id, driver, env_id, status, image, cpu_millis, memory_mib, volume_ref)
+SELECT b.id, sqlc.arg(driver), '', 'stopped', sqlc.arg(image),
+       sqlc.arg(cpu_millis), sqlc.arg(memory_mib), sqlc.arg(volume_ref)
+FROM bots b
+WHERE b.workspace_id = sqlc.arg(workspace_id) AND b.id = sqlc.arg(bot_id)
+ON CONFLICT (bot_id) DO UPDATE SET bot_id = EXCLUDED.bot_id
+RETURNING *;
+
+-- name: MarkEnvironmentStopped :one
+UPDATE environments e
+SET status = 'stopped', started_at = NULL, control_holder_user_id = NULL, updated_at = now()
+FROM bots b
+WHERE e.bot_id = b.id AND b.workspace_id = sqlc.arg(workspace_id) AND b.id = sqlc.arg(bot_id)
+RETURNING e.*;
+
 -- name: UpsertEnvironment :one
 INSERT INTO environments (
     bot_id,

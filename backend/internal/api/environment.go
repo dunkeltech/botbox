@@ -79,21 +79,58 @@ func ReconcileEnvironments(ctx context.Context, pool *pgxpool.Pool, driver compu
 		missingSet[string(id)] = true
 	}
 
+	var reconcileErr error
 	for _, row := range rows {
-		if row.Status == string(compute.StatusRunning) && missingSet[row.EnvID] {
-			if _, updErr := queries.UpdateEnvironmentStatus(ctx, db.UpdateEnvironmentStatusParams{
-				BotID:     row.BotID,
-				Status:    string(compute.StatusStopped),
-				StartedAt: pgtype.Timestamptz{},
-			}); updErr != nil {
-				return fmt.Errorf("update reconciled environment %s: %w", fromPGUUID(row.BotID), updErr)
-			}
-			logger.Info("reconciled missing sandbox container to stopped",
-				slog.String("bot_id", fromPGUUID(row.BotID).String()),
-				slog.String("env_id", row.EnvID),
-			)
+		if row.Status != string(compute.StatusRunning) || row.EnvID == "" {
+			continue
+		}
+		if err := reconcileRunningEnvironment(ctx, pool, driver, logger, row, missingSet[row.EnvID]); err != nil {
+			reconcileErr = errors.Join(reconcileErr, fmt.Errorf("reconcile environment %s: %w", row.EnvID, err))
 		}
 	}
+	return reconcileErr
+}
+
+func reconcileRunningEnvironment(ctx context.Context, pool *pgxpool.Pool, driver compute.Driver, logger *slog.Logger, row db.ListEnvironmentsForReconcileRow, driverMissing bool) error {
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer rollbackTx(ctx, tx)
+	q := db.New(tx)
+	bot, err := q.LockBotByWorkspaceAndID(ctx, db.LockBotByWorkspaceAndIDParams{WorkspaceID: row.WorkspaceID, ID: row.BotID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	env, err := q.GetEnvironmentByWorkspaceAndBot(ctx, db.GetEnvironmentByWorkspaceAndBotParams{WorkspaceID: bot.WorkspaceID, ID: bot.ID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if env.Status != string(compute.StatusRunning) || env.EnvID != row.EnvID {
+		return nil
+	}
+
+	action := "environment.stopped"
+	if !driverMissing {
+		missingPrice, err := missingEnvironmentModelPrice(ctx, q, bot)
+		if err != nil || missingPrice == nil {
+			return err
+		}
+		action = "environment.stopped_missing_model_price"
+	}
+	if _, err := stopEnvironment(ctx, q, driver, bot, env.EnvID, nil, action); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	logger.Info("reconciled sandbox environment to stopped", "action", action, "bot_id", fromPGUUID(bot.ID), "env_id", env.EnvID)
 	return nil
 }
 
@@ -107,6 +144,11 @@ func (s *server) handleGetBotEnvironment(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	missingPrice, err := missingEnvironmentModelPrice(r.Context(), s.queries, botRow)
+	if err != nil {
+		s.environmentFailure(w, err)
+		return
+	}
 	envRow, holderName, holderEmail, ok := s.loadOrInitEnvironment(w, r, botRow)
 	if !ok {
 		return
@@ -114,130 +156,104 @@ func (s *server) handleGetBotEnvironment(w http.ResponseWriter, r *http.Request)
 
 	s.touchWatcher(fromPGUUID(botRow.ID), claims.Subject, claims.DisplayName)
 	stats := s.fetchEnvStats(r.Context(), envRow)
-	writeJSON(w, s.logger, http.StatusOK, s.toAPIEnvironmentState(wsRow.ID, envRow, holderName, holderEmail, stats))
+	state := s.toAPIEnvironmentState(wsRow.ID, envRow, holderName, holderEmail, stats)
+	state.MissingModelPrice = missingPrice
+	writeJSON(w, s.logger, http.StatusOK, state)
 }
 
 func (s *server) handleStartBotEnvironment(w http.ResponseWriter, r *http.Request) {
-	wsRow, claims, actorRole, ok := s.loadWorkspaceMembership(w, r, "")
-	if !ok {
-		return
-	}
-	botRow, ok := s.loadWorkspaceBot(w, r, wsRow.ID)
-	if !ok {
-		return
-	}
-	if !s.requireManageBot(w, actorRole, claims.Subject, botRow, "start sandbox") {
-		return
-	}
-
-	envRow, _, _, ok := s.loadOrInitEnvironment(w, r, botRow)
-	if !ok {
-		return
-	}
-
-	envID, err := s.ensureCreatedAndStarted(r.Context(), botRow, envRow)
-	if err != nil {
-		s.logger.Error("start sandbox environment", "err", err, "bot_id", fromPGUUID(botRow.ID))
-		s.writeComputeError(w, err, "failed to start sandbox environment")
-		return
-	}
-
-	now := s.now().UTC()
-	updated, err := s.persistStartedEnvironment(r.Context(), botRow, envRow, string(envID), now, claims.Subject, "environment.started")
-	if err != nil {
-		s.logger.Error("persist started environment", "err", err)
-		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to save environment state")
-		return
-	}
-
-	s.touchWatcher(fromPGUUID(botRow.ID), claims.Subject, claims.DisplayName)
-	_, holderName, holderEmail, _ := s.lookupControlHolder(r.Context(), wsRow.ID, botRow.ID)
-	stats := s.fetchEnvStats(r.Context(), updated)
-	writeJSON(w, s.logger, http.StatusOK, s.toAPIEnvironmentState(wsRow.ID, updated, holderName, holderEmail, stats))
+	s.changeBotEnvironment(w, r, "start", "environment.started")
 }
 
 func (s *server) handleStopBotEnvironment(w http.ResponseWriter, r *http.Request) {
-	wsRow, claims, actorRole, ok := s.loadWorkspaceMembership(w, r, "")
-	if !ok {
-		return
-	}
-	botRow, ok := s.loadWorkspaceBot(w, r, wsRow.ID)
-	if !ok {
-		return
-	}
-	if !s.requireManageBot(w, actorRole, claims.Subject, botRow, "stop sandbox") {
-		return
-	}
-
-	envRow, _, _, ok := s.loadOrInitEnvironment(w, r, botRow)
-	if !ok {
-		return
-	}
-
-	if strings.TrimSpace(envRow.EnvID) != "" {
-		if err := s.compute.StopEnvironment(r.Context(), compute.EnvID(envRow.EnvID)); err != nil && !errors.Is(err, compute.ErrEnvironmentNotFound) {
-			s.logger.Error("stop sandbox environment", "err", err, "bot_id", fromPGUUID(botRow.ID))
-			s.writeComputeError(w, err, "failed to stop sandbox environment")
-			return
-		}
-	}
-
-	updated, err := s.persistStoppedEnvironment(r.Context(), botRow, envRow, claims.Subject, "environment.stopped")
-	if err != nil {
-		s.logger.Error("persist stopped environment", "err", err)
-		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to save environment state")
-		return
-	}
-
-	stats := s.fetchEnvStats(r.Context(), updated)
-	writeJSON(w, s.logger, http.StatusOK, s.toAPIEnvironmentState(wsRow.ID, updated, "", "", stats))
+	s.changeBotEnvironment(w, r, "stop", "environment.stopped")
 }
 
 func (s *server) handleRestartBotEnvironment(w http.ResponseWriter, r *http.Request) {
-	wsRow, claims, actorRole, ok := s.loadWorkspaceMembership(w, r, "")
+	s.changeBotEnvironment(w, r, "restart", "environment.restarted")
+}
+
+func (s *server) changeBotEnvironment(w http.ResponseWriter, r *http.Request, operation, auditAction string) {
+	ws, claims, role, ok := s.loadWorkspaceMembership(w, r, "")
 	if !ok {
 		return
 	}
-	botRow, ok := s.loadWorkspaceBot(w, r, wsRow.ID)
-	if !ok {
-		return
-	}
-	if !s.requireManageBot(w, actorRole, claims.Subject, botRow, "restart sandbox") {
+	botID, err := uuid.Parse(chi.URLParam(r, "botID"))
+	if err != nil {
+		writeError(w, s.logger, http.StatusBadRequest, "validation_error", "invalid bot identifier")
 		return
 	}
 
-	envRow, _, _, ok := s.loadOrInitEnvironment(w, r, botRow)
-	if !ok {
+	ctx := r.Context()
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		s.environmentFailure(w, err)
+		return
+	}
+	defer rollbackTx(ctx, tx)
+	q := s.queries.WithTx(tx)
+
+	// Hold the bot row through Docker and persistence so a settings update
+	// cannot commit an unpriced model between the price check and startup.
+	bot, err := q.LockBotByWorkspaceAndID(ctx, db.LockBotByWorkspaceAndIDParams{WorkspaceID: ws.ID, ID: toPGUUID(botID)})
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, s.logger, http.StatusNotFound, "bot.not_found", "bot not found")
+		return
+	}
+	if err != nil {
+		s.environmentFailure(w, err)
+		return
+	}
+	if !s.requireManageBot(w, role, claims.Subject, bot, operation+" sandbox") {
 		return
 	}
 
-	if strings.TrimSpace(envRow.EnvID) != "" {
-		if err := s.compute.StopEnvironment(r.Context(), compute.EnvID(envRow.EnvID)); err != nil && !errors.Is(err, compute.ErrEnvironmentNotFound) {
-			s.logger.Error("stop sandbox before restart", "err", err)
-			s.writeComputeError(w, err, "failed to stop sandbox before restart")
-			return
+	env, holderName, holderEmail, ok := s.loadEnvironment(w, r, q, bot)
+	if !ok {
+		return
+	}
+	missingPrice, err := missingEnvironmentModelPrice(ctx, q, bot)
+	if err != nil {
+		s.environmentFailure(w, err)
+		return
+	}
+
+	if operation == "stop" {
+		env, err = stopEnvironment(ctx, q, s.compute, bot, env.EnvID, &claims.Subject, auditAction)
+	} else if missingPrice != nil {
+		if env.Status == string(compute.StatusRunning) {
+			_, err = stopEnvironment(ctx, q, s.compute, bot, env.EnvID, &claims.Subject, "environment.stopped_missing_model_price")
 		}
+	} else {
+		env, err = s.startEnvironment(ctx, q, bot, env, claims.Subject, operation == "restart", auditAction)
 	}
-
-	envID, err := s.ensureCreatedAndStarted(r.Context(), botRow, envRow)
 	if err != nil {
-		s.logger.Error("restart sandbox environment", "err", err)
-		s.writeComputeError(w, err, "failed to restart sandbox environment")
+		s.logger.Error("change sandbox environment", "operation", operation, "bot_id", botID, "err", err)
+		s.writeComputeError(w, err, "failed to "+operation+" sandbox environment")
+		return
+	}
+	if err := tx.Commit(ctx); err != nil {
+		s.environmentFailure(w, err)
+		return
+	}
+	if missingPrice != nil && operation != "stop" {
+		writeError(w, s.logger, http.StatusConflict, "environment.model_price_required",
+			fmt.Sprintf("add a workspace model price for %s / %s", missingPrice.Provider, missingPrice.Model))
 		return
 	}
 
-	now := s.now().UTC()
-	updated, err := s.persistStartedEnvironment(r.Context(), botRow, envRow, string(envID), now, claims.Subject, "environment.restarted")
-	if err != nil {
-		s.logger.Error("persist restarted environment", "err", err)
-		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to save environment state")
-		return
+	if operation != "stop" {
+		s.touchWatcher(botID, claims.Subject, claims.DisplayName)
 	}
+	stats := s.fetchEnvStats(ctx, env)
+	state := s.toAPIEnvironmentState(ws.ID, env, holderName, holderEmail, stats)
+	state.MissingModelPrice = missingPrice
+	writeJSON(w, s.logger, http.StatusOK, state)
+}
 
-	s.touchWatcher(fromPGUUID(botRow.ID), claims.Subject, claims.DisplayName)
-	_, holderName, holderEmail, _ := s.lookupControlHolder(r.Context(), wsRow.ID, botRow.ID)
-	stats := s.fetchEnvStats(r.Context(), updated)
-	writeJSON(w, s.logger, http.StatusOK, s.toAPIEnvironmentState(wsRow.ID, updated, holderName, holderEmail, stats))
+func (s *server) environmentFailure(w http.ResponseWriter, err error) {
+	s.logger.Error("sandbox environment state unavailable", "err", err)
+	writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to access sandbox environment state")
 }
 
 func (s *server) handleTakeBotControl(w http.ResponseWriter, r *http.Request) {
@@ -703,51 +719,54 @@ func (s *server) requireManageBot(w http.ResponseWriter, actorRole workspaces.Ro
 	return true
 }
 
-func (s *server) loadOrInitEnvironment(w http.ResponseWriter, r *http.Request, botRow db.Bot) (db.Environment, string, string, bool) {
-	row, err := s.queries.GetEnvironmentByWorkspaceAndBot(r.Context(), db.GetEnvironmentByWorkspaceAndBotParams{
-		WorkspaceID: botRow.WorkspaceID,
-		ID:          botRow.ID,
+func (s *server) loadOrInitEnvironment(w http.ResponseWriter, r *http.Request, bot db.Bot) (db.Environment, string, string, bool) {
+	return s.loadEnvironment(w, r, s.queries, bot)
+}
+
+func (s *server) loadEnvironment(w http.ResponseWriter, r *http.Request, q *db.Queries, bot db.Bot) (db.Environment, string, string, bool) {
+	row, err := q.GetEnvironmentByWorkspaceAndBot(r.Context(), db.GetEnvironmentByWorkspaceAndBotParams{
+		WorkspaceID: bot.WorkspaceID,
+		ID:          bot.ID,
 	})
 	if err == nil {
-		return db.Environment{
-			BotID:               row.BotID,
-			Driver:              row.Driver,
-			EnvID:               row.EnvID,
-			Status:              row.Status,
-			Image:               row.Image,
-			CpuMillis:           row.CpuMillis,
-			MemoryMib:           row.MemoryMib,
-			VolumeRef:           row.VolumeRef,
-			ControlHolderUserID: row.ControlHolderUserID,
-			ControlNote:         row.ControlNote,
-			StartedAt:           row.StartedAt,
-			UpdatedAt:           row.UpdatedAt,
-		}, row.ControlHolderDisplayName, row.ControlHolderEmail, true
+		return environmentFromRow(row), row.ControlHolderDisplayName, row.ControlHolderEmail, true
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
-		s.logger.Error("load bot environment", "err", err)
-		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to load sandbox environment")
+		s.environmentFailure(w, err)
 		return db.Environment{}, "", "", false
 	}
 
-	botID := fromPGUUID(botRow.ID)
-	created, upsertErr := s.queries.UpsertEnvironment(r.Context(), db.UpsertEnvironmentParams{
-		BotID:       botRow.ID,
+	created, err := q.InitializeEnvironment(r.Context(), db.InitializeEnvironmentParams{
+		WorkspaceID: bot.WorkspaceID,
+		BotID:       bot.ID,
 		Driver:      s.computeDriverName(),
-		EnvID:       "",
-		Status:      string(compute.StatusStopped),
 		Image:       compute.DefaultSandboxImage,
 		CpuMillis:   compute.DefaultCPUMillis,
 		MemoryMib:   compute.DefaultMemoryMiB,
-		VolumeRef:   "botbox-home-" + botID.String(),
-		ControlNote: "",
+		VolumeRef:   "botbox-home-" + fromPGUUID(bot.ID).String(),
 	})
-	if upsertErr != nil {
-		s.logger.Error("initialize bot environment row", "err", upsertErr)
-		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to initialize sandbox environment")
+	if err != nil {
+		s.environmentFailure(w, err)
 		return db.Environment{}, "", "", false
 	}
 	return created, "", "", true
+}
+
+func environmentFromRow(row db.GetEnvironmentByWorkspaceAndBotRow) db.Environment {
+	return db.Environment{
+		BotID:               row.BotID,
+		Driver:              row.Driver,
+		EnvID:               row.EnvID,
+		Status:              row.Status,
+		Image:               row.Image,
+		CpuMillis:           row.CpuMillis,
+		MemoryMib:           row.MemoryMib,
+		VolumeRef:           row.VolumeRef,
+		ControlHolderUserID: row.ControlHolderUserID,
+		ControlNote:         row.ControlNote,
+		StartedAt:           row.StartedAt,
+		UpdatedAt:           row.UpdatedAt,
+	}
 }
 
 func (s *server) lookupControlHolder(ctx context.Context, wsID, botID pgtype.UUID) (pgtype.UUID, string, string, error) {
@@ -792,96 +811,68 @@ func (s *server) ensureCreatedAndStarted(ctx context.Context, botRow db.Bot, env
 	return createdID, nil
 }
 
-func (s *server) persistStartedEnvironment(
-	ctx context.Context,
-	botRow db.Bot,
-	envRow db.Environment,
-	envID string,
-	startedAt time.Time,
-	actorID uuid.UUID,
-	auditAction string,
-) (db.Environment, error) {
-	tx, err := s.pool.Begin(ctx)
+func (s *server) startEnvironment(ctx context.Context, q *db.Queries, bot db.Bot, env db.Environment, actorID uuid.UUID, restart bool, auditAction string) (db.Environment, error) {
+	if restart {
+		if err := stopComputeEnvironment(ctx, s.compute, env.EnvID); err != nil {
+			return db.Environment{}, err
+		}
+	}
+	id, err := s.ensureCreatedAndStarted(ctx, bot, env)
 	if err != nil {
 		return db.Environment{}, err
 	}
-	defer rollbackTx(ctx, tx)
 
-	txq := s.queries.WithTx(tx)
-	updated, err := txq.UpsertEnvironment(ctx, db.UpsertEnvironmentParams{
-		BotID:               botRow.ID,
+	updated, err := q.UpsertEnvironment(ctx, db.UpsertEnvironmentParams{
+		BotID:               bot.ID,
 		Driver:              s.computeDriverName(),
-		EnvID:               envID,
+		EnvID:               string(id),
 		Status:              string(compute.StatusRunning),
-		Image:               envRow.Image,
-		CpuMillis:           envRow.CpuMillis,
-		MemoryMib:           envRow.MemoryMib,
-		VolumeRef:           envRow.VolumeRef,
-		ControlHolderUserID: envRow.ControlHolderUserID,
-		ControlNote:         envRow.ControlNote,
-		StartedAt:           toPGTimestamptz(startedAt),
+		Image:               env.Image,
+		CpuMillis:           env.CpuMillis,
+		MemoryMib:           env.MemoryMib,
+		VolumeRef:           env.VolumeRef,
+		ControlHolderUserID: env.ControlHolderUserID,
+		ControlNote:         env.ControlNote,
+		StartedAt:           toPGTimestamptz(s.now().UTC()),
 	})
-	if err != nil {
-		return db.Environment{}, err
+	if err == nil {
+		wsID, botID := fromPGUUID(bot.WorkspaceID), fromPGUUID(bot.ID)
+		err = recordAudit(ctx, q, &wsID, &actorID, auditAction, "bot", &botID, map[string]any{
+			"env_id": string(id),
+			"driver": s.computeDriverName(),
+		})
 	}
-
-	wsUUID := fromPGUUID(botRow.WorkspaceID)
-	botUUID := fromPGUUID(botRow.ID)
-	if err := recordAudit(ctx, txq, &wsUUID, &actorID, auditAction, "bot", &botUUID, map[string]any{
-		"env_id": envID,
-		"driver": s.computeDriverName(),
-	}); err != nil {
-		return db.Environment{}, err
+	if err != nil && (restart || env.Status != string(compute.StatusRunning) || string(id) != env.EnvID) {
+		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+		defer cancel()
+		err = errors.Join(err, stopComputeEnvironment(cleanup, s.compute, string(id)))
 	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return db.Environment{}, err
-	}
-	return updated, nil
+	return updated, err
 }
 
-func (s *server) persistStoppedEnvironment(
-	ctx context.Context,
-	botRow db.Bot,
-	envRow db.Environment,
-	actorID uuid.UUID,
-	auditAction string,
-) (db.Environment, error) {
-	tx, err := s.pool.Begin(ctx)
+func stopEnvironment(ctx context.Context, q *db.Queries, driver compute.Driver, bot db.Bot, envID string, actorID *uuid.UUID, auditAction string) (db.Environment, error) {
+	stopped, err := q.MarkEnvironmentStopped(ctx, db.MarkEnvironmentStoppedParams{WorkspaceID: bot.WorkspaceID, BotID: bot.ID})
 	if err != nil {
 		return db.Environment{}, err
 	}
-	defer rollbackTx(ctx, tx)
-
-	txq := s.queries.WithTx(tx)
-	updated, err := txq.UpsertEnvironment(ctx, db.UpsertEnvironmentParams{
-		BotID:       botRow.ID,
-		Driver:      envRow.Driver,
-		EnvID:       envRow.EnvID,
-		Status:      string(compute.StatusStopped),
-		Image:       envRow.Image,
-		CpuMillis:   envRow.CpuMillis,
-		MemoryMib:   envRow.MemoryMib,
-		VolumeRef:   envRow.VolumeRef,
-		ControlNote: envRow.ControlNote,
-		StartedAt:   pgtype.Timestamptz{},
-	})
-	if err != nil {
+	wsID, botID := fromPGUUID(bot.WorkspaceID), fromPGUUID(bot.ID)
+	if err := recordAudit(ctx, q, &wsID, actorID, auditAction, "bot", &botID, map[string]any{"env_id": envID}); err != nil {
 		return db.Environment{}, err
 	}
-
-	wsUUID := fromPGUUID(botRow.WorkspaceID)
-	botUUID := fromPGUUID(botRow.ID)
-	if err := recordAudit(ctx, txq, &wsUUID, &actorID, auditAction, "bot", &botUUID, map[string]any{
-		"env_id": envRow.EnvID,
-	}); err != nil {
+	if err := stopComputeEnvironment(ctx, driver, envID); err != nil {
 		return db.Environment{}, err
 	}
+	return stopped, nil
+}
 
-	if err := tx.Commit(ctx); err != nil {
-		return db.Environment{}, err
+func stopComputeEnvironment(ctx context.Context, driver compute.Driver, envID string) error {
+	if strings.TrimSpace(envID) == "" {
+		return nil
 	}
-	return updated, nil
+	if err := driver.StopEnvironment(ctx, compute.EnvID(envID)); !errors.Is(err, compute.ErrEnvironmentNotFound) {
+		return err
+	}
+	return nil
 }
 
 func (s *server) authorizeVNC(ctx context.Context, claims vncrelay.TicketClaims) error {

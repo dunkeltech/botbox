@@ -18,6 +18,7 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/testutil/pgtest"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+	"time"
 )
 
 type preflightComputer struct {
@@ -31,8 +32,11 @@ type preflightComputer struct {
 func (d *preflightComputer) CLIProxyReady(context.Context, compute.EnvID) error { return d.proxyErr }
 func (d *preflightComputer) RunCLI(_ context.Context, _ compute.EnvID, cli, prompt, _, model string, emit func(engine.Event) error) error {
 	d.calls++
-	if cli != "claude" || model != "sonnet" || strings.Contains(prompt, "fixture-private") {
+	if (cli != "claude" && cli != "codex") || strings.Contains(prompt, "fixture-private") {
 		return errors.New("unsafe CLI input")
+	}
+	if cli == "claude" && model != "sonnet" {
+		return errors.New("unsafe claude model")
 	}
 	if d.runErr != nil {
 		return d.runErr
@@ -141,5 +145,78 @@ func TestClaudeSonnetPreflightAndPrivateCredentials(t *testing.T) {
 	err = runCLITurn(canceled, pool, q, ring, computer, session, func(engine.Event) error { return nil })
 	if !errors.Is(err, context.Canceled) || computer.calls != 4 {
 		t.Fatal("canceled request reached CLI")
+	}
+}
+
+func TestCodexOpenAIPlanSecretPreflight(t *testing.T) {
+	pool := pgtest.Open(t)
+	q := db.New(pool)
+	ctx := context.Background()
+	ws, bot := uuid.New(), uuid.New()
+	if _, err := pool.Exec(ctx, "INSERT INTO workspaces(id,name,slug) VALUES($1,'CodexWS','codex-ws')", ws); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, "INSERT INTO bots(id,workspace_id,name,avatar_seed,llm_mode,llm_provider,llm_model) VALUES($1,$2,'Codex','codex','cli','openai','gpt-5')", bot, ws); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, "INSERT INTO environments(bot_id,driver,env_id,status) SELECT id,'docker','codex-id','running' FROM bots WHERE workspace_id=$1 AND id=$2", ws, bot); err != nil {
+		t.Fatal(err)
+	}
+	pg := func(id uuid.UUID) pgtype.UUID { return pgtype.UUID{Bytes: id, Valid: true} }
+	config, err := q.GetBotByWorkspaceAndID(ctx, db.GetBotByWorkspaceAndIDParams{WorkspaceID: pg(ws), ID: pg(bot)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ring, err := secrets.NewKeyRing("v1", map[string][]byte{"v1": bytes.Repeat([]byte{2}, 32)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	computer := &preflightComputer{}
+	session := engine.Session{WorkspaceID: ws, BotID: bot, ConversationID: uuid.New(), Bot: config, Messages: []db.Message{{Content: "hi"}}}
+
+	// Missing llm-openai fails with credentials_missing.
+	if err = runCLITurn(ctx, pool, q, ring, computer, session, func(engine.Event) error { return nil }); engine.TurnFailureCode(err) != engine.FailureCredentialsMissing {
+		t.Fatalf("missing secret failure=%s want=%s", engine.TurnFailureCode(err), engine.FailureCredentialsMissing)
+	}
+
+	// Workspace-level openai_plan secret enables Codex CLI turns.
+	wsSecretID := uuid.New()
+	payload, err := secrets.MarshalOpenAIPlanTokens(secrets.OpenAIPlanTokens{
+		Access:   "fixture-private-access",
+		Refresh:  "fixture-private-refresh",
+		Expires:  time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC),
+		ClientID: "oaiapp_fixture",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wsCipher, err := ring.Encrypt(payload, secrets.SecretAAD(ws, "workspace", wsSecretID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = q.UpsertCodexPlanWorkspaceSecret(ctx, db.UpsertCodexPlanWorkspaceSecretParams{
+		ID: pg(wsSecretID), WorkspaceID: pg(ws), KekID: wsCipher.KeyID, WrappedDek: wsCipher.WrappedDEK, EncryptedValue: wsCipher.Ciphertext, MaskedPreview: "fixt...cess",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err = runCLITurn(ctx, pool, q, ring, computer, session, func(engine.Event) error { return nil }); err != nil {
+		t.Fatalf("codex openai_plan preflight failed: %v", err)
+	}
+	if computer.calls != 1 {
+		t.Fatalf("CLI calls=%d want=1", computer.calls)
+	}
+
+	// Reconnect-required state blocks turn before running CLI.
+	if _, err = q.UpdateWorkspaceSecretOpenAIPlanTokens(ctx, db.UpdateWorkspaceSecretOpenAIPlanTokensParams{
+		WorkspaceID: pg(ws), ID: pg(wsSecretID), AuthKind: secrets.SecretAuthKindOpenAIPlanReconnect,
+		KekID: wsCipher.KeyID, WrappedDek: wsCipher.WrappedDEK, EncryptedValue: wsCipher.Ciphertext, MaskedPreview: "reco...nect",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err = runCLITurn(ctx, pool, q, ring, computer, session, func(engine.Event) error { return nil }); engine.TurnFailureCode(err) != engine.FailureCredentialsUnavailable {
+		t.Fatalf("reconnect failure=%s want=%s", engine.TurnFailureCode(err), engine.FailureCredentialsUnavailable)
+	}
+	if computer.calls != 1 {
+		t.Fatal("CLI ran while reconnect was required")
 	}
 }

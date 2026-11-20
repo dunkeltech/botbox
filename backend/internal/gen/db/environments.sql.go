@@ -142,6 +142,54 @@ func (q *Queries) GetEnvironmentByWorkspaceAndBot(ctx context.Context, arg GetEn
 	return i, err
 }
 
+const initializeEnvironment = `-- name: InitializeEnvironment :one
+INSERT INTO environments (bot_id, driver, env_id, status, image, cpu_millis, memory_mib, volume_ref)
+SELECT b.id, $1, '', 'stopped', $2,
+       $3, $4, $5
+FROM bots b
+WHERE b.workspace_id = $6 AND b.id = $7
+ON CONFLICT (bot_id) DO UPDATE SET bot_id = EXCLUDED.bot_id
+RETURNING bot_id, driver, env_id, status, image, cpu_millis, memory_mib, volume_ref, control_holder_user_id, control_note, started_at, updated_at
+`
+
+type InitializeEnvironmentParams struct {
+	Driver      string      `json:"driver"`
+	Image       string      `json:"image"`
+	CpuMillis   int32       `json:"cpu_millis"`
+	MemoryMib   int32       `json:"memory_mib"`
+	VolumeRef   string      `json:"volume_ref"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	BotID       pgtype.UUID `json:"bot_id"`
+}
+
+func (q *Queries) InitializeEnvironment(ctx context.Context, arg InitializeEnvironmentParams) (Environment, error) {
+	row := q.db.QueryRow(ctx, initializeEnvironment,
+		arg.Driver,
+		arg.Image,
+		arg.CpuMillis,
+		arg.MemoryMib,
+		arg.VolumeRef,
+		arg.WorkspaceID,
+		arg.BotID,
+	)
+	var i Environment
+	err := row.Scan(
+		&i.BotID,
+		&i.Driver,
+		&i.EnvID,
+		&i.Status,
+		&i.Image,
+		&i.CpuMillis,
+		&i.MemoryMib,
+		&i.VolumeRef,
+		&i.ControlHolderUserID,
+		&i.ControlNote,
+		&i.StartedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const listEnvironmentsByWorkspace = `-- name: ListEnvironmentsByWorkspace :many
 SELECT e.bot_id, e.driver, e.env_id, e.status, e.image, e.cpu_millis, e.memory_mib, e.volume_ref, e.control_holder_user_id, e.control_note, e.started_at, e.updated_at
 FROM environments e
@@ -236,6 +284,39 @@ func (q *Queries) ListEnvironmentsForReconcile(ctx context.Context) ([]ListEnvir
 		return nil, err
 	}
 	return items, nil
+}
+
+const markEnvironmentStopped = `-- name: MarkEnvironmentStopped :one
+UPDATE environments e
+SET status = 'stopped', started_at = NULL, control_holder_user_id = NULL, updated_at = now()
+FROM bots b
+WHERE e.bot_id = b.id AND b.workspace_id = $1 AND b.id = $2
+RETURNING e.bot_id, e.driver, e.env_id, e.status, e.image, e.cpu_millis, e.memory_mib, e.volume_ref, e.control_holder_user_id, e.control_note, e.started_at, e.updated_at
+`
+
+type MarkEnvironmentStoppedParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	BotID       pgtype.UUID `json:"bot_id"`
+}
+
+func (q *Queries) MarkEnvironmentStopped(ctx context.Context, arg MarkEnvironmentStoppedParams) (Environment, error) {
+	row := q.db.QueryRow(ctx, markEnvironmentStopped, arg.WorkspaceID, arg.BotID)
+	var i Environment
+	err := row.Scan(
+		&i.BotID,
+		&i.Driver,
+		&i.EnvID,
+		&i.Status,
+		&i.Image,
+		&i.CpuMillis,
+		&i.MemoryMib,
+		&i.VolumeRef,
+		&i.ControlHolderUserID,
+		&i.ControlNote,
+		&i.StartedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const releaseEnvironmentControl = `-- name: ReleaseEnvironmentControl :one

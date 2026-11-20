@@ -21,9 +21,14 @@ files outside the home volume. See [ADR-0038](../adr/0038-split-egress-and-chrom
 
 Configure provider credentials through the write-only Secrets form. The secret's
 domain must match the provider host, and any path restriction still applies.
-Set model prices through `PUT /api/workspaces/{workspaceID}/model-prices` before
-applying monetary budgets. Owners and admins can edit budgets in the fleet or
-bot settings. Private DMs are available in the bot workspace and under `/team`.
+Add the exact configured model under **Workspace settings → Budgets & model prices**.
+The bot editor offers the workspace's priced models for the selected provider.
+The bot computer requires a matching provider and model price to start or
+restart. Saving an unpriced model stops a running computer and releases desktop
+control. The API startup check also stops existing computers with unpriced
+models. After adding the price, start the computer again. Owners and admins can
+edit budgets in the fleet or bot settings. Private DMs are available in the bot
+workspace and under `/team`.
 
 The proxy database URL defaults to `DATABASE_URL`, with loopback hosts translated
 to `host.docker.internal` for Docker Desktop. The devenv configuration sets this
@@ -34,10 +39,13 @@ per-bot proxy with its encryption key configuration; do not put database or
 provider credentials in the sandbox environment. Existing unproxied sandboxes
 must be recreated, retaining their named home volume.
 
-Each CLI request is metered before the next one is admitted. Missing usage or
-prices leave an unpriced record and block applicable monetary budgets until
-reconciled. CLI aggregates do not double charge proxy-metered requests. agy OAuth
-exchange and live-provider acceptance runs remain open. See ADR-0008 and ADR-0009.
+Each CLI request is metered before the next one is admitted. Missing usage blocks
+applicable monetary budgets until reconciled. Under **Workspace settings →
+Budgets & model prices → Unresolved subscription usage**, owners and admins can
+record the input, output, and cached-input tokens from a provider report or
+identify the adjustment as an operator estimate. bot.Box applies the matching
+workspace rate and audits the adjustment. CLI aggregates do not double charge
+proxy-metered requests. See ADR-0008, ADR-0009, and ADR-0039.
 
 After building both images, run the optional real-Docker check with
 `cd backend && BOTBOX_DOCKER_SMOKE=1 go test -race ./internal/compute/docker -run TestProxyRealDockerIsolation -count=1`.
@@ -86,12 +94,26 @@ Build the updated images with `make sandbox-image proxy-image`, then start the
 bot computer. `make test-sandbox-cli` verifies the actual pinned CLI and Sonnet
 alias against a local fake provider with networking disabled.
 
-### ChatGPT plan for interactive Codex
+### ChatGPT plan for Codex
 
 Follow the [Codex desktop setup guide](codex-desktop-setup.md) to
-connect your ChatGPT plan, start `codex` in the bot computer, and review its token
-usage. [ADR-0030](../adr/0030-codex-desktop-chatgpt-plan.md)
+connect your ChatGPT plan, store the synchronized `llm-openai` OAuth secret at
+bot or workspace scope, run Codex in chat or the bot computer terminal, and
+review its token usage. Both chat turns (`codex exec`) and interactive desktop
+sessions route through `/llm/openai/v1` with subscription metering.
+[ADR-0030](../adr/0030-codex-desktop-chatgpt-plan.md)
 describes the metered route and the subscription budget policy.
+
+The proxy can recognize a successful ChatGPT plan event stream when the
+upstream response omits its content type. Usage still requires the provider's
+token report. A complete report in the terminal event remains valid if the
+connection closes before EOF. Proxy logs include the upstream status and response format
+category for failures. Those logs exclude response bodies and credentials.
+
+The [sandbox Dockerfile](../../images/sandbox/Dockerfile) pins the Codex CLI
+version. Rebuild the image with `make sandbox-image` and verify the CLI with
+`make test-sandbox-codex`. An existing computer keeps its original image until
+it is recreated. Its named home volume can be reused.
 
 ### Deterministic engine doubles
 

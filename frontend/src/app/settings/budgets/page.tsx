@@ -4,6 +4,7 @@
 
 import { BudgetPanel } from '@/components/chat/BudgetPanel';
 import { ModelPricesPanel } from '@/components/settings/ModelPricesPanel';
+import { SubscriptionReconciliationPanel } from '@/components/settings/SubscriptionReconciliationPanel';
 import { WorkspaceSettingsShell } from '@/components/settings/WorkspaceSettingsShell';
 import { useAuth } from '@/context/AuthContext';
 import { canManageMembers } from '@/lib/rbac';
@@ -28,6 +29,12 @@ function BudgetsContent() {
         canManage={canManage}
         ignoreMissing
       />
+      {canManage ? (
+        <SubscriptionReconciliationPanel
+          key={`reconciliation:${activeWorkspace.id}`}
+          workspaceId={activeWorkspace.id}
+        />
+      ) : null}
     </div>
   );
 }

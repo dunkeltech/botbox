@@ -116,6 +116,26 @@ func (q *Queries) GetSubscriptionBudgetPolicy(ctx context.Context, id pgtype.UUI
 	return count_subscription_usage, err
 }
 
+const getUnresolvedSubscriptionUsage = `-- name: GetUnresolvedSubscriptionUsage :one
+SELECT model
+FROM usage_records
+WHERE workspace_id = $1 AND request_id = $2 AND source = 'proxy_meter'
+  AND subscription_budgeted AND usage_known IS FALSE
+  AND internal_charge_micros IS NULL AND reserved_micros IS NULL
+`
+
+type GetUnresolvedSubscriptionUsageParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	RequestID   pgtype.UUID `json:"request_id"`
+}
+
+func (q *Queries) GetUnresolvedSubscriptionUsage(ctx context.Context, arg GetUnresolvedSubscriptionUsageParams) (string, error) {
+	row := q.db.QueryRow(ctx, getUnresolvedSubscriptionUsage, arg.WorkspaceID, arg.RequestID)
+	var model string
+	err := row.Scan(&model)
+	return model, err
+}
+
 const groupBudgetCommitment = `-- name: GroupBudgetCommitment :one
 SELECT COALESCE(sum(COALESCE(u.cost_micros,u.internal_charge_micros,u.reserved_micros)),0)::bigint AS committed_micros,
 count(*) FILTER (WHERE u.cost_micros IS NULL AND u.internal_charge_micros IS NULL AND u.reserved_micros IS NULL AND (u.billing_kind='metered' OR u.subscription_budgeted))::bigint AS unknown_rows
@@ -381,6 +401,49 @@ func (q *Queries) ListSubscriptionUsage(ctx context.Context, arg ListSubscriptio
 	return items, nil
 }
 
+const listUnresolvedSubscriptionUsage = `-- name: ListUnresolvedSubscriptionUsage :many
+SELECT u.request_id, u.model, u.created_at, b.name AS bot_name
+FROM usage_records u
+JOIN bots b ON b.workspace_id = u.workspace_id AND b.id = u.bot_id
+WHERE u.workspace_id = $1 AND u.source = 'proxy_meter'
+  AND u.subscription_budgeted AND u.usage_known IS FALSE
+  AND u.internal_charge_micros IS NULL AND u.reserved_micros IS NULL
+ORDER BY u.created_at DESC, u.request_id DESC
+LIMIT 100
+`
+
+type ListUnresolvedSubscriptionUsageRow struct {
+	RequestID pgtype.UUID        `json:"request_id"`
+	Model     string             `json:"model"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	BotName   string             `json:"bot_name"`
+}
+
+func (q *Queries) ListUnresolvedSubscriptionUsage(ctx context.Context, workspaceID pgtype.UUID) ([]ListUnresolvedSubscriptionUsageRow, error) {
+	rows, err := q.db.Query(ctx, listUnresolvedSubscriptionUsage, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUnresolvedSubscriptionUsageRow
+	for rows.Next() {
+		var i ListUnresolvedSubscriptionUsageRow
+		if err := rows.Scan(
+			&i.RequestID,
+			&i.Model,
+			&i.CreatedAt,
+			&i.BotName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockWorkspaceBudgetCheck = `-- name: LockWorkspaceBudgetCheck :exec
 SELECT pg_advisory_xact_lock(hashtextextended($1::text, 1))
 `
@@ -397,6 +460,39 @@ SELECT pg_advisory_lock(hashtextextended($1::text, 1))
 func (q *Queries) LockWorkspaceSpend(ctx context.Context, lockKey string) error {
 	_, err := q.db.Exec(ctx, lockWorkspaceSpend, lockKey)
 	return err
+}
+
+const reconcileSubscriptionUsage = `-- name: ReconcileSubscriptionUsage :execrows
+UPDATE usage_records
+SET input_tokens = $3, output_tokens = $4, cache_tokens = $5,
+    internal_charge_micros = $6, usage_known = TRUE
+WHERE workspace_id = $1 AND request_id = $2 AND source = 'proxy_meter'
+  AND subscription_budgeted AND usage_known IS FALSE
+  AND internal_charge_micros IS NULL AND reserved_micros IS NULL
+`
+
+type ReconcileSubscriptionUsageParams struct {
+	WorkspaceID          pgtype.UUID `json:"workspace_id"`
+	RequestID            pgtype.UUID `json:"request_id"`
+	InputTokens          int64       `json:"input_tokens"`
+	OutputTokens         int64       `json:"output_tokens"`
+	CacheTokens          int64       `json:"cache_tokens"`
+	InternalChargeMicros pgtype.Int8 `json:"internal_charge_micros"`
+}
+
+func (q *Queries) ReconcileSubscriptionUsage(ctx context.Context, arg ReconcileSubscriptionUsageParams) (int64, error) {
+	result, err := q.db.Exec(ctx, reconcileSubscriptionUsage,
+		arg.WorkspaceID,
+		arg.RequestID,
+		arg.InputTokens,
+		arg.OutputTokens,
+		arg.CacheTokens,
+		arg.InternalChargeMicros,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const recordTurnUsage = `-- name: RecordTurnUsage :exec

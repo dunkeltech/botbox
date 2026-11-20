@@ -64,7 +64,6 @@ in
     DATABASE_URL = "postgres://botbox:botbox@127.0.0.1:15432/botbox?sslmode=disable";
     NATS_URL = "nats://127.0.0.1:4222";
     CLAUDE_CLI_VERSION = "2.1.323";
-    CODEX_CLI_VERSION = "0.39.0";
     API_LISTEN_ADDR = "127.0.0.1:8080";
     FRONTEND_URL = "http://127.0.0.1:3000";
     PUBLIC_BASE_URL = "http://127.0.0.1:8000";

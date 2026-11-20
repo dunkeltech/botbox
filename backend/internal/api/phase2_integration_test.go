@@ -109,6 +109,7 @@ func TestPhase2EnvironmentLifecycleFilesTerminalControlAndRBAC(t *testing.T) {
 	}
 
 	// Owner starts sandbox -> status running, bot reflects idle.
+	setEnvironmentModelPrice(t, h, "/api/workspaces/"+wsID, owner.AccessToken, "anthropic", "claude-sonnet-4")
 	startResp := h.request(http.MethodPost, baseURL+"/environment/start", nil, owner.AccessToken, nil, true)
 	if startResp.status != http.StatusOK {
 		t.Fatalf("start environment status=%d body=%s", startResp.status, startResp.body)

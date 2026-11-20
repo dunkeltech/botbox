@@ -18,8 +18,11 @@ func (h *proxyHandler) forwardResponse(
 	cfg *SecretConfig,
 	metered bool,
 ) Usage {
-	plan := route.provider == ProviderOpenAIPlan
+	plan := route.provider == ProviderOpenAIPlan || cfg.AuthKind == AuthKindOpenAIPlan
 	stream := isEventStream(resp.Header.Get("Content-Type"))
+	if plan {
+		stream = planEventStream(resp)
+	}
 	if plan && (resp.StatusCode != http.StatusOK || !stream) {
 		writePlanError(w, h.options.Logger, resp, cfg.SecretValue)
 		return Usage{Known: resp.StatusCode >= 300 && resp.StatusCode < 500}
@@ -34,7 +37,7 @@ func (h *proxyHandler) forwardResponse(
 	if guarded && !stream {
 		return h.forwardGuardedJSON(ctx, w, resp, route, model, metered)
 	}
-	return h.forwardBody(ctx, w, resp, route, model, cfg.SecretValue, metered, stream, guarded)
+	return h.forwardBody(ctx, w, resp, route, model, cfg.SecretValue, metered, stream, guarded, plan)
 }
 
 func (h *proxyHandler) forwardGuardedJSON(ctx context.Context, w http.ResponseWriter, resp *http.Response, route proxyRoute, model string, metered bool) Usage {
@@ -81,16 +84,14 @@ func (h *proxyHandler) forwardBody(
 	route proxyRoute,
 	model string,
 	planToken string,
-	metered, stream, guarded bool,
+	metered, stream, guarded, plan bool,
 ) Usage {
-	plan := route.provider == ProviderOpenAIPlan
 	contentType := resp.Header.Get("Content-Type")
 	if metered {
 		if plan {
-			w.Header().Set("Content-Type", "text/event-stream")
-		} else {
-			w.Header().Set("Content-Type", contentType)
+			contentType = "text/event-stream"
 		}
+		w.Header().Set("Content-Type", contentType)
 	} else {
 		copyHeaders(w.Header(), resp.Header)
 	}
@@ -132,5 +133,14 @@ func (h *proxyHandler) forwardBody(
 	if copyErr == nil && route.path == "/v1/messages/count_tokens" && resp.StatusCode == http.StatusOK {
 		return Usage{Known: true}
 	}
-	return collector.finish(copyErr == nil && resp.StatusCode >= 200 && resp.StatusCode < 300)
+	// Codex may close the request after decoding the terminal event. A verified
+	// provider usage report remains authoritative when only the connection fails.
+	complete := copyErr == nil || (plan && collector.responsesUsageComplete)
+	usage := collector.finish(complete && resp.StatusCode >= 200 && resp.StatusCode < 300)
+	if plan && !usage.Known {
+		h.options.Logger.Warn("ChatGPT plan usage not confirmed",
+			"stream_interrupted", copyErr != nil, "terminal_event_seen", collector.terminal,
+			"usage_report_seen", collector.responsesUsageComplete, "invalid_usage", collector.invalid)
+	}
+	return usage
 }

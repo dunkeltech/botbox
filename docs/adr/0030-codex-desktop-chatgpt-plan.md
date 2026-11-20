@@ -32,14 +32,19 @@ user. The service serializes refreshes per connection and removes local access
 before asking OpenAI to revoke it.
 
 The sandbox launcher starts the official Codex CLI with an internal Responses
-provider and a public placeholder. The per-bot egress proxy inserts the actual
-OAuth bearer token. Docker supplies the filesystem and network isolation because
-the container disallows the nested sandbox's user namespaces. Codex keeps its
-interactive approval policy. A request needs the connecting user to hold desktop control.
-The route checks pause, membership, explicit host blocks, and budgets before
-forwarding. It uses the same request handler and SSE meter as other model routes.
-This keeps future proxy guardrails on the common path. Desktop requests are
-recorded against the bot and workspace with a null chat turn ID.
+provider and a public placeholder on the unified `/llm/openai/v1` route. The
+per-bot egress proxy inserts the actual OAuth bearer token and refreshes rotating
+tokens under a single database row lock on the synchronized `llm-openai` secret
+(bot-scoped by default, or workspace-scoped when configured by an admin or
+owner). Docker supplies the filesystem and network isolation because the
+container disallows the nested sandbox's user namespaces. Codex keeps its
+interactive approval policy. Interactive desktop requests require desktop
+control (while autonomous chat turns run under the active bot turn without
+desktop control). The route checks pause, membership, explicit host blocks, and
+budgets before forwarding. It uses the same request handler and SSE meter as
+other model routes. This keeps future proxy guardrails on the common path.
+Desktop requests are recorded against the bot and workspace with a null chat
+turn ID, while chat turns attach the turn ID and record subscription billing.
 
 The workspace can opt to apply model prices to Claude and Codex subscription
 usage. Store the resulting internal charge apart from provider cost and count

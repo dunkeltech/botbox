@@ -266,6 +266,7 @@ func TestPhase5TakeFailsClosedWhenAgentRejectsLock(t *testing.T) {
 	var bot apigen.Bot
 	created.decode(t, &bot)
 	botPath := base + "/bots/" + bot.Id.String()
+	setEnvironmentModelPrice(t, h, base, owner.AccessToken, bot.LlmProvider, bot.LlmModel)
 	started := h.request(http.MethodPost, botPath+"/environment/start", nil, owner.AccessToken, nil, true)
 	if started.status != http.StatusOK {
 		t.Fatalf("start=%d %s", started.status, started.body)

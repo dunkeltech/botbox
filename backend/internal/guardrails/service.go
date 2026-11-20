@@ -358,8 +358,12 @@ func (s *Service) collectWorkspaceSecrets(ctx context.Context, q *db.Queries, wo
 				WrappedDEK: row.WrappedDek,
 				Ciphertext: row.EncryptedValue,
 			}, secrets.SecretAAD(workspaceID, "workspace", uuid.UUID(row.ID.Bytes)))
-			if decErr == nil && len(plain) >= minStoredSecretMatchLen {
-				out = append(out, string(plain))
+			if decErr == nil {
+				for _, val := range secrets.ExtractSecretMatchValues(row.AuthKind, plain) {
+					if len(val) >= minStoredSecretMatchLen {
+						out = append(out, val)
+					}
+				}
 			}
 		}
 	}
@@ -396,8 +400,12 @@ func (s *Service) collectBotSecrets(ctx context.Context, q *db.Queries, workspac
 			WrappedDEK: row.WrappedDek,
 			Ciphertext: row.EncryptedValue,
 		}, secrets.SecretAAD(workspaceID, "bot", uuid.UUID(row.ID.Bytes)))
-		if decErr == nil && len(plain) >= minStoredSecretMatchLen {
-			out = append(out, string(plain))
+		if decErr == nil {
+			for _, val := range secrets.ExtractSecretMatchValues(row.AuthKind, plain) {
+				if len(val) >= minStoredSecretMatchLen {
+					out = append(out, val)
+				}
+			}
 		}
 	}
 	return out

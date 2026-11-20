@@ -392,6 +392,20 @@ func (s *server) handleUpdateWorkspaceSecret(w http.ResponseWriter, r *http.Requ
 		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to update secret")
 		return
 	}
+	if req.Value != nil && *req.Value != "" && existing.AuthKind != "" {
+		if resetErr := s.queries.ResetWorkspaceSecretAuthKind(r.Context(), db.ResetWorkspaceSecretAuthKindParams{
+			WorkspaceID: wsRow.ID,
+			ID:          existing.ID,
+		}); resetErr != nil {
+			s.logger.Error("reset workspace secret auth kind", "err", resetErr)
+		}
+		if delErr := s.queries.DeleteCodexPlanConnectionByWorkspaceSecret(r.Context(), db.DeleteCodexPlanConnectionByWorkspaceSecretParams{
+			WorkspaceID:       wsRow.ID,
+			WorkspaceSecretID: existing.ID,
+		}); delErr != nil {
+			s.logger.Error("unlink codex plan workspace secret", "err", delErr)
+		}
+	}
 
 	_ = recordAudit(r.Context(), s.queries, &wsID, &claims.Subject, "secret.workspace_updated", "workspace_secret", &secretID, map[string]any{
 		"name":   parsed.name,
@@ -425,6 +439,10 @@ func (s *server) handleDeleteWorkspaceSecret(w http.ResponseWriter, r *http.Requ
 		writeError(w, s.logger, http.StatusNotFound, "secret.not_found", "secret not found")
 		return
 	}
+	_ = s.queries.DeleteCodexPlanConnectionByWorkspaceSecret(r.Context(), db.DeleteCodexPlanConnectionByWorkspaceSecretParams{
+		WorkspaceID:       wsRow.ID,
+		WorkspaceSecretID: toPGUUID(secretID),
+	})
 
 	wsID := fromPGUUID(wsRow.ID)
 	_ = recordAudit(r.Context(), s.queries, &wsID, &claims.Subject, "secret.workspace_deleted", "workspace_secret", &secretID, nil)
@@ -615,6 +633,21 @@ func (s *server) handleUpdateBotSecret(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to update secret")
 		return
 	}
+	if req.Value != nil && *req.Value != "" && existing.AuthKind != "" {
+		if resetErr := s.queries.ResetBotSecretAuthKind(r.Context(), db.ResetBotSecretAuthKindParams{
+			WorkspaceID: wsRow.ID,
+			BotID:       botRow.ID,
+			ID:          existing.ID,
+		}); resetErr != nil {
+			s.logger.Error("reset bot secret auth kind", "err", resetErr)
+		}
+		if delErr := s.queries.DeleteCodexPlanConnectionByBotSecret(r.Context(), db.DeleteCodexPlanConnectionByBotSecretParams{
+			WorkspaceID: wsRow.ID,
+			BotSecretID: existing.ID,
+		}); delErr != nil {
+			s.logger.Error("unlink codex plan bot secret", "err", delErr)
+		}
+	}
 
 	_ = recordAudit(r.Context(), s.queries, &wsID, &actorID, "secret.bot_updated", "bot_secret", &secretID, map[string]any{
 		"bot_id": fromPGUUID(botRow.ID).String(),
@@ -650,6 +683,10 @@ func (s *server) handleDeleteBotSecret(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.logger, http.StatusNotFound, "secret.not_found", "secret not found")
 		return
 	}
+	_ = s.queries.DeleteCodexPlanConnectionByBotSecret(r.Context(), db.DeleteCodexPlanConnectionByBotSecretParams{
+		WorkspaceID: wsRow.ID,
+		BotSecretID: toPGUUID(secretID),
+	})
 
 	wsID := fromPGUUID(wsRow.ID)
 	_ = recordAudit(r.Context(), s.queries, &wsID, &actorID, "secret.bot_deleted", "bot_secret", &secretID, map[string]any{
@@ -1253,14 +1290,17 @@ func NewBotEgressProxyHandler(deps BotEgressProxyDeps) (*mitmproxy.Handler, erro
 			}
 
 			for _, row := range botRows {
+				if row.AdapterID == "" {
+					addHostPattern(allowedSet, row.DomainMatch, row.MatchSubdomains)
+				}
+				if row.AuthKind != "" {
+					continue
+				}
 				rule, decErr := decryptSecretRule(deps.KeyRing, deps.WorkspaceID, fromPGUUID(row.ID), string(api.SecretScopeBot), row.Name, row.DomainMatch, row.MatchSubdomains, row.PathPrefix, row.HeaderName, row.AuthScheme, row.Username, row.KekID, row.WrappedDek, row.EncryptedValue)
 				if decErr != nil {
 					return mitmproxy.PolicySnapshot{}, decErr
 				}
 				rule.AdapterID = row.AdapterID
-				if row.AdapterID == "" {
-					addHostPattern(allowedSet, row.DomainMatch, row.MatchSubdomains)
-				}
 				if access.bind(&rule) {
 					rules = append(rules, rule)
 				}
@@ -1270,14 +1310,17 @@ func NewBotEgressProxyHandler(deps BotEgressProxyDeps) (*mitmproxy.Handler, erro
 				if access.blockedSecrets[row.ID] {
 					continue
 				}
+				if row.AdapterID == "" {
+					addHostPattern(allowedSet, row.DomainMatch, row.MatchSubdomains)
+				}
+				if row.AuthKind != "" {
+					continue
+				}
 				rule, decErr := decryptSecretRule(deps.KeyRing, deps.WorkspaceID, fromPGUUID(row.ID), string(api.SecretScopeWorkspace), row.Name, row.DomainMatch, row.MatchSubdomains, row.PathPrefix, row.HeaderName, row.AuthScheme, row.Username, row.KekID, row.WrappedDek, row.EncryptedValue)
 				if decErr != nil {
 					return mitmproxy.PolicySnapshot{}, decErr
 				}
 				rule.AdapterID = row.AdapterID
-				if row.AdapterID == "" {
-					addHostPattern(allowedSet, row.DomainMatch, row.MatchSubdomains)
-				}
 				if access.bind(&rule) {
 					rules = append(rules, rule)
 				}

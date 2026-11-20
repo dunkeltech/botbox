@@ -13,6 +13,7 @@ import (
 	"mime"
 	"net/http"
 	"regexp"
+	"strings"
 )
 
 var (
@@ -67,16 +68,58 @@ func isEventStream(value string) bool {
 	return err == nil && media == "text/event-stream"
 }
 
+type bufferedPlanBody struct {
+	*bufio.Reader
+	io.Closer
+}
+
+func planEventStream(resp *http.Response) bool {
+	media := resp.Header.Get("Content-Type")
+	if isEventStream(media) {
+		return true
+	}
+	if resp.StatusCode != http.StatusOK || media != "" || resp.Body == nil {
+		return false
+	}
+
+	// The direct plan route can omit the media type for an SSE response.
+	// Inspect a bounded prefix and keep it available for streaming and metering.
+	const maxPrefix = 64
+	reader := bufio.NewReaderSize(resp.Body, maxPrefix)
+	resp.Body = bufferedPlanBody{Reader: reader, Closer: resp.Body}
+	for size := len("event:"); size <= maxPrefix; size++ {
+		buffered, _ := reader.Peek(size)
+		prefix := bytes.TrimLeft(bytes.TrimPrefix(buffered, []byte("\xef\xbb\xbf")), " \t\r\n")
+		if len(prefix) >= len("event:") || len(buffered) < size {
+			return hasPlanEventPrefix(prefix)
+		}
+	}
+	return false
+}
+
+func hasPlanEventPrefix(body []byte) bool {
+	return bytes.HasPrefix(body, []byte("event:")) || bytes.HasPrefix(body, []byte("data:"))
+}
+
 func writePlanError(w http.ResponseWriter, logger *slog.Logger, resp *http.Response, secret string) {
-	if id := resp.Header.Get("X-Request-ID"); planRequestID.MatchString(id) && !bytes.Contains([]byte(id), []byte(secret)) {
+	id := resp.Header.Get("X-Request-ID")
+	if planRequestID.MatchString(id) && !strings.Contains(id, secret) {
 		w.Header().Set("X-Request-ID", id)
+	} else {
+		id = ""
 	}
 	var provider struct {
-		Error struct {
+		Detail string `json:"detail"`
+		Error  struct {
 			Code string `json:"code"`
 		} `json:"error"`
 	}
-	_ = json.NewDecoder(io.LimitReader(resp.Body, 16<<10)).Decode(&provider)
+	truncated, _ := io.ReadAll(io.LimitReader(resp.Body, 16<<10))
+	_ = json.Unmarshal(truncated, &provider)
+	logger.Warn("ChatGPT plan upstream response failed",
+		"upstream_status", resp.StatusCode, "category", planErrorCategory(provider.Error.Code, provider.Detail),
+		"content_type", planContentType(resp.Header.Get("Content-Type")),
+		"body_format", planBodyFormat(truncated), "upstream_request_id", id)
 	switch {
 	case resp.StatusCode == http.StatusUnauthorized:
 		writeError(w, logger, 401, "plan_reconnect", "reconnect the ChatGPT plan in bot.Box")
@@ -90,6 +133,57 @@ func writePlanError(w http.ResponseWriter, logger *slog.Logger, resp *http.Respo
 		writeError(w, logger, resp.StatusCode, "plan_request_unsupported", "ChatGPT plan rejected the request")
 	default:
 		writeError(w, logger, 502, "plan_unavailable", "ChatGPT plan provider is temporarily unavailable")
+	}
+}
+
+func planContentType(header string) string {
+	media, _, err := mime.ParseMediaType(header)
+	switch {
+	case header == "":
+		return "missing"
+	case err == nil && (media == "application/json" || media == "text/event-stream" ||
+		media == "text/html" || media == "text/plain"):
+		return media
+	default:
+		return "other"
+	}
+}
+
+func planBodyFormat(body []byte) string {
+	body = bytes.TrimSpace(body)
+	switch {
+	case len(body) == 0:
+		return "empty"
+	case bytes.HasPrefix(body, []byte("{")) || bytes.HasPrefix(body, []byte("[")):
+		return "json"
+	case hasPlanEventPrefix(body):
+		return "sse"
+	case bytes.HasPrefix(body, []byte("<")):
+		return "markup"
+	default:
+		return "other"
+	}
+}
+
+func planErrorCategory(code, detail string) string {
+	// The provider can reflect private data, so only log fixed diagnostic categories.
+	switch code {
+	case "subscription_sharing_usage_limit_exceeded", "subscription_sharing_usage_unavailable",
+		"subscription_sharing_user_not_eligible", "subscription_sharing_user_unavailable",
+		"subscription_sharing_unsupported_capability", "subscription_sharing_route_not_supported",
+		"subscription_sharing_invalid_user", "chatpass_v2_scope_not_authorized",
+		"chatpass_v2_invalid_authorization_context", "internal_server_error", "invalid_request_error":
+		return code
+	case "":
+		if strings.Contains(strings.ToLower(detail), "direct rout") {
+			return "direct_routing"
+		}
+		if detail != "" {
+			return "admission_detail"
+		}
+		return "unstructured_response"
+	default:
+		return "responses_error"
 	}
 }
 

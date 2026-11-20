@@ -6,6 +6,49 @@ info:
   version: 0.1.0
   description: REST API for first-run setup, authentication, workspaces, RBAC, invitations, and bot configuration.
 paths:
+  /api/workspaces/{workspaceID}/subscription-usage/unresolved:
+    get:
+      operationId: listUnresolvedSubscriptionUsage
+      summary: List up to 100 unresolved budgeted subscription requests for an owner or admin
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
+      responses:
+        '200':
+          description: Unresolved requests, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UnresolvedSubscriptionUsage'
+        '401': {description: Unauthenticated, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '403': {description: Workspace owner or admin required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '404': {description: Workspace not found, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+
+  /api/workspaces/{workspaceID}/subscription-usage/{requestID}/reconcile:
+    post:
+      operationId: reconcileSubscriptionUsage
+      summary: Record an audited manual token adjustment for an unresolved subscription request
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceID'
+        - name: requestID
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReconcileSubscriptionUsageRequest'
+      responses:
+        '204': {description: Usage reconciled}
+        '400': {description: Invalid token counts, provider, or basis, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '401': {description: Unauthenticated, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '403': {description: Workspace owner or admin required, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '404': {description: Workspace or unresolved request not found, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        '409': {description: Applicable model price missing, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+
   /api/workspaces/{workspaceID}/subscription-budget-policy:
     parameters:
       - {name: workspaceID, in: path, required: true, schema: {type: string, format: uuid}}
@@ -58,6 +101,11 @@ paths:
     post:
       operationId: startCodexPlanPairing
       security: [{bearerAuth: []}]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/StartCodexPlanRequest'}
       responses:
         '200':
           description: One-use workstation pairing code
@@ -1567,6 +1615,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
+        '409':
+          description: Model price missing for the configured model
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
 
   /api/workspaces/{workspaceID}/bots/{botID}/environment/stop:
     post:
@@ -1627,6 +1681,12 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
         '404':
           description: Workspace or bot not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '409':
+          description: Model price missing for the configured model
           content:
             application/json:
               schema:
@@ -3032,6 +3092,33 @@ components:
       required: [paused]
       properties:
         paused: {type: boolean}
+    UnresolvedSubscriptionUsage:
+      type: object
+      required: [requestId, botName, model, createdAt]
+      properties:
+        requestId: {type: string, format: uuid}
+        botName: {type: string}
+        model: {type: string}
+        createdAt: {type: string, format: date-time}
+
+    ReconcileSubscriptionUsageRequest:
+      type: object
+      required: [provider, basis, inputTokens, outputTokens, cacheTokens]
+      properties:
+        provider:
+          type: string
+          enum: [openai, anthropic]
+        basis:
+          type: string
+          enum: [provider_report, operator_estimate]
+        inputTokens:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Total input tokens, including cached input.
+        outputTokens: {type: integer, format: int64, minimum: 0}
+        cacheTokens: {type: integer, format: int64, minimum: 0}
+
     SubscriptionBudgetPolicy:
       type: object
       required: [enabled]
@@ -3054,6 +3141,11 @@ components:
       properties:
         status: {type: string, enum: [disconnected, connected, reconnect]}
         ownedByYou: {type: boolean}
+        secretScope: {$ref: '#/components/schemas/SecretScope'}
+    StartCodexPlanRequest:
+      type: object
+      properties:
+        secretScope: {$ref: '#/components/schemas/SecretScope'}
     CodexPlanPairing:
       type: object
       required: [code]
@@ -3793,6 +3885,8 @@ components:
         - createdAt
         - updatedAt
       properties:
+        missingModelPrice:
+          $ref: '#/components/schemas/MissingModelPrice'
         id:
           type: string
           format: uuid
@@ -3956,9 +4050,11 @@ components:
         - cpuMillis
         - memoryMiB
         - volumeRef
+        - controlHolder
         - controlNote
         - stats
         - watchers
+        - startedAt
         - updatedAt
       properties:
         botId:
@@ -3973,6 +4069,9 @@ components:
           type: string
         status:
           $ref: '#/components/schemas/EnvironmentStatus'
+        missingModelPrice:
+          description: Workspace model price required before the bot computer can run.
+          $ref: '#/components/schemas/MissingModelPrice'
         image:
           type: string
         cpuMillis:
@@ -4002,6 +4101,13 @@ components:
         updatedAt:
           type: string
           format: date-time
+
+    MissingModelPrice:
+      type: object
+      required: [provider, model]
+      properties:
+        provider: {type: string}
+        model: {type: string}
 
     ReleaseControlRequest:
       type: object

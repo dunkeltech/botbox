@@ -58,7 +58,7 @@ INSERT INTO bot_secrets (
     created_by
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-RETURNING id, workspace_id, bot_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at, adapter_id
+RETURNING id, workspace_id, bot_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at, adapter_id, auth_kind
 `
 
 type CreateBotSecretParams struct {
@@ -119,6 +119,7 @@ func (q *Queries) CreateBotSecret(ctx context.Context, arg CreateBotSecretParams
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.AdapterID,
+		&i.AuthKind,
 	)
 	return i, err
 }
@@ -214,7 +215,7 @@ INSERT INTO workspace_secrets (
     created_by
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-RETURNING id, workspace_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at, adapter_id
+RETURNING id, workspace_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at, adapter_id, auth_kind
 `
 
 type CreateWorkspaceSecretParams struct {
@@ -272,6 +273,7 @@ func (q *Queries) CreateWorkspaceSecret(ctx context.Context, arg CreateWorkspace
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.AdapterID,
+		&i.AuthKind,
 	)
 	return i, err
 }
@@ -289,6 +291,43 @@ type DeleteBotSecretByWorkspaceBotAndIDParams struct {
 
 func (q *Queries) DeleteBotSecretByWorkspaceBotAndID(ctx context.Context, arg DeleteBotSecretByWorkspaceBotAndIDParams) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteBotSecretByWorkspaceBotAndID, arg.WorkspaceID, arg.BotID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteOpenAIPlanBotSecret = `-- name: DeleteOpenAIPlanBotSecret :execrows
+DELETE FROM bot_secrets
+WHERE workspace_id = $1 AND bot_id = $2 AND id = $3 AND auth_kind IN ('openai_plan', 'openai_plan_reconnect')
+`
+
+type DeleteOpenAIPlanBotSecretParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	BotID       pgtype.UUID `json:"bot_id"`
+	ID          pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) DeleteOpenAIPlanBotSecret(ctx context.Context, arg DeleteOpenAIPlanBotSecretParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteOpenAIPlanBotSecret, arg.WorkspaceID, arg.BotID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteOpenAIPlanWorkspaceSecret = `-- name: DeleteOpenAIPlanWorkspaceSecret :execrows
+DELETE FROM workspace_secrets
+WHERE workspace_id = $1 AND id = $2 AND auth_kind IN ('openai_plan', 'openai_plan_reconnect')
+`
+
+type DeleteOpenAIPlanWorkspaceSecretParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ID          pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) DeleteOpenAIPlanWorkspaceSecret(ctx context.Context, arg DeleteOpenAIPlanWorkspaceSecretParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteOpenAIPlanWorkspaceSecret, arg.WorkspaceID, arg.ID)
 	if err != nil {
 		return 0, err
 	}
@@ -314,7 +353,7 @@ func (q *Queries) DeleteWorkspaceSecretByWorkspaceAndID(ctx context.Context, arg
 }
 
 const getBotSecretByWorkspaceBotAndID = `-- name: GetBotSecretByWorkspaceBotAndID :one
-SELECT id, workspace_id, bot_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at, adapter_id
+SELECT id, workspace_id, bot_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at, adapter_id, auth_kind
 FROM bot_secrets
 WHERE workspace_id = $1 AND bot_id = $2 AND id = $3
 `
@@ -349,6 +388,48 @@ func (q *Queries) GetBotSecretByWorkspaceBotAndID(ctx context.Context, arg GetBo
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.AdapterID,
+		&i.AuthKind,
+	)
+	return i, err
+}
+
+const getBotSecretByWorkspaceBotAndName = `-- name: GetBotSecretByWorkspaceBotAndName :one
+SELECT id, workspace_id, bot_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at, adapter_id, auth_kind
+FROM bot_secrets
+WHERE workspace_id = $1 AND bot_id = $2 AND name = $3
+`
+
+type GetBotSecretByWorkspaceBotAndNameParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	BotID       pgtype.UUID `json:"bot_id"`
+	Name        string      `json:"name"`
+}
+
+func (q *Queries) GetBotSecretByWorkspaceBotAndName(ctx context.Context, arg GetBotSecretByWorkspaceBotAndNameParams) (BotSecret, error) {
+	row := q.db.QueryRow(ctx, getBotSecretByWorkspaceBotAndName, arg.WorkspaceID, arg.BotID, arg.Name)
+	var i BotSecret
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.BotID,
+		&i.Name,
+		&i.DomainMatch,
+		&i.MatchSubdomains,
+		&i.PathPrefix,
+		&i.AuthScheme,
+		&i.HeaderName,
+		&i.Username,
+		&i.KekID,
+		&i.WrappedDek,
+		&i.EncryptedValue,
+		&i.MaskedPreview,
+		&i.UsedCount,
+		&i.LastUsedAt,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.AdapterID,
+		&i.AuthKind,
 	)
 	return i, err
 }
@@ -406,8 +487,42 @@ func (q *Queries) GetEgressRuleByWorkspaceAndBot(ctx context.Context, arg GetEgr
 	return i, err
 }
 
+const getWorkspaceOpenAIPlanSecret = `-- name: GetWorkspaceOpenAIPlanSecret :one
+SELECT id, workspace_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at, adapter_id, auth_kind
+FROM workspace_secrets
+WHERE workspace_id = $1 AND name = 'llm-openai' AND auth_kind IN ('openai_plan', 'openai_plan_reconnect')
+`
+
+func (q *Queries) GetWorkspaceOpenAIPlanSecret(ctx context.Context, workspaceID pgtype.UUID) (WorkspaceSecret, error) {
+	row := q.db.QueryRow(ctx, getWorkspaceOpenAIPlanSecret, workspaceID)
+	var i WorkspaceSecret
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Name,
+		&i.DomainMatch,
+		&i.MatchSubdomains,
+		&i.PathPrefix,
+		&i.AuthScheme,
+		&i.HeaderName,
+		&i.Username,
+		&i.KekID,
+		&i.WrappedDek,
+		&i.EncryptedValue,
+		&i.MaskedPreview,
+		&i.UsedCount,
+		&i.LastUsedAt,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.AdapterID,
+		&i.AuthKind,
+	)
+	return i, err
+}
+
 const getWorkspaceSecretByWorkspaceAndID = `-- name: GetWorkspaceSecretByWorkspaceAndID :one
-SELECT id, workspace_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at, adapter_id
+SELECT id, workspace_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at, adapter_id, auth_kind
 FROM workspace_secrets
 WHERE workspace_id = $1 AND id = $2
 `
@@ -440,12 +555,52 @@ func (q *Queries) GetWorkspaceSecretByWorkspaceAndID(ctx context.Context, arg Ge
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.AdapterID,
+		&i.AuthKind,
+	)
+	return i, err
+}
+
+const getWorkspaceSecretByWorkspaceAndName = `-- name: GetWorkspaceSecretByWorkspaceAndName :one
+SELECT id, workspace_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at, adapter_id, auth_kind
+FROM workspace_secrets
+WHERE workspace_id = $1 AND name = $2
+`
+
+type GetWorkspaceSecretByWorkspaceAndNameParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	Name        string      `json:"name"`
+}
+
+func (q *Queries) GetWorkspaceSecretByWorkspaceAndName(ctx context.Context, arg GetWorkspaceSecretByWorkspaceAndNameParams) (WorkspaceSecret, error) {
+	row := q.db.QueryRow(ctx, getWorkspaceSecretByWorkspaceAndName, arg.WorkspaceID, arg.Name)
+	var i WorkspaceSecret
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Name,
+		&i.DomainMatch,
+		&i.MatchSubdomains,
+		&i.PathPrefix,
+		&i.AuthScheme,
+		&i.HeaderName,
+		&i.Username,
+		&i.KekID,
+		&i.WrappedDek,
+		&i.EncryptedValue,
+		&i.MaskedPreview,
+		&i.UsedCount,
+		&i.LastUsedAt,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.AdapterID,
+		&i.AuthKind,
 	)
 	return i, err
 }
 
 const listBotSecretsByWorkspaceAndBot = `-- name: ListBotSecretsByWorkspaceAndBot :many
-SELECT id, workspace_id, bot_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at, adapter_id
+SELECT id, workspace_id, bot_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at, adapter_id, auth_kind
 FROM bot_secrets
 WHERE workspace_id = $1 AND bot_id = $2
 ORDER BY created_at ASC, name ASC
@@ -486,6 +641,7 @@ func (q *Queries) ListBotSecretsByWorkspaceAndBot(ctx context.Context, arg ListB
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.AdapterID,
+			&i.AuthKind,
 		); err != nil {
 			return nil, err
 		}
@@ -558,7 +714,7 @@ func (q *Queries) ListEgressLogsByWorkspaceAndBot(ctx context.Context, arg ListE
 }
 
 const listWorkspaceSecretsByWorkspace = `-- name: ListWorkspaceSecretsByWorkspace :many
-SELECT id, workspace_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at, adapter_id
+SELECT id, workspace_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at, adapter_id, auth_kind
 FROM workspace_secrets
 WHERE workspace_id = $1
 ORDER BY created_at ASC, name ASC
@@ -593,6 +749,7 @@ func (q *Queries) ListWorkspaceSecretsByWorkspace(ctx context.Context, workspace
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.AdapterID,
+			&i.AuthKind,
 		); err != nil {
 			return nil, err
 		}
@@ -618,6 +775,88 @@ type LockBotEgressRuleParams struct {
 func (q *Queries) LockBotEgressRule(ctx context.Context, arg LockBotEgressRuleParams) error {
 	_, err := q.db.Exec(ctx, lockBotEgressRule, arg.Column1, arg.Column2)
 	return err
+}
+
+const lockBotSecretByWorkspaceBotAndID = `-- name: LockBotSecretByWorkspaceBotAndID :one
+SELECT id, workspace_id, bot_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at, adapter_id, auth_kind
+FROM bot_secrets
+WHERE workspace_id = $1 AND bot_id = $2 AND id = $3
+FOR UPDATE
+`
+
+type LockBotSecretByWorkspaceBotAndIDParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	BotID       pgtype.UUID `json:"bot_id"`
+	ID          pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) LockBotSecretByWorkspaceBotAndID(ctx context.Context, arg LockBotSecretByWorkspaceBotAndIDParams) (BotSecret, error) {
+	row := q.db.QueryRow(ctx, lockBotSecretByWorkspaceBotAndID, arg.WorkspaceID, arg.BotID, arg.ID)
+	var i BotSecret
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.BotID,
+		&i.Name,
+		&i.DomainMatch,
+		&i.MatchSubdomains,
+		&i.PathPrefix,
+		&i.AuthScheme,
+		&i.HeaderName,
+		&i.Username,
+		&i.KekID,
+		&i.WrappedDek,
+		&i.EncryptedValue,
+		&i.MaskedPreview,
+		&i.UsedCount,
+		&i.LastUsedAt,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.AdapterID,
+		&i.AuthKind,
+	)
+	return i, err
+}
+
+const lockWorkspaceSecretByWorkspaceAndID = `-- name: LockWorkspaceSecretByWorkspaceAndID :one
+SELECT id, workspace_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at, adapter_id, auth_kind
+FROM workspace_secrets
+WHERE workspace_id = $1 AND id = $2
+FOR UPDATE
+`
+
+type LockWorkspaceSecretByWorkspaceAndIDParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ID          pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) LockWorkspaceSecretByWorkspaceAndID(ctx context.Context, arg LockWorkspaceSecretByWorkspaceAndIDParams) (WorkspaceSecret, error) {
+	row := q.db.QueryRow(ctx, lockWorkspaceSecretByWorkspaceAndID, arg.WorkspaceID, arg.ID)
+	var i WorkspaceSecret
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Name,
+		&i.DomainMatch,
+		&i.MatchSubdomains,
+		&i.PathPrefix,
+		&i.AuthScheme,
+		&i.HeaderName,
+		&i.Username,
+		&i.KekID,
+		&i.WrappedDek,
+		&i.EncryptedValue,
+		&i.MaskedPreview,
+		&i.UsedCount,
+		&i.LastUsedAt,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.AdapterID,
+		&i.AuthKind,
+	)
+	return i, err
 }
 
 const recordBotSecretUsage = `-- name: RecordBotSecretUsage :exec
@@ -654,6 +893,41 @@ func (q *Queries) RecordWorkspaceSecretUsage(ctx context.Context, arg RecordWork
 	return err
 }
 
+const resetBotSecretAuthKind = `-- name: ResetBotSecretAuthKind :exec
+UPDATE bot_secrets
+SET auth_kind = '',
+    updated_at = now()
+WHERE workspace_id = $1 AND bot_id = $2 AND id = $3
+`
+
+type ResetBotSecretAuthKindParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	BotID       pgtype.UUID `json:"bot_id"`
+	ID          pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) ResetBotSecretAuthKind(ctx context.Context, arg ResetBotSecretAuthKindParams) error {
+	_, err := q.db.Exec(ctx, resetBotSecretAuthKind, arg.WorkspaceID, arg.BotID, arg.ID)
+	return err
+}
+
+const resetWorkspaceSecretAuthKind = `-- name: ResetWorkspaceSecretAuthKind :exec
+UPDATE workspace_secrets
+SET auth_kind = '',
+    updated_at = now()
+WHERE workspace_id = $1 AND id = $2
+`
+
+type ResetWorkspaceSecretAuthKindParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ID          pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) ResetWorkspaceSecretAuthKind(ctx context.Context, arg ResetWorkspaceSecretAuthKindParams) error {
+	_, err := q.db.Exec(ctx, resetWorkspaceSecretAuthKind, arg.WorkspaceID, arg.ID)
+	return err
+}
+
 const updateBotSecretByWorkspaceBotAndID = `-- name: UpdateBotSecretByWorkspaceBotAndID :one
 UPDATE bot_secrets
 SET name = $4,
@@ -669,7 +943,7 @@ SET name = $4,
     masked_preview = $14,
     updated_at = now()
 WHERE workspace_id = $1 AND bot_id = $2 AND id = $3
-RETURNING id, workspace_id, bot_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at, adapter_id
+RETURNING id, workspace_id, bot_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at, adapter_id, auth_kind
 `
 
 type UpdateBotSecretByWorkspaceBotAndIDParams struct {
@@ -728,8 +1002,48 @@ func (q *Queries) UpdateBotSecretByWorkspaceBotAndID(ctx context.Context, arg Up
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.AdapterID,
+		&i.AuthKind,
 	)
 	return i, err
+}
+
+const updateBotSecretOpenAIPlanTokens = `-- name: UpdateBotSecretOpenAIPlanTokens :execrows
+UPDATE bot_secrets
+SET auth_kind = $4,
+    kek_id = $5,
+    wrapped_dek = $6,
+    encrypted_value = $7,
+    masked_preview = $8,
+    updated_at = now()
+WHERE workspace_id = $1 AND bot_id = $2 AND id = $3 AND auth_kind IN ('openai_plan', 'openai_plan_reconnect')
+`
+
+type UpdateBotSecretOpenAIPlanTokensParams struct {
+	WorkspaceID    pgtype.UUID `json:"workspace_id"`
+	BotID          pgtype.UUID `json:"bot_id"`
+	ID             pgtype.UUID `json:"id"`
+	AuthKind       string      `json:"auth_kind"`
+	KekID          string      `json:"kek_id"`
+	WrappedDek     []byte      `json:"wrapped_dek"`
+	EncryptedValue []byte      `json:"encrypted_value"`
+	MaskedPreview  string      `json:"masked_preview"`
+}
+
+func (q *Queries) UpdateBotSecretOpenAIPlanTokens(ctx context.Context, arg UpdateBotSecretOpenAIPlanTokensParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateBotSecretOpenAIPlanTokens,
+		arg.WorkspaceID,
+		arg.BotID,
+		arg.ID,
+		arg.AuthKind,
+		arg.KekID,
+		arg.WrappedDek,
+		arg.EncryptedValue,
+		arg.MaskedPreview,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateWorkspaceSecretByWorkspaceAndID = `-- name: UpdateWorkspaceSecretByWorkspaceAndID :one
@@ -747,7 +1061,7 @@ SET name = $3,
     masked_preview = $13,
     updated_at = now()
 WHERE workspace_id = $1 AND id = $2
-RETURNING id, workspace_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at, adapter_id
+RETURNING id, workspace_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at, adapter_id, auth_kind
 `
 
 type UpdateWorkspaceSecretByWorkspaceAndIDParams struct {
@@ -803,6 +1117,210 @@ func (q *Queries) UpdateWorkspaceSecretByWorkspaceAndID(ctx context.Context, arg
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.AdapterID,
+		&i.AuthKind,
+	)
+	return i, err
+}
+
+const updateWorkspaceSecretOpenAIPlanTokens = `-- name: UpdateWorkspaceSecretOpenAIPlanTokens :execrows
+UPDATE workspace_secrets
+SET auth_kind = $3,
+    kek_id = $4,
+    wrapped_dek = $5,
+    encrypted_value = $6,
+    masked_preview = $7,
+    updated_at = now()
+WHERE workspace_id = $1 AND id = $2 AND auth_kind IN ('openai_plan', 'openai_plan_reconnect')
+`
+
+type UpdateWorkspaceSecretOpenAIPlanTokensParams struct {
+	WorkspaceID    pgtype.UUID `json:"workspace_id"`
+	ID             pgtype.UUID `json:"id"`
+	AuthKind       string      `json:"auth_kind"`
+	KekID          string      `json:"kek_id"`
+	WrappedDek     []byte      `json:"wrapped_dek"`
+	EncryptedValue []byte      `json:"encrypted_value"`
+	MaskedPreview  string      `json:"masked_preview"`
+}
+
+func (q *Queries) UpdateWorkspaceSecretOpenAIPlanTokens(ctx context.Context, arg UpdateWorkspaceSecretOpenAIPlanTokensParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateWorkspaceSecretOpenAIPlanTokens,
+		arg.WorkspaceID,
+		arg.ID,
+		arg.AuthKind,
+		arg.KekID,
+		arg.WrappedDek,
+		arg.EncryptedValue,
+		arg.MaskedPreview,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const upsertCodexPlanBotSecret = `-- name: UpsertCodexPlanBotSecret :one
+INSERT INTO bot_secrets (
+    id,
+    workspace_id,
+    bot_id,
+    name,
+    domain_match,
+    match_subdomains,
+    path_prefix,
+    auth_scheme,
+    header_name,
+    username,
+    auth_kind,
+    kek_id,
+    wrapped_dek,
+    encrypted_value,
+    masked_preview,
+    created_by
+)
+VALUES ($1, $2, $3, 'llm-openai', 'api.openai.com', false, '/v1/responses', 'bearer', 'Authorization', '', 'openai_plan', $4, $5, $6, $7, $8)
+ON CONFLICT (bot_id, name) DO UPDATE SET
+    domain_match = EXCLUDED.domain_match,
+    match_subdomains = EXCLUDED.match_subdomains,
+    path_prefix = EXCLUDED.path_prefix,
+    auth_scheme = EXCLUDED.auth_scheme,
+    header_name = EXCLUDED.header_name,
+    username = EXCLUDED.username,
+    auth_kind = 'openai_plan',
+    kek_id = EXCLUDED.kek_id,
+    wrapped_dek = EXCLUDED.wrapped_dek,
+    encrypted_value = EXCLUDED.encrypted_value,
+    masked_preview = EXCLUDED.masked_preview,
+    updated_at = now()
+RETURNING id, workspace_id, bot_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at, adapter_id, auth_kind
+`
+
+type UpsertCodexPlanBotSecretParams struct {
+	ID             pgtype.UUID `json:"id"`
+	WorkspaceID    pgtype.UUID `json:"workspace_id"`
+	BotID          pgtype.UUID `json:"bot_id"`
+	KekID          string      `json:"kek_id"`
+	WrappedDek     []byte      `json:"wrapped_dek"`
+	EncryptedValue []byte      `json:"encrypted_value"`
+	MaskedPreview  string      `json:"masked_preview"`
+	CreatedBy      pgtype.UUID `json:"created_by"`
+}
+
+func (q *Queries) UpsertCodexPlanBotSecret(ctx context.Context, arg UpsertCodexPlanBotSecretParams) (BotSecret, error) {
+	row := q.db.QueryRow(ctx, upsertCodexPlanBotSecret,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.BotID,
+		arg.KekID,
+		arg.WrappedDek,
+		arg.EncryptedValue,
+		arg.MaskedPreview,
+		arg.CreatedBy,
+	)
+	var i BotSecret
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.BotID,
+		&i.Name,
+		&i.DomainMatch,
+		&i.MatchSubdomains,
+		&i.PathPrefix,
+		&i.AuthScheme,
+		&i.HeaderName,
+		&i.Username,
+		&i.KekID,
+		&i.WrappedDek,
+		&i.EncryptedValue,
+		&i.MaskedPreview,
+		&i.UsedCount,
+		&i.LastUsedAt,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.AdapterID,
+		&i.AuthKind,
+	)
+	return i, err
+}
+
+const upsertCodexPlanWorkspaceSecret = `-- name: UpsertCodexPlanWorkspaceSecret :one
+INSERT INTO workspace_secrets (
+    id,
+    workspace_id,
+    name,
+    domain_match,
+    match_subdomains,
+    path_prefix,
+    auth_scheme,
+    header_name,
+    username,
+    auth_kind,
+    kek_id,
+    wrapped_dek,
+    encrypted_value,
+    masked_preview,
+    created_by
+)
+VALUES ($1, $2, 'llm-openai', 'api.openai.com', false, '/v1/responses', 'bearer', 'Authorization', '', 'openai_plan', $3, $4, $5, $6, $7)
+ON CONFLICT (workspace_id, name) DO UPDATE SET
+    domain_match = EXCLUDED.domain_match,
+    match_subdomains = EXCLUDED.match_subdomains,
+    path_prefix = EXCLUDED.path_prefix,
+    auth_scheme = EXCLUDED.auth_scheme,
+    header_name = EXCLUDED.header_name,
+    username = EXCLUDED.username,
+    auth_kind = 'openai_plan',
+    kek_id = EXCLUDED.kek_id,
+    wrapped_dek = EXCLUDED.wrapped_dek,
+    encrypted_value = EXCLUDED.encrypted_value,
+    masked_preview = EXCLUDED.masked_preview,
+    updated_at = now()
+RETURNING id, workspace_id, name, domain_match, match_subdomains, path_prefix, auth_scheme, header_name, username, kek_id, wrapped_dek, encrypted_value, masked_preview, used_count, last_used_at, created_by, created_at, updated_at, adapter_id, auth_kind
+`
+
+type UpsertCodexPlanWorkspaceSecretParams struct {
+	ID             pgtype.UUID `json:"id"`
+	WorkspaceID    pgtype.UUID `json:"workspace_id"`
+	KekID          string      `json:"kek_id"`
+	WrappedDek     []byte      `json:"wrapped_dek"`
+	EncryptedValue []byte      `json:"encrypted_value"`
+	MaskedPreview  string      `json:"masked_preview"`
+	CreatedBy      pgtype.UUID `json:"created_by"`
+}
+
+func (q *Queries) UpsertCodexPlanWorkspaceSecret(ctx context.Context, arg UpsertCodexPlanWorkspaceSecretParams) (WorkspaceSecret, error) {
+	row := q.db.QueryRow(ctx, upsertCodexPlanWorkspaceSecret,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.KekID,
+		arg.WrappedDek,
+		arg.EncryptedValue,
+		arg.MaskedPreview,
+		arg.CreatedBy,
+	)
+	var i WorkspaceSecret
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Name,
+		&i.DomainMatch,
+		&i.MatchSubdomains,
+		&i.PathPrefix,
+		&i.AuthScheme,
+		&i.HeaderName,
+		&i.Username,
+		&i.KekID,
+		&i.WrappedDek,
+		&i.EncryptedValue,
+		&i.MaskedPreview,
+		&i.UsedCount,
+		&i.LastUsedAt,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.AdapterID,
+		&i.AuthKind,
 	)
 	return i, err
 }

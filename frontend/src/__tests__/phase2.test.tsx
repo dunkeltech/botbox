@@ -238,6 +238,45 @@ afterEach(() => {
 });
 
 describe('Phase 2 Bot Workspace, Terminal, Files, Control Lock & Fleet controls', () => {
+  it('shows the missing model price and disables computer startup', async () => {
+    const session = makeSession();
+    const bot = makeBot({ status: 'stopped', mood: 'offline' });
+    const env = makeEnv({
+      status: 'stopped',
+      envId: '',
+      startedAt: null,
+      missingModelPrice: { provider: 'openai', model: 'gpt-fixture' },
+    });
+    const calls = installFetchMock((url) => {
+      if (url === '/api/auth/refresh') return jsonResponse(session, 200);
+      if (url === '/api/workspaces/ws-1/bots/bot-1')
+        return jsonResponse(bot, 200);
+      if (url === '/api/workspaces/ws-1/bots/bot-1/environment') {
+        return jsonResponse(env, 200);
+      }
+      return jsonResponse({}, 404);
+    });
+    renderWithProviders(<BotWorkspacePage />);
+    expect(
+      await screen.findByText(
+        'The bot computer requires a model price for openai / gpt-fixture.',
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByRole('link', {
+        name: enMessages.workspaceSettings.modelPrices.openSettings,
+      }),
+    ).toHaveAttribute('href', '/settings/budgets#model-prices');
+    const start = screen.getByRole('button', {
+      name: enMessages.workspace.startSandbox,
+    });
+    expect(start).toBeDisabled();
+    fireEvent.click(start);
+    expect(calls.some(({ url }) => url.endsWith('/environment/start'))).toBe(
+      false,
+    );
+  });
+
   it('starts stopped sandbox, loads VNC ticket, takes control, and releases with a hand-back note', async () => {
     const session = makeSession();
     const bot = makeBot({ status: 'stopped', mood: 'offline' });

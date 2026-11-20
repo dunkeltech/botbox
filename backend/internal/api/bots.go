@@ -221,24 +221,17 @@ func (s *server) handleGetBot(w http.ResponseWriter, r *http.Request) {
 		WorkspaceID: wsRow.ID,
 		ID:          botRow.ID,
 	}); envErr == nil {
-		envCopy := db.Environment{
-			BotID:               envRow.BotID,
-			Driver:              envRow.Driver,
-			EnvID:               envRow.EnvID,
-			Status:              envRow.Status,
-			Image:               envRow.Image,
-			CpuMillis:           envRow.CpuMillis,
-			MemoryMib:           envRow.MemoryMib,
-			VolumeRef:           envRow.VolumeRef,
-			ControlHolderUserID: envRow.ControlHolderUserID,
-			ControlNote:         envRow.ControlNote,
-			StartedAt:           envRow.StartedAt,
-			UpdatedAt:           envRow.UpdatedAt,
-		}
+		envCopy := environmentFromRow(envRow)
 		envPtr = &envCopy
 	}
 
+	missingPrice, err := missingEnvironmentModelPrice(r.Context(), s.queries, botRow)
+	if err != nil {
+		s.environmentFailure(w, err)
+		return
+	}
 	converted := toAPIBotWithEnv(botRow, envPtr)
+	converted.MissingModelPrice = missingPrice
 	activities, activityErr := s.queries.ListRunningBotActivity(r.Context(), wsRow.ID)
 	if activityErr != nil {
 		s.chatFailure(w)
@@ -279,7 +272,7 @@ func (s *server) handleUpdateBot(w http.ResponseWriter, r *http.Request) {
 	defer rollbackTx(r.Context(), tx)
 
 	txq := s.queries.WithTx(tx)
-	existing, err := txq.GetBotByWorkspaceAndID(r.Context(), db.GetBotByWorkspaceAndIDParams{
+	existing, err := txq.LockBotByWorkspaceAndID(r.Context(), db.LockBotByWorkspaceAndIDParams{
 		WorkspaceID: wsRow.ID,
 		ID:          toPGUUID(botID),
 	})
@@ -389,26 +382,23 @@ func (s *server) handleUpdateBot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	missingPrice, err := missingEnvironmentModelPrice(r.Context(), txq, updated)
+	if err != nil {
+		s.environmentFailure(w, err)
+		return
+	}
 	var envPtr *db.Environment
-	if envRow, envErr := txq.GetEnvironmentByWorkspaceAndBot(r.Context(), db.GetEnvironmentByWorkspaceAndBotParams{
+	envRow, envErr := txq.GetEnvironmentByWorkspaceAndBot(r.Context(), db.GetEnvironmentByWorkspaceAndBotParams{
 		WorkspaceID: wsRow.ID,
 		ID:          existing.ID,
-	}); envErr == nil {
-		envCopy := db.Environment{
-			BotID:               envRow.BotID,
-			Driver:              envRow.Driver,
-			EnvID:               envRow.EnvID,
-			Status:              envRow.Status,
-			Image:               envRow.Image,
-			CpuMillis:           envRow.CpuMillis,
-			MemoryMib:           envRow.MemoryMib,
-			VolumeRef:           envRow.VolumeRef,
-			ControlHolderUserID: envRow.ControlHolderUserID,
-			ControlNote:         envRow.ControlNote,
-			StartedAt:           envRow.StartedAt,
-			UpdatedAt:           envRow.UpdatedAt,
-		}
-		envPtr = &envCopy
+	})
+	switch {
+	case envErr == nil:
+		env := environmentFromRow(envRow)
+		envPtr = &env
+	case !errors.Is(envErr, pgx.ErrNoRows):
+		s.environmentFailure(w, envErr)
+		return
 	}
 
 	wsUUID := fromPGUUID(wsRow.ID)
@@ -421,13 +411,25 @@ func (s *server) handleUpdateBot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if missingPrice != nil && envPtr != nil && envPtr.Status == string(compute.StatusRunning) {
+		stopped, err := stopEnvironment(r.Context(), txq, s.compute, updated, envPtr.EnvID, &actorUUID, "environment.stopped_missing_model_price")
+		if err != nil {
+			s.logger.Error("stop sandbox after model change", "bot_id", botID, "err", err)
+			s.writeComputeError(w, err, "failed to stop sandbox for the unpriced model")
+			return
+		}
+		envPtr = &stopped
+	}
+
 	if err := tx.Commit(r.Context()); err != nil {
 		s.logger.Error("commit update bot", "err", err)
 		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to update bot")
 		return
 	}
 
-	writeJSON(w, s.logger, http.StatusOK, toAPIBotWithEnv(updated, envPtr))
+	response := toAPIBotWithEnv(updated, envPtr)
+	response.MissingModelPrice = missingPrice
+	writeJSON(w, s.logger, http.StatusOK, response)
 }
 
 func (s *server) handleDeleteBot(w http.ResponseWriter, r *http.Request) {

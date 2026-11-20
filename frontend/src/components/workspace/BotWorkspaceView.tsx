@@ -34,6 +34,7 @@ import {
   StatusChip,
 } from '@/components/ui';
 import { ActionTimeline } from '@/components/workspace/ActionTimeline';
+import { MissingModelPriceNotice } from '@/components/bots/MissingModelPriceNotice';
 import { BotWorkspaceSkeleton } from '@/components/workspace/BotWorkspaceSkeleton';
 import { WorkspaceFiles } from '@/components/workspace/WorkspaceFiles';
 import { WorkspaceTerminal } from '@/components/workspace/WorkspaceTerminal';
@@ -58,7 +59,11 @@ import {
   takeBotControl,
 } from '@/lib/api-client';
 import { type ErrorTranslationKey, resolveErrorKey } from '@/lib/errors';
-import { canManageBot, canTakeDesktopControl } from '@/lib/rbac';
+import {
+  canManageBot,
+  canManageMembers,
+  canTakeDesktopControl,
+} from '@/lib/rbac';
 import type {
   AvatarMood,
   Bot,
@@ -495,6 +500,7 @@ export function BotWorkspaceView() {
 
   const workspaceId = activeWorkspace.id;
   const canManage = canManageBot(activeWorkspace.role, user?.id, bot);
+  const missingModelPrice = env?.missingModelPrice;
   const canControl = canTakeDesktopControl(activeWorkspace.role);
   const controlHolder = env?.controlHolder ?? null;
   const userHoldsControl = Boolean(
@@ -528,6 +534,18 @@ export function BotWorkspaceView() {
       }
     } catch (err) {
       setActionErrorKey(resolveErrorKey(err));
+      if (
+        err instanceof ApiClientError &&
+        err.code === 'environment.model_price_required'
+      ) {
+        const current = await getBotEnvironment(workspaceId, bot.id).catch(
+          () => null,
+        );
+        if (current?.missingModelPrice) {
+          setEnv(current);
+          setActionErrorKey(null);
+        }
+      }
     } finally {
       setEnvBusy(null);
     }
@@ -814,7 +832,9 @@ export function BotWorkspaceView() {
               <>
                 <Button
                   variant="secondary"
-                  disabled={!canManage || envBusy !== null}
+                  disabled={
+                    !canManage || envBusy !== null || !!missingModelPrice
+                  }
                   onClick={() => void handleLifecycle('restart')}
                 >
                   <RotateCcw className="h-4 w-4" aria-hidden="true" />
@@ -841,7 +861,10 @@ export function BotWorkspaceView() {
               <Button
                 variant="primary"
                 disabled={
-                  !canManage || envBusy !== null || envStatus === 'creating'
+                  !canManage ||
+                  envBusy !== null ||
+                  envStatus === 'creating' ||
+                  !!missingModelPrice
                 }
                 onClick={() => void handleLifecycle('start')}
               >
@@ -867,6 +890,12 @@ export function BotWorkspaceView() {
 
       {actionErrorKey ? (
         <Alert tone="warning">{tErrors(actionErrorKey)}</Alert>
+      ) : null}
+      {missingModelPrice ? (
+        <MissingModelPriceNotice
+          price={missingModelPrice}
+          canManagePrices={canManageMembers(activeWorkspace.role)}
+        />
       ) : null}
 
       {!isFullscreen ? (

@@ -44,18 +44,31 @@ func CLIProviderResolver(q *db.Queries, ring *KeyRing, workspaceID, botID uuid.U
 		if err != nil {
 			return nil, errors.New("provider credentials unavailable")
 		}
-		decrypt := func(scope string, id pgtype.UUID, key string, wrapped, value []byte, domain string, subdomains bool, path string) (*llmproxy.SecretConfig, error) {
+		decrypt := func(scope string, id pgtype.UUID, key string, wrapped, value []byte, domain string, subdomains bool, path, authKind string) (*llmproxy.SecretConfig, error) {
 			upstream, _ := url.Parse(target)
 			domain = strings.ToLower(domain)
 			if domain != upstream.Hostname() && (!subdomains || !strings.HasSuffix(upstream.Hostname(), "."+domain)) {
 				return nil, llmproxy.ErrSecretNotFound
+			}
+			if authKind == SecretAuthKindOpenAIPlanReconnect {
+				return nil, llmproxy.ErrPlanReconnect
 			}
 			aad := fmt.Appendf(nil, "workspace:%s/scope:%s/id:%s", workspaceID, scope, uuid.UUID(id.Bytes))
 			plaintext, err := ring.Decrypt(EnvelopeCiphertext{KeyID: key, WrappedDEK: wrapped, Ciphertext: value}, aad)
 			if err != nil {
 				return nil, errors.New("provider credential cannot be decrypted")
 			}
-			return &llmproxy.SecretConfig{UpstreamURL: target, AuthKind: auth, SecretValue: string(plaintext), PathPrefix: path}, nil
+			secretValue := string(plaintext)
+			resolvedAuth := auth
+			if authKind == SecretAuthKindOpenAIPlan {
+				tokens, parseErr := UnmarshalOpenAIPlanTokens(plaintext)
+				if parseErr != nil {
+					return nil, llmproxy.ErrPlanReconnect
+				}
+				secretValue = tokens.Access
+				resolvedAuth = llmproxy.AuthKindOpenAIPlan
+			}
+			return &llmproxy.SecretConfig{UpstreamURL: target, AuthKind: resolvedAuth, SecretValue: secretValue, PathPrefix: path}, nil
 		}
 		names := []string{"llm-" + provider}
 		if provider == "anthropic" {
@@ -67,7 +80,7 @@ func CLIProviderResolver(q *db.Queries, ring *KeyRing, workspaceID, botID uuid.U
 					if name == "llm-anthropic-oauth" {
 						auth = llmproxy.AuthKindClaudeOAuth
 					}
-					return decrypt("bot", s.ID, s.KekID, s.WrappedDek, s.EncryptedValue, s.DomainMatch, s.MatchSubdomains, s.PathPrefix)
+					return decrypt("bot", s.ID, s.KekID, s.WrappedDek, s.EncryptedValue, s.DomainMatch, s.MatchSubdomains, s.PathPrefix, s.AuthKind)
 				}
 			}
 		}
@@ -81,7 +94,7 @@ func CLIProviderResolver(q *db.Queries, ring *KeyRing, workspaceID, botID uuid.U
 					if name == "llm-anthropic-oauth" {
 						auth = llmproxy.AuthKindClaudeOAuth
 					}
-					return decrypt("workspace", s.ID, s.KekID, s.WrappedDek, s.EncryptedValue, s.DomainMatch, s.MatchSubdomains, s.PathPrefix)
+					return decrypt("workspace", s.ID, s.KekID, s.WrappedDek, s.EncryptedValue, s.DomainMatch, s.MatchSubdomains, s.PathPrefix, s.AuthKind)
 				}
 			}
 		}

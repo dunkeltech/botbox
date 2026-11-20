@@ -87,6 +87,7 @@ func TestChatToolImageIsPrivateAndPathLimited(t *testing.T) {
 		t.Fatalf("stopped computer=%d body=%s", r.status, r.body)
 	}
 
+	setEnvironmentModelPrice(t, h, base, owner.AccessToken, bot.LlmProvider, bot.LlmModel)
 	started := h.request(http.MethodPost, base+"/bots/"+bot.Id.String()+"/environment/start", nil, owner.AccessToken, nil, true)
 	if started.status != http.StatusOK {
 		t.Fatalf("start=%d %s", started.status, started.body)
@@ -199,6 +200,7 @@ func TestGroupToolImageIsMemberAndPathLimited(t *testing.T) {
 		t.Fatalf("stopped computer=%d", r.status)
 	}
 
+	setEnvironmentModelPrice(t, h, base, owner.AccessToken, bot.LlmProvider, bot.LlmModel)
 	started := h.request(http.MethodPost, base+"/bots/"+bot.Id.String()+"/environment/start", nil, owner.AccessToken, nil, true)
 	if started.status != http.StatusOK {
 		t.Fatalf("start=%d %s", started.status, started.body)

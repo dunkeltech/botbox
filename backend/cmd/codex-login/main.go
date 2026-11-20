@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -181,9 +182,8 @@ func authorize(ctx context.Context, pair codexplan.Pairing) (codexplan.Grant, er
 	if runtime.GOOS == "darwin" {
 		browser = "open"
 	}
-	if err := exec.CommandContext(ctx, browser, address).Run(); err != nil { //nolint:gosec // fixed opener and verified OpenAI URL
-		fmt.Printf("Open this one-time authorization link in your workstation browser:\n%s\n", address)
-	}
+	command := exec.CommandContext(ctx, browser, address) //nolint:gosec // fixed opener and verified OpenAI URL
+	showAuthorizationLink(os.Stdout, address, command.Run)
 	select {
 	case <-ctx.Done():
 		return codexplan.Grant{}, errors.New("ChatGPT authorization cancelled or timed out")
@@ -195,6 +195,12 @@ func authorize(ctx context.Context, pair codexplan.Pairing) (codexplan.Grant, er
 		}
 		return grant, nil
 	}
+}
+
+func showAuthorizationLink(output io.Writer, address string, openBrowser func() error) {
+	// The link must be available before the default browser takes focus.
+	_, _ = fmt.Fprintf(output, "To sign in manually, open this one-time link in a browser on this workstation.\n%s\n", address)
+	_ = openBrowser()
 }
 
 func random() []byte {

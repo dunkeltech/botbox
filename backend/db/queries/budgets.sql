@@ -79,6 +79,31 @@ END);
 UPDATE usage_records SET input_tokens=$3,output_tokens=$4,cache_tokens=$5,cost_micros=$6,internal_charge_micros=$7,usage_known=$8,reserved_micros=NULL
 WHERE workspace_id=$1 AND request_id=$2 AND source='proxy_meter';
 
+-- name: ListUnresolvedSubscriptionUsage :many
+SELECT u.request_id, u.model, u.created_at, b.name AS bot_name
+FROM usage_records u
+JOIN bots b ON b.workspace_id = u.workspace_id AND b.id = u.bot_id
+WHERE u.workspace_id = $1 AND u.source = 'proxy_meter'
+  AND u.subscription_budgeted AND u.usage_known IS FALSE
+  AND u.internal_charge_micros IS NULL AND u.reserved_micros IS NULL
+ORDER BY u.created_at DESC, u.request_id DESC
+LIMIT 100;
+
+-- name: GetUnresolvedSubscriptionUsage :one
+SELECT model
+FROM usage_records
+WHERE workspace_id = $1 AND request_id = $2 AND source = 'proxy_meter'
+  AND subscription_budgeted AND usage_known IS FALSE
+  AND internal_charge_micros IS NULL AND reserved_micros IS NULL;
+
+-- name: ReconcileSubscriptionUsage :execrows
+UPDATE usage_records
+SET input_tokens = $3, output_tokens = $4, cache_tokens = $5,
+    internal_charge_micros = $6, usage_known = TRUE
+WHERE workspace_id = $1 AND request_id = $2 AND source = 'proxy_meter'
+  AND subscription_budgeted AND usage_known IS FALSE
+  AND internal_charge_micros IS NULL AND reserved_micros IS NULL;
+
 -- name: GetRunningBotTurn :one
 SELECT t.* FROM bot_turns t WHERE t.workspace_id=$1 AND t.bot_id=$2 AND t.status='running';
 
