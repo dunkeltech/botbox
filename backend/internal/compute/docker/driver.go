@@ -170,6 +170,9 @@ func NewDriver(opts Options) (*Driver, error) {
 	var proxy *ProxyOptions
 	if opts.Proxy != nil {
 		copy := *opts.Proxy
+		if copy.WorkerNetwork == "" {
+			copy.WorkerNetwork = "bridge"
+		}
 		proxy = &copy
 	}
 	return &Driver{

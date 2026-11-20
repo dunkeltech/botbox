@@ -66,7 +66,7 @@ type Claims struct {
 	ExpiresAt   time.Time
 }
 
-// Provider defines the modular AuthProvider contract from Application.md §4.1.
+// Provider authenticates users and validates access tokens.
 type Provider interface {
 	Authenticate(ctx context.Context, credentials Credentials) (*User, error)
 	ValidateToken(ctx context.Context, token string) (*Claims, error)

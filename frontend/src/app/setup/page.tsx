@@ -24,7 +24,7 @@ import { slugifyName } from '@/lib/slug';
 import type { DriverType } from '@/types/api';
 
 /**
- * First-run bootstrap wizard (Application.md §4.1 / design/screens/setup-wizard.png).
+ * First-run setup wizard (design/screens/setup-wizard.png).
  * Verifies the server-generated setup secret, creates the first owner, and provisions
  * the initial workspace.
  */

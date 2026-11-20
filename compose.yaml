@@ -1,0 +1,208 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+name: botbox
+
+services:
+  secrets-init:
+    image: debian:bookworm-slim
+    network_mode: none
+    volumes:
+      - postgres-credentials:/run/botbox/postgres
+      - broker-credentials:/run/botbox/broker
+      - api-state:/var/lib/botbox
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        umask 027
+        generate() {
+          file=$$1
+          encoding=$$2
+          group=$$3
+          if [ -s "$$file" ]; then
+            return
+          fi
+          tmp=$$(mktemp "$$file.XXXXXXXX")
+          case "$$encoding" in
+            hex) od -An -v -tx1 -N32 /dev/urandom | tr -d ' \n' > "$$tmp" ;;
+            base64) head -c 32 /dev/urandom | base64 > "$$tmp" ;;
+          esac
+          chgrp "$$group" "$$tmp"
+          chmod 0640 "$$tmp"
+          mv "$$tmp" "$$file"
+        }
+        generate /run/botbox/postgres/password hex 65532
+        generate /run/botbox/broker/token hex 65532
+        generate /var/lib/botbox/jwt-seed base64 0
+        generate /var/lib/botbox/setup-secret hex 0
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: botbox
+      POSTGRES_USER: botbox
+      POSTGRES_PASSWORD_FILE: /run/botbox/postgres/password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - postgres-credentials:/run/botbox/postgres:ro
+    networks: [control]
+    depends_on:
+      secrets-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, pg_isready, -h, 127.0.0.1, -U, botbox, -d, botbox]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  nats:
+    image: nats:2.11-alpine
+    command: ["-js", "-sd", /data, "-m", "8222"]
+    volumes:
+      - nats-data:/data
+    networks: [control]
+    healthcheck:
+      test: [CMD, wget, -qO, /dev/null, "http://127.0.0.1:8222/healthz?js-enabled-only=true"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  auth-broker:
+    build:
+      context: .
+      dockerfile: images/auth-broker/Dockerfile
+    init: true
+    restart: "on-failure:3"
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+      - seccomp:./backend/internal/compute/docker/chromium-seccomp.json
+    environment:
+      AUTH_BROKER_ADDR: 0.0.0.0:8085
+    volumes:
+      - postgres-credentials:/run/botbox/postgres:ro
+      - broker-credentials:/run/botbox/broker:ro
+    networks: [control]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        export DATABASE_URL="postgres://botbox:$$(cat /run/botbox/postgres/password)@postgres:5432/botbox?sslmode=disable"
+        export AUTH_BROKER_TOKEN="$$(cat /run/botbox/broker/token)"
+        exec /usr/local/bin/auth-broker
+    healthcheck:
+      test: [CMD, curl, -fsS, "http://127.0.0.1:8085/healthz"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # The API provisions real bot containers and their proxies on demand.
+  # These jobs make the exact images it expects available in the local Engine.
+  sandbox-image:
+    image: botbox/sandbox:dev
+    build:
+      context: .
+      dockerfile: images/sandbox/Dockerfile
+    pull_policy: build
+    network_mode: none
+    entrypoint: ["/bin/true"]
+
+  egress-image:
+    image: botbox/egress-proxy:dev
+    build:
+      context: .
+      dockerfile: images/egress-proxy/Dockerfile
+    pull_policy: build
+    network_mode: none
+    entrypoint: ["/bin/true"]
+
+  api:
+    build:
+      context: .
+      dockerfile: images/api/Dockerfile
+    environment:
+      API_LISTEN_ADDR: 0.0.0.0:8080
+      PUBLIC_BASE_URL: http://127.0.0.1:${BOTBOX_COMPOSE_PORT:-8000}
+      NATS_URL: nats://nats:4222
+      BOTBOX_AUTH_BROKER_URL: http://auth-broker:8085
+      BOTBOX_EGRESS_WORKER_NETWORK: ${COMPOSE_PROJECT_NAME}-control
+      BOTBOX_SECRETS_KEK_FILE: /var/lib/botbox/secrets.kek
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - type: bind
+        source: ${BOTBOX_DOCKER_SOCKET:-/var/run/docker.sock}
+        target: /var/run/docker.sock
+        bind:
+          create_host_path: false
+      - postgres-credentials:/run/botbox/postgres:ro
+      - broker-credentials:/run/botbox/broker:ro
+      - api-state:/var/lib/botbox
+    networks: [control, web]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      auth-broker:
+        condition: service_healthy
+      sandbox-image:
+        condition: service_completed_successfully
+      egress-image:
+        condition: service_completed_successfully
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        export DATABASE_URL="postgres://botbox:$$(cat /run/botbox/postgres/password)@postgres:5432/botbox?sslmode=disable"
+        export BOTBOX_AUTH_BROKER_TOKEN="$$(cat /run/botbox/broker/token)"
+        export BOTBOX_JWT_PRIVATE_KEY="$$(cat /var/lib/botbox/jwt-seed)"
+        export BOTBOX_SETUP_SECRET="$$(cat /var/lib/botbox/setup-secret)"
+        exec /usr/local/bin/botbox-api
+    healthcheck:
+      test: [CMD, curl, -fsS, "http://127.0.0.1:8080/api/healthz"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  frontend:
+    build:
+      context: .
+      dockerfile: images/frontend/Dockerfile
+    networks: [web]
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/login').then(r => { if (!r.ok) process.exitCode = 1 })"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  gateway:
+    image: caddy:2-alpine
+    ports:
+      - "127.0.0.1:${BOTBOX_COMPOSE_PORT:-8000}:8000"
+    environment:
+      BOTBOX_API_UPSTREAM: api:8080
+      BOTBOX_FRONTEND_UPSTREAM: frontend:3000
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    networks: [web]
+    depends_on:
+      api:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+
+networks:
+  control:
+    name: ${COMPOSE_PROJECT_NAME}-control
+  web:
+
+volumes:
+  postgres-credentials:
+  broker-credentials:
+  postgres-data:
+  nats-data:
+  api-state:

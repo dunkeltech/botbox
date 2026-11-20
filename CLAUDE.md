@@ -12,4 +12,4 @@ All project rules live in AGENTS.md, which is imported here so both files stay i
 - **Tests:** write the negative tests (see AGENTS.md §1) in the same change as the feature. Do not leave them for later.
 - **Comments:** simple technical English that explains *why*. Do not add comments that restate the code.
 - **Tools:** run commands inside the devenv shell, so that `go`, `node`, `gh`, `sqlc` and the other tools come from `devenv.nix`. If a tool is missing, add it to `devenv.nix` instead of installing it globally.
-- **Scope:** before starting work, read the phase issue the task belongs to (`gh issue view <n>`) and `Application.md`. Keep changes within that issue.
+- **Scope:** before starting work, read the phase issue the task belongs to (`gh issue view <n>`) and the [technical overview](docs/overview.md). Keep changes within that issue.

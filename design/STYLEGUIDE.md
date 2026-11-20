@@ -11,6 +11,9 @@ bot.Box is a dunkel.Tech project, and its interface inherits the dunkel.tech loo
 3. **The human stays in charge.** "Take control", "Pause", turn limits and approvals are always one click away.
 4. **Calm, technical, precise.** Light surfaces, one accent family, monospace for anything a machine reads (commands, hosts, models, image names, seeds).
 
+The local Compose install uses the same first-run wizard. Operators retrieve the
+setup secret from the API container as described in the [README](../README.md).
+
 ## 2. Brand
 
 - **Wordmark:** `bot` + green `.` + `Box`, Lato 900. The dot is `green` (`#3f9147`) on light surfaces and `green-light` (`#5eab60`) on dark ones. This mirrors `dunkel.Tech`.

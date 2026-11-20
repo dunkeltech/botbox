@@ -37,6 +37,12 @@ budgeting, MCP, memory and browser-broker handlers. The worker remains a trusted
 control-plane component with significant access to shared services. Deployments
 can provide separate database and NATS roles via the egress overrides.
 
+Compose places workers on its control bridge through
+`BOTBOX_EGRESS_WORKER_NETWORK` to reach the private service endpoints. Sandboxes
+and relays remain on their dedicated bot bridges. Startup ingress repair checks
+the bot and workspace against this instance's database before touching Docker
+containers, since another instance may share the daemon.
+
 The worker publishes its public interception CA to a dedicated volume mounted
 read-only into its desktop. Its private signing key is envelope encrypted in a
 separate, worker-only volume and rewrapped on restart when the key ring changes.

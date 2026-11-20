@@ -10,7 +10,7 @@ for OpenRouter. Managed execution now uses the sandbox CLI and its proxy routes.
 
 ## Context
 
-Bots run in both in-sandbox CLI mode (`claude`, `codex`, `agy`) and host-side Model API mode (`openrouter`, `anthropic`, `openai`). Users want to expose external Model Context Protocol (MCP) servers to bots while enforcing two core `bot.Box` invariants (`Application.md` §1):
+At the time of this decision, bots ran in both in-sandbox CLI mode (`claude`, `codex`, `agy`) and host-side Model API mode (`openrouter`, `anthropic`, `openai`). Users wanted to expose external Model Context Protocol (MCP) servers to bots while enforcing these [security invariants](../../AGENTS.md#7-security-invariants-never-break-these).
 
 1. **Credentials never enter a sandbox.** Upstream MCP server authentication headers (`bearer`, `header`, `basic`) must remain envelope-encrypted outside bot containers and must never be written into sandbox MCP config files, environment variables, prompts, or logs.
 2. **Least-privilege per-bot command control.** Different bots in the same workspace need independent subsets of MCP servers and per-command permissions (`allow`, `ask`, `deny`), with newly discovered or unassigned tools failing closed (`deny`).

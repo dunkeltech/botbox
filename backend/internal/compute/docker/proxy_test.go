@@ -18,8 +18,17 @@ import (
 )
 
 func TestProxyProvisioningKeepsCredentialsOutsideSandbox(t *testing.T) {
-	for _, fail := range []string{"", "create", "network", "start", "external network", "legacy image"} {
-		t.Run(fail, func(t *testing.T) {
+	for _, tc := range []struct{ name, fail, workerNetwork string }{
+		{name: "default bridge"},
+		{name: "compose control bridge", workerNetwork: "botbox-test-control"},
+		{name: "create failure", fail: "create"},
+		{name: "network failure", fail: "network"},
+		{name: "start failure", fail: "start"},
+		{name: "external bot network", fail: "external network"},
+		{name: "legacy image", fail: "legacy image"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fail := tc.fail
 			var mu sync.Mutex
 			configs := map[string]map[string]any{}
 			deleted := map[string]bool{}
@@ -34,7 +43,13 @@ func TestProxyProvisioningKeepsCredentialsOutsideSandbox(t *testing.T) {
 				if r.Method == "GET" && strings.HasSuffix(path, "/json") {
 					name := strings.TrimSuffix(strings.TrimPrefix(path, "/containers/"), "/json")
 					if config, ok := configs[name]; ok {
-						_ = json.NewEncoder(w).Encode(map[string]any{"Id": name, "Config": config, "State": map[string]any{"Running": true, "Health": map[string]string{"Status": "healthy"}}})
+						host := config["HostConfig"].(map[string]any)
+						network := host["NetworkMode"].(string)
+						_ = json.NewEncoder(w).Encode(map[string]any{
+							"Id": name, "Config": config,
+							"NetworkSettings": map[string]any{"Networks": map[string]any{network: map[string]any{}}},
+							"State":           map[string]any{"Running": true, "Health": map[string]string{"Status": "healthy"}},
+						})
 						return
 					}
 					http.Error(w, "missing", 404)
@@ -74,7 +89,7 @@ func TestProxyProvisioningKeepsCredentialsOutsideSandbox(t *testing.T) {
 				w.WriteHeader(200)
 			}))
 			defer server.Close()
-			opts := docker.Options{BaseURL: server.URL, Proxy: &docker.ProxyOptions{Image: "botbox/egress-proxy:dev", DatabaseURL: "postgres://fixture-db-password@db/botbox", KeySpec: "fixture-key-must-not-leak"}}
+			opts := docker.Options{BaseURL: server.URL, Proxy: &docker.ProxyOptions{Image: "botbox/egress-proxy:dev", WorkerNetwork: tc.workerNetwork, DatabaseURL: "postgres://fixture-db-password@db/botbox", KeySpec: "fixture-key-must-not-leak"}}
 			d, err := docker.NewDriver(opts)
 			if err != nil {
 				t.Fatal(err)
@@ -123,7 +138,11 @@ func TestProxyProvisioningKeepsCredentialsOutsideSandbox(t *testing.T) {
 				}
 			}
 			worker := configs["botbox-egress-worker-bot"]
-			if worker == nil || worker["HostConfig"].(map[string]any)["NetworkMode"] != "bridge" {
+			wantNetwork := tc.workerNetwork
+			if wantNetwork == "" {
+				wantNetwork = "bridge"
+			}
+			if worker == nil || worker["HostConfig"].(map[string]any)["NetworkMode"] != wantNetwork {
 				t.Fatal("trusted worker missing external network")
 			}
 			host := proxy["HostConfig"].(map[string]any)
@@ -265,6 +284,9 @@ func TestUpgradeProxyIngressStopsLegacyComputers(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
 			_, _ = w.Write([]byte(`[
+				{"Id":"other-proxy","Names":["/botbox-egress-other-bot"],"Labels":{"botbox.proxy":"true","botbox.workspace_id":"other-ws","botbox.bot_id":"other-bot"}},
+				{"Id":"other-sandbox","State":"running","Names":["/botbox-bot-other-bot"],"Labels":{"botbox.managed":"true","botbox.workspace_id":"other-ws","botbox.bot_id":"other-bot"}},
+				{"Id":"wrong-workspace","State":"running","Names":["/botbox-bot-bot"],"Labels":{"botbox.managed":"true","botbox.workspace_id":"other-ws","botbox.bot_id":"bot"}},
 				{"Id":"proxy-legacy","Names":["/botbox-egress-bot"],"Labels":{"botbox.proxy":"true","botbox.workspace_id":"ws","botbox.bot_id":"bot"}},
 				{"Id":"sandbox","State":"running","Names":["/botbox-bot-bot"],"Labels":{"botbox.managed":"true","botbox.workspace_id":"ws","botbox.bot_id":"bot"}}
 			]`))
@@ -290,13 +312,26 @@ func TestUpgradeProxyIngressStopsLegacyComputers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := driver.UpgradeProxyIngress(t.Context()); err != nil {
+	if err := driver.UpgradeProxyIngress(t.Context(), map[string]string{"bot": "ws"}); err != nil {
 		t.Fatal(err)
 	}
 	mu.Lock()
 	defer mu.Unlock()
 	if !removed || !stopped {
 		t.Fatal("legacy sidecar was not removed or legacy computer was not stopped")
+	}
+}
+
+func TestWorkerNetworkRejectsNonBridgeModes(t *testing.T) {
+	for _, network := range []string{"host", "none", "container:shared", "botbox-egress-net-other"} {
+		t.Run(network, func(t *testing.T) {
+			_, err := docker.NewDriver(docker.Options{Proxy: &docker.ProxyOptions{
+				Image: "egress:dev", DatabaseURL: "postgres://db/botbox", KeySpec: "fixture-key", WorkerNetwork: network,
+			}})
+			if err == nil {
+				t.Fatal("unsafe worker network accepted")
+			}
+		})
 	}
 }
 

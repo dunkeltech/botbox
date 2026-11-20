@@ -7,7 +7,7 @@
 
 ## Context
 
-Each bot in bot.Box requires a full Linux GUI desktop inside an unprivileged container that humans can watch live at low latency in the browser and seamlessly take over without fighting the bot for mouse or keyboard control (see `Application.md` §4.1 and §4.8, Issue #2 Spike S1). We also need concrete host capacity targets before sizing Docker hosts in Phase 2 (#4) and Kubernetes pods in Phase 7 (#9).
+Each bot in bot.Box requires a full Linux GUI desktop inside an unprivileged container that humans can watch live at low latency in the browser and seamlessly take over without fighting the bot for mouse or keyboard control (Issue #2 Spike S1). We also need concrete host capacity targets before sizing Docker hosts in Phase 2 (#4) and Kubernetes pods in Phase 7 (#9).
 
 ## Options Considered
 
@@ -51,4 +51,4 @@ Adopt **Option A**: `Xtigervnc :0` (`-geometry 1280x800 -depth 24 -localhost yes
 ## Consequences
 
 - `botbox/sandbox:dev` starts in under 1 second and sustains interactive VNC sessions with single-digit-millisecond handshake overhead.
-- `Application.md` §7 capacity target and desktop streaming stack questions are resolved; Phase 2 (#4) can enforce `2 vCPU` / `2 GiB` Docker container limits and the `vncrelay` endpoint `/ws/bots/{workspaceID}/{botID}/vnc` directly.
+- Phase 2 (#4) can use `2 vCPU` and `2 GiB` Docker container limits and expose the `vncrelay` endpoint at `/ws/bots/{workspaceID}/{botID}/vnc`.

@@ -4,6 +4,8 @@
 .git
 .devenv*
 .direnv
+.playwright-mcp
+node_modules
 .env*
 **/.env*
 backend/bin

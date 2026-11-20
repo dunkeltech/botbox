@@ -20,7 +20,9 @@ import (
 
 // ProxyOptions configures per-bot relays and their trusted egress workers.
 type ProxyOptions struct {
-	Image           string
+	Image string
+	// WorkerNetwork is the Docker bridge that reaches trusted services. Empty uses bridge.
+	WorkerNetwork   string
 	DatabaseURL     string
 	KeySpec         string
 	NATSURL         string
@@ -68,8 +70,11 @@ func (d *Driver) ensureProxy(ctx context.Context, workspace, bot, network string
 		return err
 	}
 	serviceEnv := d.workerServiceEnv(workspace, bot)
+	workerNetwork := d.proxy.WorkerNetwork
 	if matchingProxyPair(relay, worker) && workerSettingsMatch(worker.Config.Env, serviceEnv) {
-		return d.startExistingProxyPair(ctx, relay, worker)
+		if _, attached := worker.NetworkSettings.Networks[workerNetwork]; attached {
+			return d.startExistingProxyPair(ctx, relay, worker)
+		}
 	}
 
 	image, err := d.proxyIngressImage(ctx)
@@ -92,7 +97,7 @@ func (d *Driver) ensureProxy(ctx context.Context, workspace, bot, network string
 	pairID := uuid.NewString()
 	workerEnv := append(workerIdentity.Environment(), "EGRESS_LINK_MODE=worker", "EGRESS_PROXY_BOT_SUBNET="+subnet)
 	workerEnv = append(workerEnv, serviceEnv...)
-	workerID, err := d.createProxyContainer(ctx, workerName, "worker", image, workspace, bot, pairID, "bridge", workerEnv)
+	workerID, err := d.createProxyContainer(ctx, workerName, "worker", image, workspace, bot, pairID, workerNetwork, workerEnv)
 	if err != nil {
 		return err
 	}
@@ -295,9 +300,9 @@ func (d *Driver) startProxy(ctx context.Context, id string) error {
 	return nil
 }
 
-// UpgradeProxyIngress removes legacy sidecars and restores secure ingress for
-// running sandboxes before the API starts accepting work.
-func (d *Driver) UpgradeProxyIngress(ctx context.Context) error {
+// UpgradeProxyIngress repairs ingress for bots known to this deployment because
+// independent instances can share a Docker daemon.
+func (d *Driver) UpgradeProxyIngress(ctx context.Context, workspacesByBot map[string]string) error {
 	if d.proxy == nil {
 		return nil
 	}
@@ -319,6 +324,9 @@ func (d *Driver) UpgradeProxyIngress(ctx context.Context) error {
 			continue
 		}
 		workspace, bot := proxy.Labels["botbox.workspace_id"], proxy.Labels["botbox.bot_id"]
+		if owner, ok := workspacesByBot[bot]; !ok || owner != workspace {
+			continue
+		}
 		if proxy.ID == "" || workspace == "" || bot == "" || !slices.Contains(proxy.Names, "/botbox-egress-"+sanitizeIdentifier(bot)) {
 			return errors.New("legacy proxy identity mismatch")
 		}
@@ -332,6 +340,9 @@ func (d *Driver) UpgradeProxyIngress(ctx context.Context) error {
 			continue
 		}
 		workspace, bot := sandbox.Labels["botbox.workspace_id"], sandbox.Labels["botbox.bot_id"]
+		if owner, ok := workspacesByBot[bot]; !ok || owner != workspace {
+			continue
+		}
 		if workspace == "" || bot == "" || sandbox.ID == "" || !slices.Contains(sandbox.Names, "/botbox-bot-"+sanitizeIdentifier(bot)) {
 			return errors.New("metered sandbox identity mismatch")
 		}
@@ -395,6 +406,9 @@ func validateProxyOptions(opts *ProxyOptions) error {
 	}
 	if strings.TrimSpace(opts.Image) == "" || strings.TrimSpace(opts.DatabaseURL) == "" || strings.TrimSpace(opts.KeySpec) == "" {
 		return errors.New("proxy configuration incomplete")
+	}
+	if name := opts.WorkerNetwork; name != "" && (name == "host" || name == "none" || sanitizeIdentifier(name) != name || strings.HasPrefix(name, "botbox-egress-net-")) {
+		return errors.New("egress worker requires a separate Docker bridge network")
 	}
 	return nil
 }

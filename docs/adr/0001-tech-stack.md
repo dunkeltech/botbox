@@ -27,7 +27,7 @@ bot.Box needs a high-concurrency control plane for managing sandboxed Linux desk
 
 ## Decision
 
-Adopt the following stack (aligned with `Application.md` §2 and Issue #2):
+Adopt the following stack for Issue #2.
 
 - **Backend (`backend/`):** Go with `chi` for HTTP routing, `pgx/v5` + `sqlc` for SQL access, `goose` for forward-only migrations, `slog` for structured JSON logging, `coder/websocket` for WebSocket relays, gRPC generated via `buf` (`protoc-gen-go`, `protoc-gen-go-grpc`), and `oapi-codegen` for typed REST handlers.
 - **Frontend (`frontend/`):** Next.js (App Router, `strict` TypeScript), Tailwind CSS sourced from `design/tokens.json`, `next-intl` (`messages/en.json`), TanStack Query, and `lucide-react`.

@@ -8,7 +8,7 @@ Guidance for coding agents and humans working on this repository.
 
 bot.Box is a multi-user web app for bot computer agents. Each bot is an LLM plus its own sandboxed Linux desktop; bots work alone or together with humans in a Slack-style team chat.
 
-- **Spec:** [`Application.md`](Application.md). Keep it in sync when behaviour or architecture changes.
+- **Overview and permissions** in [`docs/overview.md`](docs/overview.md). The HTTP API contract is in [`backend/api/openapi.yaml`](backend/api/openapi.yaml).
 - **Roadmap:** GitHub issues, one per phase ([#2](https://github.com/dunkeltech/botbox/issues/2)–[#10](https://github.com/dunkeltech/botbox/issues/10), design hub [#1](https://github.com/dunkeltech/botbox/issues/1)): https://github.com/dunkeltech/botbox/issues
 - **Design:** [`design/STYLEGUIDE.md`](design/STYLEGUIDE.md), [`design/tokens.json`](design/tokens.json), screens in [`design/README.md`](design/README.md)
 - **Decisions:** ADRs in `docs/adr/`
@@ -19,7 +19,7 @@ bot.Box is a multi-user web app for bot computer agents. Each bot is an LLM plus
 - Every change comes with tests. A change without tests is not done.
 - **Write negative tests, not only the happy path.** For each feature, cover at least:
   - invalid and missing input, wrong types, values out of range
-  - unauthenticated (401) and forbidden (403) requests, for every role in the permission matrix
+  - unauthenticated (401) and forbidden (403) requests, for every role in the [permission matrix](docs/overview.md#workspace-permissions)
   - **cross-workspace access** (must return 404)
   - error paths of dependencies (database, NATS, Docker, agent, LLM provider down or slow), timeouts and cancellation
   - limits: rate limits, turn limits, budgets, quotas, size limits
@@ -61,7 +61,7 @@ bot.Box is a multi-user web app for bot computer agents. Each bot is an LLM plus
 ### 4. Document the why
 - Architectural or security-relevant decisions go into an ADR (`docs/adr/NNNN-title.md`) with context, options, decision and consequences.
 - PR descriptions explain **why** the change is needed and which alternatives were rejected, not only what changed.
-- When behaviour changes, update `Application.md`, the ADRs and `design/STYLEGUIDE.md` in the same PR.
+- Update the relevant documentation in the same PR. Keep API contracts in the OpenAPI specification, workspace permissions in the overview, design rules in the style guide, and architectural decisions in ADRs.
 
 ### 5. English everywhere
 Code, identifiers, comments, commit messages, PRs, ADRs and docs are written in English. UI copy is English and goes through `next-intl`; never hard-code user-facing strings.

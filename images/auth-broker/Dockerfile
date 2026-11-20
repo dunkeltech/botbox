@@ -13,6 +13,7 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     chromium \
+    curl \
     fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /out/auth-broker /usr/local/bin/auth-broker

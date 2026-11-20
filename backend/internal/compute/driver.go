@@ -28,7 +28,7 @@ const (
 	StatusError EnvStatus = "error"
 )
 
-// Default sandbox resource and image settings from Application.md and ADR-0002.
+// Default sandbox settings use the resource limits from ADR-0002.
 const (
 	DefaultDriverDocker = "docker"
 	DefaultDriverFake   = "fake"

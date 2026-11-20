@@ -13,6 +13,7 @@ const apiBackendUrl = (
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  output: process.env.BOTBOX_STANDALONE === '1' ? 'standalone' : undefined,
   // eslint-disable-next-line @typescript-eslint/require-await -- NextConfig.rewrites must return a Promise.
   async rewrites() {
     return [

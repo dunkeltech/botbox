@@ -68,7 +68,7 @@ func (m *SetupManager) EnsureSetupSecret(_ context.Context, userCount int64, env
 		logger.Info("database has 0 users; entering first-run setup using configured BOTBOX_SETUP_SECRET")
 	} else {
 		logger.Info("database has 0 users; entering first-run setup")
-		// Print the auto-generated secret once to stdout as documented in Application.md §4.1.
+		// The operator needs the generated secret to unlock first-run setup.
 		_, _ = fmt.Fprintf(m.out, "\nONE-TIME SETUP SECRET: %s\n\n", secret)
 	}
 

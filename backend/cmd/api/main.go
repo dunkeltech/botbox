@@ -134,7 +134,15 @@ func run(logger *slog.Logger) error {
 			defer closeCompute()
 		}
 		if dockerDriver, ok := computeDrv.(*docker.Driver); ok {
-			if err := dockerDriver.UpgradeProxyIngress(ctx); err != nil {
+			rows, err := queries.ListEnvironmentsForReconcile(ctx)
+			if err != nil {
+				return fmt.Errorf("list environments for proxy upgrade: %w", err)
+			}
+			workspacesByBot := make(map[string]string, len(rows))
+			for _, row := range rows {
+				workspacesByBot[row.BotID.String()] = row.WorkspaceID.String()
+			}
+			if err := dockerDriver.UpgradeProxyIngress(ctx, workspacesByBot); err != nil {
 				return fmt.Errorf("upgrade bot proxy ingress: %w", err)
 			}
 		}
@@ -325,10 +333,11 @@ func initComputeDriverWithBroker(logger *slog.Logger, authBrokerEnabled bool) (c
 				keySpec = strings.TrimSpace(string(data))
 			}
 			proxy = &docker.ProxyOptions{
-				Image:       envOrDefault("BOTBOX_EGRESS_IMAGE", "botbox/egress-proxy:dev"),
-				DatabaseURL: proxyDB,
-				KeySpec:     keySpec,
-				NATSURL:     proxyNATSURL(os.Getenv("NATS_URL"), os.Getenv("BOTBOX_EGRESS_NATS_URL")),
+				Image:         envOrDefault("BOTBOX_EGRESS_IMAGE", "botbox/egress-proxy:dev"),
+				WorkerNetwork: os.Getenv("BOTBOX_EGRESS_WORKER_NETWORK"),
+				DatabaseURL:   proxyDB,
+				KeySpec:       keySpec,
+				NATSURL:       proxyNATSURL(os.Getenv("NATS_URL"), os.Getenv("BOTBOX_EGRESS_NATS_URL")),
 			}
 			if authBrokerEnabled {
 				proxy.AuthBrokerURL = proxyNATSURL(os.Getenv("BOTBOX_AUTH_BROKER_URL"), os.Getenv("BOTBOX_AUTH_BROKER_PROXY_URL"))

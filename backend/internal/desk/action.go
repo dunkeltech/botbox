@@ -15,7 +15,7 @@ import (
 )
 
 // Fixed desktop size. Screenshots may be smaller; coordinates are scaled back
-// onto this grid before xdotool runs (Application.md §4.7).
+// onto this grid before xdotool runs. See ADR-0005.
 const (
 	Width  = 1280
 	Height = 800
