@@ -58,6 +58,37 @@ Provider error results retain their provider error handling. The chat translates
 format failures into a compatibility recovery hint instead of suggesting that
 credentials or a budget need to change.
 
+### agy 1.5.9 records (2026-11-20)
+
+The agy parser and fixture above were never checked against a real binary.
+The pinned agy 1.5.9 uses a different format, so every agy turn failed
+([ADR-0040](0040-agy-gemini-api-key-route.md) has the spike details):
+
+- **Input.** The input record needs `"event":"user"` instead of `"type"`.
+- **Output.** Each output record has an `event` field (`init`, `step_update`,
+  `result`) and a payload object with the same name.
+- **Text.** `text_delta` is a plain string on `agent_response` steps.
+- **Tools.**
+  - Tool steps have no call ID, so `step_index` becomes the tool ID.
+  - A failed tool ends with `state: "ERROR"`.
+  - MCP tools are called through `call_mcp_tool`. The parser reports them as
+    `server.tool` with the MCP arguments.
+- **Usage.** It is counted once, from `result`. The same numbers also appear
+  on each step.
+- **Turn result.** `result.status` decides the turn. agy exits 0 after retries
+  outlast `--print-timeout`. Any status other than `SUCCESS` is reported as
+  `engine.provider_failed`, without the result's error text.
+- **Missing result.** A stream that ends without a result is a format failure.
+
+Soft denials now come from `result.denied_actions`, not from stderr. The real
+stderr notice did not say "permission denied". The `AGY_ERROR` lines on stderr
+quote upstream error bodies and can contain "PERMISSION_DENIED". For all CLIs,
+stderr is now only drained.
+
+Keeping the stderr match was rejected because it misreads provider errors as
+tool denials. Taking failure from the exit code alone was rejected because
+agy exits 0 after a failed turn.
+
 ## Consequences
 
 - Adding or updating a CLI runner only touches `backend/internal/engine/stream.go` and its recorded fixtures in `backend/internal/engine/testdata/`.

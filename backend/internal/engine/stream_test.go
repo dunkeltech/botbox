@@ -104,21 +104,6 @@ func TestStreamParsersAgainstFixtures(t *testing.T) {
 			t.Fatalf("tool name = %q, want shell", events[2].ToolName)
 		}
 	})
-
-	t.Run("agy fixture maps stdout and surfaces stderr soft-denial notice", func(t *testing.T) {
-		t.Parallel()
-		stdout := openFixture(t, "agy_stream.jsonl")
-		stderr := openFixture(t, "agy_soft_deny.stderr")
-		events, err := engine.ParseAgyStream(ctx, stdout, stderr)
-		if err != nil {
-			t.Fatalf("ParseAgyStream: %v", err)
-		}
-
-		last := events[len(events)-1]
-		if last.Kind != engine.EventKindError || last.ErrorCode != "tool_soft_denied" {
-			t.Fatalf("expected final soft-denial error event, got %+v", last)
-		}
-	})
 }
 
 func TestStreamParsersNegativeCases(t *testing.T) {
@@ -142,12 +127,13 @@ func TestStreamParsersNegativeCases(t *testing.T) {
 
 	t.Run("unknown event type is ignored cleanly", func(t *testing.T) {
 		t.Parallel()
-		events, err := engine.ParseAgyStream(context.Background(), strings.NewReader(`{"type":"future_event","payload":1}`+"\n"), nil)
+		input := `{"event":"future_event","payload":1}` + "\n" + `{"event":"result","result":{"status":"SUCCESS"}}` + "\n"
+		events, err := engine.ParseAgyStream(context.Background(), strings.NewReader(input))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if len(events) != 0 {
-			t.Fatalf("expected 0 events, got %+v", events)
+		if len(events) != 1 || events[0].Kind != engine.EventKindStatus {
+			t.Fatalf("expected only the idle status, got %+v", events)
 		}
 	})
 

@@ -62,6 +62,10 @@ test-sandbox-codex:
 test-sandbox-pi:
 	docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges --user bot --entrypoint python3 --mount "type=bind,src=$(CURDIR)/images/sandbox/tests/pi_openrouter_contract.py,dst=/tmp/pi_openrouter_contract.py,readonly" botbox/sandbox:dev /tmp/pi_openrouter_contract.py
 
+.PHONY: test-sandbox-agy
+test-sandbox-agy:
+	docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges --user bot --entrypoint python3 --mount "type=bind,src=$(CURDIR)/images/sandbox/tests/agy_gemini_contract.py,dst=/tmp/agy_gemini_contract.py,readonly" botbox/sandbox:dev /tmp/agy_gemini_contract.py
+
 .PHONY: test-sandbox-chromium
 test-sandbox-chromium:
 	docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges --user bot --entrypoint python3 -e BOTBOX_SANDBOX_DIR=/tmp/sandbox --mount "type=bind,src=$(CURDIR)/images/sandbox,dst=/tmp/sandbox,readonly" botbox/sandbox:dev /tmp/sandbox/tests/chromium_profile_contract.py

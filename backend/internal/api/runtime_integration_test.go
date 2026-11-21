@@ -152,7 +152,8 @@ func TestPhase4SoftDenialSurvivesHistoryReload(t *testing.T) {
 	if r.status != 202 {
 		t.Fatal(string(r.body))
 	}
-	fake := enginetest.CLI{Name: "agy", Stdout: "{\"type\":\"result\"}\n", Stderr: "Tool execution denied by policy\n"}
+	// agy 1.5.9 exits 0 and lists auto-denied tools only in its result record.
+	fake := enginetest.CLI{Name: "agy", Stdout: `{"event":"result","result":{"status":"SUCCESS","denied_actions":[{"action":"command","display_name":"Bash"}]}}` + "\n", Stderr: "jetski: a tool was auto-denied\n"}
 	worker := &engine.Worker{Pool: h.pool, Now: h.clock.Now, Execute: fake.Run}
 	if err := worker.Process(context.Background(), queue.jobs[0]); err != nil {
 		t.Fatal(err)
@@ -162,7 +163,7 @@ func TestPhase4SoftDenialSurvivesHistoryReload(t *testing.T) {
 	r.decode(t, &history)
 	found := false
 	for _, message := range history.Messages {
-		if message.Kind == "system" && message.Content == "Tool execution denied by policy" {
+		if message.Kind == "system" && message.Content == "agy denied tools without asking: Bash" {
 			found = true
 		}
 	}

@@ -18,7 +18,7 @@ func TestLiveStreamBeforeEOF(t *testing.T) {
 	for _, tc := range []struct{ cli, line string }{
 		{"claude", `{"type":"stream_event","event":{"delta":{"type":"text_delta","text":"hello"}}}`},
 		{"codex", `{"type":"item.completed","item":{"type":"agent_message","text":"hello"}}`},
-		{"agy", `{"type":"step_update","text_delta":{"text":"hello"}}`},
+		{"agy", `{"event":"step_update","step_update":{"step_index":1,"state":"ACTIVE","step_type":"agent_response","text_delta":"hello"}}`},
 	} {
 		t.Run(tc.cli, func(t *testing.T) {
 			reader, writer := io.Pipe()
@@ -78,30 +78,6 @@ func TestLiveStreamFailures(t *testing.T) {
 	}
 }
 
-func TestLiveAgyDrainsStderrConcurrently(t *testing.T) {
-	stdout, outWriter := io.Pipe()
-	stderr, errWriter := io.Pipe()
-	defer func() { _ = outWriter.Close() }()
-	defer func() { _ = errWriter.Close() }()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	emitted := make(chan engine.Event, 1)
-	done := make(chan error, 1)
-	go func() {
-		done <- engine.Stream(ctx, "agy", stdout, stderr, func(ev engine.Event) error { emitted <- ev; return nil })
-	}()
-	if _, err := io.WriteString(errWriter, "permission denied\n"); err != nil {
-		t.Fatal(err)
-	}
-	if ev := <-emitted; ev.ErrorCode != "tool_soft_denied" {
-		t.Fatalf("event = %+v", ev)
-	}
-	cancel()
-	if err := <-done; !errors.Is(err, context.Canceled) {
-		t.Fatalf("error = %v", err)
-	}
-}
-
 func TestLiveStreamFixtures(t *testing.T) {
 	for _, tc := range []struct {
 		cli, fixture string
@@ -109,9 +85,7 @@ func TestLiveStreamFixtures(t *testing.T) {
 	}{
 		{"claude", "claude_stream.jsonl", engine.ParseClaudeStream},
 		{"codex", "codex_stream.jsonl", engine.ParseCodexStream},
-		{"agy", "agy_stream.jsonl", func(ctx context.Context, r io.Reader) ([]engine.Event, error) {
-			return engine.ParseAgyStream(ctx, r, nil)
-		}},
+		{"agy", "agy_stream.jsonl", engine.ParseAgyStream},
 	} {
 		t.Run(tc.cli, func(t *testing.T) {
 			want, err := tc.parse(context.Background(), openFixture(t, tc.fixture))

@@ -25,6 +25,10 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// agySettings applies to one agy run and is never saved, so a person's own
+// interactive agy settings in the same home stay unchanged.
+const agySettings = `{"modelProvider":"gemini"}`
+
 // RunCLI streams a fixed CLI binary inside the isolated bot sandbox.
 // The request context owns the process group, including tool subprocesses.
 func (s *Server) RunCLI(req *agentv1.RunCLIRequest, stream grpc.ServerStreamingServer[agentv1.RunCLIResponse]) error {
@@ -71,11 +75,16 @@ func (s *Server) RunCLI(req *agentv1.RunCLIRequest, stream grpc.ServerStreamingS
 		}
 	case "agy":
 		seconds := max(1, (timeout+time.Second-1)/time.Second)
-		args = []string{"--input-format", "stream-json", "--output-format", "stream-json", "--print-timeout", fmt.Sprintf("%ds", seconds)}
+		// modelProvider "gemini" selects the Gemini API with GEMINI_API_KEY
+		// instead of a Google sign-in. The proxy holds the real key (ADR-0040).
+		// Headless agy cannot ask for permission and would deny every tool, so
+		// the sandbox is the boundary here, as for claude and codex.
+		args = []string{"--input-format", "stream-json", "--output-format", "stream-json", "--print-timeout", fmt.Sprintf("%ds", seconds),
+			"--settings", agySettings, "--dangerously-skip-permissions"}
 		if req.SessionId != "" {
 			args = append(args, "--conversation", req.SessionId)
 		}
-		input, _ = json.Marshal(map[string]any{"type": "user", "message": map[string]string{"role": "user", "content": req.Prompt}})
+		input, _ = json.Marshal(map[string]any{"event": "user", "message": map[string]string{"role": "user", "content": req.Prompt}})
 		input = append(input, '\n')
 	default:
 		return status.Error(codes.InvalidArgument, "unsupported CLI")
@@ -138,6 +147,9 @@ func (s *Server) RunCLI(req *agentv1.RunCLIRequest, stream grpc.ServerStreamingS
 		if req.Cli != "pi" {
 			cmd.Env = append(cmd.Env, "ANTHROPIC_BASE_URL="+trimmedProxy+"/llm/anthropic", "OPENAI_BASE_URL="+trimmedProxy+"/llm/openai/v1")
 		}
+		if req.Cli == "agy" {
+			cmd.Env = append(cmd.Env, "GOOGLE_GEMINI_BASE_URL="+trimmedProxy+"/llm/google")
+		}
 	} else if noProxy := strings.TrimSpace(os.Getenv("NO_PROXY")); noProxy != "" {
 		cmd.Env = append(cmd.Env, "NO_PROXY="+noProxy, "no_proxy="+noProxy)
 	}
@@ -150,6 +162,9 @@ func (s *Server) RunCLI(req *agentv1.RunCLIRequest, stream grpc.ServerStreamingS
 	}
 	if req.Cli != "pi" {
 		cmd.Env = append(cmd.Env, "OPENAI_API_KEY=botbox-placeholder")
+	}
+	if req.Cli == "agy" {
+		cmd.Env = append(cmd.Env, "GEMINI_API_KEY=botbox-placeholder")
 	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error {

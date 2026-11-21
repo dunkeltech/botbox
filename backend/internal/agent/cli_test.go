@@ -4,6 +4,7 @@ package agent_test
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -143,11 +144,129 @@ func TestAgyPrintTimeoutFollowsTurnDeadline(t *testing.T) {
 				}
 			}
 			_, timeoutArg, found := strings.Cut(output.String(), "--print-timeout\n")
-			seconds, err := strconv.Atoi(strings.TrimSuffix(strings.TrimSpace(timeoutArg), "s"))
+			timeoutArg, _, _ = strings.Cut(timeoutArg, "\n")
+			seconds, err := strconv.Atoi(strings.TrimSuffix(timeoutArg, "s"))
 			if !found || err != nil || seconds < tc.minSeconds || seconds > tc.maxSeconds {
 				t.Fatalf("agy arguments = %q, want print timeout in [%d, %d] seconds", output.String(), tc.minSeconds, tc.maxSeconds)
 			}
 		})
+	}
+}
+
+// agyRun records what one fake agy process received.
+type agyRun struct {
+	stdin string
+	args  []string
+	env   map[string]string
+}
+
+func runFakeAgy(t *testing.T, cli string, req *agentv1.RunCLIRequest) agyRun {
+	t.Helper()
+	home := t.TempDir()
+	binary := filepath.Join(home, "fake-"+cli)
+	script := "#!/bin/sh\ncat > \"$HOME/stdin\"\nprintf '%s\\n' \"$@\" > \"$HOME/args\"\nenv > \"$HOME/env\"\n"
+	//nolint:gosec // executable fixture owned by this test
+	if err := os.WriteFile(binary, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	server := agent.NewServerWithOptions(agent.ServerOptions{HomeDir: home, CLIBinaries: map[string]string{cli: binary}})
+	stream := &fakeCLIStream{ctx: t.Context()}
+	if err := server.RunCLI(req, stream); err != nil {
+		t.Fatal(err)
+	}
+	if last := stream.frames[len(stream.frames)-1]; !last.Exited || last.ExitCode != 0 {
+		t.Fatalf("fake %s failed: %+v", cli, last)
+	}
+	read := func(name string) string {
+		data, err := os.ReadFile(filepath.Join(home, name)) // #nosec G304 -- file written by the fixture inside t.TempDir
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+	run := agyRun{stdin: read("stdin"), args: strings.Split(strings.TrimSuffix(read("args"), "\n"), "\n"), env: map[string]string{}}
+	for _, line := range strings.Split(read("env"), "\n") {
+		if key, value, ok := strings.Cut(line, "="); ok {
+			run.env[key] = value
+		}
+	}
+	return run
+}
+
+func TestAgyUsesGeminiPlaceholderAndEventInput(t *testing.T) {
+	proxy := httptest.NewServer(http.NotFoundHandler())
+	defer proxy.Close()
+	t.Setenv("HTTP_PROXY", proxy.URL+"/")
+	for _, key := range []string{"GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_APPLICATION_CREDENTIALS", "AGY_ADC_AUTH", "GOOGLE_GEMINI_BASE_URL"} {
+		t.Setenv(key, "host-value-must-not-enter-sandbox")
+	}
+
+	run := runFakeAgy(t, "agy", &agentv1.RunCLIRequest{Cli: "agy", Prompt: "fixture prompt", SessionId: "fixture-conversation", Model: "gemini-3.8-flash"})
+
+	var input map[string]any
+	if err := json.Unmarshal([]byte(run.stdin), &input); err != nil {
+		t.Fatalf("stdin = %q: %v", run.stdin, err)
+	}
+	message, _ := input["message"].(map[string]any)
+	if input["event"] != "user" || input["type"] != nil || message["role"] != "user" || message["content"] != "fixture prompt" {
+		t.Fatalf("agy 1.5.9 rejects input without an event field, got %q", run.stdin)
+	}
+	joined := strings.Join(run.args, " ")
+	for _, want := range []string{
+		`--settings {"modelProvider":"gemini"}`,
+		"--dangerously-skip-permissions",
+		"--conversation fixture-conversation",
+		"--model gemini-3.8-flash",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("agy arguments %q miss %q", joined, want)
+		}
+	}
+	if run.env["GEMINI_API_KEY"] != "botbox-placeholder" {
+		t.Fatalf("GEMINI_API_KEY = %q, want the placeholder", run.env["GEMINI_API_KEY"])
+	}
+	if run.env["GOOGLE_GEMINI_BASE_URL"] != proxy.URL+"/llm/google" {
+		t.Fatalf("GOOGLE_GEMINI_BASE_URL = %q, want the metered route", run.env["GOOGLE_GEMINI_BASE_URL"])
+	}
+	for key, value := range run.env {
+		if strings.Contains(value, "must-not-enter-sandbox") {
+			t.Fatalf("host value of %s reached agy", key)
+		}
+	}
+	for _, key := range []string{"GOOGLE_API_KEY", "GOOGLE_APPLICATION_CREDENTIALS", "AGY_ADC_AUTH"} {
+		if _, ok := run.env[key]; ok {
+			t.Fatalf("%s must not select another agy credential", key)
+		}
+	}
+}
+
+func TestAgyWithoutProxyGetsNoGeminiEndpoint(t *testing.T) {
+	t.Setenv("HTTP_PROXY", "")
+	t.Setenv("GOOGLE_GEMINI_BASE_URL", "http://host-endpoint.invalid")
+	run := runFakeAgy(t, "agy", &agentv1.RunCLIRequest{Cli: "agy", Prompt: "fixture"})
+	if _, ok := run.env["GOOGLE_GEMINI_BASE_URL"]; ok {
+		t.Fatal("agy got a Gemini endpoint without the metered proxy")
+	}
+	if run.env["GEMINI_API_KEY"] != "botbox-placeholder" {
+		t.Fatal("agy without proxy must still hold only the placeholder")
+	}
+	if strings.Contains(strings.Join(run.args, " "), "--conversation") {
+		t.Fatal("new conversation must not resume")
+	}
+}
+
+func TestOtherCLIsGetNoGeminiSettings(t *testing.T) {
+	proxy := httptest.NewServer(http.NotFoundHandler())
+	defer proxy.Close()
+	t.Setenv("HTTP_PROXY", proxy.URL)
+	run := runFakeAgy(t, "codex", &agentv1.RunCLIRequest{Cli: "codex", Prompt: "fixture"})
+	for _, key := range []string{"GEMINI_API_KEY", "GOOGLE_GEMINI_BASE_URL"} {
+		if _, ok := run.env[key]; ok {
+			t.Fatalf("codex got %s", key)
+		}
+	}
+	if strings.Contains(strings.Join(run.args, " "), "modelProvider") {
+		t.Fatal("codex got agy settings")
 	}
 }
 

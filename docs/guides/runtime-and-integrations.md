@@ -115,6 +115,16 @@ version. Rebuild the image with `make sandbox-image` and verify the CLI with
 `make test-sandbox-codex`. An existing computer keeps its original image until
 it is recreated. Its named home volume can be reused.
 
+### Google Gemini with agy
+
+Google bots run the pinned `agy` CLI with a Gemini API key, never with a
+Google account sign-in (ADR-0040). The agent gives `agy` only the placeholder
+`GEMINI_API_KEY=botbox-placeholder` and points `GOOGLE_GEMINI_BASE_URL` at the
+metered `/llm/google` route. The proxy side of that route, the `llm-google`
+secret and Gemini usage metering are not built yet. Until then, Google bot turns
+fail with a provider error. `make test-sandbox-agy` runs the pinned binary
+against a local Gemini fixture with networking disabled.
+
 ### Deterministic engine doubles
 
 `backend/internal/engine/enginetest` provides a scripted HTTP provider and a fake
@@ -122,7 +132,7 @@ CLI turn executor. Provider responses contain ordered chunks with optional chann
 gates, request validation and dependency status codes. Use `httptest.NewServer`
 and assert `Remaining()` and `Errors()` after the test. CLI doubles replay the
 recorded streams through the production live parsers and support gates, stderr
-soft denials and nonzero exits. Gates synchronize streaming/cancellation tests
+output, soft denials and nonzero exits. Gates synchronize streaming/cancellation tests
 without sleeps; neither double calls an LLM or launches an agent process.
 
 ## Self-hosted GitLab access

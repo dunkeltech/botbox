@@ -32,6 +32,7 @@ func Stream(ctx context.Context, cli string, stdout, stderr io.ReadCloser, emit 
 	}
 	var decode func([]byte) ([]Event, error)
 	var pi piStream
+	var agy agyStream
 	switch cli {
 	case "claude":
 		decode = decodeClaudeLine
@@ -41,7 +42,7 @@ func Stream(ctx context.Context, cli string, stdout, stderr io.ReadCloser, emit 
 		// Keep Pi's state for the full turn to distinguish transient and terminal errors.
 		decode = pi.parseLine
 	case "agy":
-		decode = decodeAgyLine
+		decode = agy.parseLine
 	default:
 		return errors.New("unsupported CLI")
 	}
@@ -69,11 +70,9 @@ func Stream(ctx context.Context, cli string, stdout, stderr io.ReadCloser, emit 
 	count := 1
 	if stderr != nil {
 		count++
-		var decodeStderr func([]byte) ([]Event, error)
-		if cli == "agy" {
-			decodeStderr = decodeAgyStderrLine
-		}
-		go run(cli+" stderr", stderr, decodeStderr)
+		// Stderr is only drained. agy reports soft denials in its result record,
+		// and its stderr can quote upstream error bodies (ADR-0040).
+		go run(cli+" stderr", stderr, nil)
 	}
 	for range count {
 		<-done
@@ -81,8 +80,11 @@ func Stream(ctx context.Context, cli string, stdout, stderr io.ReadCloser, emit 
 	if err := context.Cause(ctx); err != nil {
 		return fmt.Errorf("CLI stream interrupted: %w", err)
 	}
-	if cli == "pi" {
+	switch cli {
+	case "pi":
 		return pi.finish()
+	case "agy":
+		return agy.finish()
 	}
 	return nil
 }
