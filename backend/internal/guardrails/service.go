@@ -233,9 +233,12 @@ type failingSSECloser struct {
 }
 
 func (f *failingSSECloser) Write(_ []byte) (int, error) {
-	if f.provider == "anthropic" {
+	switch f.provider {
+	case "anthropic":
 		_, _ = io.WriteString(f.dst, "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"guardrail_unavailable\",\"message\":\"LLM guardrail unavailable\"}}\n\n")
-	} else {
+	case "google":
+		_, _ = io.WriteString(f.dst, geminiErrorFrame("LLM guardrail unavailable"))
+	default:
 		_, _ = io.WriteString(f.dst, "data: {\"error\":{\"code\":\"guardrail_unavailable\",\"message\":\"LLM guardrail unavailable\"}}\n\ndata: [DONE]\n\n")
 	}
 	return 0, ErrStreamBlocked

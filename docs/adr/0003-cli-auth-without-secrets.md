@@ -3,7 +3,7 @@
 # 0003. CLI Authentication Without Sandbox Secrets
 
 - **Date:** 2026-11-14
-- **Status:** Accepted
+- **Status:** Accepted. Superseded for `agy` by [ADR-0040](0040-agy-gemini-api-key-route.md)
 
 ## Context
 

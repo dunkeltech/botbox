@@ -32,7 +32,7 @@ type preflightComputer struct {
 func (d *preflightComputer) CLIProxyReady(context.Context, compute.EnvID) error { return d.proxyErr }
 func (d *preflightComputer) RunCLI(_ context.Context, _ compute.EnvID, cli, prompt, _, model string, emit func(engine.Event) error) error {
 	d.calls++
-	if (cli != "claude" && cli != "codex") || strings.Contains(prompt, "fixture-private") {
+	if (cli != "claude" && cli != "codex" && cli != "agy") || strings.Contains(prompt, "fixture-private") {
 		return errors.New("unsafe CLI input")
 	}
 	if cli == "claude" && model != "sonnet" {
@@ -218,5 +218,92 @@ func TestCodexOpenAIPlanSecretPreflight(t *testing.T) {
 	}
 	if computer.calls != 1 {
 		t.Fatal("CLI ran while reconnect was required")
+	}
+}
+
+// agy turns need the Gemini API key in llm-google like the other CLIs need
+// their keys. Before ADR-0040 they started without any credential check.
+func TestAgyGeminiKeyPreflight(t *testing.T) {
+	pool := pgtest.Open(t)
+	q := db.New(pool)
+	ctx := context.Background()
+	ws, other, bot := uuid.New(), uuid.New(), uuid.New()
+	for i, id := range []uuid.UUID{ws, other} {
+		if _, err := pool.Exec(ctx, "INSERT INTO workspaces(id,name,slug) VALUES($1,$2,$2)", id, fmt.Sprintf("agy-ws-%d", i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := pool.Exec(ctx, "INSERT INTO bots(id,workspace_id,name,avatar_seed,llm_mode,llm_provider,llm_model) VALUES($1,$2,'Gem','gem','cli','google','gemini-3.8-flash')", bot, ws); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, "INSERT INTO environments(bot_id,driver,env_id,status) VALUES($1,'docker','agy-id','running')", bot); err != nil {
+		t.Fatal(err)
+	}
+	pg := func(id uuid.UUID) pgtype.UUID { return pgtype.UUID{Bytes: id, Valid: true} }
+	config, err := q.GetBotByWorkspaceAndID(ctx, db.GetBotByWorkspaceAndIDParams{WorkspaceID: pg(ws), ID: pg(bot)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ring, err := secrets.NewKeyRing("v1", map[string][]byte{"v1": bytes.Repeat([]byte{3}, 32)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	computer := &preflightComputer{}
+	session := engine.Session{WorkspaceID: ws, BotID: bot, ConversationID: uuid.New(), Bot: config, Messages: []db.Message{{Content: "hi"}}}
+	run := func(want string) {
+		t.Helper()
+		err := runCLITurn(ctx, pool, q, ring, computer, session, func(engine.Event) error { return nil })
+		if engine.TurnFailureCode(err) != want && (want != "" || err != nil) {
+			t.Fatalf("failure=%v want=%q", err, want)
+		}
+		if err != nil && strings.Contains(err.Error(), "fixture-private") {
+			t.Fatal("private cause exposed")
+		}
+	}
+	workspaceSecret := func(workspace uuid.UUID, domain string, aad []byte) {
+		t.Helper()
+		id := uuid.New()
+		if aad == nil {
+			aad = secrets.SecretAAD(workspace, "workspace", id)
+		}
+		cipher, err := ring.Encrypt([]byte("fixture-private-gemini-key"), aad)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = q.CreateWorkspaceSecret(ctx, db.CreateWorkspaceSecretParams{ID: pg(id), WorkspaceID: pg(workspace), Name: "llm-google", DomainMatch: domain, AuthScheme: "header", HeaderName: "x-goog-api-key", KekID: cipher.KeyID, WrappedDek: cipher.WrappedDEK, EncryptedValue: cipher.Ciphertext, MaskedPreview: "masked"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	run(engine.FailureCredentialsMissing)
+	// A key of another workspace is never used.
+	workspaceSecret(other, "generativelanguage.googleapis.com", nil)
+	run(engine.FailureCredentialsMissing)
+	if computer.calls != 0 {
+		t.Fatal("agy started without a Gemini key")
+	}
+	// A key that does not decrypt for this workspace is unavailable, not missing.
+	workspaceSecret(ws, "generativelanguage.googleapis.com", secrets.SecretAAD(other, "workspace", uuid.New()))
+	run(engine.FailureCredentialsUnavailable)
+	if computer.calls != 0 {
+		t.Fatal("agy started with an unreadable Gemini key")
+	}
+	if _, err = pool.Exec(ctx, "DELETE FROM workspace_secrets WHERE workspace_id=$1", ws); err != nil {
+		t.Fatal(err)
+	}
+	// The secret must be bound to the Gemini API host.
+	workspaceSecret(ws, "api.openai.com", nil)
+	run(engine.FailureCredentialsMissing)
+	if _, err = pool.Exec(ctx, "DELETE FROM workspace_secrets WHERE workspace_id=$1", ws); err != nil {
+		t.Fatal(err)
+	}
+	workspaceSecret(ws, "googleapis.com", nil)
+	run(engine.FailureCredentialsMissing)
+	if _, err = pool.Exec(ctx, "UPDATE workspace_secrets SET match_subdomains=true WHERE workspace_id=$1", ws); err != nil {
+		t.Fatal(err)
+	}
+	run("")
+	if computer.calls != 1 || computer.subscription {
+		t.Fatalf("calls=%d subscription=%v", computer.calls, computer.subscription)
 	}
 }

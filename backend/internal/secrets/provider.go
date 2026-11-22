@@ -17,7 +17,8 @@ import (
 
 // CLIProviderResolver selects the encrypted credential for the scoped bot,
 // preferring a bot secret over the inherited workspace secret. Claude may use
-// a subscription token. Other CLI provider routes use API keys.
+// a subscription token. Other CLI provider routes use API keys; Google uses
+// a Gemini API key.
 func CLIProviderResolver(q *db.Queries, ring *KeyRing, workspaceID, botID uuid.UUID) llmproxy.SecretResolver {
 	return func(ctx context.Context, requestedBot, provider string) (*llmproxy.SecretConfig, error) {
 		if q == nil || ring == nil || requestedBot != botID.String() {
@@ -32,6 +33,10 @@ func CLIProviderResolver(q *db.Queries, ring *KeyRing, workspaceID, botID uuid.U
 		case "anthropic":
 			target = "https://api.anthropic.com"
 			auth = llmproxy.AuthKindAnthropicKey
+		case "google":
+			// A Gemini API key, never a Google account token (ADR-0040).
+			target = llmproxy.GeminiUpstreamURL
+			auth = llmproxy.AuthKindGoogleAPIKey
 		default:
 			return nil, llmproxy.ErrSecretNotFound
 		}

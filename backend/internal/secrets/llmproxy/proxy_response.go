@@ -4,6 +4,7 @@ package llmproxy
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -126,6 +127,9 @@ func (h *proxyHandler) forwardBody(
 	}
 	if copyErr != nil {
 		h.options.Logger.Debug("stream upstream response interrupted", slog.String("provider", route.provider))
+	}
+	if route.provider == ProviderGoogle && errors.Is(copyErr, ErrStreamBlocked) {
+		h.refuseNextGemini()
 	}
 	if !metered {
 		return Usage{}

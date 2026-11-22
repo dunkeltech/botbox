@@ -25,6 +25,7 @@ const (
 	deltaAnthropicText
 	deltaOpenAIChat
 	deltaOpenAIResponse
+	deltaGeminiText
 )
 
 type sseDeltaTemplate struct {
@@ -35,6 +36,18 @@ type sseDeltaTemplate struct {
 	itemID       string
 	outputIndex  int
 	contentIndex int
+	role         string
+	responseID   string
+}
+
+// sseDelta is one streamed text delta. before and after are payloads without
+// visible text that must be sent around it, such as Gemini thoughts, tool
+// calls or the finish reason. Both are empty for the other providers.
+type sseDelta struct {
+	tmpl   sseDeltaTemplate
+	text   string
+	before string
+	after  string
 }
 
 // SSEFilter inspects streamed LLM text deltas using a sliding lookahead window
@@ -52,6 +65,11 @@ type SSEFilter struct {
 	pendingText  strings.Builder
 	template     sseDeltaTemplate
 	hasTemplate  bool
+	// crlf mirrors the upstream line ending. The Gemini SDK in agy rejects a
+	// stream that mixes \r\n\r\n and \n\n frame separators.
+	crlf bool
+	// skipBlank drops the separator line of a frame this filter rewrote.
+	skipBlank bool
 
 	blocked   bool
 	closed    bool
@@ -121,9 +139,9 @@ func (f *SSEFilter) collectAuditBytes(p []byte) {
 		if dataPayload, ok := strings.CutPrefix(line, "data:"); ok {
 			payload := strings.TrimSpace(dataPayload)
 			if payload != "" && payload != "[DONE]" {
-				if _, text, okDelta := extractSSETextDelta(payload); okDelta {
+				if delta, okDelta := extractSSETextDelta(payload); okDelta {
 					if f.auditText.Len() < 256<<10 {
-						f.auditText.WriteString(text)
+						f.auditText.WriteString(delta.text)
 					}
 				}
 			}
@@ -133,6 +151,12 @@ func (f *SSEFilter) collectAuditBytes(p []byte) {
 
 func (f *SSEFilter) processLine(rawLine string) error {
 	trimmed := strings.TrimRight(rawLine, "\r\n")
+	if strings.HasSuffix(rawLine, "\r\n") {
+		f.crlf = true
+	}
+	if trimmed != "" {
+		f.skipBlank = false
+	}
 	if strings.HasPrefix(trimmed, "event:") {
 		// Hold the event line until we see whether its data payload is a buffered text delta.
 		if f.pendingEvent != "" {
@@ -150,14 +174,30 @@ func (f *SSEFilter) processLine(rawLine string) error {
 	if dataPayload, ok := strings.CutPrefix(trimmed, "data:"); ok {
 		payload := strings.TrimSpace(dataPayload)
 		if payload != "" && payload != "[DONE]" {
-			if tmpl, deltaText, okDelta := extractSSETextDelta(payload); okDelta {
+			if delta, okDelta := extractSSETextDelta(payload); okDelta {
 				f.pendingEvent = ""
+				f.skipBlank = true
+				// Thoughts and thought signatures carry no visible text. Sending
+				// them first keeps the lookahead window across chunks.
+				if delta.before != "" {
+					if err := f.writeFrame("data: " + delta.before + "\n\n"); err != nil {
+						return err
+					}
+				}
 				if !f.hasTemplate {
-					f.template = tmpl
+					f.template = delta.tmpl
 					f.hasTemplate = true
 				}
-				f.pendingText.WriteString(deltaText)
-				return f.flushText(false)
+				f.pendingText.WriteString(delta.text)
+				if delta.after == "" {
+					return f.flushText(false)
+				}
+				// A tool call or the finish reason ends this text, so release
+				// the checked text before it.
+				if err := f.flushText(true); err != nil {
+					return err
+				}
+				return f.writeFrame("data: " + delta.after + "\n\n")
 			}
 		}
 		// Control, usage, or [DONE] line: flush any held text before forwarding.
@@ -175,8 +215,9 @@ func (f *SSEFilter) processLine(rawLine string) error {
 	}
 
 	// Blank separator or SSE comment line.
-	if trimmed == "" && f.pendingEvent == "" && f.pendingText.Len() > 0 {
+	if trimmed == "" && f.pendingEvent == "" && (f.pendingText.Len() > 0 || f.skipBlank) {
 		// Suppress blank line belonging to absorbed text delta frame.
+		f.skipBlank = false
 		return nil
 	}
 	if f.pendingEvent != "" {
@@ -242,7 +283,16 @@ func (f *SSEFilter) emitDeltaFrame(text string) error {
 	if err != nil {
 		return err
 	}
-	_, err = io.WriteString(f.dst, frame)
+	return f.writeFrame(frame)
+}
+
+// writeFrame writes a frame built by this filter with the upstream line ending.
+// Frame payloads are JSON, so every raw newline is a line separator.
+func (f *SSEFilter) writeFrame(frame string) error {
+	if f.crlf {
+		frame = strings.ReplaceAll(frame, "\n", "\r\n")
+	}
+	_, err := io.WriteString(f.dst, frame)
 	return err
 }
 
@@ -250,12 +300,12 @@ func (f *SSEFilter) writeBlockedFrame() error {
 	switch f.provider {
 	case "anthropic":
 		frame := "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"guardrail_blocked\",\"message\":\"LLM response blocked by workspace guardrail\"}}\n\n"
-		_, err := io.WriteString(f.dst, frame)
-		return err
+		return f.writeFrame(frame)
+	case "google":
+		return f.writeFrame(geminiBlockedFrame())
 	default:
 		frame := "data: {\"error\":{\"code\":\"guardrail_blocked\",\"message\":\"LLM response blocked by workspace guardrail\"}}\n\ndata: [DONE]\n\n"
-		_, err := io.WriteString(f.dst, frame)
-		return err
+		return f.writeFrame(frame)
 	}
 }
 
@@ -300,13 +350,18 @@ func (f *SSEFilter) Close() error {
 	return closeErr
 }
 
-func extractSSETextDelta(payload string) (sseDeltaTemplate, string, bool) {
+// extractSSETextDelta returns the text of one streamed delta.
+func extractSSETextDelta(payload string) (sseDelta, bool) {
 	var raw map[string]json.RawMessage
 	if json.Unmarshal([]byte(payload), &raw) != nil || raw == nil {
-		return sseDeltaTemplate{}, "", false
+		return sseDelta{}, false
 	}
 	var typ string
 	_ = json.Unmarshal(raw["type"], &typ)
+
+	if _, hasCandidates := raw["candidates"]; hasCandidates && typ == "" {
+		return extractGeminiTextDelta(raw)
+	}
 
 	if typ == "content_block_delta" {
 		var msg struct {
@@ -317,9 +372,9 @@ func extractSSETextDelta(payload string) (sseDeltaTemplate, string, bool) {
 			} `json:"delta"`
 		}
 		if json.Unmarshal([]byte(payload), &msg) == nil && msg.Delta.Type == "text_delta" {
-			return sseDeltaTemplate{kind: deltaAnthropicText, index: msg.Index}, msg.Delta.Text, true
+			return sseDelta{tmpl: sseDeltaTemplate{kind: deltaAnthropicText, index: msg.Index}, text: msg.Delta.Text}, true
 		}
-		return sseDeltaTemplate{}, "", false
+		return sseDelta{}, false
 	}
 
 	if typ == "response.output_text.delta" {
@@ -330,14 +385,14 @@ func extractSSETextDelta(payload string) (sseDeltaTemplate, string, bool) {
 			Delta        string `json:"delta"`
 		}
 		if json.Unmarshal([]byte(payload), &msg) == nil && msg.Delta != "" {
-			return sseDeltaTemplate{
+			return sseDelta{tmpl: sseDeltaTemplate{
 				kind:         deltaOpenAIResponse,
 				itemID:       msg.ItemID,
 				outputIndex:  msg.OutputIndex,
 				contentIndex: msg.ContentIndex,
-			}, msg.Delta, true
+			}, text: msg.Delta}, true
 		}
-		return sseDeltaTemplate{}, "", false
+		return sseDelta{}, false
 	}
 
 	if _, hasChoices := raw["choices"]; hasChoices {
@@ -355,21 +410,23 @@ func extractSSETextDelta(payload string) (sseDeltaTemplate, string, bool) {
 		if json.Unmarshal([]byte(payload), &msg) == nil && len(msg.Choices) == 1 && msg.Choices[0].Delta.Content != nil && msg.Choices[0].FinishReason == nil {
 			text := *msg.Choices[0].Delta.Content
 			if text != "" {
-				return sseDeltaTemplate{
+				return sseDelta{tmpl: sseDeltaTemplate{
 					kind:  deltaOpenAIChat,
 					id:    msg.ID,
 					model: msg.Model,
 					index: msg.Choices[0].Index,
-				}, text, true
+				}, text: text}, true
 			}
 		}
 	}
 
-	return sseDeltaTemplate{}, "", false
+	return sseDelta{}, false
 }
 
 func formatSSETextDelta(tmpl sseDeltaTemplate, text string) (string, error) {
 	switch tmpl.kind {
+	case deltaGeminiText:
+		return formatGeminiTextDelta(tmpl, text)
 	case deltaAnthropicText:
 		data, err := json.Marshal(map[string]any{
 			"type":  "content_block_delta",

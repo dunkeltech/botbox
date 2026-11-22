@@ -430,6 +430,17 @@ var skipJSONKeys = map[string]bool{
 	"usage":          true,
 	"service_tier":   true,
 	"reasoning_type": true,
+	// Gemini metadata. inlineData and fileData hold base64 images or file
+	// references, and thoughtSignature is opaque. A redaction there would
+	// corrupt a screenshot or make the next request fail validation.
+	"inlineData":       true,
+	"fileData":         true,
+	"thoughtSignature": true,
+	"mimeType":         true,
+	"finishReason":     true,
+	"usageMetadata":    true,
+	"modelVersion":     true,
+	"responseId":       true,
 }
 
 func walkJSONValue(parentKey string, v any, acc *evalAccumulator, eval func(string) (EvalResult, string)) any {

@@ -118,12 +118,35 @@ it is recreated. Its named home volume can be reused.
 ### Google Gemini with agy
 
 Google bots run the pinned `agy` CLI with a Gemini API key, never with a
-Google account sign-in (ADR-0040). The agent gives `agy` only the placeholder
-`GEMINI_API_KEY=botbox-placeholder` and points `GOOGLE_GEMINI_BASE_URL` at the
-metered `/llm/google` route. The proxy side of that route, the `llm-google`
-secret and Gemini usage metering are not built yet. Until then, Google bot turns
-fail with a provider error. `make test-sandbox-agy` runs the pinned binary
-against a local Gemini fixture with networking disabled.
+Google account sign-in (ADR-0040). To set one up:
+
+1. Create a Gemini API key on a Google Cloud project with billing enabled.
+   Unpaid keys let Google use prompts to improve its products, and users in
+   the EEA, Switzerland and the UK may only use paid keys.
+   - **Google AI Pro or Ultra.** These plans include monthly API credits:
+     10, 40 or 100 USD. Set up prepaid billing in AI Studio with at least
+     5 USD, then apply the credits on the Google Developer Program benefits
+     page. Keys of that billing account use the credits first.
+   - **Who may use the key.** Only the subscriber may use these credits, so
+     store such a key at bot scope on that person's own bot.
+   - **Sign-in quota.** The Antigravity quota that comes with a Google
+     sign-in cannot be used in bot.Box. Google's terms forbid third-party
+     apps from using it (ADR-0040).
+2. Store it in **Secrets & network** as `llm-google`, at bot or workspace
+   scope, with the domain `generativelanguage.googleapis.com`.
+3. Set the bot model to a Gemini API ID such as `gemini-3.8-flash`, not a
+   display name.
+4. Under **Workspace settings → Budgets & model prices**, price that model
+   and every other Gemini model agy may call. agy's subagents can use other
+   models than the bot model, and a budgeted request for an unpriced model is
+   refused.
+
+The agent gives `agy` only the placeholder `GEMINI_API_KEY=botbox-placeholder`
+and points `GOOGLE_GEMINI_BASE_URL` at the metered `/llm/google` route. The
+proxy sets the real key and meters each request from its `usageMetadata`.
+After a guardrail blocks a Gemini response, the proxy refuses agy's automatic
+retry, so the turn ends after one upstream call. `make test-sandbox-agy` runs
+the pinned binary against a local Gemini fixture with networking disabled.
 
 ### Deterministic engine doubles
 

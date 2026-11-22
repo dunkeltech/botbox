@@ -36,7 +36,9 @@ revision-aware NATS invalidation, and a 1-second fail-closed freshness window fo
 active passthrough tunnels per `ADR-0017`) for other hosts. Native provider hosts
 are denied CONNECT, including with open egress policy. Claude and Codex must use
 the explicit metered routes. Google routes/tunnels stay unavailable until the
-agy OAuth exchange and native metering are implemented.
+agy OAuth exchange and native metering are implemented. (Update 2026-11-20:
+[ADR-0040](0040-agy-gemini-api-key-route.md) adds the metered `/llm/google`
+route with a Gemini API key. CONNECT to Google hosts stays denied.)
 
 Each model request takes the workspace spend advisory lock, checks the active
 CLI turn and pause/control state, checks budgets, and inserts an unpriced

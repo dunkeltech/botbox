@@ -90,9 +90,18 @@ func (c *usageCollector) parse(data []byte) {
 		Response struct {
 			Usage json.RawMessage `json:"usage"`
 		} `json:"response"`
+		UsageMetadata  json.RawMessage   `json:"usageMetadata"`
+		Candidates     []geminiCandidate `json:"candidates"`
+		PromptFeedback struct {
+			BlockReason string `json:"blockReason"`
+		} `json:"promptFeedback"`
 	}
 	if json.Unmarshal(data, &env) != nil {
 		c.invalid = true
+		return
+	}
+	if len(env.UsageMetadata) > 0 || len(env.Candidates) > 0 || env.PromptFeedback.BlockReason != "" {
+		c.parseGemini(env.UsageMetadata, geminiFinished(env.Candidates) || env.PromptFeedback.BlockReason != "")
 		return
 	}
 	if env.Type == "message_stop" || env.Type == "response.completed" {

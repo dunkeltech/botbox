@@ -3,7 +3,7 @@
 # 0040. Run agy with a Gemini API key through the metered proxy
 
 - **Date:** 2026-11-20
-- **Status:** Proposed
+- **Status:** Accepted
 
 ## Context
 
@@ -136,10 +136,27 @@ route uses plain HTTP to the proxy. Application Default Credentials
 
 ### Option B — Proxy-held Google OAuth token (ADR-0003, option 2)
 
-- **Pros:** Could use a person's Google AI plan.
-- **Cons:** Running agy inside bot.Box with Antigravity OAuth is exactly the
-  use that section 6 of the terms forbids. It needs MITM on Google hosts and
-  an unofficial token exchange. Rejected.
+- **Pros:** Could use the quota of a person's Google AI Pro or Ultra plan.
+- **Cons:**
+  - Running agy inside bot.Box with Antigravity OAuth is exactly the use that
+    section 6 of the terms forbids. The user's Google account can be
+    suspended.
+  - Injecting the OAuth token on the Gemini API route does not reach the plan
+    quota. With a Google sign-in, agy calls the internal Cloud Code API on
+    `cloudcode-pa.googleapis.com` (`/v1internal:streamGenerateContent`,
+    `loadCodeAssist`, `retrieveUserQuota`). The plan quota is only there.
+    A token on `generativelanguage.googleapis.com` bills a Cloud project
+    instead.
+  - Reaching that quota would need one of two things. The gateway could
+    translate requests to the undocumented internal API and refresh tokens
+    with Antigravity's own OAuth client. Or it could intercept
+    `cloudcode-pa.googleapis.com` and fake agy's token refresh.
+  - Claude Code and Codex differ. Anthropic supports `claude setup-token` for
+    headless use, and OpenAI documents token sharing (ADR-0030). Google
+    offers no such program for Antigravity.
+  - Rejected. Reconfirmed on 2026-11-20 when plan support was requested.
+    Plan holders use their monthly Gemini API credits through an API key
+    instead (see Consequences).
 
 ### Option C — Application Default Credentials (Vertex)
 
@@ -154,12 +171,26 @@ route uses plain HTTP to the proxy. Application Default Credentials
 
 ## Decision
 
-Proposed: use Option A. It replaces the `agy` part of ADR-0003.
+Use Option A. It replaces the `agy` part of ADR-0003.
 
-- A workspace or bot secret `llm-google` holds a Gemini API key. The proxy
-  routes `/llm/google/*` to `https://generativelanguage.googleapis.com`. It
-  removes the placeholder `X-Goog-Api-Key` and sets the real key. Budget,
-  pause, guardrail and model price checks run as on the other model routes.
+- **Secret.** A workspace or bot secret `llm-google` holds a Gemini API key.
+  Its domain must match `generativelanguage.googleapis.com`. The turn runner
+  requires it before an agy turn, as for the other CLIs.
+- **Route.** The proxy routes `/llm/google/*` to
+  `https://generativelanguage.googleapis.com`. It removes the placeholder
+  `X-Goog-Api-Key`, drops any `key=` query parameter and sets the real key.
+  Budget, pause, guardrail and model price checks run as on the other model
+  routes.
+- **Metered requests.** Only `POST /v1beta/models/{model}:streamGenerateContent?alt=sse`
+  and `POST /v1beta/models/{model}:generateContent` are metered. The model
+  comes from the path, never from the body. A request may not ask for more
+  than one candidate, because the output guardrail inspects one candidate per
+  chunk.
+- **Usage.** The meter reads `usageMetadata`. Stream chunks carry running
+  totals, so the last report counts. Input is `promptTokenCount` plus
+  `toolUsePromptTokenCount`, and it includes `cachedContentTokenCount`.
+  Output is `candidatesTokenCount` plus `thoughtsTokenCount`. A stream counts
+  as complete only after a finish reason.
 - The agent starts agy with `GEMINI_API_KEY=botbox-placeholder`,
   `GOOGLE_GEMINI_BASE_URL=<proxy>/llm/google` and
   `--settings '{"modelProvider":"gemini"}'`. The prompt uses the `event`
@@ -168,6 +199,20 @@ Proposed: use Option A. It replaces the `agy` part of ADR-0003.
   Headless agy cannot ask for permission and would otherwise deny every tool.
   Per-bot `permissions.allow` rules (issue #6) are still open.
 - CONNECT to `googleapis.com`, including `play.googleapis.com`, stays denied.
+- **Guardrails.** The SSE filter reads Gemini text parts
+  ([ADR-0035](0035-llm-proxy-guardrails.md)):
+  - Thoughts and thought signatures are sent before the checked text, so the
+    lookahead window keeps running.
+  - Tool calls and the finish reason are sent after it.
+  - Frames use the upstream line ending. The SDK in agy rejects a stream that
+    mixes `\r\n\r\n` and `\n\n` separators.
+  - Request scanning skips `inlineData`, `fileData` and `thoughtSignature`.
+    A redaction there would break a screenshot or the next request.
+- **Blocked output.** A blocked stream ends with `finishReason: SAFETY`. agy
+  still retries a stopped stream up to five times, and each retry is a new
+  billed request. So the proxy refuses the next Google request of that bot
+  within two minutes with a 403, before any upstream call. agy then ends the
+  turn at once. Only one request is refused, so a later turn still works.
 
 ## Consequences
 
@@ -179,17 +224,26 @@ Proposed: use Option A. It replaces the `agy` part of ADR-0003.
   - The `agy_*.jsonl` fixtures are recordings from 1.5.9.
   - `make test-sandbox-agy` runs the pinned binary against a loopback Gemini
     and MCP fixture in CI.
-- **Turn runner.** `cmd/api/engine.go` must resolve the Google credential
-  before an agy turn, as it does for the other CLIs.
-- **Proxy.**
-  - Add a Gemini auth kind and the upstream URL in `CLIProviderResolver`.
-  - Add a meter for `usageMetadata` in Gemini SSE responses. Usage is
-    cumulative per chunk, so take the last value. Count
-    `cachedContentTokenCount` and `thoughtsTokenCount` separately.
-  - Add prices for Gemini models.
-  - The current 429 for an exhausted budget costs about 40 seconds of retries
-    per turn. A non-retryable status for the Google route would end the turn
-    at once. This needs a decision.
+- **Turn runner and proxy (done).** The route, the meter and the guardrail
+  changes above are in place. Real agy 1.5.9 runs were checked through the
+  proxy and the SSE filter against a fake Gemini server: a clean turn, a
+  redaction across chunks, and a block that ends the turn after one upstream
+  call.
+- **Google AI plans.** Google AI Pro and Ultra include monthly Google Cloud
+  credits: 10, 40 or 100 USD. They apply to the AI Studio billing account
+  after a 5 USD prepayment, and API keys of its projects draw on them. A plan
+  holder therefore uses the plan through an AI Studio key in `llm-google`,
+  with no extra code. Only the primary subscriber may use these credits. So
+  a person's key belongs at bot scope, on a bot that person runs. The
+  included Antigravity quota is not available (Option B).
+- **Prices.** Admins price every Gemini model that agy may call. agy's
+  subagents can use other models than the bot model, and a budgeted request
+  for an unpriced model is refused.
+- **Open decision.** An exhausted budget still answers 429. agy retries that
+  for about 40 seconds before the turn fails. No upstream call is made.
+- **Known gap.** A stream stopped by a guardrail settles with unknown usage,
+  as on the other routes. That blocks monetary budgets until an admin
+  reconciles it.
 - **Desktop.** An `agy` launcher for the bot computer sets the same
   placeholder environment and writes `modelProvider` into
   `~/.gemini/antigravity-cli/settings.json`. The person accepts the agy terms

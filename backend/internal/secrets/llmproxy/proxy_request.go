@@ -62,6 +62,13 @@ func (h *proxyHandler) resolveUpstream(w http.ResponseWriter, r *http.Request, r
 	targetURL := *targetBase
 	targetURL.Path = strings.TrimRight(targetBase.Path, "/") + upstreamPath
 	targetURL.RawQuery = r.URL.RawQuery
+	if provider == ProviderGoogle && r.URL.Query().Has("key") {
+		// Google also accepts the API key as a query parameter. Only the
+		// injected header may authenticate, also on unmetered routes.
+		query := r.URL.Query()
+		query.Del("key")
+		targetURL.RawQuery = query.Encode()
+	}
 	if prefix := strings.TrimRight(cfg.PathPrefix, "/"); prefix != "" && targetURL.Path != prefix && !strings.HasPrefix(targetURL.Path, prefix+"/") {
 		writeError(w, logger, http.StatusForbidden, "forbidden", "credential does not allow this path")
 		return nil, nil
@@ -139,6 +146,17 @@ func (h *proxyHandler) prepareModelBody(ctx context.Context, w http.ResponseWrit
 		Model string `json:"model"`
 	}
 	modelErr := json.Unmarshal(body, &model)
+	if route.provider == ProviderGoogle {
+		// Gemini names the model in the path. A body field must not choose
+		// the price or budget identity.
+		model.Model, modelErr = "", nil
+		if name, ok := geminiRequestModel(route.path, outReq.URL.RawQuery, body); ok {
+			model.Model = name
+		} else if metered {
+			writeError(w, h.options.Logger, http.StatusForbidden, "forbidden", "unsupported metered endpoint")
+			return "", nil, false
+		}
+	}
 	if metered && (modelErr != nil || model.Model == "" || len(model.Model) > 200) {
 		writeError(w, h.options.Logger, http.StatusBadRequest, "validation_error", "model is required")
 		return "", nil, false

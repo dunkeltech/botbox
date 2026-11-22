@@ -13,10 +13,16 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 )
 
 // ErrSecretNotFound indicates no credential is configured for the bot and provider.
 var ErrSecretNotFound = errors.New("provider secret not configured")
+
+// ErrStreamBlocked is returned by a GuardrailEnforcer stream writer when it
+// stops a response.
+var ErrStreamBlocked = errors.New("llm stream blocked by workspace guardrail")
 
 // AuthMode reports the placeholder the sandbox CLI must present.
 // The result is oauth, api_key, or none. Credential material is never returned.
@@ -37,7 +43,7 @@ func AuthMode(ctx context.Context, resolve SecretResolver, botID, provider strin
 	switch cfg.AuthKind {
 	case AuthKindClaudeOAuth, AuthKindOpenAIPlan:
 		return "oauth", nil
-	case AuthKindAnthropicKey, AuthKindBearer:
+	case AuthKindAnthropicKey, AuthKindBearer, AuthKindGoogleAPIKey:
 		return "api_key", nil
 	default:
 		return "none", nil
@@ -57,6 +63,7 @@ const (
 	AuthKindClaudeOAuth  = "claude_oauth"
 	AuthKindOpenAIPlan   = "openai_plan"
 	AuthKindOAuthRefresh = "oauth_refresh"
+	AuthKindGoogleAPIKey = "google_api_key"
 )
 
 // SecretConfig holds the upstream base URL and credential material stored outside the sandbox.
@@ -123,6 +130,8 @@ type Options struct {
 	OAuthExchanger OAuthExchanger
 	OnAudit        func(AuditEvent)
 	Logger         *slog.Logger
+	// Now replaces the clock in tests.
+	Now func() time.Time
 }
 
 type errorEnvelope struct {
@@ -135,6 +144,10 @@ type errorEnvelope struct {
 type proxyHandler struct {
 	resolve SecretResolver
 	options Options
+
+	mu sync.Mutex
+	// refuseGeminiUntil is set after a guardrail stopped a Gemini stream.
+	refuseGeminiUntil time.Time
 }
 
 type proxyRoute struct {
@@ -160,6 +173,9 @@ func NewHandler(resolve SecretResolver, opts *Options) http.Handler {
 	if options.Logger == nil {
 		options.Logger = slog.Default()
 	}
+	if options.Now == nil {
+		options.Now = time.Now
+	}
 	return &proxyHandler{resolve: resolve, options: options}
 }
 
@@ -170,6 +186,12 @@ func (h *proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !ok || !isSupportedProvider(provider) {
 		emitAudit(opts.OnAudit, r.Header.Get(opts.BotIDHeader), provider, r.Method, r.URL.Path, "blocked")
 		writeError(w, logger, http.StatusForbidden, "forbidden", "unsupported LLM provider")
+		return
+	}
+
+	if provider == ProviderGoogle && h.takeGeminiRefusal() {
+		emitAudit(opts.OnAudit, r.Header.Get(opts.BotIDHeader), provider, r.Method, r.URL.Path, "guardrail_blocked")
+		writeError(w, logger, http.StatusForbidden, "guardrail_blocked", "LLM response blocked by workspace guardrail")
 		return
 	}
 
@@ -335,6 +357,9 @@ func injectCredential(ctx context.Context, h http.Header, cfg *SecretConfig, exc
 	case AuthKindAnthropicKey:
 		h.Set("x-api-key", cfg.SecretValue)
 		return nil
+	case AuthKindGoogleAPIKey:
+		h.Set("x-goog-api-key", cfg.SecretValue)
+		return nil
 	case AuthKindBearer, AuthKindClaudeOAuth, AuthKindOpenAIPlan:
 		h.Set("Authorization", "Bearer "+cfg.SecretValue)
 		return nil
@@ -431,6 +456,8 @@ func meteredPath(provider, path string) bool {
 		return path == "/v1/chat/completions" || path == "/v1/messages"
 	case ProviderAnthropic:
 		return path == "/v1/messages" || path == "/v1/messages/count_tokens"
+	case ProviderGoogle:
+		return geminiPath.MatchString(path)
 	default:
 		return false
 	}

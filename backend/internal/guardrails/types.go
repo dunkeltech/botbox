@@ -9,6 +9,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/dunkeltech/botbox/backend/internal/secrets/llmproxy"
 	"github.com/google/uuid"
 )
 
@@ -66,11 +67,13 @@ const (
 
 // Sentinel errors returned by guardrail validation and streaming filters.
 var (
-	ErrValidation    = errors.New("invalid guardrail configuration")
-	ErrRuleNotFound  = errors.New("guardrail rule not found")
-	ErrRuleConflict  = errors.New("guardrail rule slug already exists")
-	ErrRuleLimit     = errors.New("workspace guardrail rule limit reached")
-	ErrStreamBlocked = errors.New("llm stream blocked by workspace guardrail")
+	ErrValidation   = errors.New("invalid guardrail configuration")
+	ErrRuleNotFound = errors.New("guardrail rule not found")
+	ErrRuleConflict = errors.New("guardrail rule slug already exists")
+	ErrRuleLimit    = errors.New("workspace guardrail rule limit reached")
+	// ErrStreamBlocked is the proxy's error, so the proxy can tell a guardrail
+	// stop from a broken connection.
+	ErrStreamBlocked = llmproxy.ErrStreamBlocked
 )
 
 // CoveredProviders lists all llmproxy provider routes protected by workspace guardrails.

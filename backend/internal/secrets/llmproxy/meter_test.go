@@ -23,6 +23,20 @@ func TestUsageCollectorProviderFormats(t *testing.T) {
 		{"negative", `{"usage":{"prompt_tokens":-1,"completion_tokens":3}}`, "application/json", -1, 3, 0, false},
 		{"wrong type", `{"usage":{"prompt_tokens":"12"}}`, "application/json", 0, 0, 0, false},
 		{"invalid cache", `{"usage":{"prompt_tokens":2,"prompt_tokens_details":{"cached_tokens":3}}}`, "application/json", 2, 0, 3, false},
+		// Gemini repeats running totals; the last report counts. Output is
+		// candidates plus thoughts; prompt already includes cached tokens.
+		{"gemini stream", "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"a\"}]}}],\"usageMetadata\":{\"promptTokenCount\":1500}}\r\n\r\n" +
+			"data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"b\"}]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":1500,\"toolUsePromptTokenCount\":20,\"candidatesTokenCount\":9,\"thoughtsTokenCount\":40,\"cachedContentTokenCount\":1000}}\r\n\r\n",
+			"text/event-stream", 1520, 49, 1000, true},
+		{"gemini without finish", "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"a\"}]}}],\"usageMetadata\":{\"promptTokenCount\":10,\"candidatesTokenCount\":2}}\r\n\r\n", "text/event-stream", 10, 2, 0, false},
+		{"gemini finish without usage", "data: {\"candidates\":[{\"finishReason\":\"STOP\"}]}\n\n", "text/event-stream", 0, 0, 0, false},
+		{"gemini empty answer", "data: {\"candidates\":[{\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":10}}\n\n", "text/event-stream", 10, 0, 0, true},
+		{"gemini blocked prompt", "data: {\"promptFeedback\":{\"blockReason\":\"SAFETY\"},\"usageMetadata\":{\"promptTokenCount\":10}}\n\n", "text/event-stream", 10, 0, 0, true},
+		{"gemini json", `{"candidates":[{"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":12,"candidatesTokenCount":3,"cachedContentTokenCount":4}}`, "application/json", 12, 3, 4, true},
+		{"gemini negative", `{"usageMetadata":{"promptTokenCount":12,"candidatesTokenCount":-3}}`, "application/json", 0, 0, 0, false},
+		{"gemini cache above prompt", `{"usageMetadata":{"promptTokenCount":2,"candidatesTokenCount":1,"cachedContentTokenCount":3}}`, "application/json", 0, 0, 0, false},
+		{"gemini wrong type", `{"usageMetadata":{"promptTokenCount":"12","candidatesTokenCount":1}}`, "application/json", 0, 0, 0, false},
+		{"gemini overflow", `{"usageMetadata":{"promptTokenCount":12,"candidatesTokenCount":9223372036854775807,"thoughtsTokenCount":1}}`, "application/json", 0, 0, 0, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := newUsageCollector(tc.content)

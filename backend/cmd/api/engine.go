@@ -75,20 +75,17 @@ func runCLITurnWithBroker(ctx context.Context, pool *pgxpool.Pool, q *db.Queries
 	if cli == "" {
 		return engine.WithFailureCode(engine.FailureCLIUnavailable, nil)
 	}
-	subscription := false
-	if cli != "agy" {
-		credential, credentialErr := secrets.CLIProviderResolver(q, ring, s.WorkspaceID, s.BotID)(ctx, s.BotID.String(), provider)
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if errors.Is(credentialErr, llmproxy.ErrSecretNotFound) {
-			return engine.WithFailureCode(engine.FailureCredentialsMissing, credentialErr)
-		}
-		if credentialErr != nil {
-			return engine.WithFailureCode(engine.FailureCredentialsUnavailable, credentialErr)
-		}
-		subscription = credential.AuthKind == llmproxy.AuthKindClaudeOAuth
+	credential, credentialErr := secrets.CLIProviderResolver(q, ring, s.WorkspaceID, s.BotID)(ctx, s.BotID.String(), provider)
+	if err := ctx.Err(); err != nil {
+		return err
 	}
+	if errors.Is(credentialErr, llmproxy.ErrSecretNotFound) {
+		return engine.WithFailureCode(engine.FailureCredentialsMissing, credentialErr)
+	}
+	if credentialErr != nil {
+		return engine.WithFailureCode(engine.FailureCredentialsUnavailable, credentialErr)
+	}
+	subscription := credential.AuthKind == llmproxy.AuthKindClaudeOAuth
 	external := ""
 	saved, err := q.GetBotSession(ctx, db.GetBotSessionParams{WorkspaceID: ws, BotID: bot, ConversationID: conv})
 	if err == nil && saved.Runner == cli {
