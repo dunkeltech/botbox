@@ -1177,6 +1177,9 @@ type BotEgressProxyDeps struct {
 	Now                func() time.Time
 	PolicyFreshnessMax time.Duration
 	OnPolicyAdopted    func(context.Context, int64) error
+	// NativeHosts adds exact infrastructure destinations for the saved runner.
+	// An explicit host block still takes precedence over these destinations.
+	NativeHosts func(context.Context) ([]string, error)
 	// Notify publishes ids after a new host card commits. Nil leaves the row
 	// and the client reloads the list (issue #17).
 	Notify notify.Signal
@@ -1233,6 +1236,15 @@ func NewBotEgressProxyHandler(deps BotEgressProxyDeps) (*mitmproxy.Handler, erro
 				return mitmproxy.PolicySnapshot{}, fmt.Errorf("load egress rule: %w", err)
 			}
 			allowedSet := make(map[string]bool)
+			if deps.NativeHosts != nil {
+				hosts, hostErr := deps.NativeHosts(ctx)
+				if hostErr != nil {
+					return mitmproxy.PolicySnapshot{}, fmt.Errorf("load native runner egress: %w", hostErr)
+				}
+				for _, host := range hosts {
+					allowedSet[host] = true
+				}
+			}
 			if err == nil {
 				snap.Revision = egressRow.Revision
 				snap.GitLabAllowedHosts = append([]string(nil), egressRow.AllowedHosts...)

@@ -1263,7 +1263,7 @@ type Bot struct {
 	LlmMode     LlmMode            `json:"llmMode"`
 	LlmModel    string             `json:"llmModel"`
 
-	// LlmProvider Selects the sandbox CLI. OpenRouter uses Pi, OpenAI uses Codex, Anthropic uses Claude Code, and Google uses agy.
+	// LlmProvider Selects the sandbox CLI. OpenRouter uses Pi, OpenAI uses Codex, Anthropic uses Claude Code, google uses agy with a Gemini API key, and google-acp uses agy over ACP with Google sign-in.
 	LlmProvider       string              `json:"llmProvider"`
 	MissingModelPrice *MissingModelPrice  `json:"missingModelPrice,omitempty"`
 	Mood              AvatarMood          `json:"mood"`
@@ -1553,7 +1553,7 @@ type CreateBotRequest struct {
 	LlmMode     LlmMode     `json:"llmMode"`
 	LlmModel    string      `json:"llmModel"`
 
-	// LlmProvider Selects the sandbox CLI. OpenRouter uses Pi, OpenAI uses Codex, Anthropic uses Claude Code, and Google uses agy.
+	// LlmProvider Selects the sandbox CLI. OpenRouter uses Pi, OpenAI uses Codex, Anthropic uses Claude Code, google uses agy with a Gemini API key, and google-acp uses agy over ACP with Google sign-in.
 	LlmProvider   string  `json:"llmProvider"`
 	Name          string  `json:"name"`
 	ReplyLanguage *string `json:"replyLanguage,omitempty"`
@@ -2337,7 +2337,7 @@ type UpdateBotRequest struct {
 	LlmMode     *LlmMode    `json:"llmMode,omitempty"`
 	LlmModel    *string     `json:"llmModel,omitempty"`
 
-	// LlmProvider Selects the sandbox CLI. OpenRouter uses Pi, OpenAI uses Codex, Anthropic uses Claude Code, and Google uses agy.
+	// LlmProvider Selects the sandbox CLI. OpenRouter uses Pi, OpenAI uses Codex, Anthropic uses Claude Code, google uses agy with a Gemini API key, and google-acp uses agy over ACP with Google sign-in.
 	LlmProvider   *string `json:"llmProvider,omitempty"`
 	Name          *string `json:"name,omitempty"`
 	ReplyLanguage *string `json:"replyLanguage,omitempty"`

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dunkeltech/botbox/backend/internal/bots"
 	"github.com/dunkeltech/botbox/backend/internal/compute"
 	"github.com/dunkeltech/botbox/backend/internal/engine"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
@@ -27,6 +28,55 @@ type preflightComputer struct {
 	runErr       error
 	calls        int
 	subscription bool
+}
+
+type acpPreflightComputer struct {
+	preflightComputer
+	nativeCalls int
+}
+
+func (d *acpPreflightComputer) RunAgyACP(_ context.Context, id compute.EnvID, prompt, session, model string, emit func(engine.Event) error) error {
+	d.nativeCalls++
+	if id != "native-id" || model != "gemini-3.8-flash" || !strings.Contains(prompt, "user fixture") || session != "" {
+		return errors.New("wrong ACP turn")
+	}
+	return emit(engine.Event{Kind: engine.EventKindTextDelta, Text: "fixture reply"})
+}
+
+func TestAgyACPPreflightUsesNativeRunnerWithoutWorkspaceCredential(t *testing.T) {
+	pool := pgtest.Open(t)
+	q := db.New(pool)
+	ctx := t.Context()
+	workspace, other, bot := uuid.New(), uuid.New(), uuid.New()
+	for _, id := range []uuid.UUID{workspace, other} {
+		if _, err := pool.Exec(ctx, "INSERT INTO workspaces(id,name,slug) VALUES($1,$2,$2)", id, id.String()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := pool.Exec(ctx, "INSERT INTO bots(id,workspace_id,name,avatar_seed,llm_mode,llm_provider,llm_model) VALUES($1,$2,'Gem','gem','cli',$3,'gemini-3.8-flash')", bot, workspace, bots.AgyACPProvider); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, "INSERT INTO environments(bot_id,driver,env_id,status) VALUES($1,'docker','native-id','running')", bot); err != nil {
+		t.Fatal(err)
+	}
+	pg := func(id uuid.UUID) pgtype.UUID { return pgtype.UUID{Bytes: id, Valid: true} }
+	config, err := q.GetBotByWorkspaceAndID(ctx, db.GetBotByWorkspaceAndIDParams{WorkspaceID: pg(workspace), ID: pg(bot)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	computer := &acpPreflightComputer{}
+	input := engine.Session{WorkspaceID: other, BotID: bot, ConversationID: uuid.New(), Bot: config, Messages: []db.Message{{Content: "user fixture"}}}
+	emit := func(engine.Event) error { return nil }
+	if err := runCLITurn(ctx, pool, q, nil, computer, input, emit); err == nil || computer.nativeCalls != 0 {
+		t.Fatal("a different workspace reached the ACP runtime")
+	}
+	input.WorkspaceID = workspace
+	if err := runCLITurn(ctx, pool, q, nil, computer, input, emit); err != nil {
+		t.Fatal(err)
+	}
+	if computer.calls != 0 || computer.nativeCalls != 1 {
+		t.Fatal("native runner should start without a hosted credential")
+	}
 }
 
 func (d *preflightComputer) CLIProxyReady(context.Context, compute.EnvID) error { return d.proxyErr }

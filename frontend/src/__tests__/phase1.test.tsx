@@ -459,6 +459,16 @@ describe('Phase 1 frontend workflows', () => {
     expect(
       screen.getByRole('button', { name: enMessages.builder.createSubmit }),
     ).toBeDisabled();
+    fireEvent.change(agent, { target: { value: 'google-acp' } });
+    expect(
+      screen.getByText(enMessages.builder.agyACPLicenseNotice),
+    ).toBeVisible();
+    expect(
+      screen.getByRole('textbox', { name: enMessages.builder.modelLabel }),
+    ).toBeRequired();
+    expect(
+      screen.getByRole('combobox', { name: enMessages.builder.agentLabel }),
+    ).toHaveValue('google-acp');
     fireEvent.change(agent, { target: { value: 'openrouter' } });
     const model = screen.getByRole('combobox', {
       name: enMessages.builder.modelLabel,

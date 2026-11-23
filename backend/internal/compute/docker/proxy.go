@@ -46,17 +46,22 @@ func proxyCAVolume(bot, kind string) string {
 }
 
 func (d *Driver) ensureProxy(ctx context.Context, workspace, bot, network string) error {
+	return d.ensureProxyPair(ctx, workspace, bot, bot, network)
+}
+
+func (d *Driver) ensureProxyPair(ctx context.Context, workspace, bot, namespace, network string) error {
 	if d.proxy == nil {
 		return nil
 	}
-	if workspace == "" || bot == "" || network != proxyNetworkName(bot) {
+	nativeACP := namespace == agyACPProxyNamespace(bot)
+	if workspace == "" || bot == "" || (namespace != bot && !nativeACP) || network != proxyNetworkName(namespace) {
 		return errors.New("proxy identity unavailable")
 	}
 	d.proxyMu.Lock()
 	defer d.proxyMu.Unlock()
 
-	relayName := "botbox-egress-" + sanitizeIdentifier(bot)
-	workerName := "botbox-egress-worker-" + sanitizeIdentifier(bot)
+	relayName := "botbox-egress-" + sanitizeIdentifier(namespace)
+	workerName := "botbox-egress-worker-" + sanitizeIdentifier(namespace)
 	subnet, err := d.botProxySubnet(ctx, network, workspace, bot)
 	if err != nil {
 		return err
@@ -70,6 +75,9 @@ func (d *Driver) ensureProxy(ctx context.Context, workspace, bot, network string
 		return err
 	}
 	serviceEnv := d.workerServiceEnv(workspace, bot)
+	if nativeACP {
+		serviceEnv = append(serviceEnv, "EGRESS_PROXY_AGY_ACP=true")
+	}
 	workerNetwork := d.proxy.WorkerNetwork
 	if matchingProxyPair(relay, worker) && workerSettingsMatch(worker.Config.Env, serviceEnv) {
 		if _, attached := worker.NetworkSettings.Networks[workerNetwork]; attached {
@@ -77,7 +85,7 @@ func (d *Driver) ensureProxy(ctx context.Context, workspace, bot, network string
 		}
 	}
 
-	image, err := d.proxyIngressImage(ctx)
+	image, err := d.proxyIngressImage(ctx, nativeACP)
 	if err != nil {
 		return err
 	}
@@ -97,7 +105,7 @@ func (d *Driver) ensureProxy(ctx context.Context, workspace, bot, network string
 	pairID := uuid.NewString()
 	workerEnv := append(workerIdentity.Environment(), "EGRESS_LINK_MODE=worker", "EGRESS_PROXY_BOT_SUBNET="+subnet)
 	workerEnv = append(workerEnv, serviceEnv...)
-	workerID, err := d.createProxyContainer(ctx, workerName, "worker", image, workspace, bot, pairID, workerNetwork, workerEnv)
+	workerID, err := d.createProxyContainer(ctx, workerName, "worker", image, workspace, bot, namespace, pairID, workerNetwork, workerEnv)
 	if err != nil {
 		return err
 	}
@@ -121,7 +129,7 @@ func (d *Driver) ensureProxy(ctx context.Context, workspace, bot, network string
 		return err
 	}
 	relayEnv := append(relayIdentity.Environment(), "EGRESS_LINK_MODE=relay", "EGRESS_PROXY_BOT_SUBNET="+subnet)
-	relayID, err = d.createProxyContainer(ctx, relayName, "relay", image, workspace, bot, pairID, network, relayEnv)
+	relayID, err = d.createProxyContainer(ctx, relayName, "relay", image, workspace, bot, namespace, pairID, network, relayEnv)
 	if err != nil {
 		return err
 	}
@@ -156,7 +164,7 @@ func workerSettingsMatch(actual, expected []string) bool {
 	for _, entry := range actual {
 		key, _, _ := strings.Cut(entry, "=")
 		switch key {
-		case "NATS_URL", "EGRESS_PROXY_AUTH_BROKER_URL", "EGRESS_PROXY_AUTH_BROKER_TOKEN":
+		case "NATS_URL", "EGRESS_PROXY_AUTH_BROKER_URL", "EGRESS_PROXY_AUTH_BROKER_TOKEN", "EGRESS_PROXY_AGY_ACP":
 			if !slices.Contains(expected, entry) {
 				return false
 			}
@@ -203,7 +211,7 @@ func (d *Driver) inspectProxy(ctx context.Context, name, workspace, bot, role st
 	return c, nil
 }
 
-func (d *Driver) createProxyContainer(ctx context.Context, name, role, image, workspace, bot, pair, network string, env []string) (string, error) {
+func (d *Driver) createProxyContainer(ctx context.Context, name, role, image, workspace, bot, namespace, pair, network string, env []string) (string, error) {
 	aliases := map[string]any{}
 	if role == "relay" {
 		aliases["Aliases"] = []string{"egress"}
@@ -214,8 +222,8 @@ func (d *Driver) createProxyContainer(ctx context.Context, name, role, image, wo
 		"Sysctls": map[string]string{"net.ipv4.ip_forward": "0"}}
 	if role == "worker" {
 		host["Binds"] = []string{
-			proxyCAVolume(bot, "private") + ":/var/lib/botbox/egress-private",
-			proxyCAVolume(bot, "public") + ":/var/lib/botbox/egress-public",
+			proxyCAVolume(namespace, "private") + ":/var/lib/botbox/egress-private",
+			proxyCAVolume(namespace, "public") + ":/var/lib/botbox/egress-public",
 		}
 	}
 	payload := map[string]any{
@@ -249,7 +257,7 @@ func (d *Driver) removeProxy(ctx context.Context, id string) error {
 	return nil
 }
 
-func (d *Driver) proxyIngressImage(ctx context.Context) (string, error) {
+func (d *Driver) proxyIngressImage(ctx context.Context, nativeACP bool) (string, error) {
 	var image struct {
 		ID     string `json:"Id"`
 		Config struct {
@@ -261,6 +269,9 @@ func (d *Driver) proxyIngressImage(ctx context.Context) (string, error) {
 	}
 	if image.ID == "" || image.Config.Labels[proxyIngressLabel] != proxyIngressVersion {
 		return "", errors.New("egress proxy image requires a secure-ingress rebuild")
+	}
+	if nativeACP && image.Config.Labels["botbox.agy_acp"] != "true" {
+		return "", errors.New("egress proxy image requires an ACP rebuild")
 	}
 	// Pin the inspected image so deployment cannot switch tags between the
 	// ingress-version check and container creation.
@@ -347,7 +358,7 @@ func (d *Driver) UpgradeProxyIngress(ctx context.Context, workspacesByBot map[st
 			return errors.New("metered sandbox identity mismatch")
 		}
 		if sandbox.Labels[proxyIngressLabel] != proxyIngressVersion {
-			if err := d.StopEnvironment(ctx, compute.EnvID(sandbox.ID)); err != nil {
+			if err := d.stopWorkContainer(ctx, compute.EnvID(sandbox.ID)); err != nil {
 				return err
 			}
 			continue
@@ -374,8 +385,12 @@ func (d *Driver) CLIProxyReady(ctx context.Context, id compute.EnvID) error {
 		return errors.New("sandbox requires metered proxy recreation")
 	}
 	workspace, bot := labels["botbox.workspace_id"], labels["botbox.bot_id"]
-	relay, relayErr := d.inspectProxy(ctx, "botbox-egress-"+sanitizeIdentifier(bot), workspace, bot, "relay")
-	worker, workerErr := d.inspectProxy(ctx, "botbox-egress-worker-"+sanitizeIdentifier(bot), workspace, bot, "worker")
+	return d.proxyPairReady(ctx, workspace, bot, bot)
+}
+
+func (d *Driver) proxyPairReady(ctx context.Context, workspace, bot, namespace string) error {
+	relay, relayErr := d.inspectProxy(ctx, "botbox-egress-"+sanitizeIdentifier(namespace), workspace, bot, "relay")
+	worker, workerErr := d.inspectProxy(ctx, "botbox-egress-worker-"+sanitizeIdentifier(namespace), workspace, bot, "worker")
 	if relayErr != nil || workerErr != nil || !matchingProxyPair(relay, worker) ||
 		!relay.State.Running || !worker.State.Running || relay.State.Health.Status != "healthy" {
 		return errors.New("metered proxy unavailable")
@@ -384,12 +399,16 @@ func (d *Driver) CLIProxyReady(ctx context.Context, id compute.EnvID) error {
 }
 
 func (d *Driver) waitProxyReady(ctx context.Context, id compute.EnvID) error {
+	return waitForProxy(ctx, func(ctx context.Context) error { return d.CLIProxyReady(ctx, id) })
+}
+
+func waitForProxy(ctx context.Context, ready func(context.Context) error) error {
 	waitCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		if err := d.CLIProxyReady(waitCtx, id); err == nil {
+		if err := ready(waitCtx); err == nil {
 			return nil
 		}
 		select {

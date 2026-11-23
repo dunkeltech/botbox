@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/dunkeltech/botbox/backend/internal/codexplan"
+	"github.com/dunkeltech/botbox/backend/internal/secrets/mitmproxy"
 )
 
 func TestNativeProviderTunnelsCannotBypassMetering(t *testing.T) {
@@ -22,6 +23,52 @@ func TestNativeProviderTunnelsCannotBypassMetering(t *testing.T) {
 	for _, host := range []string{"github.com", "api.openai.com.example.org", "example.com"} {
 		if isLLMHost(host) {
 			t.Fatalf("unrelated host matched: %s", host)
+		}
+	}
+}
+
+func TestACPConnectIsConfinedToEnabledWorkerAndExactOrigins(t *testing.T) {
+	ca, err := mitmproxy.NewBotCA("fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	connect, err := mitmproxy.NewHandler(mitmproxy.Config{CA: ca})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var enabled, broken bool
+	native := newNativeGoogleConnect(connect, func(context.Context) (bool, error) {
+		if broken {
+			return false, errors.New("private database cause")
+		}
+		return enabled, nil
+	}, func(http.ResponseWriter, *http.Request, string, http.RoundTripper) {
+		t.Fatal("disallowed native route reached upstream")
+	})
+	h := newEgressHandler(egressDeps{
+		NativeOnly: true, NativeGoogle: native, Connect: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+			t.Fatal("ACP worker fell back to generic egress")
+		}),
+	})
+	for _, tc := range []struct {
+		method, target  string
+		enabled, broken bool
+		want            int
+	}{
+		{"CONNECT", "daily-cloudcode-pa.googleapis.com:443", false, false, 403},
+		{"CONNECT", "daily-cloudcode-pa.googleapis.com:443", true, true, 403},
+		{"CONNECT", "daily-cloudcode-pa.googleapis.com:8443", true, false, 403},
+		{"CONNECT", "daily-cloudcode-pa.googleapis.com.fixture.test:443", true, false, 403},
+		{"CONNECT", "generativelanguage.googleapis.com:443", true, false, 403},
+		{"CONNECT", "example.org:443", true, false, 403},
+		{"POST", "/llm/google/v1beta/models/a:generateContent", true, false, 404},
+		{"POST", "/broker/browser", true, false, 404},
+	} {
+		enabled, broken = tc.enabled, tc.broken
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(tc.method, tc.target, nil))
+		if rec.Code != tc.want || strings.Contains(rec.Body.String(), "private database cause") {
+			t.Fatalf("%s %s = %d, want %d", tc.method, tc.target, rec.Code, tc.want)
 		}
 	}
 }

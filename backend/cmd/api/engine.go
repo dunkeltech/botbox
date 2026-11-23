@@ -75,17 +75,21 @@ func runCLITurnWithBroker(ctx context.Context, pool *pgxpool.Pool, q *db.Queries
 	if cli == "" {
 		return engine.WithFailureCode(engine.FailureCLIUnavailable, nil)
 	}
-	credential, credentialErr := secrets.CLIProviderResolver(q, ring, s.WorkspaceID, s.BotID)(ctx, s.BotID.String(), provider)
-	if err := ctx.Err(); err != nil {
-		return err
+	nativeACP := s.Bot.LlmProvider == bots.AgyACPProvider
+	subscription := false
+	if !nativeACP {
+		credential, credentialErr := secrets.CLIProviderResolver(q, ring, s.WorkspaceID, s.BotID)(ctx, s.BotID.String(), provider)
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if errors.Is(credentialErr, llmproxy.ErrSecretNotFound) {
+			return engine.WithFailureCode(engine.FailureCredentialsMissing, credentialErr)
+		}
+		if credentialErr != nil {
+			return engine.WithFailureCode(engine.FailureCredentialsUnavailable, credentialErr)
+		}
+		subscription = credential.AuthKind == llmproxy.AuthKindClaudeOAuth
 	}
-	if errors.Is(credentialErr, llmproxy.ErrSecretNotFound) {
-		return engine.WithFailureCode(engine.FailureCredentialsMissing, credentialErr)
-	}
-	if credentialErr != nil {
-		return engine.WithFailureCode(engine.FailureCredentialsUnavailable, credentialErr)
-	}
-	subscription := credential.AuthKind == llmproxy.AuthKindClaudeOAuth
 	external := ""
 	saved, err := q.GetBotSession(ctx, db.GetBotSessionParams{WorkspaceID: ws, BotID: bot, ConversationID: conv})
 	if err == nil && saved.Runner == cli {
@@ -96,13 +100,25 @@ func runCLITurnWithBroker(ctx context.Context, pool *pgxpool.Pool, q *db.Queries
 	if len(s.Messages) == 0 {
 		return errors.New("missing turn input")
 	}
-	guidance := engine.DesktopGuidanceFor(brokerEnabled)
-	if mcpGuidance := mcpTurnGuidance(ctx, pool, ring, s.WorkspaceID, s.BotID); mcpGuidance != "" {
-		guidance += "\n" + mcpGuidance
+	guidance := "Use the context provided in this conversation to answer the request."
+	if !nativeACP {
+		guidance = engine.DesktopGuidanceFor(brokerEnabled)
+		if mcpGuidance := mcpTurnGuidance(ctx, pool, ring, s.WorkspaceID, s.BotID); mcpGuidance != "" {
+			guidance += "\n" + mcpGuidance
+		}
 	}
-	prompt := cliTurnPrompt(s, external, guidance)
 	run := transport.RunCLI
-	if subscription {
+	if nativeACP {
+		acp, ok := driver.(interface {
+			RunAgyACP(context.Context, compute.EnvID, string, string, string, func(engine.Event) error) error
+		})
+		if !ok {
+			return engine.WithFailureCode(engine.FailureCLIUnavailable, nil)
+		}
+		run = func(ctx context.Context, id compute.EnvID, _, prompt, resume, model string, emit func(engine.Event) error) error {
+			return acp.RunAgyACP(ctx, id, prompt, resume, model, emit)
+		}
+	} else if subscription {
 		authenticated, ok := driver.(interface {
 			RunCLIWithSubscription(context.Context, compute.EnvID, string, string, string, string, bool, func(engine.Event) error) error
 		})
@@ -113,6 +129,7 @@ func runCLITurnWithBroker(ctx context.Context, pool *pgxpool.Pool, q *db.Queries
 			return authenticated.RunCLIWithSubscription(ctx, id, cli, prompt, resume, model, true, emit)
 		}
 	}
+	prompt := cliTurnPrompt(s, external, guidance)
 	runErr := run(ctx, compute.EnvID(env.EnvID), cli, prompt, external, s.Bot.LlmModel, func(event engine.Event) error {
 		if event.SessionID != "" {
 			if err := q.UpsertBotSession(ctx, db.UpsertBotSessionParams{WorkspaceID: ws, BotID: bot, ConversationID: conv, Runner: cli, ExternalSessionID: event.SessionID}); err != nil {
@@ -121,6 +138,14 @@ func runCLITurnWithBroker(ctx context.Context, pool *pgxpool.Pool, q *db.Queries
 		}
 		return emit(event)
 	})
+	if runErr != nil || nativeACP {
+		if blocked, checkErr := q.HasTurnGuardrailBlock(ctx, db.HasTurnGuardrailBlockParams{
+			WorkspaceID: ws,
+			TurnID:      pgtype.UUID{Bytes: s.TurnID, Valid: true},
+		}); checkErr == nil && blocked {
+			return engine.WithFailureCode(engine.FailureGuardrailBlocked, runErr)
+		}
+	}
 	if runErr != nil {
 		// The UI only receives the stable failure code. A short server-side
 		// cause distinguishes a dial failure from a provider rejection.
@@ -129,13 +154,8 @@ func runCLITurnWithBroker(ctx context.Context, pool *pgxpool.Pool, q *db.Queries
 			cause = cause[:200]
 		}
 		slog.Warn("cli turn failed", "bot_id", s.BotID.String(), "err", cause)
-		if blocked, checkErr := q.HasTurnGuardrailBlock(ctx, db.HasTurnGuardrailBlockParams{
-			WorkspaceID: ws,
-			TurnID:      pgtype.UUID{Bytes: s.TurnID, Valid: true},
-		}); checkErr == nil && blocked {
-			return engine.WithFailureCode(engine.FailureGuardrailBlocked, runErr)
-		}
-		if engine.TurnFailureCode(runErr) == engine.FailureStreamFormat {
+		switch engine.TurnFailureCode(runErr) {
+		case engine.FailureStreamFormat, engine.FailureAgyLoginRequired, engine.FailureCLIUnavailable:
 			return runErr
 		}
 		return engine.WithFailureCode(engine.FailureProvider, runErr)

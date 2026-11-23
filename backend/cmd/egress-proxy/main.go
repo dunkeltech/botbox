@@ -142,7 +142,7 @@ func main() {
 
 	var handler http.Handler = rootHandler
 	if database != "" {
-		bound, closeDB, err := openDatabaseProxy(context.Background(), database, ring, os.Getenv("BOTBOX_WORKSPACE_ID"), os.Getenv("BOTBOX_BOT_ID"), os.Getenv("NATS_URL"), ca, logger)
+		bound, closeDB, err := openDatabaseProxy(context.Background(), database, ring, os.Getenv("BOTBOX_WORKSPACE_ID"), os.Getenv("BOTBOX_BOT_ID"), os.Getenv("NATS_URL"), ca, logger, os.Getenv("EGRESS_PROXY_AGY_ACP") == "true")
 		if err != nil {
 			logger.Error("database proxy initialization failed", "error", err)
 			os.Exit(1)

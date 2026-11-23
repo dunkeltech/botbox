@@ -17,6 +17,7 @@ import (
 
 	"github.com/dunkeltech/botbox/backend/internal/api"
 	"github.com/dunkeltech/botbox/backend/internal/authbroker"
+	"github.com/dunkeltech/botbox/backend/internal/bots"
 	"github.com/dunkeltech/botbox/backend/internal/budgets"
 	"github.com/dunkeltech/botbox/backend/internal/codexplan"
 	"github.com/dunkeltech/botbox/backend/internal/events"
@@ -30,6 +31,7 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/secrets/llmproxy"
 	"github.com/dunkeltech/botbox/backend/internal/secrets/mitmproxy"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -37,6 +39,8 @@ import (
 // egressDeps is the per-bot proxy surface. AuthMode must not return credential material.
 type egressDeps struct {
 	Connect         http.Handler
+	NativeGoogle    http.Handler
+	NativeOnly      bool
 	LLM             http.Handler
 	MCP             http.Handler
 	TeamMCP         http.Handler
@@ -62,6 +66,7 @@ func databaseHandlerWithLifecycle(
 	signal notify.Signal,
 	pub *events.Publisher,
 	broker authbroker.Client,
+	nativeOnly bool,
 ) (http.Handler, func(), error) {
 	if pool == nil || ring == nil || workspace == uuid.Nil || bot == uuid.Nil || ca == nil {
 		return nil, nil, errors.New("proxy configuration incomplete")
@@ -69,7 +74,23 @@ func databaseHandlerWithLifecycle(
 	q := db.New(pool)
 	wsPG := pgtype.UUID{Bytes: workspace, Valid: true}
 	botPG := pgtype.UUID{Bytes: bot, Valid: true}
+	nativeGoogleEnabled := func(ctx context.Context) (bool, error) {
+		config, err := q.GetBotByWorkspaceAndID(ctx, db.GetBotByWorkspaceAndIDParams{WorkspaceID: wsPG, ID: botPG})
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		return err == nil && config.LlmMode == "cli" && config.LlmProvider == bots.AgyACPProvider, err
+	}
 
+	var nativeHosts func(context.Context) ([]string, error)
+	if nativeOnly {
+		nativeHosts = func(ctx context.Context) ([]string, error) {
+			if enabled, err := nativeGoogleEnabled(ctx); !enabled {
+				return nil, err
+			}
+			return nativeGoogleHosts[:], nil
+		}
+	}
 	//nolint:contextcheck // OnAudit creates a bounded cleanup context per request outside startup ctx
 	connect, err := api.NewBotEgressProxyHandler(api.BotEgressProxyDeps{
 		Pool:               pool,
@@ -81,6 +102,7 @@ func databaseHandlerWithLifecycle(
 		Notify:             signal,
 		PolicyFreshnessMax: time.Second,
 		PublicOnly:         true,
+		NativeHosts:        nativeHosts,
 		OnPolicyAdopted: func(ackCtx context.Context, revision int64) error {
 			return q.AcknowledgeEgressPolicyRevision(ackCtx, db.AcknowledgeEgressPolicyRevisionParams{
 				WorkspaceID: wsPG,
@@ -155,6 +177,11 @@ func databaseHandlerWithLifecycle(
 				return nil, llmproxy.ErrSecretNotFound
 			}
 			return plan.ResolveOpenAISecret(ctx, workspace, bot)
+		case llmproxy.ProviderGoogle:
+			if enabled, err := nativeGoogleEnabled(ctx); enabled || err != nil {
+				return nil, llmproxy.ErrSecretNotFound
+			}
+			return resolveCLI(ctx, botID, provider)
 		default:
 			return resolveCLI(ctx, botID, provider)
 		}
@@ -185,6 +212,14 @@ func databaseHandlerWithLifecycle(
 		unsub()
 		stopReval()
 		return nil, nil, err
+	}
+	var nativeConnect http.Handler
+	if nativeOnly {
+		nativeGoogle := llmproxy.NewNativeGoogleProxy(bot.String(), llmproxy.Options{
+			Logger: logger, Admit: budgets.ProxyAdmission(pool, workspace, bot, time.Now),
+			Guardrails: guardrailSvc.ForBot(workspace, bot),
+		})
+		nativeConnect = newNativeGoogleConnect(connect, nativeGoogleEnabled, nativeGoogle.ServeInspected)
 	}
 	mcpSvc := mcpproxy.NewService(pool, ring, nil, signal, logger)
 	mcpUnsub := func() {}
@@ -217,11 +252,13 @@ func databaseHandlerWithLifecycle(
 		return codexplan.CheckDesktopOpenAI(ctx, q, wsPG, botPG, "")
 	}
 	return newEgressHandler(egressDeps{
-		Connect:   connect,
-		LLM:       llm,
-		MCP:       mcpSvc.Handler(workspace, bot),
-		TeamMCP:   mcpproxy.TeamHandler(groups.TeamTools{Pool: pool, Signal: signal}, workspace, bot),
-		MemoryMCP: mcpproxy.MemoryHandler(memory.Service{Pool: pool, Ring: ring, Signal: signal}, workspace, bot),
+		Connect:      connect,
+		NativeGoogle: nativeConnect,
+		NativeOnly:   nativeOnly,
+		LLM:          llm,
+		MCP:          mcpSvc.Handler(workspace, bot),
+		TeamMCP:      mcpproxy.TeamHandler(groups.TeamTools{Pool: pool, Signal: signal}, workspace, bot),
+		MemoryMCP:    mcpproxy.MemoryHandler(memory.Service{Pool: pool, Ring: ring, Signal: signal}, workspace, bot),
 		AuthMode: func(ctx context.Context) (string, error) {
 			return llmproxy.AuthMode(ctx, resolve, bot.String(), llmproxy.ProviderAnthropic)
 		},
@@ -256,7 +293,11 @@ func newEgressHandler(deps egressDeps) http.Handler {
 			// Native provider endpoints must use the metered LLM routes. Tunneling
 			// them would bypass request settlement, even under an open egress policy.
 			host, _, err := net.SplitHostPort(r.Host)
-			if err != nil || isLLMHost(host) {
+			if err == nil && isNativeGoogleHost(host) && deps.NativeGoogle != nil {
+				deps.NativeGoogle.ServeHTTP(w, r)
+				return
+			}
+			if err != nil || deps.NativeOnly || isLLMHost(host) {
 				http.Error(w, "metered LLM endpoint required", http.StatusForbidden)
 				return
 			}
@@ -278,6 +319,10 @@ func newEgressHandler(deps egressDeps) http.Handler {
 				return
 			}
 			w.WriteHeader(http.StatusOK)
+			return
+		}
+		if deps.NativeOnly {
+			http.NotFound(w, r)
 			return
 		}
 		// The desktop CLI asks which placeholder to present. The answer is a
@@ -478,7 +523,7 @@ func isLLMHost(host string) bool {
 	return false
 }
 
-func openDatabaseProxy(ctx context.Context, dsn string, ring *secrets.KeyRing, workspace, bot, natsURL string, ca *mitmproxy.BotCA, logger *slog.Logger) (http.Handler, func(), error) {
+func openDatabaseProxy(ctx context.Context, dsn string, ring *secrets.KeyRing, workspace, bot, natsURL string, ca *mitmproxy.BotCA, logger *slog.Logger, nativeOnly bool) (http.Handler, func(), error) {
 	ws, err := uuid.Parse(workspace)
 	if err != nil {
 		return nil, nil, errors.New("invalid proxy workspace identity")
@@ -530,7 +575,7 @@ func openDatabaseProxy(ctx context.Context, dsn string, ring *secrets.KeyRing, w
 					logger.Error("publish notification signal", "err", err)
 				}
 			}
-			handler, stopHandler, err := databaseHandlerWithLifecycle(ctx, pool, ring, ws, botID, ca, logger, signal, publisher, brokerClient)
+			handler, stopHandler, err := databaseHandlerWithLifecycle(ctx, pool, ring, ws, botID, ca, logger, signal, publisher, brokerClient, nativeOnly)
 			if err != nil {
 				closeAll()
 				return nil, nil, err
@@ -541,7 +586,7 @@ func openDatabaseProxy(ctx context.Context, dsn string, ring *secrets.KeyRing, w
 			}, nil
 		}
 	}
-	handler, stopHandler, err := databaseHandlerWithLifecycle(ctx, pool, ring, ws, botID, ca, logger, signal, nil, brokerClient)
+	handler, stopHandler, err := databaseHandlerWithLifecycle(ctx, pool, ring, ws, botID, ca, logger, signal, nil, brokerClient, nativeOnly)
 	if err != nil {
 		closeAll()
 		return nil, nil, err

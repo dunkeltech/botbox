@@ -6,6 +6,9 @@ import "regexp"
 
 var openRouterModelID = regexp.MustCompile(`^~?[a-zA-Z0-9_][a-zA-Z0-9_.-]*/[a-zA-Z0-9_][a-zA-Z0-9_.:-]*$`)
 
+// AgyACPProvider selects the native Antigravity ACP runner.
+const AgyACPProvider = "google-acp"
+
 // RunnerForProvider maps saved provider names and existing CLI aliases to a
 // sandbox executable and the provider identifier used by the proxy.
 func RunnerForProvider(provider string) (cli, upstream string) {
@@ -16,6 +19,8 @@ func RunnerForProvider(provider string) (cli, upstream string) {
 		return "codex", "openai"
 	case "google", "agy":
 		return "agy", "google"
+	case AgyACPProvider:
+		return "agy-acp", "google"
 	case "openrouter":
 		return "pi", "openrouter"
 	default:

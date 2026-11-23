@@ -40,6 +40,10 @@ agy OAuth exchange and native metering are implemented. (Update 2026-11-20:
 [ADR-0040](0040-agy-gemini-api-key-route.md) adds the metered `/llm/google`
 route with a Gemini API key. CONNECT to Google hosts stays denied.)
 
+[ADR-0041](0041-native-antigravity-acp.md) adds a separate proxy pair for
+native Antigravity ACP. That pair admits the account's login traffic and
+inspects the native model requests on its private network.
+
 Each model request takes the workspace spend advisory lock, checks the active
 CLI turn and pause/control state, checks budgets, and inserts an unpriced
 `proxy_meter` record before forwarding. The lock stays held until usage is

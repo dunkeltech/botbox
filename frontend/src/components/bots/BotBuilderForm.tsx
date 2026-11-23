@@ -39,7 +39,13 @@ import type {
 } from '@/types/api';
 
 const MOOD_OPTIONS: AvatarMood[] = ['idle', 'thinking', 'action', 'offline'];
-const AGENTS = ['anthropic', 'openai', 'google', 'openrouter'] as const;
+const AGENTS = [
+  'anthropic',
+  'openai',
+  'google',
+  'google-acp',
+  'openrouter',
+] as const;
 const AGENT_ALIASES: Record<string, string> = {
   claude: 'anthropic',
   codex: 'openai',
@@ -117,10 +123,12 @@ export function BotBuilderForm({
     enabled: canEdit,
     retry: false,
   });
+  const nativeACP = llmProvider === 'google-acp';
+  const priceProvider = nativeACP ? 'google' : llmProvider;
   const pricedModels = (priceQuery.data?.prices ?? [])
     .filter(
       (price) =>
-        price.provider === llmProvider && price.model === price.model.trim(),
+        price.provider === priceProvider && price.model === price.model.trim(),
     )
     .map((price) => price.model)
     .sort((a, b) => a.localeCompare(b));
@@ -129,9 +137,10 @@ export function BotBuilderForm({
     llmProvider === savedModel.provider &&
     llmModel === savedModel.model;
   const modelIsPriced = pricedModels.includes(llmModel);
-  const canSaveModel = keepsSavedModel || modelIsPriced;
+  const canSaveModel =
+    keepsSavedModel || (nativeACP ? !!llmModel.trim() : modelIsPriced);
   const hasNoPricedModels =
-    canEdit && priceQuery.isSuccess && pricedModels.length === 0;
+    !nativeACP && canEdit && priceQuery.isSuccess && pricedModels.length === 0;
   const modelHelp = !canEdit
     ? undefined
     : priceQuery.isPending
@@ -163,7 +172,7 @@ export function BotBuilderForm({
           avatarSeed: avatarSeed.trim(),
           llmMode: 'cli',
           llmProvider,
-          llmModel,
+          llmModel: llmModel.trim(),
           driverType,
           replyLanguage,
           turnTimeoutMinutes: Number(turnTimeoutMinutes),
@@ -175,7 +184,9 @@ export function BotBuilderForm({
           description: description.trim(),
           avatarSeed: avatarSeed.trim(),
           llmMode: 'cli',
-          ...(!keepsSavedModel ? { llmProvider, llmModel } : {}),
+          ...(!keepsSavedModel
+            ? { llmProvider, llmModel: llmModel.trim() }
+            : {}),
           driverType,
           replyLanguage,
           turnTimeoutMinutes: Number(turnTimeoutMinutes),
@@ -398,30 +409,52 @@ export function BotBuilderForm({
             ))}
           </Select>
 
-          <Select
-            label={t('modelLabel')}
-            helperText={modelHelp}
-            mono
-            value={llmModel}
-            disabled={!canEdit || pricedModels.length === 0}
-            required={!keepsSavedModel}
-            onChange={(event) => setLlmModel(event.target.value)}
-          >
-            <option value="" disabled>
-              {t('choosePricedModel')}
-            </option>
-            {keepsSavedModel && llmModel && !modelIsPriced ? (
-              <option value={llmModel} disabled>
-                {llmModel}
+          {nativeACP ? (
+            <Input
+              label={t('modelLabel')}
+              helperText={t('agyACPModelHelp')}
+              mono
+              value={llmModel}
+              maxLength={100}
+              disabled={!canEdit}
+              required
+              onChange={(event) => setLlmModel(event.target.value)}
+            />
+          ) : (
+            <Select
+              label={t('modelLabel')}
+              helperText={modelHelp}
+              mono
+              value={llmModel}
+              disabled={!canEdit || pricedModels.length === 0}
+              required={!keepsSavedModel}
+              onChange={(event) => setLlmModel(event.target.value)}
+            >
+              <option value="" disabled>
+                {t('choosePricedModel')}
               </option>
-            ) : null}
-            {pricedModels.map((model) => (
-              <option key={model} value={model}>
-                {model}
-              </option>
-            ))}
-          </Select>
+              {keepsSavedModel && llmModel && !modelIsPriced ? (
+                <option value={llmModel} disabled>
+                  {llmModel}
+                </option>
+              ) : null}
+              {pricedModels.map((model) => (
+                <option key={model} value={model}>
+                  {model}
+                </option>
+              ))}
+            </Select>
+          )}
         </div>
+        {nativeACP ? (
+          <div className="rounded-card border border-amber-line bg-amber-tint p-3 text-[14px] text-ink">
+            <p>{t('agyACPLicenseNotice')}</p>
+            <p className="mt-2">{t('agyACPSetupHelp')}</p>
+            {bot ? (
+              <code className="mt-2 block break-all">{`docker exec -it botbox-agy-acp-${bot.id} agy acp --login`}</code>
+            ) : null}
+          </div>
+        ) : null}
         {hasNoPricedModels &&
         !missingModelPrice &&
         canManageMembers(workspace.role) ? (

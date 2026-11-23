@@ -13,6 +13,7 @@ func TestRunnerForProvider(t *testing.T) {
 		{"openai", "codex", "openai"}, {"codex", "codex", "openai"},
 		{"anthropic", "claude", "anthropic"}, {"claude", "claude", "anthropic"},
 		{"google", "agy", "google"}, {"agy", "agy", "google"},
+		{AgyACPProvider, "agy-acp", "google"},
 		{"pi", "", ""}, {"", "", ""},
 	} {
 		if cli, upstream := RunnerForProvider(tt.stored); cli != tt.cli || upstream != tt.upstream {

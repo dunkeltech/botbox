@@ -656,6 +656,7 @@ describe('turn failure recovery', () => {
     ['engine.computer_restart_required', 'replace its simulated computer'],
     ['engine.proxy_unavailable', 'egress proxy'],
     ['engine.credentials_missing', 'provider credential'],
+    ['engine.agy_login_required', 'Sign in to Antigravity'],
     ['engine.provider_failed', 'The model provider could not complete'],
     [
       'engine.stream_format_invalid',

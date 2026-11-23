@@ -84,17 +84,19 @@ type PortBinding struct {
 
 // ContainerHostConfig captures Docker HostConfig security and resource constraints.
 type ContainerHostConfig struct {
-	Privileged   bool                     `json:"Privileged"`
-	CapDrop      []string                 `json:"CapDrop"`
-	CapAdd       []string                 `json:"CapAdd,omitempty"`
-	SecurityOpt  []string                 `json:"SecurityOpt"`
-	NanoCPUs     int64                    `json:"NanoCPUs"`
-	Memory       int64                    `json:"Memory"`
-	PidsLimit    *int64                   `json:"PidsLimit"`
-	ShmSize      int64                    `json:"ShmSize"`
-	Binds        []string                 `json:"Binds"`
-	NetworkMode  string                   `json:"NetworkMode"`
-	PortBindings map[string][]PortBinding `json:"PortBindings,omitempty"`
+	Privileged     bool                     `json:"Privileged"`
+	CapDrop        []string                 `json:"CapDrop"`
+	CapAdd         []string                 `json:"CapAdd,omitempty"`
+	SecurityOpt    []string                 `json:"SecurityOpt"`
+	NanoCPUs       int64                    `json:"NanoCPUs"`
+	Memory         int64                    `json:"Memory"`
+	PidsLimit      *int64                   `json:"PidsLimit"`
+	ShmSize        int64                    `json:"ShmSize"`
+	Binds          []string                 `json:"Binds"`
+	NetworkMode    string                   `json:"NetworkMode"`
+	PortBindings   map[string][]PortBinding `json:"PortBindings,omitempty"`
+	ReadonlyRootfs bool                     `json:"ReadonlyRootfs,omitempty"`
+	Tmpfs          map[string]string        `json:"Tmpfs,omitempty"`
 }
 
 // ContainerNetworkingConfig attaches a container to a single isolated bot network.
@@ -105,6 +107,9 @@ type ContainerNetworkingConfig struct {
 // ContainerCreateSpec is the JSON body posted to Docker Engine /containers/create.
 type ContainerCreateSpec struct {
 	Image            string                    `json:"Image"`
+	User             string                    `json:"User,omitempty"`
+	Entrypoint       []string                  `json:"Entrypoint,omitempty"`
+	Cmd              []string                  `json:"Cmd,omitempty"`
 	Env              []string                  `json:"Env,omitempty"`
 	Labels           map[string]string         `json:"Labels"`
 	ExposedPorts     map[string]struct{}       `json:"ExposedPorts,omitempty"`
@@ -458,7 +463,7 @@ func (d *Driver) retireLegacySandbox(ctx context.Context, info *containerInspect
 	if info.Name != "/botbox-bot-"+sanitizeIdentifier(bot) {
 		return errors.New("legacy sandbox name mismatch")
 	}
-	if err := d.StopEnvironment(ctx, compute.EnvID(info.ID)); err != nil {
+	if err := d.stopWorkContainer(ctx, compute.EnvID(info.ID)); err != nil {
 		return err
 	}
 	if _, err := d.doJSON(ctx, http.MethodPost, "/containers/"+url.PathEscape(info.ID)+"/rename?name="+url.QueryEscape(retired), nil, nil); err != nil {
@@ -471,16 +476,23 @@ func (d *Driver) retireLegacySandbox(ctx context.Context, info *containerInspect
 
 // StopEnvironment stops the sandbox container while retaining its /home/bot volume.
 func (d *Driver) StopEnvironment(ctx context.Context, id compute.EnvID) error {
+	if err := d.stopWorkContainer(ctx, id); err != nil {
+		return err
+	}
+	if d.proxy != nil {
+		return d.stopAgyACPCompanion(ctx, id)
+	}
+	return nil
+}
+
+func (d *Driver) stopWorkContainer(ctx context.Context, id compute.EnvID) error {
 	if strings.TrimSpace(string(id)) == "" {
 		return compute.ErrEnvironmentNotFound
 	}
 	statusCode, err := d.doJSON(ctx, http.MethodPost, "/containers/"+url.PathEscape(string(id))+"/stop?t=10", nil, nil)
-	if err != nil {
+	if err != nil && statusCode != http.StatusNotModified {
 		if statusCode == http.StatusNotFound {
 			return compute.ErrEnvironmentNotFound
-		}
-		if statusCode == http.StatusNotModified {
-			return nil
 		}
 		return err
 	}
@@ -512,6 +524,9 @@ func (d *Driver) DestroyEnvironment(ctx context.Context, id compute.EnvID) error
 	if workspace != "" && bot != "" {
 		d.proxyMu.Lock()
 		defer d.proxyMu.Unlock()
+		if err := d.removeAgyACPContainer(ctx, workspace, bot); err != nil {
+			return err
+		}
 		for _, role := range []string{"worker", "relay"} {
 			name := "botbox-egress-" + sanitizeIdentifier(bot)
 			if role == "worker" {
@@ -757,6 +772,7 @@ type containerInspectResponse struct {
 	} `json:"Config"`
 	ID    string `json:"Id"`
 	Name  string `json:"Name"`
+	Image string `json:"Image"`
 	State struct {
 		Status  string `json:"Status"`
 		Running bool   `json:"Running"`

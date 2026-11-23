@@ -14,6 +14,7 @@ const turnFailureKeys: Record<string, string> = {
   'engine.computer_controlled': 'computerControlled',
   'engine.proxy_unavailable': 'proxyUnavailable',
   'engine.credentials_missing': 'credentialsMissing',
+  'engine.agy_login_required': 'agyLoginRequired',
   'engine.credentials_unavailable': 'credentialsUnavailable',
   'engine.provider_failed': 'providerFailed',
   'engine.stream_format_invalid': 'streamFormatInvalid',

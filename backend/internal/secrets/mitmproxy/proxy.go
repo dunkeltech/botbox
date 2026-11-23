@@ -513,13 +513,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	rule, needsMITM := h.firstHostRule(snap, host)
 	if !needsMITM {
-		h.handlePassthrough(w, r, host, port, snap.Revision)
+		h.handlePassthrough(w, r, host, port, snap.Revision, false)
 		return
 	}
 	h.handleMITM(w, r, host, port, rule)
 }
 
-func (h *Handler) handlePassthrough(w http.ResponseWriter, r *http.Request, host, port string, checkedRevision int64) {
+func (h *Handler) handlePassthrough(w http.ResponseWriter, r *http.Request, host, port string, checkedRevision int64, verifyServerName bool) {
 	norm := normalizeHostPattern(host)
 	dialCtx, cancel := context.WithTimeout(r.Context(), h.cfg.DialTimeout)
 	defer cancel()
@@ -635,12 +635,36 @@ func (h *Handler) handlePassthrough(w http.ResponseWriter, r *http.Request, host
 		return
 	}
 	defer h.unregisterPassthrough(host, clientConn)
+	if verifyServerName && !verifyTunnelServerName(clientConn, clientBuf, host) {
+		_ = clientConn.Close()
+		_ = upstreamConn.Close()
+		h.emitAudit(AuditEvent{Host: host, Port: port, Method: http.MethodConnect, Action: ActionBlockedHost, Status: http.StatusForbidden})
+		return
+	}
 
 	h.emitAudit(AuditEvent{Host: host, Port: port, Method: http.MethodConnect, Action: ActionTunnelPassthrough, Status: http.StatusOK})
 	tunnelBidirectional(clientConn, clientBuf, upstreamConn)
 }
 
 func (h *Handler) handleMITM(w http.ResponseWriter, r *http.Request, host, port string, rule SecretRule) {
+	publicOnly := IsGitLabAdapter(rule.AdapterID) && host != "gitlab.com"
+	transport := h.interceptTransport(host, port, publicOnly)
+	defer transport.CloseIdleConnections()
+	h.serveTLS(w, r, host, publicOnly, http.HandlerFunc(func(iw http.ResponseWriter, ir *http.Request) {
+		h.forwardMITMRequest(iw, ir, host, port, rule, transport)
+	}))
+}
+
+func (h *Handler) trackInspectedConnection(host string, client net.Conn) {
+	h.passthroughMu.Lock()
+	defer h.passthroughMu.Unlock()
+	if h.credentialConns[host] == nil {
+		h.credentialConns[host] = map[net.Conn]struct{}{}
+	}
+	h.credentialConns[host][client] = struct{}{}
+}
+
+func (h *Handler) serveTLS(w http.ResponseWriter, r *http.Request, host string, track bool, innerHandler http.Handler) {
 	leafCert, err := h.cfg.CA.LeafCertificate(host)
 	if err != nil {
 		http.Error(w, "failed to prepare TLS interception", http.StatusInternalServerError)
@@ -657,13 +681,8 @@ func (h *Handler) handleMITM(w http.ResponseWriter, r *http.Request, host, port 
 	if err != nil {
 		return
 	}
-	if IsGitLabAdapter(rule.AdapterID) && host != "gitlab.com" {
-		h.passthroughMu.Lock()
-		if h.credentialConns[host] == nil {
-			h.credentialConns[host] = map[net.Conn]struct{}{}
-		}
-		h.credentialConns[host][clientConn] = struct{}{}
-		h.passthroughMu.Unlock()
+	if track {
+		h.trackInspectedConnection(host, clientConn)
 		defer func() { h.passthroughMu.Lock(); delete(h.credentialConns[host], clientConn); h.passthroughMu.Unlock() }()
 	}
 
@@ -683,22 +702,6 @@ func (h *Handler) handleMITM(w http.ResponseWriter, r *http.Request, host, port 
 	}
 	defer func() { _ = tlsClient.Close() }()
 
-	transport := &http.Transport{
-		DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
-			return h.dialUpstream(ctx, network, host, port, IsGitLabAdapter(rule.AdapterID) && host != "gitlab.com")
-		},
-		TLSClientConfig: &tls.Config{
-			MinVersion: tls.VersionTLS12,
-			ServerName: host,
-			RootCAs:    h.cfg.UpstreamRootCAs,
-		},
-	}
-	defer transport.CloseIdleConnections()
-
-	innerHandler := http.HandlerFunc(func(iw http.ResponseWriter, ir *http.Request) {
-		h.forwardMITMRequest(iw, ir, host, port, rule, transport)
-	})
-
 	single := newSingleConnListener(tlsClient)
 	defer func() { _ = single.Close() }()
 	innerSrv := &http.Server{
@@ -707,6 +710,19 @@ func (h *Handler) handleMITM(w http.ResponseWriter, r *http.Request, host, port 
 		IdleTimeout:       5 * time.Second,
 	}
 	_ = innerSrv.Serve(single)
+}
+
+func (h *Handler) interceptTransport(host, port string, publicOnly bool) *http.Transport {
+	return &http.Transport{
+		DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			return h.dialUpstream(ctx, network, host, port, publicOnly)
+		},
+		TLSClientConfig: &tls.Config{
+			MinVersion: tls.VersionTLS12,
+			ServerName: host,
+			RootCAs:    h.cfg.UpstreamRootCAs,
+		},
+	}
 }
 
 func (h *Handler) forwardMITMRequest(
@@ -1167,12 +1183,11 @@ func tunnelBidirectional(client net.Conn, clientBuf *bufio.ReadWriter, upstream 
 
 	go func() {
 		defer wg.Done()
-		if clientBuf != nil && clientBuf.Reader.Buffered() > 0 {
-			if _, err := io.CopyN(upstream, clientBuf.Reader, int64(clientBuf.Reader.Buffered())); err != nil {
-				return
-			}
+		var reader io.Reader = client
+		if clientBuf != nil {
+			reader = clientBuf.Reader
 		}
-		_, _ = io.Copy(upstream, client)
+		_, _ = io.Copy(upstream, reader)
 		if cw, ok := upstream.(interface{ CloseWrite() error }); ok {
 			_ = cw.CloseWrite()
 		}

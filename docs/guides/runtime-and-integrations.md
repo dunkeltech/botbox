@@ -117,8 +117,8 @@ it is recreated. Its named home volume can be reused.
 
 ### Google Gemini with agy
 
-Google bots run the pinned `agy` CLI with a Gemini API key, never with a
-Google account sign-in (ADR-0040). To set one up:
+Choose **agy · Google Antigravity** for the pinned CLI with a Gemini API
+key (ADR-0040). To set one up:
 
 1. Create a Gemini API key on a Google Cloud project with billing enabled.
    Unpaid keys let Google use prompts to improve its products, and users in
@@ -129,9 +129,8 @@ Google account sign-in (ADR-0040). To set one up:
      page. Keys of that billing account use the credits first.
    - **Who may use the key.** Only the subscriber may use these credits, so
      store such a key at bot scope on that person's own bot.
-   - **Sign-in quota.** The Antigravity quota that comes with a Google
-     sign-in cannot be used in bot.Box. Google's terms forbid third-party
-     apps from using it (ADR-0040).
+   - **Sign-in quota.** This route uses Gemini API billing. See the ACP
+     setup below for an account that permits native Antigravity use.
 2. Store it in **Secrets & network** as `llm-google`, at bot or workspace
    scope, with the domain `generativelanguage.googleapis.com`.
 3. Set the bot model to a Gemini API ID such as `gemini-3.8-flash`, not a
@@ -147,6 +146,36 @@ proxy sets the real key and meters each request from its `usageMetadata`.
 After a guardrail blocks a Gemini response, the proxy refuses agy's automatic
 retry, so the turn ends after one upstream call. `make test-sandbox-agy` runs
 the pinned binary against a local Gemini fixture with networking disabled.
+
+### Antigravity ACP with Google sign-in
+
+Choose **agy · ACP with Google sign-in** and enter a model ID available to
+the account. Add a workspace model price under the **Google** provider
+for the exact ID before starting the computer. Check the terms of the
+account's subscription or license
+before granting other workspace members or automated tasks access to it.
+The official ACP client contract covers native sign-in. Deployment terms
+depend on the account and how its session is used.
+
+1. Build and deploy the updated API and egress proxy image. The development
+   image target is `make proxy-image`. Use a sandbox image containing the
+   pinned `agy` CLI.
+2. Start the bot computer and send a chat message. This creates the
+   separate ACP runtime. Its first turn reports that sign-in is required.
+3. On the Docker host, run `docker exec -it botbox-agy-acp-<bot-id> agy acp --login`.
+   Open the displayed URL in your browser and enter the resulting code in
+   that terminal. Bot settings show the command with the bot's ID.
+4. Retry the chat message. The CLI retains its own session in its private
+   Docker volume. Use the same sign-in command to reconnect after expiry.
+
+ACP chat supports text only. The authenticated runtime has no access to
+the bot desktop's files or tools. Model replies enter the chat after the
+proxy validates the complete bounded response. The proxy records usage
+under the Google provider with subscription accounting. Explicit host
+blocks in **Secrets & network** also apply to this runtime.
+
+See [ADR-0041](../adr/0041-native-antigravity-acp.md) and the
+[Antigravity ACP guide](https://antigravity.google/docs/ide/extensions/acp/).
 
 ### Deterministic engine doubles
 

@@ -592,6 +592,13 @@ export function ChatPanel({
             >
               {t('openCredentials')}
             </Link>
+          ) : turn.errorCode === 'engine.agy_login_required' ? (
+            <Link
+              className="mt-2 inline-flex min-h-[44px] items-center font-bold underline"
+              href={`/bots/${botId}/settings`}
+            >
+              {t('openAgySetup')}
+            </Link>
           ) : [
               'engine.computer_not_running',
               'engine.computer_restart_required',

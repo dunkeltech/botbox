@@ -2094,7 +2094,7 @@ export interface components {
       description: string;
       avatarSeed: string;
       llmMode: components['schemas']['LlmMode'];
-      /** @description Selects the sandbox CLI. OpenRouter uses Pi, OpenAI uses Codex, Anthropic uses Claude Code, and Google uses agy. */
+      /** @description Selects the sandbox CLI. OpenRouter uses Pi, OpenAI uses Codex, Anthropic uses Claude Code, google uses agy with a Gemini API key, and google-acp uses agy over ACP with Google sign-in. */
       llmProvider: string;
       llmModel: string;
       driverType: components['schemas']['DriverType'];
@@ -2120,7 +2120,7 @@ export interface components {
       description?: string;
       avatarSeed: string;
       llmMode: components['schemas']['LlmMode'];
-      /** @description Selects the sandbox CLI. OpenRouter uses Pi, OpenAI uses Codex, Anthropic uses Claude Code, and Google uses agy. */
+      /** @description Selects the sandbox CLI. OpenRouter uses Pi, OpenAI uses Codex, Anthropic uses Claude Code, google uses agy with a Gemini API key, and google-acp uses agy over ACP with Google sign-in. */
       llmProvider: string;
       llmModel: string;
       driverType?: components['schemas']['DriverType'];
@@ -2132,7 +2132,7 @@ export interface components {
       description?: string;
       avatarSeed?: string;
       llmMode?: components['schemas']['LlmMode'];
-      /** @description Selects the sandbox CLI. OpenRouter uses Pi, OpenAI uses Codex, Anthropic uses Claude Code, and Google uses agy. */
+      /** @description Selects the sandbox CLI. OpenRouter uses Pi, OpenAI uses Codex, Anthropic uses Claude Code, google uses agy with a Gemini API key, and google-acp uses agy over ACP with Google sign-in. */
       llmProvider?: string;
       llmModel?: string;
       driverType?: components['schemas']['DriverType'];
