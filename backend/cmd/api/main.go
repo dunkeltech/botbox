@@ -348,6 +348,7 @@ func initComputeDriverWithBroker(logger *slog.Logger, authBrokerEnabled bool) (c
 			SocketPath:        os.Getenv("DOCKER_SOCKET"),
 			Proxy:             proxy,
 			AuthBrokerEnabled: authBrokerEnabled,
+			Logger:            logger,
 		})
 		if err != nil {
 			return nil, nil, err

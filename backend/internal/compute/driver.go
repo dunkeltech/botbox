@@ -49,6 +49,10 @@ var (
 	ErrInvalidConfig = errors.New("invalid sandbox configuration")
 	// ErrSecurityViolation indicates an attempted violation of sandbox isolation invariants.
 	ErrSecurityViolation = errors.New("sandbox security invariant violation")
+	// ErrNetworkCapacity indicates the container host has no free address
+	// range left for another isolated sandbox network. An operator must free
+	// networks or widen the host's address pools; retrying does not help.
+	ErrNetworkCapacity = errors.New("no free sandbox network address range")
 )
 
 // BotConfig specifies provisioning configuration and resource limits for a bot sandbox.

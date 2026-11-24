@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -56,6 +57,9 @@ type Options struct {
 	AgentDialer func(ctx context.Context, addr string) (*grpc.ClientConn, error)
 	// AuthBrokerEnabled advertises non-secret browser_login capability into the sandbox.
 	AuthBrokerEnabled bool
+	// Logger receives best-effort cleanup failures that must not fail the
+	// caller's operation. Nil discards them.
+	Logger *slog.Logger
 }
 
 // Driver implements compute.Driver using Docker Engine HTTP API calls
@@ -70,6 +74,10 @@ type Driver struct {
 	// daemonDial opens one raw Engine connection. The shared HTTP client
 	// timeout would cut a hijacked chat stream off.
 	daemonDial func(ctx context.Context) (net.Conn, error)
+	logger     *slog.Logger
+	// now is replaceable so tests can check the orphan network grace period
+	// without waiting.
+	now func() time.Time
 
 	proxyMu sync.Mutex
 	mu      sync.RWMutex
@@ -180,6 +188,10 @@ func NewDriver(opts Options) (*Driver, error) {
 		}
 		proxy = &copy
 	}
+	logger := opts.Logger
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
+	}
 	return &Driver{
 		proxy:             proxy,
 		client:            client,
@@ -188,6 +200,8 @@ func NewDriver(opts Options) (*Driver, error) {
 		agentDialer:       opts.AgentDialer,
 		authBrokerEnabled: opts.AuthBrokerEnabled,
 		daemonDial:        daemonDial,
+		logger:            logger,
+		now:               time.Now,
 		tokens:            make(map[compute.EnvID]string),
 	}, nil
 }
@@ -215,7 +229,7 @@ func BuildContainerSpec(cfg compute.BotConfig, seccompProfile string) (Container
 	if volumeName == "" {
 		volumeName = "botbox-home-" + sanitizeIdentifier(cfg.BotID)
 	}
-	netName := "botbox-net-" + sanitizeIdentifier(cfg.BotID)
+	netName := legacyNetworkName(cfg.BotID)
 	if cfg.ProxyURL != "" {
 		netName = proxyNetworkName(cfg.BotID)
 	}
@@ -499,17 +513,17 @@ func (d *Driver) stopWorkContainer(ctx context.Context, id compute.EnvID) error 
 	return nil
 }
 
-// DestroyEnvironment removes the sandbox container cleanly.
+// DestroyEnvironment removes the sandbox container, its egress proxy and,
+// once nothing uses them any more, its networks. The home volume stays.
 func (d *Driver) DestroyEnvironment(ctx context.Context, id compute.EnvID) error {
-	var workspace, bot string
-	if d.proxy != nil {
-		info, err := d.inspectContainer(ctx, string(id))
-		if err == nil && info.Config.Labels["botbox.egress_proxy"] == proxyMarker {
-			workspace, bot = info.Config.Labels["botbox.workspace_id"], info.Config.Labels["botbox.bot_id"]
-		}
-	}
 	if strings.TrimSpace(string(id)) == "" {
 		return compute.ErrEnvironmentNotFound
+	}
+	var workspace, bot string
+	proxied := false
+	if info, err := d.inspectContainer(ctx, string(id)); err == nil {
+		workspace, bot = info.Config.Labels["botbox.workspace_id"], info.Config.Labels["botbox.bot_id"]
+		proxied = d.proxy != nil && info.Config.Labels["botbox.egress_proxy"] == proxyMarker
 	}
 	statusCode, err := d.doJSON(ctx, http.MethodDelete, "/containers/"+url.PathEscape(string(id))+"?force=true", nil, nil)
 	if err != nil {
@@ -521,9 +535,14 @@ func (d *Driver) DestroyEnvironment(ctx context.Context, id compute.EnvID) error
 	d.mu.Lock()
 	delete(d.tokens, id)
 	d.mu.Unlock()
-	if workspace != "" && bot != "" {
-		d.proxyMu.Lock()
-		defer d.proxyMu.Unlock()
+	if workspace == "" || bot == "" {
+		return nil
+	}
+	// The networks can only go after every container on them, so the network
+	// cleanup runs last and under the same lock as proxy creation.
+	d.proxyMu.Lock()
+	defer d.proxyMu.Unlock()
+	if proxied {
 		if err := d.removeAgyACPContainer(ctx, workspace, bot); err != nil {
 			return err
 		}
@@ -542,6 +561,12 @@ func (d *Driver) DestroyEnvironment(ctx context.Context, id compute.EnvID) error
 				}
 			}
 		}
+	}
+	// The computer is already gone, so a failed network cleanup must not fail
+	// the delete. A leftover network is reclaimed when the address pool runs
+	// full (see ensureInternalNetwork).
+	if err := d.removeBotNetworks(ctx, workspace, bot); err != nil {
+		d.logger.WarnContext(ctx, "remove bot networks", "workspace_id", workspace, "bot_id", bot, "err", err)
 	}
 	return nil
 }
@@ -759,10 +784,30 @@ func (d *Driver) ensureInternalNetwork(ctx context.Context, name string, labels 
 		payload["EnableIPv6"] = false
 	}
 	code, createErr := d.doJSON(ctx, http.MethodPost, "/networks/create", payload, nil)
-	if createErr != nil && code == http.StatusConflict {
+	if createErr == nil || code == http.StatusConflict {
 		return nil
 	}
-	return createErr
+	if !isPoolExhausted(createErr) {
+		return createErr
+	}
+	removed, reclaimErr := d.reclaimOrphanNetworks(ctx, name)
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("reclaim bot networks: %w", err)
+	}
+	if reclaimErr != nil {
+		d.logger.WarnContext(ctx, "reclaim orphan bot networks", "err", reclaimErr)
+	}
+	if removed > 0 {
+		d.logger.InfoContext(ctx, "reclaimed orphan bot networks", "count", removed)
+		code, createErr = d.doJSON(ctx, http.MethodPost, "/networks/create", payload, nil)
+		if createErr == nil || code == http.StatusConflict {
+			return nil
+		}
+		if !isPoolExhausted(createErr) {
+			return createErr
+		}
+	}
+	return fmt.Errorf("%w: create network %s: %w", compute.ErrNetworkCapacity, name, createErr)
 }
 
 type containerInspectResponse struct {

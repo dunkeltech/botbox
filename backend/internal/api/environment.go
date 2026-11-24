@@ -1097,6 +1097,11 @@ func (s *server) writeComputeError(w http.ResponseWriter, err error, fallbackMsg
 		writeError(w, s.logger, http.StatusBadRequest, "validation_error", err.Error())
 	case errors.Is(err, compute.ErrSecurityViolation):
 		writeError(w, s.logger, http.StatusForbidden, "security_violation", err.Error())
+	case errors.Is(err, compute.ErrNetworkCapacity):
+		// A fixed message: the wrapped Docker error names host networks that
+		// are none of the caller's business.
+		writeError(w, s.logger, http.StatusServiceUnavailable, "environment.network_capacity",
+			"the container host has no free network address range for another computer")
 	case status.Code(err) == codes.PermissionDenied || status.Code(err) == codes.InvalidArgument:
 		writeError(w, s.logger, http.StatusBadRequest, "validation_error", status.Convert(err).Message())
 	case status.Code(err) == codes.NotFound:

@@ -19,6 +19,16 @@ to provision its relay and trusted worker. The home volume is reused. The old
 container is retained stopped under a `botbox-retired-` name for recovering
 files outside the home volume. See [ADR-0038](../adr/0038-split-egress-and-chromium-isolation.md).
 
+Every bot computer uses its own internal Docker network, and native ACP bots use
+a second one. Each takes a /24 from the Docker address pools: OrbStack has 30,
+shared with every other project on the host. Deleting a computer removes its
+networks. When the pool is full, starting a computer first removes bot networks
+that no container uses. If that frees nothing, the start fails with
+`environment.network_capacity`. Then remove unused networks of other projects
+(`docker network ls`, `docker network rm <name>`) or widen the pools with
+`default-address-pools` in the Docker daemon configuration. See
+[ADR-0042](../adr/0042-bot-network-lifecycle.md).
+
 Configure provider credentials through the write-only Secrets form. The secret's
 domain must match the provider host, and any path restriction still applies.
 Add the exact configured model under **Workspace settings → Budgets & model prices**.

@@ -52,6 +52,7 @@
     "environmentNotRunning": "Start the bot sandbox before opening the desktop, terminal, or files.",
     "environmentNotFound": "This bot sandbox environment has not been created yet.",
     "environmentModelPriceRequired": "Add a model price in Workspace settings → Budgets & model prices before starting this bot computer.",
+    "environmentNetworkCapacity": "The container host has no free network address range for another bot computer. Ask an operator to remove unused Docker networks, then start the computer again.",
     "subscriptionUsageNotFound": "This subscription request is already reconciled or is no longer available.",
     "subscriptionModelPriceRequired": "Add a price for this provider and model above, then try again.",
     "fileNotFound": "That file or directory does not exist inside /home/bot.",
