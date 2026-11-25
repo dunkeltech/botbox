@@ -20,6 +20,7 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/bots"
 	"github.com/dunkeltech/botbox/backend/internal/budgets"
 	"github.com/dunkeltech/botbox/backend/internal/codexplan"
+	"github.com/dunkeltech/botbox/backend/internal/computermcp"
 	"github.com/dunkeltech/botbox/backend/internal/events"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
 	"github.com/dunkeltech/botbox/backend/internal/groups"
@@ -215,10 +216,14 @@ func databaseHandlerWithLifecycle(
 	}
 	var nativeConnect http.Handler
 	if nativeOnly {
-		nativeGoogle := llmproxy.NewNativeGoogleProxy(bot.String(), llmproxy.Options{
+		options := llmproxy.Options{
 			Logger: logger, Admit: budgets.ProxyAdmission(pool, workspace, bot, time.Now),
 			Guardrails: guardrailSvc.ForBot(workspace, bot),
-		})
+		}
+		if os.Getenv("EGRESS_PROXY_AGY_ACP_TOOLS") == "v1" {
+			options.NativeComputerTools = computermcp.ModelTools()
+		}
+		nativeGoogle := llmproxy.NewNativeGoogleProxy(bot.String(), options)
 		nativeConnect = newNativeGoogleConnect(connect, nativeGoogleEnabled, nativeGoogle.ServeInspected)
 	}
 	mcpSvc := mcpproxy.NewService(pool, ring, nil, signal, logger)

@@ -121,15 +121,17 @@ type Options struct {
 	Admit func(context.Context, string, string, string) (func(Usage) error, error)
 
 	// CheckBudget must atomically check all applicable limits before each request.
-	CheckBudget    func(context.Context, string, string) error
-	Guardrails     GuardrailEnforcer
-	workspaceID    string
-	botID          string
-	BotIDHeader    string
-	Client         *http.Client
-	OAuthExchanger OAuthExchanger
-	OnAudit        func(AuditEvent)
-	Logger         *slog.Logger
+	CheckBudget func(context.Context, string, string) error
+	Guardrails  GuardrailEnforcer
+	// NativeComputerTools maps the exact model-facing MCP names to their argument validators.
+	NativeComputerTools map[string]func(json.RawMessage) error
+	workspaceID         string
+	botID               string
+	BotIDHeader         string
+	Client              *http.Client
+	OAuthExchanger      OAuthExchanger
+	OnAudit             func(AuditEvent)
+	Logger              *slog.Logger
 	// Now replaces the clock in tests.
 	Now func() time.Time
 }

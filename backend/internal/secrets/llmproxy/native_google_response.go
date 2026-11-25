@@ -46,11 +46,13 @@ func (p *NativeGoogleProxy) forwardNativeGoogle(ctx context.Context, w http.Resp
 			collector := newUsageCollector("application/json")
 			collector.parse(inner)
 			usage = collector.finish(ok)
-			if _, err := nativeTextParts(body); err != nil || !ok {
+			if _, err := nativeTextParts(body, p.options.NativeComputerTools); err != nil || !ok {
 				body = nil
 				ok = false
 			} else if body, ok = p.checkNativeOutput(ctx, w, route, model, body); !ok {
 				return usage
+			} else if _, err := nativeTextParts(body, p.options.NativeComputerTools); err != nil {
+				body, ok = nil, false
 			}
 		}
 	}
@@ -82,7 +84,7 @@ func (p *NativeGoogleProxy) inspectNativeStream(ctx context.Context, w http.Resp
 	var text strings.Builder
 	visibleCount := 0
 	for _, frame := range frames {
-		parts, err := nativeTextParts(frame)
+		parts, err := nativeTextParts(frame, p.options.NativeComputerTools)
 		if err != nil {
 			return nil, usage, false
 		}
@@ -106,7 +108,7 @@ func (p *NativeGoogleProxy) inspectNativeStream(ctx context.Context, w http.Resp
 		return []byte{}, usage, false
 	}
 	if !bytes.Equal(checked, encoded) {
-		frames, ok = redactNativeStream(response.Text, checked, visibleCount)
+		frames, ok = redactNativeStream(response.Text, checked, visibleCount, p.options.NativeComputerTools)
 		if !ok {
 			return nil, usage, false
 		}
@@ -128,28 +130,26 @@ type nativeStreamDocument struct {
 	Text   string           `json:"text"`
 }
 
-func redactNativeStream(original string, checked []byte, visibleCount int) ([]json.RawMessage, bool) {
+func redactNativeStream(original string, checked []byte, visibleCount int, tools map[string]func(json.RawMessage) error) ([]json.RawMessage, bool) {
 	var next nativeStreamDocument
 	decoder := json.NewDecoder(bytes.NewReader(checked))
 	decoder.UseNumber()
 	if decoder.Decode(&next) != nil || len(next.Frames) == 0 {
 		return nil, false
 	}
-	if next.Text != original && visibleCount > 0 {
-		remaining := next.Text
-		for _, frame := range next.Frames {
-			visible, err := visibleNativeParts(frame)
-			if err != nil {
-				return nil, false
-			}
+	remaining := next.Text
+	frames := make([]json.RawMessage, 0, len(next.Frames))
+	for _, frame := range next.Frames {
+		visible, err := visibleNativeParts(frame, tools)
+		if err != nil {
+			return nil, false
+		}
+		if next.Text != original && visibleCount > 0 {
 			for _, part := range visible {
 				part["text"] = remaining
 				remaining = ""
 			}
 		}
-	}
-	frames := make([]json.RawMessage, 0, len(next.Frames))
-	for _, frame := range next.Frames {
 		data, err := json.Marshal(frame)
 		if err != nil {
 			return nil, false
@@ -164,21 +164,21 @@ type nativeResponseParts struct {
 	visible []map[string]any
 }
 
-func nativeTextParts(data []byte) (nativeResponseParts, error) {
+func nativeTextParts(data []byte, tools map[string]func(json.RawMessage) error) (nativeResponseParts, error) {
 	var result nativeResponseParts
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
 	if err := decoder.Decode(&result.frame); err != nil {
 		return result, err
 	}
-	visible, err := visibleNativeParts(result.frame)
+	visible, err := visibleNativeParts(result.frame, tools)
 	result.visible = visible
 	return result, err
 }
 
 var errNativeShape = errors.New("unsupported Cloud Code response shape")
 
-func visibleNativeParts(frame map[string]any) ([]map[string]any, error) {
+func visibleNativeParts(frame map[string]any, tools map[string]func(json.RawMessage) error) ([]map[string]any, error) {
 	response, ok := frame["response"].(map[string]any)
 	if !ok {
 		return nil, errNativeShape
@@ -214,10 +214,10 @@ func visibleNativeParts(frame map[string]any) ([]map[string]any, error) {
 	if !ok {
 		return nil, errNativeShape
 	}
-	return inspectNativeParts(parts)
+	return inspectNativeParts(parts, tools)
 }
 
-func inspectNativeParts(parts []any) ([]map[string]any, error) {
+func inspectNativeParts(parts []any, tools map[string]func(json.RawMessage) error) ([]map[string]any, error) {
 	var visible []map[string]any
 	for _, item := range parts {
 		part, ok := item.(map[string]any)
@@ -233,6 +233,10 @@ func inspectNativeParts(parts []any) ([]map[string]any, error) {
 				}
 			case "thought":
 				if _, ok := value.(bool); !ok {
+					return nil, errNativeShape
+				}
+			case "functionCall":
+				if !validNativeMCPCall(value, tools) {
 					return nil, errNativeShape
 				}
 			default:

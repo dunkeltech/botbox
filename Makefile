@@ -65,6 +65,7 @@ test-sandbox-pi:
 .PHONY: test-sandbox-agy
 test-sandbox-agy:
 	docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges --user bot --entrypoint python3 --mount "type=bind,src=$(CURDIR)/images/sandbox/tests/agy_gemini_contract.py,dst=/tmp/agy_gemini_contract.py,readonly" botbox/sandbox:dev /tmp/agy_gemini_contract.py
+	docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges --user bot --entrypoint /usr/bin/timeout --mount "type=bind,src=$(CURDIR)/images/sandbox/tests/agy_acp_tools_contract.py,dst=/tmp/agy_acp_tools_contract.py,readonly" botbox/sandbox:dev 60s python3 /tmp/agy_acp_tools_contract.py
 
 .PHONY: test-sandbox-chromium
 test-sandbox-chromium:

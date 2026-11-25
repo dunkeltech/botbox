@@ -81,7 +81,7 @@ func (p *NativeGoogleProxy) ServeInspected(w http.ResponseWriter, r *http.Reques
 	var usage Usage
 	if metered {
 		ctx = context.WithValue(ctx, subscriptionContextKey{}, true)
-		body, ok = disableNativeTools(body, nested)
+		body, ok = constrainNativeTools(body, nested, p.options.NativeComputerTools)
 		if !ok {
 			http.Error(w, "invalid inspected model request", http.StatusForbidden)
 			return
@@ -166,14 +166,23 @@ func decodeJSONObject(body []byte, dst any) bool {
 	return len(body) != 0 && body[0] == '{' && json.Unmarshal(body, dst) == nil
 }
 
-func disableNativeTools(body, request []byte) ([]byte, bool) {
+func constrainNativeTools(body, request []byte, tools map[string]func(json.RawMessage) error) ([]byte, bool) {
 	var envelope, modelRequest map[string]json.RawMessage
 	if json.Unmarshal(body, &envelope) != nil || json.Unmarshal(request, &modelRequest) != nil {
 		return nil, false
 	}
-	// Model-triggered tools must never run beside the CLI's native login.
+	declared := modelRequest["tools"]
 	delete(modelRequest, "tools")
 	delete(modelRequest, "toolConfig")
+	if len(tools) > 0 {
+		safe, ok := nativeMCPDeclarations(declared, tools)
+		if !ok {
+			return nil, false
+		}
+		if len(safe) > 0 {
+			modelRequest["tools"] = safe
+		}
+	}
 	nested, err := json.Marshal(modelRequest)
 	if err != nil {
 		return nil, false

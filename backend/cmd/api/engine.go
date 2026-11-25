@@ -13,6 +13,7 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/bots"
 	"github.com/dunkeltech/botbox/backend/internal/budgets"
 	"github.com/dunkeltech/botbox/backend/internal/compute"
+	"github.com/dunkeltech/botbox/backend/internal/computermcp"
 	"github.com/dunkeltech/botbox/backend/internal/engine"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
 	"github.com/dunkeltech/botbox/backend/internal/mcpproxy"
@@ -100,7 +101,7 @@ func runCLITurnWithBroker(ctx context.Context, pool *pgxpool.Pool, q *db.Queries
 	if len(s.Messages) == 0 {
 		return errors.New("missing turn input")
 	}
-	guidance := "Use the context provided in this conversation to answer the request."
+	guidance := engine.DesktopGuidance + " Use the botbox-computer MCP tools for all work on your computer. The computer workspace is /home/bot."
 	if !nativeACP {
 		guidance = engine.DesktopGuidanceFor(brokerEnabled)
 		if mcpGuidance := mcpTurnGuidance(ctx, pool, ring, s.WorkspaceID, s.BotID); mcpGuidance != "" {
@@ -110,13 +111,23 @@ func runCLITurnWithBroker(ctx context.Context, pool *pgxpool.Pool, q *db.Queries
 	run := transport.RunCLI
 	if nativeACP {
 		acp, ok := driver.(interface {
-			RunAgyACP(context.Context, compute.EnvID, string, string, string, func(engine.Event) error) error
+			computermcp.Backend
+			RunAgyACP(context.Context, compute.EnvID, string, string, string, *computermcp.Session, func(engine.Event) error) error
 		})
 		if !ok {
 			return engine.WithFailureCode(engine.FailureCLIUnavailable, nil)
 		}
 		run = func(ctx context.Context, id compute.EnvID, _, prompt, resume, model string, emit func(engine.Event) error) error {
-			return acp.RunAgyACP(ctx, id, prompt, resume, model, emit)
+			tools := computermcp.NewSession(acp, id, func(ctx context.Context) error {
+				allowed, err := q.CanRunACPComputerTool(ctx, db.CanRunACPComputerToolParams{
+					WorkspaceID: ws, BotID: bot, TurnID: pgtype.UUID{Bytes: s.TurnID, Valid: true}, EnvID: string(id),
+				})
+				if err != nil || !allowed {
+					return errors.New("computer tool turn unavailable")
+				}
+				return nil
+			})
+			return acp.RunAgyACP(ctx, id, prompt, resume, model, tools, emit)
 		}
 	} else if subscription {
 		authenticated, ok := driver.(interface {

@@ -33,6 +33,9 @@ service AgentService {
   // Exec executes a bounded command inside the sandbox under /home/bot.
   rpc Exec(ExecRequest) returns (ExecResponse);
 
+  // RunTerminal streams a bot command and cancels it on desktop takeover.
+  rpc RunTerminal(stream RunTerminalRequest) returns (stream RunTerminalResponse);
+
   // ListFiles lists entries inside a directory scoped strictly under /home/bot.
   rpc ListFiles(ListFilesRequest) returns (ListFilesResponse);
 
@@ -113,6 +116,22 @@ message ExecResponse {
   string stdout = 1;
   string stderr = 2;
   int32 exit_code = 3;
+}
+
+message RunTerminalRequest {
+  oneof frame {
+    ExecRequest start = 1;
+    bytes input = 2;
+    bool close_input = 3;
+  }
+}
+
+message RunTerminalResponse {
+  bytes data = 1;
+  bool stderr = 2;
+  bool exited = 3;
+  int32 exit_code = 4;
+  bool truncated = 5;
 }
 
 message FileEntry {

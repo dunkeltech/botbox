@@ -32,9 +32,20 @@ when the CLI authenticates directly.
   `agy acp --login` command.
 - The Docker runtime is unprivileged. It has its own named home volume
   and internal network, with no desktop mounts or published ports.
-  Tool permission requests are cancelled. The proxy removes model tool
-  declarations and refuses executable response parts to keep untrusted
-  tool execution away from the persisted native session.
+  bot.Box registers a fixed stdio MCP helper when creating or loading
+  the ACP session. A private Unix socket and a Docker exec stream carry
+  its requests back to the API. The API binds each request to the active
+  workspace, bot, turn, and work environment before calling the desktop
+  agent. The ACP client approves only validated work computer calls
+  once during the active prompt. The two containers have no general-purpose
+  network connection.
+- The proxy keeps the exact model function declarations generated for
+  the work computer MCP server and validates tool names and argument
+  shapes before returning model calls. Built-in local executors remain
+  disabled in the native runtime. The regular desktop agent executes
+  the supported file, terminal, browser, and desktop tools. Terminal
+  commands use cancellable streams owned by the active turn and the
+  same control gate as desktop actions.
 - The dedicated relay and egress worker use the same workspace and
   bot identity as the desktop pair. The ACP runner mounts only the
   worker's public CA. The worker confirms the runner selection in the
@@ -62,8 +73,9 @@ when the CLI authenticates directly.
   volume. The operator can reconnect or revoke the Google session using
   the provider's tools. A volume that persists after container recreation
   must be handled as credential-bearing data.
-- The local tool surface is unavailable in this mode. Approving local
-  agent tools requires a separate execution boundary from the login.
+- The work desktop retains its own process, filesystem, and network
+  boundary. The MCP tool bridge grants access only to that work desktop.
+  The desktop agent version must include the streaming terminal RPC.
 - The Cloud Code wire format is specific to the pinned CLI. Keep the
   allowlists and synthetic fixtures aligned when bumping the release.
   Deployment and shared use depend on the applicable provider terms.

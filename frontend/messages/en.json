@@ -334,7 +334,7 @@
     "openRouterHelp": "Pi uses the OpenRouter credential named llm-openrouter in workspace secrets.",
     "agyACPModelHelp": "Enter a model identifier available to your Antigravity account. The computer requires a Google model price for that identifier.",
     "agyACPLicenseNotice": "Check that your subscription or license covers use by other workspace members and automated tasks.",
-    "agyACPSetupHelp": "Start the bot computer and send a chat message to prepare the isolated ACP runtime. Sign in from a terminal on the Docker host. ACP chat has local agent tools disabled.",
+    "agyACPSetupHelp": "Start the bot computer and send a chat message to prepare the isolated ACP runtime. Sign in from a terminal on the Docker host. ACP tools run on the bot computer.",
     "modelLabel": "Model identifier",
     "choosePricedModel": "Select a priced model",
     "modelPricesLoading": "Loading workspace model prices…",

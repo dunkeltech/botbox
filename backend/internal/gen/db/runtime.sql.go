@@ -11,6 +11,42 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const canRunACPComputerTool = `-- name: CanRunACPComputerTool :one
+SELECT EXISTS (
+    SELECT 1
+    FROM bot_turns AS t
+    JOIN bots AS b ON b.workspace_id = t.workspace_id AND b.id = t.bot_id
+    JOIN environments AS e ON e.bot_id = b.id
+    LEFT JOIN bot_runtime AS r ON r.workspace_id = b.workspace_id AND r.bot_id = b.id
+    WHERE t.workspace_id = $1
+      AND t.bot_id = $2
+      AND t.id = $3
+      AND t.status = 'running' AND NOT t.stop_requested
+      AND b.llm_mode = 'cli' AND b.llm_provider = 'google-acp'
+      AND e.env_id = $4 AND e.status = 'running'
+      AND e.control_holder_user_id IS NULL AND NOT COALESCE(r.paused, false)
+)
+`
+
+type CanRunACPComputerToolParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	BotID       pgtype.UUID `json:"bot_id"`
+	TurnID      pgtype.UUID `json:"turn_id"`
+	EnvID       string      `json:"env_id"`
+}
+
+func (q *Queries) CanRunACPComputerTool(ctx context.Context, arg CanRunACPComputerToolParams) (bool, error) {
+	row := q.db.QueryRow(ctx, canRunACPComputerTool,
+		arg.WorkspaceID,
+		arg.BotID,
+		arg.TurnID,
+		arg.EnvID,
+	)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const getBotRuntime = `-- name: GetBotRuntime :one
 SELECT COALESCE(r.paused,false)::boolean AS paused,
        COALESCE(e.control_holder_user_id IS NOT NULL,false)::boolean AS controlled

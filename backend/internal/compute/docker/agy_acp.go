@@ -4,15 +4,19 @@ package docker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
-	"strconv"
+	"sync"
 	"time"
 
+	"github.com/dunkeltech/botbox/backend/internal/agent"
 	"github.com/dunkeltech/botbox/backend/internal/bots"
 	"github.com/dunkeltech/botbox/backend/internal/compute"
+	"github.com/dunkeltech/botbox/backend/internal/computermcp"
 	"github.com/dunkeltech/botbox/backend/internal/engine"
 	"github.com/google/uuid"
 )
@@ -24,7 +28,6 @@ const (
 umask 077
 mkdir -p /home/bot/.gemini/antigravity-cli /tmp/agy-workspace
 cat /etc/ssl/certs/ca-certificates.crt /run/botbox/egress-ca/ca.crt > /tmp/botbox-acp-ca.pem
-printf '%s\n' '{"toolPermission":"strict","permissions":{"deny":["command(*)","unsandboxed(*)","read_file(*)","write_file(*)","read_url(*)","execute_url(*)","mcp(*)"]}}' > /home/bot/.gemini/antigravity-cli/settings.json
 exec sleep infinity
 `
 )
@@ -32,11 +35,13 @@ exec sleep infinity
 // RunAgyACP runs a native ACP turn in a separate container. Only Docker's
 // trusted exec channel reaches its stdio, and the work sandbox never mounts
 // the volume where agy keeps its own login.
-func (d *Driver) RunAgyACP(ctx context.Context, sandbox compute.EnvID, prompt, session, model string, emit func(engine.Event) error) error {
+func (d *Driver) RunAgyACP(ctx context.Context, sandbox compute.EnvID, prompt, session, model string, tools *computermcp.Session, emit func(engine.Event) error) error {
 	id, err := d.ensureAgyACPContainer(ctx, sandbox)
 	if err != nil {
 		return engine.WithFailureCode(engine.FailureCLIUnavailable, err)
 	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	conn, err := d.dialAgyACP(ctx, id)
 	if err != nil {
 		return engine.WithFailureCode(engine.FailureCLIUnavailable, err)
@@ -44,11 +49,45 @@ func (d *Driver) RunAgyACP(ctx context.Context, sandbox compute.EnvID, prompt, s
 	defer func() { _ = conn.Close() }()
 	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
 	defer stop()
-	err = engine.RunACP(conn, conn, engine.ACPTurn{Directory: agyACPWorkspace, Prompt: prompt, SessionID: session, Model: model}, emit)
+	turn := engine.ACPTurn{Directory: agyACPWorkspace, Prompt: prompt, SessionID: session, Model: model}
+	var emitMu sync.Mutex
+	report := func(event engine.Event) error {
+		emitMu.Lock()
+		defer emitMu.Unlock()
+		return emit(event)
+	}
+	if tools != nil {
+		server, finish, err := d.startComputerMCP(ctx, id, computerMCPHandler(tools, report))
+		if err != nil {
+			return engine.WithFailureCode(engine.FailureCLIUnavailable, err)
+		}
+		defer tools.Close()
+		defer finish()
+		turn.MCPServers = []engine.ACPMCPServer{server}
+		turn.ToolValidators = computermcp.ModelTools()
+	}
+	err = engine.RunACP(conn, conn, turn, report)
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
 	return err
+}
+
+func computerMCPHandler(tools *computermcp.Session, report func(engine.Event) error) *agent.MCPHandler {
+	return agent.NewScopedMCPHandler(computermcp.Tools(), func(ctx context.Context, name string, args json.RawMessage) (any, error) {
+		if err := computermcp.ValidateCall(computermcp.ServerName, name, args); err != nil {
+			return nil, err
+		}
+		id := uuid.NewString()
+		if err := report(engine.Event{Kind: engine.EventKindToolCall, ToolID: id, ToolName: name, Status: "action"}); err != nil {
+			return nil, err
+		}
+		result, err := tools.Call(ctx, name, args)
+		if err := report(engine.Event{Kind: engine.EventKindToolResult, ToolID: id, ToolName: name, IsError: err != nil}); err != nil {
+			return nil, err
+		}
+		return result, err
+	})
 }
 
 func (d *Driver) ensureAgyACPContainer(ctx context.Context, sandbox compute.EnvID) (string, error) {
@@ -224,6 +263,18 @@ func (d *Driver) stopAgyACPCompanion(ctx context.Context, sandbox compute.EnvID)
 }
 
 func (d *Driver) dialAgyACP(ctx context.Context, id string) (net.Conn, error) {
+	const launcher = `
+umask 077
+dir=/home/bot/.gemini/antigravity-cli
+tmp=$(mktemp "$dir/.botbox-settings.XXXXXX")
+printf '%s\n' '{"toolPermission":"request-review","permissions":{"allow":["mcp(botbox-computer/*)"],"deny":["command(*)","unsandboxed(*)","read_file(*)","write_file(*)","read_url(*)","execute_url(*)"]}}' > "$tmp"
+mv -f "$tmp" "$dir/settings.json"
+exec /usr/local/bin/agy acp --sandbox --disable-telemetry --include-default-customizations=false --log-file /dev/null
+`
+	return d.dialACPExec(ctx, id, []string{"/bin/sh", "-ec", launcher})
+}
+
+func (d *Driver) dialACPExec(ctx context.Context, id string, command []string) (net.Conn, error) {
 	// Docker does not signal an exec process when a client disconnects. A
 	// process deadline also bounds orphaned workers after an API restart.
 	deadline, exists := ctx.Deadline()
@@ -234,8 +285,7 @@ func (d *Driver) dialAgyACP(ctx context.Context, id string) (net.Conn, error) {
 	payload := map[string]any{
 		"AttachStdin": true, "AttachStdout": true, "AttachStderr": true, "Tty": false,
 		"WorkingDir": agyACPWorkspace,
-		"Cmd": []string{"/usr/bin/timeout", "--kill-after=2s", strconv.FormatInt(int64(timeout/time.Second), 10) + "s", "/usr/local/bin/agy", "acp",
-			"--sandbox", "--disable-telemetry", "--include-default-customizations=false", "--log-file", "/dev/null"},
+		"Cmd":        append([]string{"/usr/bin/timeout", "--kill-after=2s", fmt.Sprintf("%ds", timeout/time.Second)}, command...),
 	}
 	var created struct {
 		ID string `json:"Id"`

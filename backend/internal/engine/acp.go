@@ -15,17 +15,30 @@ import (
 
 // ACPTurn describes one prompt against a dedicated ACP stdio process.
 type ACPTurn struct {
-	Directory string
-	SessionID string
-	Prompt    string
-	Model     string
+	Directory  string
+	SessionID  string
+	Prompt     string
+	Model      string
+	MCPServers []ACPMCPServer
+	// ToolValidators are the model-facing names and argument contracts the
+	// client may approve once during the active prompt.
+	ToolValidators map[string]func(json.RawMessage) error
+}
+
+// ACPMCPServer registers a trusted local stdio program for this ACP session.
+type ACPMCPServer struct {
+	Name    string
+	Command string
+	Args    []string
 }
 
 type acpClient struct {
-	input  *bufio.Scanner
-	output *json.Encoder
-	id     int
-	bytes  int
+	input         *bufio.Scanner
+	output        *json.Encoder
+	allowedTools  map[string]func(json.RawMessage) error
+	activeSession string
+	id            int
+	bytes         int
 }
 
 type acpMessage struct {
@@ -70,6 +83,8 @@ func RunACP(input io.Reader, output io.Writer, turn ACPTurn, emit func(Event) er
 	if err := emit(Event{Kind: EventKindStatus, SessionID: sessionID}); err != nil {
 		return err
 	}
+	client.activeSession = sessionID
+	client.allowedTools = turn.ToolValidators
 	var result struct {
 		StopReason string `json:"stopReason"`
 		Usage      struct {
@@ -103,7 +118,13 @@ func RunACP(input io.Reader, output io.Writer, turn ACPTurn, emit func(Event) er
 }
 
 func (c *acpClient) session(turn ACPTurn, loadSupported bool) (string, error) {
-	params := map[string]any{"cwd": turn.Directory, "mcpServers": []any{}}
+	servers := make([]map[string]any, 0, len(turn.MCPServers))
+	for _, server := range turn.MCPServers {
+		servers = append(servers, map[string]any{
+			"name": server.Name, "command": server.Command, "args": server.Args, "env": []any{},
+		})
+	}
+	params := map[string]any{"cwd": turn.Directory, "mcpServers": servers}
 	var session struct {
 		ID string `json:"sessionId"`
 	}
@@ -183,7 +204,7 @@ func (c *acpClient) handleAgentMessage(msg acpMessage, onUpdate func(json.RawMes
 	}
 	reply := map[string]any{"jsonrpc": "2.0", "id": msg.ID}
 	if msg.Method == "session/request_permission" {
-		reply["result"] = map[string]any{"outcome": map[string]string{"outcome": "cancelled"}}
+		reply["result"] = map[string]any{"outcome": c.permission(msg.Params)}
 	} else {
 		// The runner advertises no client-side file or terminal capabilities.
 		reply["error"] = map[string]any{"code": -32601, "message": "unsupported client method"}
@@ -192,6 +213,37 @@ func (c *acpClient) handleAgentMessage(msg acpMessage, onUpdate func(json.RawMes
 		return acpFormatError("cannot reply to agent request")
 	}
 	return nil
+}
+
+func (c *acpClient) permission(params json.RawMessage) map[string]string {
+	cancelled := map[string]string{"outcome": "cancelled"}
+	if c.activeSession == "" || len(c.allowedTools) == 0 {
+		return cancelled
+	}
+	var request struct {
+		SessionID string `json:"sessionId"`
+		ToolCall  struct {
+			Name string          `json:"name"`
+			Args json.RawMessage `json:"args"`
+		} `json:"toolCall"`
+		Options []struct {
+			Kind string `json:"kind"`
+			ID   string `json:"optionId"`
+		} `json:"options"`
+	}
+	if json.Unmarshal(params, &request) != nil || request.SessionID != c.activeSession {
+		return cancelled
+	}
+	validate := c.allowedTools[request.ToolCall.Name]
+	if validate == nil || validate(request.ToolCall.Args) != nil {
+		return cancelled
+	}
+	for _, option := range request.Options {
+		if option.Kind == "allow_once" && option.ID != "" && len(option.ID) <= 128 {
+			return map[string]string{"outcome": "selected", "optionId": option.ID}
+		}
+	}
+	return cancelled
 }
 
 func acpUpdate(params json.RawMessage, sessionID string, emit func(Event) error) error {

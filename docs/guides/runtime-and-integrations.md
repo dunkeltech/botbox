@@ -167,9 +167,10 @@ before granting other workspace members or automated tasks access to it.
 The official ACP client contract covers native sign-in. Deployment terms
 depend on the account and how its session is used.
 
-1. Build and deploy the updated API and egress proxy image. The development
-   image target is `make proxy-image`. Use a sandbox image containing the
-   pinned `agy` CLI.
+1. Build and deploy the updated API, egress proxy, and sandbox images.
+   The development image targets are `make proxy-image sandbox-image`.
+   Recreate existing bot computers with the updated sandbox image and
+   retain their named home volumes so they gain the streaming terminal RPC.
 2. Start the bot computer and send a chat message. This creates the
    separate ACP runtime. Its first turn reports that sign-in is required.
 3. On the Docker host, run `docker exec -it botbox-agy-acp-<bot-id> agy acp --login`.
@@ -178,11 +179,14 @@ depend on the account and how its session is used.
 4. Retry the chat message. The CLI retains its own session in its private
    Docker volume. Use the same sign-in command to reconnect after expiry.
 
-ACP chat supports text only. The authenticated runtime has no access to
-the bot desktop's files or tools. Model replies enter the chat after the
-proxy validates the complete bounded response. The proxy records usage
-under the Google provider with subscription accounting. Explicit host
-blocks in **Secrets & network** also apply to this runtime.
+The bot can edit files, run commands, and control its desktop and browser
+through the `botbox-computer` MCP server. Commands, their input, and their
+output stay scoped to the requesting turn and its bot computer. A human
+takeover cancels in-flight terminal commands and desktop actions.
+Model replies reach the authenticated runtime after the proxy validates
+the complete bounded response. The proxy records usage under the Google
+provider with subscription accounting. Explicit host blocks in
+**Secrets & network** also apply to this runtime.
 
 See [ADR-0041](../adr/0041-native-antigravity-acp.md) and the
 [Antigravity ACP guide](https://antigravity.google/docs/ide/extensions/acp/).

@@ -13,6 +13,8 @@ import (
 
 	"github.com/dunkeltech/botbox/backend/internal/bots"
 	"github.com/dunkeltech/botbox/backend/internal/compute"
+	"github.com/dunkeltech/botbox/backend/internal/computermcp"
+	"github.com/dunkeltech/botbox/backend/internal/desk"
 	"github.com/dunkeltech/botbox/backend/internal/engine"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
 	"github.com/dunkeltech/botbox/backend/internal/secrets"
@@ -35,12 +37,20 @@ type acpPreflightComputer struct {
 	nativeCalls int
 }
 
-func (d *acpPreflightComputer) RunAgyACP(_ context.Context, id compute.EnvID, prompt, session, model string, emit func(engine.Event) error) error {
+func (d *acpPreflightComputer) RunAgyACP(_ context.Context, id compute.EnvID, prompt, session, model string, tools *computermcp.Session, emit func(engine.Event) error) error {
 	d.nativeCalls++
-	if id != "native-id" || model != "gemini-3.8-flash" || !strings.Contains(prompt, "user fixture") || session != "" {
+	if id != "native-id" || model != "gemini-3.8-flash" || !strings.Contains(prompt, "user fixture") || session != "" || tools == nil {
 		return errors.New("wrong ACP turn")
 	}
 	return emit(engine.Event{Kind: engine.EventKindTextDelta, Text: "fixture reply"})
+}
+
+func (*acpPreflightComputer) OpenTerminal(context.Context, compute.EnvID, computermcp.Command) (computermcp.Terminal, error) {
+	return nil, errors.New("unexpected command")
+}
+
+func (*acpPreflightComputer) DesktopAction(context.Context, compute.EnvID, string, []byte) (desk.Result, error) {
+	return desk.Result{}, errors.New("unexpected desktop action")
 }
 
 func TestAgyACPPreflightUsesNativeRunnerWithoutWorkspaceCredential(t *testing.T) {
@@ -77,6 +87,49 @@ func TestAgyACPPreflightUsesNativeRunnerWithoutWorkspaceCredential(t *testing.T)
 	if computer.calls != 0 || computer.nativeCalls != 1 {
 		t.Fatal("native runner should start without a hosted credential")
 	}
+}
+
+func TestACPComputerToolsRequireTheActiveUncontrolledTurn(t *testing.T) {
+	pool := pgtest.Open(t)
+	q := db.New(pool)
+	ctx := t.Context()
+	id := func() pgtype.UUID { return pgtype.UUID{Bytes: uuid.New(), Valid: true} }
+	workspace, user, bot, conversation, message, turn := id(), id(), id(), id(), id(), id()
+	run := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := pool.Exec(ctx, sql, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run("INSERT INTO workspaces(id,name,slug) VALUES($1,'ACP fixture','acp-tools')", workspace)
+	run("INSERT INTO users(id,email,password_hash,display_name) VALUES($1,'acp@example.test','fixture','Owner')", user)
+	run("INSERT INTO workspace_members(workspace_id,user_id,role) VALUES($1,$2,'owner')", workspace, user)
+	run("INSERT INTO bots(id,workspace_id,name,avatar_seed,llm_mode,llm_provider,llm_model) VALUES($1,$2,'Gem','gem','cli','google-acp','fixture')", bot, workspace)
+	run("INSERT INTO environments(bot_id,driver,env_id,status) VALUES($1,'docker','work-id','running')", bot)
+	run("INSERT INTO conversations(id,workspace_id,user_id,bot_id) VALUES($1,$2,$3,$4)", conversation, workspace, user, bot)
+	run("INSERT INTO messages(id,workspace_id,conversation_id,sender_type,sender_user_id,content) VALUES($1,$2,$3,'user',$4,'fixture')", message, workspace, conversation, user)
+	run("INSERT INTO bot_turns(id,workspace_id,bot_id,conversation_id,message_id,status) VALUES($1,$2,$3,$4,$5,'running')", turn, workspace, bot, conversation, message)
+
+	approved := db.CanRunACPComputerToolParams{WorkspaceID: workspace, BotID: bot, TurnID: turn, EnvID: "work-id"}
+	check := func(params db.CanRunACPComputerToolParams, want bool) {
+		t.Helper()
+		actual, err := q.CanRunACPComputerTool(ctx, params)
+		if err != nil || actual != want {
+			t.Fatalf("tool authorization = %v, %v, want %v", actual, err, want)
+		}
+	}
+	check(approved, true)
+	check(db.CanRunACPComputerToolParams{WorkspaceID: id(), BotID: bot, TurnID: turn, EnvID: "work-id"}, false)
+	check(db.CanRunACPComputerToolParams{WorkspaceID: workspace, BotID: bot, TurnID: id(), EnvID: "work-id"}, false)
+	check(db.CanRunACPComputerToolParams{WorkspaceID: workspace, BotID: bot, TurnID: turn, EnvID: "stale-id"}, false)
+	run("UPDATE environments SET control_holder_user_id=$1 WHERE bot_id=$2", user, bot)
+	check(approved, false)
+	run("UPDATE environments SET control_holder_user_id=NULL WHERE bot_id=$1", bot)
+	run("INSERT INTO bot_runtime(workspace_id,bot_id,paused) VALUES($1,$2,true)", workspace, bot)
+	check(approved, false)
+	run("UPDATE bot_runtime SET paused=false WHERE workspace_id=$1 AND bot_id=$2", workspace, bot)
+	run("UPDATE bot_turns SET stop_requested=true WHERE workspace_id=$1 AND id=$2", workspace, turn)
+	check(approved, false)
 }
 
 func (d *preflightComputer) CLIProxyReady(context.Context, compute.EnvID) error { return d.proxyErr }

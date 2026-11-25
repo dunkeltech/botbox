@@ -76,7 +76,7 @@ func (d *Driver) ensureProxyPair(ctx context.Context, workspace, bot, namespace,
 	}
 	serviceEnv := d.workerServiceEnv(workspace, bot)
 	if nativeACP {
-		serviceEnv = append(serviceEnv, "EGRESS_PROXY_AGY_ACP=true")
+		serviceEnv = append(serviceEnv, "EGRESS_PROXY_AGY_ACP=true", "EGRESS_PROXY_AGY_ACP_TOOLS=v1")
 	}
 	workerNetwork := d.proxy.WorkerNetwork
 	if matchingProxyPair(relay, worker) && workerSettingsMatch(worker.Config.Env, serviceEnv) {
@@ -164,7 +164,7 @@ func workerSettingsMatch(actual, expected []string) bool {
 	for _, entry := range actual {
 		key, _, _ := strings.Cut(entry, "=")
 		switch key {
-		case "NATS_URL", "EGRESS_PROXY_AUTH_BROKER_URL", "EGRESS_PROXY_AUTH_BROKER_TOKEN", "EGRESS_PROXY_AGY_ACP":
+		case "NATS_URL", "EGRESS_PROXY_AUTH_BROKER_URL", "EGRESS_PROXY_AUTH_BROKER_TOKEN", "EGRESS_PROXY_AGY_ACP", "EGRESS_PROXY_AGY_ACP_TOOLS":
 			if !slices.Contains(expected, entry) {
 				return false
 			}
@@ -270,7 +270,7 @@ func (d *Driver) proxyIngressImage(ctx context.Context, nativeACP bool) (string,
 	if image.ID == "" || image.Config.Labels[proxyIngressLabel] != proxyIngressVersion {
 		return "", errors.New("egress proxy image requires a secure-ingress rebuild")
 	}
-	if nativeACP && image.Config.Labels["botbox.agy_acp"] != "true" {
+	if nativeACP && image.Config.Labels["botbox.agy_acp_tools"] != "v1" {
 		return "", errors.New("egress proxy image requires an ACP rebuild")
 	}
 	// Pin the inspected image so deployment cannot switch tags between the

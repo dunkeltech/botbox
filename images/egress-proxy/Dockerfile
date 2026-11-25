@@ -11,6 +11,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/egress-proxy ./cm
 FROM debian:bookworm-slim
 LABEL botbox.proxy_ingress="bot-network-v2"
 LABEL botbox.agy_acp="true"
+LABEL botbox.agy_acp_tools="v1"
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/* \
     && install -d -m 0700 -o 65532 -g 65532 /var/lib/botbox/egress-private \
     && install -d -m 0755 -o 65532 -g 65532 /var/lib/botbox/egress-public

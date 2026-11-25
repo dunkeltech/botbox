@@ -25,6 +25,7 @@ func TestACPResumeStreamsOnlyCurrentTurn(t *testing.T) {
 	var events []engine.Event
 	err := engine.RunACP(input, &output, engine.ACPTurn{
 		Directory: "/workspace", SessionID: "fixture", Model: "gemini-test", Prompt: "fixture prompt",
+		MCPServers: []engine.ACPMCPServer{{Name: "botbox-computer", Command: "/bin/fixture", Args: []string{"fixture"}}},
 	}, func(event engine.Event) error {
 		events = append(events, event)
 		return nil
@@ -43,6 +44,7 @@ func TestACPResumeStreamsOnlyCurrentTurn(t *testing.T) {
 	for decoder.More() {
 		var message struct {
 			Method string          `json:"method"`
+			Params json.RawMessage `json:"params"`
 			Result json.RawMessage `json:"result"`
 		}
 		if err := decoder.Decode(&message); err != nil {
@@ -50,6 +52,9 @@ func TestACPResumeStreamsOnlyCurrentTurn(t *testing.T) {
 		}
 		if message.Method != "" {
 			methods = append(methods, message.Method)
+			if message.Method == "session/load" && !strings.Contains(string(message.Params), `"name":"botbox-computer"`) {
+				t.Fatal("resumed session lost its MCP tools")
+			}
 		} else if string(message.Result) != `{"outcome":{"outcome":"cancelled"}}` {
 			t.Fatalf("permission response = %s", message.Result)
 		}
@@ -84,6 +89,41 @@ func TestACPRejectsUnsafeOrIncompleteReplies(t *testing.T) {
 			})
 			if err == nil || engine.TurnFailureCode(err) != tc.want || strings.Contains(err.Error(), "private upstream detail") {
 				t.Fatalf("ACP returned %v, want %s", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestACPApprovesOnlyAllowedToolsInTheActiveSession(t *testing.T) {
+	const sessionInit = `{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1}}` + "\n" +
+		`{"jsonrpc":"2.0","id":2,"result":{"sessionId":"fixture"}}` + "\n"
+	const done = `{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn"}}`
+	for _, tc := range []struct {
+		name, session, tool, args, option, want string
+	}{
+		{"known tool", "fixture", "mcp_botbox-computer_screenshot", "{}", "allow_once", "selected"},
+		{"foreign session", "another", "mcp_botbox-computer_screenshot", "{}", "allow_once", "cancelled"},
+		{"native tool", "fixture", "run_command", "{}", "allow_once", "cancelled"},
+		{"wrong arguments", "fixture", "mcp_botbox-computer_screenshot", `{"path":"/tmp"}`, "allow_once", "cancelled"},
+		{"persistent permission", "fixture", "mcp_botbox-computer_screenshot", "{}", "allow_always", "cancelled"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			frame := `{"jsonrpc":"2.0","id":"ask","method":"session/request_permission","params":{"sessionId":"` + tc.session +
+				`","toolCall":{"name":"` + tc.tool + `","args":` + tc.args + `},"options":[{"kind":"` + tc.option +
+				`","optionId":"choice"}]}}` + "\n"
+			var output bytes.Buffer
+			err := engine.RunACP(strings.NewReader(sessionInit+frame+done), &output, engine.ACPTurn{
+				Directory: "/workspace", Prompt: "fixture", ToolValidators: map[string]func(json.RawMessage) error{
+					"mcp_botbox-computer_screenshot": func(args json.RawMessage) error {
+						if string(args) != "{}" {
+							return errors.New("invalid fixture arguments")
+						}
+						return nil
+					},
+				},
+			}, func(engine.Event) error { return nil })
+			if err != nil || !strings.Contains(output.String(), `"outcome":"`+tc.want+`"`) {
+				t.Fatalf("permission outcome %s, %v, want %s", output.String(), err, tc.want)
 			}
 		})
 	}

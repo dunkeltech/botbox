@@ -711,6 +711,180 @@ func (x *ExecResponse) GetExitCode() int32 {
 	return 0
 }
 
+type RunTerminalRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Frame:
+	//
+	//	*RunTerminalRequest_Start
+	//	*RunTerminalRequest_Input
+	//	*RunTerminalRequest_CloseInput
+	Frame         isRunTerminalRequest_Frame `protobuf_oneof:"frame"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RunTerminalRequest) Reset() {
+	*x = RunTerminalRequest{}
+	mi := &file_agent_v1_agent_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RunTerminalRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RunTerminalRequest) ProtoMessage() {}
+
+func (x *RunTerminalRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_agent_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RunTerminalRequest.ProtoReflect.Descriptor instead.
+func (*RunTerminalRequest) Descriptor() ([]byte, []int) {
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *RunTerminalRequest) GetFrame() isRunTerminalRequest_Frame {
+	if x != nil {
+		return x.Frame
+	}
+	return nil
+}
+
+func (x *RunTerminalRequest) GetStart() *ExecRequest {
+	if x != nil {
+		if x, ok := x.Frame.(*RunTerminalRequest_Start); ok {
+			return x.Start
+		}
+	}
+	return nil
+}
+
+func (x *RunTerminalRequest) GetInput() []byte {
+	if x != nil {
+		if x, ok := x.Frame.(*RunTerminalRequest_Input); ok {
+			return x.Input
+		}
+	}
+	return nil
+}
+
+func (x *RunTerminalRequest) GetCloseInput() bool {
+	if x != nil {
+		if x, ok := x.Frame.(*RunTerminalRequest_CloseInput); ok {
+			return x.CloseInput
+		}
+	}
+	return false
+}
+
+type isRunTerminalRequest_Frame interface {
+	isRunTerminalRequest_Frame()
+}
+
+type RunTerminalRequest_Start struct {
+	Start *ExecRequest `protobuf:"bytes,1,opt,name=start,proto3,oneof"`
+}
+
+type RunTerminalRequest_Input struct {
+	Input []byte `protobuf:"bytes,2,opt,name=input,proto3,oneof"`
+}
+
+type RunTerminalRequest_CloseInput struct {
+	CloseInput bool `protobuf:"varint,3,opt,name=close_input,json=closeInput,proto3,oneof"`
+}
+
+func (*RunTerminalRequest_Start) isRunTerminalRequest_Frame() {}
+
+func (*RunTerminalRequest_Input) isRunTerminalRequest_Frame() {}
+
+func (*RunTerminalRequest_CloseInput) isRunTerminalRequest_Frame() {}
+
+type RunTerminalResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Data          []byte                 `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
+	Stderr        bool                   `protobuf:"varint,2,opt,name=stderr,proto3" json:"stderr,omitempty"`
+	Exited        bool                   `protobuf:"varint,3,opt,name=exited,proto3" json:"exited,omitempty"`
+	ExitCode      int32                  `protobuf:"varint,4,opt,name=exit_code,json=exitCode,proto3" json:"exit_code,omitempty"`
+	Truncated     bool                   `protobuf:"varint,5,opt,name=truncated,proto3" json:"truncated,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RunTerminalResponse) Reset() {
+	*x = RunTerminalResponse{}
+	mi := &file_agent_v1_agent_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RunTerminalResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RunTerminalResponse) ProtoMessage() {}
+
+func (x *RunTerminalResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_agent_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RunTerminalResponse.ProtoReflect.Descriptor instead.
+func (*RunTerminalResponse) Descriptor() ([]byte, []int) {
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *RunTerminalResponse) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
+func (x *RunTerminalResponse) GetStderr() bool {
+	if x != nil {
+		return x.Stderr
+	}
+	return false
+}
+
+func (x *RunTerminalResponse) GetExited() bool {
+	if x != nil {
+		return x.Exited
+	}
+	return false
+}
+
+func (x *RunTerminalResponse) GetExitCode() int32 {
+	if x != nil {
+		return x.ExitCode
+	}
+	return 0
+}
+
+func (x *RunTerminalResponse) GetTruncated() bool {
+	if x != nil {
+		return x.Truncated
+	}
+	return false
+}
+
 type FileEntry struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -724,7 +898,7 @@ type FileEntry struct {
 
 func (x *FileEntry) Reset() {
 	*x = FileEntry{}
-	mi := &file_agent_v1_agent_proto_msgTypes[14]
+	mi := &file_agent_v1_agent_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -736,7 +910,7 @@ func (x *FileEntry) String() string {
 func (*FileEntry) ProtoMessage() {}
 
 func (x *FileEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[14]
+	mi := &file_agent_v1_agent_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -749,7 +923,7 @@ func (x *FileEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileEntry.ProtoReflect.Descriptor instead.
 func (*FileEntry) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{14}
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *FileEntry) GetName() string {
@@ -796,7 +970,7 @@ type ListFilesRequest struct {
 
 func (x *ListFilesRequest) Reset() {
 	*x = ListFilesRequest{}
-	mi := &file_agent_v1_agent_proto_msgTypes[15]
+	mi := &file_agent_v1_agent_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -808,7 +982,7 @@ func (x *ListFilesRequest) String() string {
 func (*ListFilesRequest) ProtoMessage() {}
 
 func (x *ListFilesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[15]
+	mi := &file_agent_v1_agent_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -821,7 +995,7 @@ func (x *ListFilesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFilesRequest.ProtoReflect.Descriptor instead.
 func (*ListFilesRequest) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{15}
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ListFilesRequest) GetPath() string {
@@ -841,7 +1015,7 @@ type ListFilesResponse struct {
 
 func (x *ListFilesResponse) Reset() {
 	*x = ListFilesResponse{}
-	mi := &file_agent_v1_agent_proto_msgTypes[16]
+	mi := &file_agent_v1_agent_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -853,7 +1027,7 @@ func (x *ListFilesResponse) String() string {
 func (*ListFilesResponse) ProtoMessage() {}
 
 func (x *ListFilesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[16]
+	mi := &file_agent_v1_agent_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -866,7 +1040,7 @@ func (x *ListFilesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFilesResponse.ProtoReflect.Descriptor instead.
 func (*ListFilesResponse) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{16}
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ListFilesResponse) GetPath() string {
@@ -892,7 +1066,7 @@ type ReadFileRequest struct {
 
 func (x *ReadFileRequest) Reset() {
 	*x = ReadFileRequest{}
-	mi := &file_agent_v1_agent_proto_msgTypes[17]
+	mi := &file_agent_v1_agent_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -904,7 +1078,7 @@ func (x *ReadFileRequest) String() string {
 func (*ReadFileRequest) ProtoMessage() {}
 
 func (x *ReadFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[17]
+	mi := &file_agent_v1_agent_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -917,7 +1091,7 @@ func (x *ReadFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadFileRequest.ProtoReflect.Descriptor instead.
 func (*ReadFileRequest) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{17}
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ReadFileRequest) GetPath() string {
@@ -938,7 +1112,7 @@ type ReadFileResponse struct {
 
 func (x *ReadFileResponse) Reset() {
 	*x = ReadFileResponse{}
-	mi := &file_agent_v1_agent_proto_msgTypes[18]
+	mi := &file_agent_v1_agent_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -950,7 +1124,7 @@ func (x *ReadFileResponse) String() string {
 func (*ReadFileResponse) ProtoMessage() {}
 
 func (x *ReadFileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[18]
+	mi := &file_agent_v1_agent_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -963,7 +1137,7 @@ func (x *ReadFileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadFileResponse.ProtoReflect.Descriptor instead.
 func (*ReadFileResponse) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{18}
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ReadFileResponse) GetPath() string {
@@ -997,7 +1171,7 @@ type WriteFileRequest struct {
 
 func (x *WriteFileRequest) Reset() {
 	*x = WriteFileRequest{}
-	mi := &file_agent_v1_agent_proto_msgTypes[19]
+	mi := &file_agent_v1_agent_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1009,7 +1183,7 @@ func (x *WriteFileRequest) String() string {
 func (*WriteFileRequest) ProtoMessage() {}
 
 func (x *WriteFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[19]
+	mi := &file_agent_v1_agent_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1022,7 +1196,7 @@ func (x *WriteFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WriteFileRequest.ProtoReflect.Descriptor instead.
 func (*WriteFileRequest) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{19}
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *WriteFileRequest) GetPath() string {
@@ -1049,7 +1223,7 @@ type WriteFileResponse struct {
 
 func (x *WriteFileResponse) Reset() {
 	*x = WriteFileResponse{}
-	mi := &file_agent_v1_agent_proto_msgTypes[20]
+	mi := &file_agent_v1_agent_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1061,7 +1235,7 @@ func (x *WriteFileResponse) String() string {
 func (*WriteFileResponse) ProtoMessage() {}
 
 func (x *WriteFileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[20]
+	mi := &file_agent_v1_agent_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1074,7 +1248,7 @@ func (x *WriteFileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WriteFileResponse.ProtoReflect.Descriptor instead.
 func (*WriteFileResponse) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{20}
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *WriteFileResponse) GetPath() string {
@@ -1104,7 +1278,7 @@ type RunCLIRequest struct {
 
 func (x *RunCLIRequest) Reset() {
 	*x = RunCLIRequest{}
-	mi := &file_agent_v1_agent_proto_msgTypes[21]
+	mi := &file_agent_v1_agent_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1116,7 +1290,7 @@ func (x *RunCLIRequest) String() string {
 func (*RunCLIRequest) ProtoMessage() {}
 
 func (x *RunCLIRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[21]
+	mi := &file_agent_v1_agent_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1129,7 +1303,7 @@ func (x *RunCLIRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunCLIRequest.ProtoReflect.Descriptor instead.
 func (*RunCLIRequest) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{21}
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *RunCLIRequest) GetCli() string {
@@ -1179,7 +1353,7 @@ type RunCLIResponse struct {
 
 func (x *RunCLIResponse) Reset() {
 	*x = RunCLIResponse{}
-	mi := &file_agent_v1_agent_proto_msgTypes[22]
+	mi := &file_agent_v1_agent_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1191,7 +1365,7 @@ func (x *RunCLIResponse) String() string {
 func (*RunCLIResponse) ProtoMessage() {}
 
 func (x *RunCLIResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[22]
+	mi := &file_agent_v1_agent_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1204,7 +1378,7 @@ func (x *RunCLIResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunCLIResponse.ProtoReflect.Descriptor instead.
 func (*RunCLIResponse) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{22}
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *RunCLIResponse) GetData() []byte {
@@ -1245,7 +1419,7 @@ type DesktopActionRequest struct {
 
 func (x *DesktopActionRequest) Reset() {
 	*x = DesktopActionRequest{}
-	mi := &file_agent_v1_agent_proto_msgTypes[23]
+	mi := &file_agent_v1_agent_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1257,7 +1431,7 @@ func (x *DesktopActionRequest) String() string {
 func (*DesktopActionRequest) ProtoMessage() {}
 
 func (x *DesktopActionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[23]
+	mi := &file_agent_v1_agent_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1270,7 +1444,7 @@ func (x *DesktopActionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DesktopActionRequest.ProtoReflect.Descriptor instead.
 func (*DesktopActionRequest) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{23}
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *DesktopActionRequest) GetKind() string {
@@ -1301,7 +1475,7 @@ type DesktopActionResponse struct {
 
 func (x *DesktopActionResponse) Reset() {
 	*x = DesktopActionResponse{}
-	mi := &file_agent_v1_agent_proto_msgTypes[24]
+	mi := &file_agent_v1_agent_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1313,7 +1487,7 @@ func (x *DesktopActionResponse) String() string {
 func (*DesktopActionResponse) ProtoMessage() {}
 
 func (x *DesktopActionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[24]
+	mi := &file_agent_v1_agent_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1326,7 +1500,7 @@ func (x *DesktopActionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DesktopActionResponse.ProtoReflect.Descriptor instead.
 func (*DesktopActionResponse) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{24}
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *DesktopActionResponse) GetResultText() string {
@@ -1380,7 +1554,7 @@ type SetControlLockRequest struct {
 
 func (x *SetControlLockRequest) Reset() {
 	*x = SetControlLockRequest{}
-	mi := &file_agent_v1_agent_proto_msgTypes[25]
+	mi := &file_agent_v1_agent_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1392,7 +1566,7 @@ func (x *SetControlLockRequest) String() string {
 func (*SetControlLockRequest) ProtoMessage() {}
 
 func (x *SetControlLockRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[25]
+	mi := &file_agent_v1_agent_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1405,7 +1579,7 @@ func (x *SetControlLockRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetControlLockRequest.ProtoReflect.Descriptor instead.
 func (*SetControlLockRequest) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{25}
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *SetControlLockRequest) GetHuman() bool {
@@ -1423,7 +1597,7 @@ type SetControlLockResponse struct {
 
 func (x *SetControlLockResponse) Reset() {
 	*x = SetControlLockResponse{}
-	mi := &file_agent_v1_agent_proto_msgTypes[26]
+	mi := &file_agent_v1_agent_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1435,7 +1609,7 @@ func (x *SetControlLockResponse) String() string {
 func (*SetControlLockResponse) ProtoMessage() {}
 
 func (x *SetControlLockResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[26]
+	mi := &file_agent_v1_agent_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1448,7 +1622,7 @@ func (x *SetControlLockResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetControlLockResponse.ProtoReflect.Descriptor instead.
 func (*SetControlLockResponse) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{26}
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{28}
 }
 
 type PullDesktopActionsRequest struct {
@@ -1459,7 +1633,7 @@ type PullDesktopActionsRequest struct {
 
 func (x *PullDesktopActionsRequest) Reset() {
 	*x = PullDesktopActionsRequest{}
-	mi := &file_agent_v1_agent_proto_msgTypes[27]
+	mi := &file_agent_v1_agent_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1471,7 +1645,7 @@ func (x *PullDesktopActionsRequest) String() string {
 func (*PullDesktopActionsRequest) ProtoMessage() {}
 
 func (x *PullDesktopActionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[27]
+	mi := &file_agent_v1_agent_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1484,7 +1658,7 @@ func (x *PullDesktopActionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PullDesktopActionsRequest.ProtoReflect.Descriptor instead.
 func (*PullDesktopActionsRequest) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{27}
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{29}
 }
 
 type DesktopActionRecord struct {
@@ -1507,7 +1681,7 @@ type DesktopActionRecord struct {
 
 func (x *DesktopActionRecord) Reset() {
 	*x = DesktopActionRecord{}
-	mi := &file_agent_v1_agent_proto_msgTypes[28]
+	mi := &file_agent_v1_agent_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1519,7 +1693,7 @@ func (x *DesktopActionRecord) String() string {
 func (*DesktopActionRecord) ProtoMessage() {}
 
 func (x *DesktopActionRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[28]
+	mi := &file_agent_v1_agent_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1532,7 +1706,7 @@ func (x *DesktopActionRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DesktopActionRecord.ProtoReflect.Descriptor instead.
 func (*DesktopActionRecord) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{28}
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *DesktopActionRecord) GetSeq() uint64 {
@@ -1629,7 +1803,7 @@ type PullDesktopActionsResponse struct {
 
 func (x *PullDesktopActionsResponse) Reset() {
 	*x = PullDesktopActionsResponse{}
-	mi := &file_agent_v1_agent_proto_msgTypes[29]
+	mi := &file_agent_v1_agent_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1641,7 +1815,7 @@ func (x *PullDesktopActionsResponse) String() string {
 func (*PullDesktopActionsResponse) ProtoMessage() {}
 
 func (x *PullDesktopActionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[29]
+	mi := &file_agent_v1_agent_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1654,7 +1828,7 @@ func (x *PullDesktopActionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PullDesktopActionsResponse.ProtoReflect.Descriptor instead.
 func (*PullDesktopActionsResponse) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{29}
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *PullDesktopActionsResponse) GetSessionId() string {
@@ -1681,7 +1855,7 @@ type AckDesktopActionsRequest struct {
 
 func (x *AckDesktopActionsRequest) Reset() {
 	*x = AckDesktopActionsRequest{}
-	mi := &file_agent_v1_agent_proto_msgTypes[30]
+	mi := &file_agent_v1_agent_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1693,7 +1867,7 @@ func (x *AckDesktopActionsRequest) String() string {
 func (*AckDesktopActionsRequest) ProtoMessage() {}
 
 func (x *AckDesktopActionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[30]
+	mi := &file_agent_v1_agent_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1706,7 +1880,7 @@ func (x *AckDesktopActionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AckDesktopActionsRequest.ProtoReflect.Descriptor instead.
 func (*AckDesktopActionsRequest) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{30}
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *AckDesktopActionsRequest) GetSessionId() string {
@@ -1731,7 +1905,7 @@ type AckDesktopActionsResponse struct {
 
 func (x *AckDesktopActionsResponse) Reset() {
 	*x = AckDesktopActionsResponse{}
-	mi := &file_agent_v1_agent_proto_msgTypes[31]
+	mi := &file_agent_v1_agent_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1743,7 +1917,7 @@ func (x *AckDesktopActionsResponse) String() string {
 func (*AckDesktopActionsResponse) ProtoMessage() {}
 
 func (x *AckDesktopActionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[31]
+	mi := &file_agent_v1_agent_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1756,7 +1930,7 @@ func (x *AckDesktopActionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AckDesktopActionsResponse.ProtoReflect.Descriptor instead.
 func (*AckDesktopActionsResponse) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{31}
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{33}
 }
 
 var File_agent_v1_agent_proto protoreflect.FileDescriptor
@@ -1802,7 +1976,19 @@ const file_agent_v1_agent_proto_rawDesc = "" +
 	"\fExecResponse\x12\x16\n" +
 	"\x06stdout\x18\x01 \x01(\tR\x06stdout\x12\x16\n" +
 	"\x06stderr\x18\x02 \x01(\tR\x06stderr\x12\x1b\n" +
-	"\texit_code\x18\x03 \x01(\x05R\bexitCode\"\x88\x01\n" +
+	"\texit_code\x18\x03 \x01(\x05R\bexitCode\"\x87\x01\n" +
+	"\x12RunTerminalRequest\x12-\n" +
+	"\x05start\x18\x01 \x01(\v2\x15.agent.v1.ExecRequestH\x00R\x05start\x12\x16\n" +
+	"\x05input\x18\x02 \x01(\fH\x00R\x05input\x12!\n" +
+	"\vclose_input\x18\x03 \x01(\bH\x00R\n" +
+	"closeInputB\a\n" +
+	"\x05frame\"\x94\x01\n" +
+	"\x13RunTerminalResponse\x12\x12\n" +
+	"\x04data\x18\x01 \x01(\fR\x04data\x12\x16\n" +
+	"\x06stderr\x18\x02 \x01(\bR\x06stderr\x12\x16\n" +
+	"\x06exited\x18\x03 \x01(\bR\x06exited\x12\x1b\n" +
+	"\texit_code\x18\x04 \x01(\x05R\bexitCode\x12\x1c\n" +
+	"\ttruncated\x18\x05 \x01(\bR\ttruncated\"\x88\x01\n" +
 	"\tFileEntry\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x15\n" +
@@ -1885,7 +2071,7 @@ const file_agent_v1_agent_proto_rawDesc = "" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1f\n" +
 	"\vthrough_seq\x18\x02 \x01(\x04R\n" +
 	"throughSeq\"\x1b\n" +
-	"\x19AckDesktopActionsResponse2\x9e\b\n" +
+	"\x19AckDesktopActionsResponse2\xee\b\n" +
 	"\fAgentService\x12=\n" +
 	"\x06RunCLI\x12\x17.agent.v1.RunCLIRequest\x1a\x18.agent.v1.RunCLIResponse0\x01\x125\n" +
 	"\x04Ping\x12\x15.agent.v1.PingRequest\x1a\x16.agent.v1.PingResponse\x12>\n" +
@@ -1895,7 +2081,8 @@ const file_agent_v1_agent_proto_rawDesc = "" +
 	"\x05Click\x12\x16.agent.v1.ClickRequest\x1a\x17.agent.v1.ClickResponse\x125\n" +
 	"\x04Type\x12\x15.agent.v1.TypeRequest\x1a\x16.agent.v1.TypeResponse\x122\n" +
 	"\x03Key\x12\x14.agent.v1.KeyRequest\x1a\x15.agent.v1.KeyResponse\x125\n" +
-	"\x04Exec\x12\x15.agent.v1.ExecRequest\x1a\x16.agent.v1.ExecResponse\x12D\n" +
+	"\x04Exec\x12\x15.agent.v1.ExecRequest\x1a\x16.agent.v1.ExecResponse\x12N\n" +
+	"\vRunTerminal\x12\x1c.agent.v1.RunTerminalRequest\x1a\x1d.agent.v1.RunTerminalResponse(\x010\x01\x12D\n" +
 	"\tListFiles\x12\x1a.agent.v1.ListFilesRequest\x1a\x1b.agent.v1.ListFilesResponse\x12A\n" +
 	"\bReadFile\x12\x19.agent.v1.ReadFileRequest\x1a\x1a.agent.v1.ReadFileResponse\x12D\n" +
 	"\tWriteFile\x12\x1a.agent.v1.WriteFileRequest\x1a\x1b.agent.v1.WriteFileResponse\x12P\n" +
@@ -1916,7 +2103,7 @@ func file_agent_v1_agent_proto_rawDescGZIP() []byte {
 	return file_agent_v1_agent_proto_rawDescData
 }
 
-var file_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
+var file_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 34)
 var file_agent_v1_agent_proto_goTypes = []any{
 	(*PingRequest)(nil),                // 0: agent.v1.PingRequest
 	(*PingResponse)(nil),               // 1: agent.v1.PingResponse
@@ -1932,63 +2119,68 @@ var file_agent_v1_agent_proto_goTypes = []any{
 	(*KeyResponse)(nil),                // 11: agent.v1.KeyResponse
 	(*ExecRequest)(nil),                // 12: agent.v1.ExecRequest
 	(*ExecResponse)(nil),               // 13: agent.v1.ExecResponse
-	(*FileEntry)(nil),                  // 14: agent.v1.FileEntry
-	(*ListFilesRequest)(nil),           // 15: agent.v1.ListFilesRequest
-	(*ListFilesResponse)(nil),          // 16: agent.v1.ListFilesResponse
-	(*ReadFileRequest)(nil),            // 17: agent.v1.ReadFileRequest
-	(*ReadFileResponse)(nil),           // 18: agent.v1.ReadFileResponse
-	(*WriteFileRequest)(nil),           // 19: agent.v1.WriteFileRequest
-	(*WriteFileResponse)(nil),          // 20: agent.v1.WriteFileResponse
-	(*RunCLIRequest)(nil),              // 21: agent.v1.RunCLIRequest
-	(*RunCLIResponse)(nil),             // 22: agent.v1.RunCLIResponse
-	(*DesktopActionRequest)(nil),       // 23: agent.v1.DesktopActionRequest
-	(*DesktopActionResponse)(nil),      // 24: agent.v1.DesktopActionResponse
-	(*SetControlLockRequest)(nil),      // 25: agent.v1.SetControlLockRequest
-	(*SetControlLockResponse)(nil),     // 26: agent.v1.SetControlLockResponse
-	(*PullDesktopActionsRequest)(nil),  // 27: agent.v1.PullDesktopActionsRequest
-	(*DesktopActionRecord)(nil),        // 28: agent.v1.DesktopActionRecord
-	(*PullDesktopActionsResponse)(nil), // 29: agent.v1.PullDesktopActionsResponse
-	(*AckDesktopActionsRequest)(nil),   // 30: agent.v1.AckDesktopActionsRequest
-	(*AckDesktopActionsResponse)(nil),  // 31: agent.v1.AckDesktopActionsResponse
+	(*RunTerminalRequest)(nil),         // 14: agent.v1.RunTerminalRequest
+	(*RunTerminalResponse)(nil),        // 15: agent.v1.RunTerminalResponse
+	(*FileEntry)(nil),                  // 16: agent.v1.FileEntry
+	(*ListFilesRequest)(nil),           // 17: agent.v1.ListFilesRequest
+	(*ListFilesResponse)(nil),          // 18: agent.v1.ListFilesResponse
+	(*ReadFileRequest)(nil),            // 19: agent.v1.ReadFileRequest
+	(*ReadFileResponse)(nil),           // 20: agent.v1.ReadFileResponse
+	(*WriteFileRequest)(nil),           // 21: agent.v1.WriteFileRequest
+	(*WriteFileResponse)(nil),          // 22: agent.v1.WriteFileResponse
+	(*RunCLIRequest)(nil),              // 23: agent.v1.RunCLIRequest
+	(*RunCLIResponse)(nil),             // 24: agent.v1.RunCLIResponse
+	(*DesktopActionRequest)(nil),       // 25: agent.v1.DesktopActionRequest
+	(*DesktopActionResponse)(nil),      // 26: agent.v1.DesktopActionResponse
+	(*SetControlLockRequest)(nil),      // 27: agent.v1.SetControlLockRequest
+	(*SetControlLockResponse)(nil),     // 28: agent.v1.SetControlLockResponse
+	(*PullDesktopActionsRequest)(nil),  // 29: agent.v1.PullDesktopActionsRequest
+	(*DesktopActionRecord)(nil),        // 30: agent.v1.DesktopActionRecord
+	(*PullDesktopActionsResponse)(nil), // 31: agent.v1.PullDesktopActionsResponse
+	(*AckDesktopActionsRequest)(nil),   // 32: agent.v1.AckDesktopActionsRequest
+	(*AckDesktopActionsResponse)(nil),  // 33: agent.v1.AckDesktopActionsResponse
 }
 var file_agent_v1_agent_proto_depIdxs = []int32{
-	14, // 0: agent.v1.ListFilesResponse.entries:type_name -> agent.v1.FileEntry
-	28, // 1: agent.v1.PullDesktopActionsResponse.records:type_name -> agent.v1.DesktopActionRecord
-	21, // 2: agent.v1.AgentService.RunCLI:input_type -> agent.v1.RunCLIRequest
-	0,  // 3: agent.v1.AgentService.Ping:input_type -> agent.v1.PingRequest
-	2,  // 4: agent.v1.AgentService.GetInfo:input_type -> agent.v1.GetInfoRequest
-	4,  // 5: agent.v1.AgentService.Screenshot:input_type -> agent.v1.ScreenshotRequest
-	6,  // 6: agent.v1.AgentService.Click:input_type -> agent.v1.ClickRequest
-	8,  // 7: agent.v1.AgentService.Type:input_type -> agent.v1.TypeRequest
-	10, // 8: agent.v1.AgentService.Key:input_type -> agent.v1.KeyRequest
-	12, // 9: agent.v1.AgentService.Exec:input_type -> agent.v1.ExecRequest
-	15, // 10: agent.v1.AgentService.ListFiles:input_type -> agent.v1.ListFilesRequest
-	17, // 11: agent.v1.AgentService.ReadFile:input_type -> agent.v1.ReadFileRequest
-	19, // 12: agent.v1.AgentService.WriteFile:input_type -> agent.v1.WriteFileRequest
-	23, // 13: agent.v1.AgentService.DesktopAction:input_type -> agent.v1.DesktopActionRequest
-	25, // 14: agent.v1.AgentService.SetControlLock:input_type -> agent.v1.SetControlLockRequest
-	27, // 15: agent.v1.AgentService.PullDesktopActions:input_type -> agent.v1.PullDesktopActionsRequest
-	30, // 16: agent.v1.AgentService.AckDesktopActions:input_type -> agent.v1.AckDesktopActionsRequest
-	22, // 17: agent.v1.AgentService.RunCLI:output_type -> agent.v1.RunCLIResponse
-	1,  // 18: agent.v1.AgentService.Ping:output_type -> agent.v1.PingResponse
-	3,  // 19: agent.v1.AgentService.GetInfo:output_type -> agent.v1.GetInfoResponse
-	5,  // 20: agent.v1.AgentService.Screenshot:output_type -> agent.v1.ScreenshotResponse
-	7,  // 21: agent.v1.AgentService.Click:output_type -> agent.v1.ClickResponse
-	9,  // 22: agent.v1.AgentService.Type:output_type -> agent.v1.TypeResponse
-	11, // 23: agent.v1.AgentService.Key:output_type -> agent.v1.KeyResponse
-	13, // 24: agent.v1.AgentService.Exec:output_type -> agent.v1.ExecResponse
-	16, // 25: agent.v1.AgentService.ListFiles:output_type -> agent.v1.ListFilesResponse
-	18, // 26: agent.v1.AgentService.ReadFile:output_type -> agent.v1.ReadFileResponse
-	20, // 27: agent.v1.AgentService.WriteFile:output_type -> agent.v1.WriteFileResponse
-	24, // 28: agent.v1.AgentService.DesktopAction:output_type -> agent.v1.DesktopActionResponse
-	26, // 29: agent.v1.AgentService.SetControlLock:output_type -> agent.v1.SetControlLockResponse
-	29, // 30: agent.v1.AgentService.PullDesktopActions:output_type -> agent.v1.PullDesktopActionsResponse
-	31, // 31: agent.v1.AgentService.AckDesktopActions:output_type -> agent.v1.AckDesktopActionsResponse
-	17, // [17:32] is the sub-list for method output_type
-	2,  // [2:17] is the sub-list for method input_type
-	2,  // [2:2] is the sub-list for extension type_name
-	2,  // [2:2] is the sub-list for extension extendee
-	0,  // [0:2] is the sub-list for field type_name
+	12, // 0: agent.v1.RunTerminalRequest.start:type_name -> agent.v1.ExecRequest
+	16, // 1: agent.v1.ListFilesResponse.entries:type_name -> agent.v1.FileEntry
+	30, // 2: agent.v1.PullDesktopActionsResponse.records:type_name -> agent.v1.DesktopActionRecord
+	23, // 3: agent.v1.AgentService.RunCLI:input_type -> agent.v1.RunCLIRequest
+	0,  // 4: agent.v1.AgentService.Ping:input_type -> agent.v1.PingRequest
+	2,  // 5: agent.v1.AgentService.GetInfo:input_type -> agent.v1.GetInfoRequest
+	4,  // 6: agent.v1.AgentService.Screenshot:input_type -> agent.v1.ScreenshotRequest
+	6,  // 7: agent.v1.AgentService.Click:input_type -> agent.v1.ClickRequest
+	8,  // 8: agent.v1.AgentService.Type:input_type -> agent.v1.TypeRequest
+	10, // 9: agent.v1.AgentService.Key:input_type -> agent.v1.KeyRequest
+	12, // 10: agent.v1.AgentService.Exec:input_type -> agent.v1.ExecRequest
+	14, // 11: agent.v1.AgentService.RunTerminal:input_type -> agent.v1.RunTerminalRequest
+	17, // 12: agent.v1.AgentService.ListFiles:input_type -> agent.v1.ListFilesRequest
+	19, // 13: agent.v1.AgentService.ReadFile:input_type -> agent.v1.ReadFileRequest
+	21, // 14: agent.v1.AgentService.WriteFile:input_type -> agent.v1.WriteFileRequest
+	25, // 15: agent.v1.AgentService.DesktopAction:input_type -> agent.v1.DesktopActionRequest
+	27, // 16: agent.v1.AgentService.SetControlLock:input_type -> agent.v1.SetControlLockRequest
+	29, // 17: agent.v1.AgentService.PullDesktopActions:input_type -> agent.v1.PullDesktopActionsRequest
+	32, // 18: agent.v1.AgentService.AckDesktopActions:input_type -> agent.v1.AckDesktopActionsRequest
+	24, // 19: agent.v1.AgentService.RunCLI:output_type -> agent.v1.RunCLIResponse
+	1,  // 20: agent.v1.AgentService.Ping:output_type -> agent.v1.PingResponse
+	3,  // 21: agent.v1.AgentService.GetInfo:output_type -> agent.v1.GetInfoResponse
+	5,  // 22: agent.v1.AgentService.Screenshot:output_type -> agent.v1.ScreenshotResponse
+	7,  // 23: agent.v1.AgentService.Click:output_type -> agent.v1.ClickResponse
+	9,  // 24: agent.v1.AgentService.Type:output_type -> agent.v1.TypeResponse
+	11, // 25: agent.v1.AgentService.Key:output_type -> agent.v1.KeyResponse
+	13, // 26: agent.v1.AgentService.Exec:output_type -> agent.v1.ExecResponse
+	15, // 27: agent.v1.AgentService.RunTerminal:output_type -> agent.v1.RunTerminalResponse
+	18, // 28: agent.v1.AgentService.ListFiles:output_type -> agent.v1.ListFilesResponse
+	20, // 29: agent.v1.AgentService.ReadFile:output_type -> agent.v1.ReadFileResponse
+	22, // 30: agent.v1.AgentService.WriteFile:output_type -> agent.v1.WriteFileResponse
+	26, // 31: agent.v1.AgentService.DesktopAction:output_type -> agent.v1.DesktopActionResponse
+	28, // 32: agent.v1.AgentService.SetControlLock:output_type -> agent.v1.SetControlLockResponse
+	31, // 33: agent.v1.AgentService.PullDesktopActions:output_type -> agent.v1.PullDesktopActionsResponse
+	33, // 34: agent.v1.AgentService.AckDesktopActions:output_type -> agent.v1.AckDesktopActionsResponse
+	19, // [19:35] is the sub-list for method output_type
+	3,  // [3:19] is the sub-list for method input_type
+	3,  // [3:3] is the sub-list for extension type_name
+	3,  // [3:3] is the sub-list for extension extendee
+	0,  // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_agent_v1_agent_proto_init() }
@@ -1996,13 +2188,18 @@ func file_agent_v1_agent_proto_init() {
 	if File_agent_v1_agent_proto != nil {
 		return
 	}
+	file_agent_v1_agent_proto_msgTypes[14].OneofWrappers = []any{
+		(*RunTerminalRequest_Start)(nil),
+		(*RunTerminalRequest_Input)(nil),
+		(*RunTerminalRequest_CloseInput)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agent_v1_agent_proto_rawDesc), len(file_agent_v1_agent_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   32,
+			NumMessages:   34,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

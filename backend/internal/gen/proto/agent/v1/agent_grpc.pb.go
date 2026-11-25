@@ -29,6 +29,7 @@ const (
 	AgentService_Type_FullMethodName               = "/agent.v1.AgentService/Type"
 	AgentService_Key_FullMethodName                = "/agent.v1.AgentService/Key"
 	AgentService_Exec_FullMethodName               = "/agent.v1.AgentService/Exec"
+	AgentService_RunTerminal_FullMethodName        = "/agent.v1.AgentService/RunTerminal"
 	AgentService_ListFiles_FullMethodName          = "/agent.v1.AgentService/ListFiles"
 	AgentService_ReadFile_FullMethodName           = "/agent.v1.AgentService/ReadFile"
 	AgentService_WriteFile_FullMethodName          = "/agent.v1.AgentService/WriteFile"
@@ -61,6 +62,8 @@ type AgentServiceClient interface {
 	Key(ctx context.Context, in *KeyRequest, opts ...grpc.CallOption) (*KeyResponse, error)
 	// Exec executes a bounded command inside the sandbox under /home/bot.
 	Exec(ctx context.Context, in *ExecRequest, opts ...grpc.CallOption) (*ExecResponse, error)
+	// RunTerminal streams a bot command and cancels it on desktop takeover.
+	RunTerminal(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[RunTerminalRequest, RunTerminalResponse], error)
 	// ListFiles lists entries inside a directory scoped strictly under /home/bot.
 	ListFiles(ctx context.Context, in *ListFilesRequest, opts ...grpc.CallOption) (*ListFilesResponse, error)
 	// ReadFile reads file bytes strictly under /home/bot.
@@ -174,6 +177,19 @@ func (c *agentServiceClient) Exec(ctx context.Context, in *ExecRequest, opts ...
 	return out, nil
 }
 
+func (c *agentServiceClient) RunTerminal(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[RunTerminalRequest, RunTerminalResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &AgentService_ServiceDesc.Streams[1], AgentService_RunTerminal_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[RunTerminalRequest, RunTerminalResponse]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AgentService_RunTerminalClient = grpc.BidiStreamingClient[RunTerminalRequest, RunTerminalResponse]
+
 func (c *agentServiceClient) ListFiles(ctx context.Context, in *ListFilesRequest, opts ...grpc.CallOption) (*ListFilesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListFilesResponse)
@@ -267,6 +283,8 @@ type AgentServiceServer interface {
 	Key(context.Context, *KeyRequest) (*KeyResponse, error)
 	// Exec executes a bounded command inside the sandbox under /home/bot.
 	Exec(context.Context, *ExecRequest) (*ExecResponse, error)
+	// RunTerminal streams a bot command and cancels it on desktop takeover.
+	RunTerminal(grpc.BidiStreamingServer[RunTerminalRequest, RunTerminalResponse]) error
 	// ListFiles lists entries inside a directory scoped strictly under /home/bot.
 	ListFiles(context.Context, *ListFilesRequest) (*ListFilesResponse, error)
 	// ReadFile reads file bytes strictly under /home/bot.
@@ -314,6 +332,9 @@ func (UnimplementedAgentServiceServer) Key(context.Context, *KeyRequest) (*KeyRe
 }
 func (UnimplementedAgentServiceServer) Exec(context.Context, *ExecRequest) (*ExecResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Exec not implemented")
+}
+func (UnimplementedAgentServiceServer) RunTerminal(grpc.BidiStreamingServer[RunTerminalRequest, RunTerminalResponse]) error {
+	return status.Error(codes.Unimplemented, "method RunTerminal not implemented")
 }
 func (UnimplementedAgentServiceServer) ListFiles(context.Context, *ListFilesRequest) (*ListFilesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListFiles not implemented")
@@ -493,6 +514,13 @@ func _AgentService_Exec_Handler(srv interface{}, ctx context.Context, dec func(i
 	}
 	return interceptor(ctx, in, info, handler)
 }
+
+func _AgentService_RunTerminal_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(AgentServiceServer).RunTerminal(&grpc.GenericServerStream[RunTerminalRequest, RunTerminalResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AgentService_RunTerminalServer = grpc.BidiStreamingServer[RunTerminalRequest, RunTerminalResponse]
 
 func _AgentService_ListFiles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListFilesRequest)
@@ -689,6 +717,12 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 			StreamName:    "RunCLI",
 			Handler:       _AgentService_RunCLI_Handler,
 			ServerStreams: true,
+		},
+		{
+			StreamName:    "RunTerminal",
+			Handler:       _AgentService_RunTerminal_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
 		},
 	},
 	Metadata: "agent/v1/agent.proto",
