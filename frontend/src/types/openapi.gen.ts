@@ -2100,6 +2100,7 @@ export interface components {
       driverType: components['schemas']['DriverType'];
       replyLanguage: string;
       turnTimeoutMinutes: components['schemas']['BotTurnTimeoutMinutes'];
+      askBefore?: components['schemas']['AskBeforeRule'][];
       status: components['schemas']['BotStatus'];
       mood: components['schemas']['AvatarMood'];
       /** Format: date-time */
@@ -2126,6 +2127,7 @@ export interface components {
       driverType?: components['schemas']['DriverType'];
       replyLanguage?: string;
       turnTimeoutMinutes?: components['schemas']['BotTurnTimeoutMinutes'];
+      askBefore?: components['schemas']['AskBeforeRule'][];
     };
     UpdateBotRequest: {
       name?: string;
@@ -2138,6 +2140,7 @@ export interface components {
       driverType?: components['schemas']['DriverType'];
       replyLanguage?: string;
       turnTimeoutMinutes?: components['schemas']['BotTurnTimeoutMinutes'];
+      askBefore?: components['schemas']['AskBeforeRule'][];
     };
     /** @enum {string} */
     EnvironmentStatus: 'creating' | 'running' | 'stopped' | 'error';

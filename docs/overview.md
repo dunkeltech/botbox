@@ -47,8 +47,10 @@ Roles apply within a single workspace. This table covers common operations.
 
 - Sending a message still requires access to the conversation. Direct messages
   are private to their human participant. Group chat reads require group membership.
-- A group member with write access can decide a group approval. Workspace
-  owners and admins can also decide group approvals and workspace budget approvals.
+- A group member with write access can decide a group approval, and a
+  direct-message participant with write access can decide their direct-message
+  approvals. Workspace owners and admins can also decide group approvals and
+  workspace budget approvals.
 - A workspace must keep at least one owner. Deleting a workspace also requires
   the caller to belong to another workspace and the workspace to have no active
   bot work or credential sessions.

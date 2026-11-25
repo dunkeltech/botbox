@@ -10,6 +10,7 @@ import type { components } from '@/types/openapi.gen';
 import { initials } from '@/components/team/text';
 import { TalkSwitch } from '@/components/team/TalkSwitch';
 import { BotRoleDescription } from '@/components/team/BotRoleDescription';
+import { AskBeforeEditor } from '@/components/team/AskBeforeEditor';
 
 type Group = components['schemas']['Group'];
 type AskBefore = components['schemas']['AskBeforeRule'];
@@ -33,16 +34,6 @@ function moodFor(
   if (status === 'thinking') return 'thinking';
   if (status === 'stopped') return 'offline';
   return 'idle';
-}
-
-function askText(
-  rule: AskBefore,
-  t: (key: 'askNewHost' | 'askBudget' | 'askPush' | 'askBefore') => string,
-): string {
-  if (rule.kind === 'new_host') return t('askNewHost');
-  if (rule.kind === 'raise_budget') return t('askBudget');
-  if (rule.kind === 'push_protected') return t('askPush');
-  return rule.label?.trim() || t('askBefore');
 }
 
 function policyText(
@@ -70,6 +61,7 @@ export function GroupDetails({
     botTalk?: boolean;
     turnLimit?: number;
     answerPolicy?: Policy;
+    askBefore?: AskBefore[];
   }) => void;
 }) {
   const t = useTranslations('team');
@@ -192,23 +184,13 @@ export function GroupDetails({
             {` · ${policyText(group.answerPolicy, t)}`}
           </p>
         )}
-        <div className="flex flex-col gap-1.5">
-          <span className="text-[14px] font-bold">{t('askBefore')}</span>
-          {group.askBefore.length > 0 ? (
-            <ul className="flex flex-wrap gap-1.5">
-              {group.askBefore.map((rule) => (
-                <li
-                  key={`${rule.kind}:${rule.label ?? ''}`}
-                  className="rounded-pill border border-line bg-paper px-2.5 py-1 text-[13px]"
-                >
-                  {askText(rule, t)}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-[14px] text-muted">{t('notSet')}</p>
-          )}
-        </div>
+        <AskBeforeEditor
+          value={group.askBefore}
+          onChange={(next) => onPatch({ askBefore: next })}
+          allowRaiseBudget
+          canEdit={canEdit}
+          hint={canEdit ? t('askBeforeHint') : undefined}
+        />
         {error ? <Alert tone="warning">{error}</Alert> : null}
       </section>
 
@@ -243,12 +225,18 @@ export function DirectDetails({
   bot,
   groups,
   canCreate,
+  canEditAskBefore = false,
+  askBeforeError = null,
+  onUpdateAskBefore,
   onOpenGroup,
   onNewGroup,
 }: {
   bot: Bot;
   groups: Group[];
   canCreate: boolean;
+  canEditAskBefore?: boolean;
+  askBeforeError?: string | null;
+  onUpdateAskBefore?: (askBefore: AskBefore[]) => void;
   onOpenGroup: (groupId: string) => void;
   onNewGroup: () => void;
 }) {
@@ -296,6 +284,18 @@ export function DirectDetails({
             {t('botSettings')}
           </Link>
         </div>
+      </section>
+      <section className="flex flex-col gap-2">
+        <AskBeforeEditor
+          value={bot.askBefore ?? []}
+          onChange={(next) => onUpdateAskBefore?.(next)}
+          allowRaiseBudget={false}
+          canEdit={Boolean(canEditAskBefore && onUpdateAskBefore)}
+          hint={
+            canEditAskBefore ? t('askBeforeBotHint') : t('askBeforeReadOnly')
+          }
+        />
+        {askBeforeError ? <Alert tone="warning">{askBeforeError}</Alert> : null}
       </section>
       <section className="flex flex-col gap-2">
         <h2 className="text-[12px] font-bold uppercase tracking-[0.08em] text-muted">

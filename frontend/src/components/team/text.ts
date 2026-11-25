@@ -93,6 +93,7 @@ export function groupSettingsBody(
     botTalk: boolean;
     turnLimit: number;
     answerPolicy: Group['answerPolicy'];
+    askBefore: Group['askBefore'];
     members: Member[];
   }>,
 ): components['schemas']['UpdateGroupRequest'] {
@@ -103,7 +104,7 @@ export function groupSettingsBody(
     botTalk: patch.botTalk ?? group.botTalk,
     turnLimit: patch.turnLimit ?? group.turnLimit,
     answerPolicy: patch.answerPolicy ?? group.answerPolicy,
-    askBefore: group.askBefore,
+    askBefore: patch.askBefore ?? group.askBefore,
     budgetLimitMicros: group.budgetLimitMicros ?? null,
     members: (patch.members ?? group.members).map((member) => ({
       type: member.type,

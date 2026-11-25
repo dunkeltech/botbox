@@ -5,7 +5,7 @@
 import { turnFailureKey } from '@/components/chat/turnFailure';
 import { connectConversation } from '@/lib/conversation-events';
 
-import { X } from 'lucide-react';
+import { ArrowLeftRight, X } from 'lucide-react';
 import Link from 'next/link';
 import {
   Fragment,
@@ -47,6 +47,15 @@ import { SecretRequestModal } from '@/components/chat/SecretRequestModal';
 import { useSecretRequestControl } from '@/components/chat/useSecretRequestControl';
 import { useChatScroll } from '@/components/chat/useChatScroll';
 import { useConversationHistory } from '@/components/chat/useConversationHistory';
+import {
+  approvalForMessage,
+  canDecideApproval,
+} from '@/components/team/approvals';
+import {
+  approvalsQueryKey,
+  useApprovalDecision,
+  useApprovalList,
+} from '@/components/team/useApprovals';
 import { canManageBot } from '@/lib/rbac';
 import type { Bot, WorkspaceRole } from '@/types/api';
 import type { components } from '@/types/openapi.gen';
@@ -181,6 +190,12 @@ export function ChatPanel({
     enabled: canManage === undefined && effectiveRole === 'member',
     queryFn: () => requestJson<Bot>(`${base}/bots/${botId}`),
   });
+  const approvalList = useApprovalList(workspaceId);
+  const {
+    decide,
+    busyId,
+    error: decisionError,
+  } = useApprovalDecision(workspaceId);
   const canManageMemory =
     canManage ??
     (effectiveRole === 'owner' ||
@@ -222,6 +237,9 @@ export function ChatPanel({
           void client.invalidateQueries({
             queryKey: ['chat', workspaceId, userId, conversationId],
           });
+          void client.invalidateQueries({
+            queryKey: approvalsQueryKey(workspaceId),
+          });
         }
         if ('Kind' in data && data.Kind === 'status') {
           void client.invalidateQueries({ queryKey: ['bots', workspaceId] });
@@ -234,6 +252,9 @@ export function ChatPanel({
           }
           void client.invalidateQueries({
             queryKey: ['chat', workspaceId, userId, conversationId],
+          });
+          void client.invalidateQueries({
+            queryKey: approvalsQueryKey(workspaceId),
           });
         }
       } catch {
@@ -250,6 +271,9 @@ export function ChatPanel({
           queryKey: ['chat', workspaceId, userId, conversationId],
         });
         void client.invalidateQueries({ queryKey: ['bots', workspaceId] });
+        void client.invalidateQueries({
+          queryKey: approvalsQueryKey(workspaceId),
+        });
       },
     );
   }, [conversationId, workspaceId, userId, client]);
@@ -366,6 +390,25 @@ export function ChatPanel({
   }
 
   function renderConversationMessage(message: History['messages'][number]) {
+    if (
+      message.kind === 'system' ||
+      message.kind === 'card' ||
+      message.senderType === 'system'
+    ) {
+      return (
+        <div
+          data-message-id={message.id}
+          className="flex items-center gap-2 rounded-sm border border-mint-line bg-mint-soft px-3.5 py-2 text-[13px] text-dark"
+        >
+          <ArrowLeftRight
+            className="h-4 w-4 shrink-0 text-green-600"
+            aria-hidden="true"
+          />
+          <span>{message.content}</span>
+        </div>
+      );
+    }
+
     const isUser = message.senderType === 'user';
     const attachedTurn = trace.turnsByReplyId.get(message.id);
 
@@ -504,27 +547,62 @@ export function ChatPanel({
 
             {renderUnattachedToolTurns(trace.leadingUnattachedTurns)}
 
-            {messages.map((message, index) => (
-              <Fragment key={message.id}>
-                {isDayBoundary(messages, index, leadingDayKey) ? (
-                  <ChatDayDivider dateIso={message.createdAt} />
-                ) : null}
-                <ChatTranscriptRow
-                  message={message}
-                  workspaceId={workspaceId}
-                  role={effectiveRole}
-                  secretControl={secretControl}
-                  memoryBotId={botId}
-                  canManageMemory={() => canManageMemory}
-                  refreshHistory={refreshHistory}
-                  onInspectTurn={handleInspectTurn}
-                  toolTurnsAfter={renderUnattachedToolTurns(
-                    trace.unattachedTurnsByAnchor.get(message.id) ?? [],
-                  )}
-                  renderMessage={() => renderConversationMessage(message)}
-                />
-              </Fragment>
-            ))}
+            {messages.map((message, index) => {
+              const matchedApproval =
+                message.kind === 'approval' && conversationId
+                  ? approvalForMessage(
+                      approvalList.data?.approvals ?? [],
+                      message.id,
+                      conversationId,
+                    )
+                  : undefined;
+              return (
+                <Fragment key={message.id}>
+                  {isDayBoundary(messages, index, leadingDayKey) ? (
+                    <ChatDayDivider dateIso={message.createdAt} />
+                  ) : null}
+                  <ChatTranscriptRow
+                    message={message}
+                    workspaceId={workspaceId}
+                    role={effectiveRole}
+                    secretControl={secretControl}
+                    approval={
+                      message.kind === 'approval'
+                        ? {
+                            matched: matchedApproval,
+                            botName: name,
+                            avatarSeed,
+                            canDecide: matchedApproval
+                              ? canDecideApproval(
+                                  effectiveRole,
+                                  matchedApproval,
+                                )
+                              : false,
+                            busy: busyId === matchedApproval?.id,
+                            errorKey:
+                              matchedApproval &&
+                              decisionError?.id === matchedApproval.id
+                                ? decisionError.key
+                                : null,
+                            onDecide: matchedApproval
+                              ? (decision) =>
+                                  void decide(matchedApproval.id, decision)
+                              : undefined,
+                          }
+                        : undefined
+                    }
+                    memoryBotId={botId}
+                    canManageMemory={() => canManageMemory}
+                    refreshHistory={refreshHistory}
+                    onInspectTurn={handleInspectTurn}
+                    toolTurnsAfter={renderUnattachedToolTurns(
+                      trace.unattachedTurnsByAnchor.get(message.id) ?? [],
+                    )}
+                    renderMessage={() => renderConversationMessage(message)}
+                  />
+                </Fragment>
+              );
+            })}
 
             {live ? (
               <div

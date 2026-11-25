@@ -530,7 +530,7 @@ func (s *server) parseGroupSpec(w http.ResponseWriter, r *http.Request, workspac
 		writeError(w, s.logger, http.StatusBadRequest, "validation_error", "budget limit must be 1..1000000000000 microdollars")
 		return zero, false
 	}
-	ask, err := canonicalAskBefore(body.ask)
+	ask, err := canonicalAskBefore(body.ask, true)
 	if err != nil {
 		writeError(w, s.logger, http.StatusBadRequest, "validation_error", err.Error())
 		return zero, false
@@ -574,7 +574,7 @@ func (s *server) parseGroupSpec(w http.ResponseWriter, r *http.Request, workspac
 	}, true
 }
 
-func canonicalAskBefore(rules []apigen.AskBeforeRule) ([]byte, error) {
+func canonicalAskBefore(rules []apigen.AskBeforeRule, allowRaiseBudget bool) ([]byte, error) {
 	if len(rules) > maxAskBeforeRules {
 		return nil, errors.New("at most 20 ask-before rules")
 	}
@@ -588,7 +588,11 @@ func canonicalAskBefore(rules []apigen.AskBeforeRule) ([]byte, error) {
 			return nil, errors.New("ask-before label must be at most 200 characters")
 		}
 		switch string(rule.Kind) {
-		case "new_host", "raise_budget", "push_protected":
+		case "new_host", "push_protected":
+		case "raise_budget":
+			if !allowRaiseBudget {
+				return nil, errors.New("raise_budget ask-before rule is only supported for groups")
+			}
 		case "custom":
 			if label == "" {
 				return nil, errors.New("a custom ask-before rule needs a label")

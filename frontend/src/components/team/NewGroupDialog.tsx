@@ -18,6 +18,10 @@ import type { Bot, WorkspaceMember, WorkspaceRole } from '@/types/api';
 import type { components } from '@/types/openapi.gen';
 import { initials } from '@/components/team/text';
 import { TalkSwitch } from '@/components/team/TalkSwitch';
+import {
+  AskBeforeEditor,
+  type AskBeforeRule,
+} from '@/components/team/AskBeforeEditor';
 
 type CreateGroup = components['schemas']['CreateGroupRequest'];
 
@@ -67,6 +71,7 @@ export function NewGroupDialog({
   const [leadId, setLeadId] = useState(initialBotId ?? '');
   const [botTalk, setBotTalk] = useState(true);
   const [turnLimit, setTurnLimit] = useState(20);
+  const [askBefore, setAskBefore] = useState<AskBeforeRule[]>([]);
   const people = humans.some((human) => human.userId === userId)
     ? humans
     : [
@@ -115,7 +120,7 @@ export function NewGroupDialog({
       botTalk,
       turnLimit,
       answerPolicy: 'mentioned_else_lead',
-      askBefore: [],
+      askBefore,
       budgetLimitMicros: null,
       members: [
         { type: 'user', id: userId, roleText: '' },
@@ -300,6 +305,15 @@ export function NewGroupDialog({
               ))}
             </select>
           </label>
+          <div className="border-t border-line pt-3">
+            <AskBeforeEditor
+              value={askBefore}
+              onChange={setAskBefore}
+              allowRaiseBudget
+              disabled={creating}
+              hint={t('askBeforeHint')}
+            />
+          </div>
         </div>
         {error ? <Alert tone="warning">{error}</Alert> : null}
         <div className="flex flex-wrap justify-end gap-2">

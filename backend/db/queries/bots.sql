@@ -10,9 +10,10 @@ INSERT INTO bots (
     llm_model,
     driver_type,
     reply_language,
-    turn_timeout_minutes
+    turn_timeout_minutes,
+    ask_before
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE(sqlc.narg(turn_timeout_minutes)::integer, 10))
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE(sqlc.narg(turn_timeout_minutes)::integer, 10), COALESCE(sqlc.narg(ask_before)::jsonb, '[]'::jsonb))
 RETURNING *;
 
 -- name: ListBotsByWorkspace :many
@@ -43,6 +44,7 @@ SET name = $3,
     driver_type = $9,
     reply_language = $10,
     turn_timeout_minutes = COALESCE(sqlc.narg(turn_timeout_minutes)::integer, turn_timeout_minutes),
+    ask_before = COALESCE(sqlc.narg(ask_before)::jsonb, ask_before),
     updated_at = now()
 WHERE workspace_id = $1 AND id = $2
 RETURNING *;

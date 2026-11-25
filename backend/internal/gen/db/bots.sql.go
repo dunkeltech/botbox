@@ -23,10 +23,11 @@ INSERT INTO bots (
     llm_model,
     driver_type,
     reply_language,
-    turn_timeout_minutes
+    turn_timeout_minutes,
+    ask_before
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11::integer, 10))
-RETURNING id, workspace_id, owner_user_id, name, description, avatar_seed, llm_mode, llm_provider, llm_model, driver_type, reply_language, created_at, updated_at, memory_auto_save, turn_timeout_minutes
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11::integer, 10), COALESCE($12::jsonb, '[]'::jsonb))
+RETURNING id, workspace_id, owner_user_id, name, description, avatar_seed, llm_mode, llm_provider, llm_model, driver_type, reply_language, created_at, updated_at, memory_auto_save, turn_timeout_minutes, ask_before
 `
 
 type CreateBotParams struct {
@@ -41,6 +42,7 @@ type CreateBotParams struct {
 	DriverType         string      `json:"driver_type"`
 	ReplyLanguage      string      `json:"reply_language"`
 	TurnTimeoutMinutes pgtype.Int4 `json:"turn_timeout_minutes"`
+	AskBefore          []byte      `json:"ask_before"`
 }
 
 func (q *Queries) CreateBot(ctx context.Context, arg CreateBotParams) (Bot, error) {
@@ -56,6 +58,7 @@ func (q *Queries) CreateBot(ctx context.Context, arg CreateBotParams) (Bot, erro
 		arg.DriverType,
 		arg.ReplyLanguage,
 		arg.TurnTimeoutMinutes,
+		arg.AskBefore,
 	)
 	var i Bot
 	err := row.Scan(
@@ -74,6 +77,7 @@ func (q *Queries) CreateBot(ctx context.Context, arg CreateBotParams) (Bot, erro
 		&i.UpdatedAt,
 		&i.MemoryAutoSave,
 		&i.TurnTimeoutMinutes,
+		&i.AskBefore,
 	)
 	return i, err
 }
@@ -97,7 +101,7 @@ func (q *Queries) DeleteBotByWorkspaceAndID(ctx context.Context, arg DeleteBotBy
 }
 
 const getBotByWorkspaceAndID = `-- name: GetBotByWorkspaceAndID :one
-SELECT id, workspace_id, owner_user_id, name, description, avatar_seed, llm_mode, llm_provider, llm_model, driver_type, reply_language, created_at, updated_at, memory_auto_save, turn_timeout_minutes
+SELECT id, workspace_id, owner_user_id, name, description, avatar_seed, llm_mode, llm_provider, llm_model, driver_type, reply_language, created_at, updated_at, memory_auto_save, turn_timeout_minutes, ask_before
 FROM bots
 WHERE workspace_id = $1 AND id = $2
 `
@@ -126,12 +130,13 @@ func (q *Queries) GetBotByWorkspaceAndID(ctx context.Context, arg GetBotByWorksp
 		&i.UpdatedAt,
 		&i.MemoryAutoSave,
 		&i.TurnTimeoutMinutes,
+		&i.AskBefore,
 	)
 	return i, err
 }
 
 const listBotsByWorkspace = `-- name: ListBotsByWorkspace :many
-SELECT id, workspace_id, owner_user_id, name, description, avatar_seed, llm_mode, llm_provider, llm_model, driver_type, reply_language, created_at, updated_at, memory_auto_save, turn_timeout_minutes
+SELECT id, workspace_id, owner_user_id, name, description, avatar_seed, llm_mode, llm_provider, llm_model, driver_type, reply_language, created_at, updated_at, memory_auto_save, turn_timeout_minutes, ask_before
 FROM bots
 WHERE workspace_id = $1
 ORDER BY created_at ASC, name ASC
@@ -162,6 +167,7 @@ func (q *Queries) ListBotsByWorkspace(ctx context.Context, workspaceID pgtype.UU
 			&i.UpdatedAt,
 			&i.MemoryAutoSave,
 			&i.TurnTimeoutMinutes,
+			&i.AskBefore,
 		); err != nil {
 			return nil, err
 		}
@@ -174,7 +180,7 @@ func (q *Queries) ListBotsByWorkspace(ctx context.Context, workspaceID pgtype.UU
 }
 
 const lockBotByWorkspaceAndID = `-- name: LockBotByWorkspaceAndID :one
-SELECT id, workspace_id, owner_user_id, name, description, avatar_seed, llm_mode, llm_provider, llm_model, driver_type, reply_language, created_at, updated_at, memory_auto_save, turn_timeout_minutes
+SELECT id, workspace_id, owner_user_id, name, description, avatar_seed, llm_mode, llm_provider, llm_model, driver_type, reply_language, created_at, updated_at, memory_auto_save, turn_timeout_minutes, ask_before
 FROM bots
 WHERE workspace_id = $1 AND id = $2
 FOR NO KEY UPDATE
@@ -204,6 +210,7 @@ func (q *Queries) LockBotByWorkspaceAndID(ctx context.Context, arg LockBotByWork
 		&i.UpdatedAt,
 		&i.MemoryAutoSave,
 		&i.TurnTimeoutMinutes,
+		&i.AskBefore,
 	)
 	return i, err
 }
@@ -219,9 +226,10 @@ SET name = $3,
     driver_type = $9,
     reply_language = $10,
     turn_timeout_minutes = COALESCE($11::integer, turn_timeout_minutes),
+    ask_before = COALESCE($12::jsonb, ask_before),
     updated_at = now()
 WHERE workspace_id = $1 AND id = $2
-RETURNING id, workspace_id, owner_user_id, name, description, avatar_seed, llm_mode, llm_provider, llm_model, driver_type, reply_language, created_at, updated_at, memory_auto_save, turn_timeout_minutes
+RETURNING id, workspace_id, owner_user_id, name, description, avatar_seed, llm_mode, llm_provider, llm_model, driver_type, reply_language, created_at, updated_at, memory_auto_save, turn_timeout_minutes, ask_before
 `
 
 type UpdateBotByWorkspaceAndIDParams struct {
@@ -236,6 +244,7 @@ type UpdateBotByWorkspaceAndIDParams struct {
 	DriverType         string      `json:"driver_type"`
 	ReplyLanguage      string      `json:"reply_language"`
 	TurnTimeoutMinutes pgtype.Int4 `json:"turn_timeout_minutes"`
+	AskBefore          []byte      `json:"ask_before"`
 }
 
 func (q *Queries) UpdateBotByWorkspaceAndID(ctx context.Context, arg UpdateBotByWorkspaceAndIDParams) (Bot, error) {
@@ -251,6 +260,7 @@ func (q *Queries) UpdateBotByWorkspaceAndID(ctx context.Context, arg UpdateBotBy
 		arg.DriverType,
 		arg.ReplyLanguage,
 		arg.TurnTimeoutMinutes,
+		arg.AskBefore,
 	)
 	var i Bot
 	err := row.Scan(
@@ -269,6 +279,7 @@ func (q *Queries) UpdateBotByWorkspaceAndID(ctx context.Context, arg UpdateBotBy
 		&i.UpdatedAt,
 		&i.MemoryAutoSave,
 		&i.TurnTimeoutMinutes,
+		&i.AskBefore,
 	)
 	return i, err
 }

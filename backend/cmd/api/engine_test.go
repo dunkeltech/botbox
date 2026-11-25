@@ -89,6 +89,18 @@ func TestCLIMemoryPrompt(t *testing.T) {
 	}
 }
 
+func TestCLIAskBeforePrompt(t *testing.T) {
+	s := engine.Session{
+		Bot:             db.Bot{Name: "Atlas"},
+		AskBeforePrompt: "Ask before: new_host, delete the database",
+		Messages:        []db.Message{{Content: "Hello"}},
+	}
+	prompt := cliTurnPrompt(s, "", "Desktop guidance")
+	if !strings.Contains(prompt, s.AskBeforePrompt) {
+		t.Fatalf("cliTurnPrompt omitted AskBeforePrompt: %q", prompt)
+	}
+}
+
 func TestCLIOnSimulatedComputerHasActionableFailure(t *testing.T) {
 	driver, err := compute.NewMemoryDriver()
 	if err != nil {

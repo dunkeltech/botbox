@@ -47,6 +47,7 @@ import {
   canDecideApproval,
 } from '@/components/team/approvals';
 import {
+  approvalsQueryKey,
   useApprovalDecision,
   useApprovalList,
 } from '@/components/team/useApprovals';
@@ -163,6 +164,9 @@ export function GroupConversation({
       });
       void client.invalidateQueries({
         queryKey: ['notifications', workspaceId],
+      });
+      void client.invalidateQueries({
+        queryKey: approvalsQueryKey(workspaceId),
       });
       void client.invalidateQueries({ queryKey: ['bots', workspaceId] });
     };

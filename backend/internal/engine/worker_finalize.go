@@ -8,11 +8,13 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/dunkeltech/botbox/backend/internal/approvals"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
 	"github.com/dunkeltech/botbox/backend/internal/orchestrator"
 	"github.com/dunkeltech/botbox/backend/internal/secretrequests"
 	"github.com/dunkeltech/botbox/backend/internal/secrets/llmproxy"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -79,10 +81,47 @@ func (w *Worker) finalizeTurn(ctx context.Context, q *db.Queries, events *turnEv
 		if err := w.routeGroupReply(finalCtx, turn, reply, events.text.String(), inputReply); err != nil {
 			return err
 		}
+	} else if kind == "dm" && events.text.Len() > 0 && outcome.status == "completed" {
+		if err := w.routeDMReply(finalCtx, turn, reply.Content); err != nil {
+			return err
+		}
 	} else if err := q.FinishRunningBotTurn(finalCtx, db.FinishRunningBotTurnParams{
 		WorkspaceID: turn.WorkspaceID, ID: turn.ID, Status: outcome.status, ErrorCode: outcome.code,
 	}); err != nil {
 		return err
 	}
 	return events.publish(finalCtx, *events.session, Event{Kind: EventKindStatus, Status: "idle"})
+}
+
+func (w *Worker) routeDMReply(ctx context.Context, turn db.BotTurn, content string) error {
+	tx, err := w.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := db.New(tx)
+	stop, err := q.LockRunningBotTurnForFinalization(ctx, db.LockRunningBotTurnForFinalizationParams{WorkspaceID: turn.WorkspaceID, ID: turn.ID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var ids []uuid.UUID
+	if !stop {
+		ids, err = approvals.NoteReply(ctx, q, turn, content)
+		if err != nil {
+			return err
+		}
+	}
+	if err = q.FinishRunningBotTurn(ctx, db.FinishRunningBotTurnParams{
+		WorkspaceID: turn.WorkspaceID, ID: turn.ID, Status: "completed",
+	}); err != nil {
+		return err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return err
+	}
+	w.Signal.Send(ctx, uuidID(turn.WorkspaceID), uuidID(turn.ConversationID), ids)
+	return nil
 }

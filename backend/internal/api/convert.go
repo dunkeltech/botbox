@@ -271,6 +271,10 @@ func toAPIBotWithEnv(b db.Bot, env *db.Environment) api.Bot {
 			mood = api.AvatarMoodOffline
 		}
 	}
+	askBefore, err := presentAskBefore(b.AskBefore)
+	if err != nil {
+		askBefore = []api.AskBeforeRule{}
+	}
 	return api.Bot{
 		Id:                 fromPGUUID(b.ID),
 		WorkspaceId:        fromPGUUID(b.WorkspaceID),
@@ -284,6 +288,7 @@ func toAPIBotWithEnv(b db.Bot, env *db.Environment) api.Bot {
 		DriverType:         api.DriverType(b.DriverType),
 		ReplyLanguage:      b.ReplyLanguage,
 		TurnTimeoutMinutes: b.TurnTimeoutMinutes,
+		AskBefore:          &askBefore,
 		Status:             status,
 		Mood:               mood,
 		CreatedAt:          b.CreatedAt.Time.UTC(),

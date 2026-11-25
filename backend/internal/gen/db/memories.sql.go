@@ -643,7 +643,7 @@ UPDATE bots
 SET memory_auto_save = $3,
     updated_at = now()
 WHERE workspace_id = $1 AND id = $2
-RETURNING id, workspace_id, owner_user_id, name, description, avatar_seed, llm_mode, llm_provider, llm_model, driver_type, reply_language, created_at, updated_at, memory_auto_save, turn_timeout_minutes
+RETURNING id, workspace_id, owner_user_id, name, description, avatar_seed, llm_mode, llm_provider, llm_model, driver_type, reply_language, created_at, updated_at, memory_auto_save, turn_timeout_minutes, ask_before
 `
 
 type UpdateBotMemoryPolicyParams struct {
@@ -671,6 +671,7 @@ func (q *Queries) UpdateBotMemoryPolicy(ctx context.Context, arg UpdateBotMemory
 		&i.UpdatedAt,
 		&i.MemoryAutoSave,
 		&i.TurnTimeoutMinutes,
+		&i.AskBefore,
 	)
 	return i, err
 }

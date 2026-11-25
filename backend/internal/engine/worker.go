@@ -36,6 +36,7 @@ type Session struct {
 	Bot                                        db.Bot
 	Messages                                   []db.Message
 	Preface                                    string
+	AskBeforePrompt                            string
 	ContinuationPrompt                         string
 	// MemoryPrompt injects always-in-context knowledge base entries and tool guidance.
 	MemoryPrompt string
@@ -210,6 +211,9 @@ func (w *Worker) executeClaimed(runCtx context.Context, cancel context.CancelFun
 		Messages:           history,
 		Preface:            preface,
 		ContinuationPrompt: turn.ContinuationPrompt,
+	}
+	if preface == "" {
+		session.AskBeforePrompt = formatAskBeforePrompt(bot.AskBefore)
 	}
 	if preface != "" {
 		tools := groups.TeamTools{Pool: w.Pool, Now: w.now, Signal: w.Signal}
@@ -412,6 +416,35 @@ func (w *Worker) Interrupt(ws, bot uuid.UUID) {
 	if cancel := w.active[ws.String()+"/"+bot.String()]; cancel != nil {
 		cancel()
 	}
+}
+
+func formatAskBeforePrompt(raw []byte) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var rules []struct {
+		Kind  string `json:"kind"`
+		Label string `json:"label"`
+	}
+	if json.Unmarshal(raw, &rules) != nil || len(rules) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(rules))
+	for _, rule := range rules {
+		label := strings.TrimSpace(rule.Label)
+		switch {
+		case label != "" && rule.Kind == "push_protected":
+			parts = append(parts, rule.Kind+" ("+label+")")
+		case label != "":
+			parts = append(parts, label)
+		case rule.Kind != "":
+			parts = append(parts, rule.Kind)
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "Ask before: " + strings.Join(parts, ", ")
 }
 
 func (w *Worker) now() time.Time {

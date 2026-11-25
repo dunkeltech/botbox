@@ -189,6 +189,9 @@ func cliTurnPrompt(s engine.Session, external, guidance string) string {
 	if s.TeamTool != nil {
 		guidance += "\n" + teamToolGuidance + " Use the botbox-team tools with turn_id " + s.TurnID.String() + "."
 	}
+	if s.AskBeforePrompt != "" {
+		guidance += "\n" + s.AskBeforePrompt
+	}
 	if s.MemoryPrompt != "" {
 		guidance += "\n" + s.MemoryPrompt
 	}

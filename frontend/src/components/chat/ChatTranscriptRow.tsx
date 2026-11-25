@@ -9,18 +9,35 @@ import { ChatTurnToolChip } from '@/components/chat/ChatTurnToolChip';
 import { GuardrailNoticeCard } from '@/components/chat/GuardrailNoticeCard';
 import { MemorySavedCard } from '@/components/chat/MemorySavedCard';
 import { SecretRequestCard } from '@/components/chat/SecretRequestCard';
+import { ApprovalCard } from '@/components/team/ApprovalCard';
+import type { ApprovalDecision } from '@/components/team/approvals';
 import type {
   ToolChatMessage,
   ToolTraceTurn,
 } from '@/components/chat/toolTrace';
 import type { useSecretRequestControl } from '@/components/chat/useSecretRequestControl';
 import { BotAvatar } from '@/components/ui';
+import type { ErrorTranslationKey } from '@/lib/errors';
 import type { WorkspaceRole } from '@/types/api';
+import type { components } from '@/types/openapi.gen';
+
+type Approval = components['schemas']['Approval'];
 
 type SecretRequestActions = Pick<
   ReturnType<typeof useSecretRequestControl>,
   'busyRequestId' | 'requestError' | 'openModal' | 'openTakeover' | 'deny'
 >;
+
+export interface TranscriptApprovalControl {
+  matched?: Approval;
+  botName?: string;
+  where?: string;
+  avatarSeed?: string;
+  canDecide: boolean;
+  busy: boolean;
+  errorKey: ErrorTranslationKey | null;
+  onDecide?: (decision: ApprovalDecision) => void;
+}
 
 /** Renders common transcript cards and keeps tool-only turns beside their anchor. */
 export function ChatTranscriptRow({
@@ -29,6 +46,7 @@ export function ChatTranscriptRow({
   role,
   cardClassName,
   secretControl,
+  approval,
   memoryBotId,
   canManageMemory,
   refreshHistory,
@@ -41,6 +59,7 @@ export function ChatTranscriptRow({
   role: WorkspaceRole;
   cardClassName?: string;
   secretControl: SecretRequestActions;
+  approval?: TranscriptApprovalControl;
   memoryBotId?: string;
   canManageMemory: (botId: string) => boolean;
   refreshHistory: () => Promise<void>;
@@ -66,6 +85,21 @@ export function ChatTranscriptRow({
         onProvide={secretControl.openModal}
         onTakeover={secretControl.openTakeover}
         onDeny={(request) => void secretControl.deny(request)}
+      />
+    );
+  } else if (message.kind === 'approval' && approval) {
+    content = (
+      <ApprovalCard
+        className={cardClassName}
+        approval={approval.matched}
+        content={message.content}
+        botName={approval.botName}
+        where={approval.where}
+        avatarSeed={approval.avatarSeed}
+        canDecide={approval.canDecide}
+        busy={approval.busy}
+        errorKey={approval.errorKey}
+        onDecide={approval.onDecide}
       />
     );
   } else if (message.kind === 'guardrail' && message.guardrail) {

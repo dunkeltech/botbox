@@ -69,6 +69,9 @@ export function useApprovalDecision(workspaceId: string) {
       await client.invalidateQueries({
         queryKey: ['group-messages', workspaceId],
       });
+      await client.invalidateQueries({
+        queryKey: ['chat', workspaceId],
+      });
       await client.invalidateQueries({ queryKey: ['groups', workspaceId] });
     } catch (err) {
       setError({ id, key: resolveErrorKey(err) });

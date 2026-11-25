@@ -1255,6 +1255,7 @@ type AvatarMood string
 
 // Bot defines model for Bot.
 type Bot struct {
+	AskBefore   *[]AskBeforeRule   `json:"askBefore,omitempty"`
 	AvatarSeed  string             `json:"avatarSeed"`
 	CreatedAt   time.Time          `json:"createdAt"`
 	Description string             `json:"description"`
@@ -1547,11 +1548,12 @@ type CreateBotMemoryRequest struct {
 
 // CreateBotRequest defines model for CreateBotRequest.
 type CreateBotRequest struct {
-	AvatarSeed  string      `json:"avatarSeed"`
-	Description *string     `json:"description,omitempty"`
-	DriverType  *DriverType `json:"driverType,omitempty"`
-	LlmMode     LlmMode     `json:"llmMode"`
-	LlmModel    string      `json:"llmModel"`
+	AskBefore   *[]AskBeforeRule `json:"askBefore,omitempty"`
+	AvatarSeed  string           `json:"avatarSeed"`
+	Description *string          `json:"description,omitempty"`
+	DriverType  *DriverType      `json:"driverType,omitempty"`
+	LlmMode     LlmMode          `json:"llmMode"`
+	LlmModel    string           `json:"llmModel"`
 
 	// LlmProvider Selects the sandbox CLI. OpenRouter uses Pi, OpenAI uses Codex, Anthropic uses Claude Code, google uses agy with a Gemini API key, and google-acp uses agy over ACP with Google sign-in.
 	LlmProvider   string  `json:"llmProvider"`
@@ -2331,11 +2333,12 @@ type UpdateBotMemoryRequest struct {
 
 // UpdateBotRequest defines model for UpdateBotRequest.
 type UpdateBotRequest struct {
-	AvatarSeed  *string     `json:"avatarSeed,omitempty"`
-	Description *string     `json:"description,omitempty"`
-	DriverType  *DriverType `json:"driverType,omitempty"`
-	LlmMode     *LlmMode    `json:"llmMode,omitempty"`
-	LlmModel    *string     `json:"llmModel,omitempty"`
+	AskBefore   *[]AskBeforeRule `json:"askBefore,omitempty"`
+	AvatarSeed  *string          `json:"avatarSeed,omitempty"`
+	Description *string          `json:"description,omitempty"`
+	DriverType  *DriverType      `json:"driverType,omitempty"`
+	LlmMode     *LlmMode         `json:"llmMode,omitempty"`
+	LlmModel    *string          `json:"llmModel,omitempty"`
 
 	// LlmProvider Selects the sandbox CLI. OpenRouter uses Pi, OpenAI uses Codex, Anthropic uses Claude Code, google uses agy with a Gemini API key, and google-acp uses agy over ACP with Google sign-in.
 	LlmProvider   *string `json:"llmProvider,omitempty"`

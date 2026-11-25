@@ -3,6 +3,7 @@
 package api
 
 import (
+	"bytes"
 	"errors"
 	"net/http"
 	"strings"
@@ -141,6 +142,15 @@ func (s *server) handleCreateBot(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	var rawAskRules []api.AskBeforeRule
+	if req.AskBefore != nil {
+		rawAskRules = *req.AskBefore
+	}
+	askBefore, err := canonicalAskBefore(rawAskRules, false)
+	if err != nil {
+		writeError(w, s.logger, http.StatusBadRequest, "validation_error", err.Error())
+		return
+	}
 
 	tx, err := s.pool.Begin(r.Context())
 	if err != nil {
@@ -163,6 +173,7 @@ func (s *server) handleCreateBot(w http.ResponseWriter, r *http.Request) {
 		DriverType:         string(driver),
 		ReplyLanguage:      replyLang,
 		TurnTimeoutMinutes: turnTimeout,
+		AskBefore:          askBefore,
 	})
 	if err != nil {
 		s.logger.Error("create bot", "err", err)
@@ -296,6 +307,19 @@ func (s *server) handleUpdateBot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	askBefore := existing.AskBefore
+	if len(bytes.TrimSpace(askBefore)) == 0 {
+		askBefore = []byte("[]")
+	}
+	if req.AskBefore != nil {
+		var askErr error
+		askBefore, askErr = canonicalAskBefore(*req.AskBefore, false)
+		if askErr != nil {
+			writeError(w, s.logger, http.StatusBadRequest, "validation_error", askErr.Error())
+			return
+		}
+	}
+
 	params := db.UpdateBotByWorkspaceAndIDParams{
 		WorkspaceID:        wsRow.ID,
 		ID:                 existing.ID,
@@ -308,6 +332,7 @@ func (s *server) handleUpdateBot(w http.ResponseWriter, r *http.Request) {
 		DriverType:         existing.DriverType,
 		ReplyLanguage:      existing.ReplyLanguage,
 		TurnTimeoutMinutes: turnTimeout,
+		AskBefore:          askBefore,
 	}
 
 	if req.Name != nil {

@@ -29,7 +29,9 @@ import { groupSettingsBody, initials } from '@/components/team/text';
 import { Alert, BotAvatar, Button, ModalDialog } from '@/components/ui';
 import { requestJson } from '@/lib/api-client';
 import { resolveErrorKey, type ErrorTranslationKey } from '@/lib/errors';
+import { canManageBot } from '@/lib/rbac';
 import type {
+  Bot,
   BotListResponse,
   BotStatus,
   WorkspaceMemberListResponse,
@@ -134,6 +136,9 @@ export function TeamScreen({
     null,
   );
   const [saveError, setSaveError] = useState<ErrorTranslationKey | null>(null);
+  const [botSaveError, setBotSaveError] = useState<ErrorTranslationKey | null>(
+    null,
+  );
   const [deleteTarget, setDeleteTarget] = useState<Group | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<ErrorTranslationKey | null>(
@@ -362,6 +367,32 @@ export function TeamScreen({
       );
     } catch (err) {
       setSaveError(resolveErrorKey(err));
+    }
+  }
+
+  async function patchBotAskBefore(
+    bot: Bot,
+    askBefore: components['schemas']['AskBeforeRule'][],
+  ) {
+    setBotSaveError(null);
+    try {
+      const updated = await requestJson<Bot>(
+        `${base}/bots/${encodeURIComponent(bot.id)}`,
+        { method: 'PATCH', body: { askBefore } },
+      );
+      client.setQueryData<BotListResponse>(['bots', workspaceId], (current) =>
+        current
+          ? {
+              ...current,
+              bots: current.bots.map((row) =>
+                row.id === updated.id ? updated : row,
+              ),
+            }
+          : current,
+      );
+      client.setQueryData<Bot>(['bot', workspaceId, bot.id], updated);
+    } catch (err) {
+      setBotSaveError(resolveErrorKey(err));
     }
   }
 
@@ -856,6 +887,11 @@ export function TeamScreen({
                     bot={selectedBot}
                     groups={groupList}
                     canCreate={canChange}
+                    canEditAskBefore={canManageBot(role, userId, selectedBot)}
+                    askBeforeError={botSaveError ? errors(botSaveError) : null}
+                    onUpdateAskBefore={(next) =>
+                      void patchBotAskBefore(selectedBot, next)
+                    }
                     onOpenGroup={handleSelectGroup}
                     onNewGroup={() => openDialog(selectedBot.id)}
                   />

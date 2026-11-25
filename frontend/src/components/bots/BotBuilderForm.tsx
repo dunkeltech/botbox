@@ -11,6 +11,10 @@ import { useQuery } from '@tanstack/react-query';
 
 import { MissingModelPriceNotice } from '@/components/bots/MissingModelPriceNotice';
 import {
+  AskBeforeEditor,
+  type AskBeforeRule,
+} from '@/components/team/AskBeforeEditor';
+import {
   Alert,
   BotAvatar,
   Button,
@@ -107,6 +111,9 @@ export function BotBuilderForm({
   const [turnTimeoutMinutes, setTurnTimeoutMinutes] = useState(
     String(bot?.turnTimeoutMinutes ?? DEFAULT_TURN_TIMEOUT_MINUTES),
   );
+  const [askBefore, setAskBefore] = useState<AskBeforeRule[]>(
+    bot?.askBefore ?? [],
+  );
 
   const [submitting, setSubmitting] = useState(false);
   const [errorKey, setErrorKey] = useState<ErrorTranslationKey | null>(null);
@@ -176,6 +183,7 @@ export function BotBuilderForm({
           driverType,
           replyLanguage,
           turnTimeoutMinutes: Number(turnTimeoutMinutes),
+          askBefore,
         });
         router.push(`/bots/${created.id}`);
       } else if (bot) {
@@ -190,11 +198,13 @@ export function BotBuilderForm({
           driverType,
           replyLanguage,
           turnTimeoutMinutes: Number(turnTimeoutMinutes),
+          askBefore,
         });
         setName(updated.name);
         setDescription(updated.description);
         setAvatarSeed(updated.avatarSeed);
         setTurnTimeoutMinutes(String(updated.turnTimeoutMinutes));
+        setAskBefore(updated.askBefore ?? []);
         setSavedModel({
           provider: AGENT_ALIASES[updated.llmProvider] ?? updated.llmProvider,
           model: updated.llmModel,
@@ -519,6 +529,16 @@ export function BotBuilderForm({
           required
           onChange={(event) => setTurnTimeoutMinutes(event.target.value)}
         />
+        <div className="border-t border-line pt-4">
+          <AskBeforeEditor
+            value={askBefore}
+            onChange={setAskBefore}
+            allowRaiseBudget={false}
+            canEdit={canEdit}
+            disabled={submitting}
+            hint={t('askBeforeHelp')}
+          />
+        </div>
       </Card>
 
       {canEdit ? (

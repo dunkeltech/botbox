@@ -139,7 +139,9 @@ export function ApprovalsInbox({
                   botName={bot?.name || t('bot')}
                   where={
                     row.conversationId
-                      ? group?.name || t('groupFallback')
+                      ? groups.data
+                        ? group?.name || t('dmFallback')
+                        : undefined
                       : t('workspaceBudget')
                   }
                   avatarSeed={bot?.avatarSeed ?? row.botId}

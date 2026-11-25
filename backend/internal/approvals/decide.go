@@ -119,11 +119,11 @@ func Apply(ctx context.Context, q *db.Queries, approval db.Approval, decision st
 	if err != nil {
 		return nil, err
 	}
-	// Only an approval pause resumes the bot. A turn limit stays in place.
-	// Direct messages do not set group pause flags, so an approved mcp_tool on
-	// a DM still queues continuation when no turn is currently running.
+	// Only an approval pause resumes a group. A turn limit stays in place.
+	// Direct messages do not set group pause flags, so approved DM cards still
+	// queue continuation when their kind can resume a DM turn.
 	if cleared != 1 {
-		if approval.Kind != kindMCPTool {
+		if !resumableDMKind(approval.Kind) {
 			return nil, nil
 		}
 		convType, typeErr := q.GetConversationType(ctx, db.GetConversationTypeParams{
@@ -135,6 +135,15 @@ func Apply(ctx context.Context, q *db.Queries, approval db.Approval, decision st
 		}
 	}
 	return queueResume(ctx, q, approval)
+}
+
+func resumableDMKind(kind string) bool {
+	switch kind {
+	case kindMCPTool, kindNewHost, kindPushProtected, kindCustom:
+		return true
+	default:
+		return false
+	}
 }
 
 func allow(ctx context.Context, q *db.Queries, approval db.Approval, actor pgtype.UUID, now time.Time, opts ApplyOptions) error {

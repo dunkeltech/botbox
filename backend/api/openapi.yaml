@@ -3916,6 +3916,10 @@ components:
           type: string
         turnTimeoutMinutes:
           $ref: '#/components/schemas/BotTurnTimeoutMinutes'
+        askBefore:
+          type: array
+          items:
+            $ref: '#/components/schemas/AskBeforeRule'
         status:
           $ref: '#/components/schemas/BotStatus'
         mood:
@@ -3971,6 +3975,10 @@ components:
           type: string
         turnTimeoutMinutes:
           $ref: '#/components/schemas/BotTurnTimeoutMinutes'
+        askBefore:
+          type: array
+          items:
+            $ref: '#/components/schemas/AskBeforeRule'
 
     UpdateBotRequest:
       type: object
@@ -3994,6 +4002,10 @@ components:
           type: string
         turnTimeoutMinutes:
           $ref: '#/components/schemas/BotTurnTimeoutMinutes'
+        askBefore:
+          type: array
+          items:
+            $ref: '#/components/schemas/AskBeforeRule'
 
     EnvironmentStatus:
       type: string

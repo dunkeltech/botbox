@@ -104,6 +104,38 @@ func (q *Queries) DecideApproval(ctx context.Context, arg DecideApprovalParams) 
 	return result.RowsAffected(), nil
 }
 
+const getApprovalConversation = `-- name: GetApprovalConversation :one
+SELECT id, type, user_id, bot_id, ask_before
+FROM conversations
+WHERE workspace_id = $1 AND id = $2
+`
+
+type GetApprovalConversationParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ID          pgtype.UUID `json:"id"`
+}
+
+type GetApprovalConversationRow struct {
+	ID        pgtype.UUID `json:"id"`
+	Type      string      `json:"type"`
+	UserID    pgtype.UUID `json:"user_id"`
+	BotID     pgtype.UUID `json:"bot_id"`
+	AskBefore []byte      `json:"ask_before"`
+}
+
+func (q *Queries) GetApprovalConversation(ctx context.Context, arg GetApprovalConversationParams) (GetApprovalConversationRow, error) {
+	row := q.db.QueryRow(ctx, getApprovalConversation, arg.WorkspaceID, arg.ID)
+	var i GetApprovalConversationRow
+	err := row.Scan(
+		&i.ID,
+		&i.Type,
+		&i.UserID,
+		&i.BotID,
+		&i.AskBefore,
+	)
+	return i, err
+}
+
 const getApprovalForUpdate = `-- name: GetApprovalForUpdate :one
 SELECT id, workspace_id, bot_id, budget_id, kind, status, decided_by, created_at, decided_at, conversation_id, message_id, payload FROM approvals WHERE workspace_id = $1 AND id = $2 FOR UPDATE
 `

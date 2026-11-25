@@ -50,6 +50,7 @@ type Bot struct {
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 	MemoryAutoSave     bool               `json:"memory_auto_save"`
 	TurnTimeoutMinutes int32              `json:"turn_timeout_minutes"`
+	AskBefore          []byte             `json:"ask_before"`
 }
 
 type BotGitlabInstance struct {

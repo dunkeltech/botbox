@@ -82,6 +82,11 @@ WHERE workspace_id = $1 AND conversation_id = $2 AND kind = 'text'
 ORDER BY position DESC
 LIMIT 1;
 
+-- name: GetApprovalConversation :one
+SELECT id, type, user_id, bot_id, ask_before
+FROM conversations
+WHERE workspace_id = $1 AND id = $2;
+
 -- name: GetBudgetForUpdate :one
 SELECT * FROM budgets WHERE workspace_id = $1 AND id = $2 FOR UPDATE;
 

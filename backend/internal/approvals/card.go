@@ -57,20 +57,20 @@ type cardPayload struct {
 	TriggerMessageID string `json:"triggerMessageId,omitempty"`
 }
 
-// Open inserts one pending approval and a kind=approval message. A direct
-// message, a kind the group did not list, or a duplicate pending payload is
-// ignored. An existing pause is left as it is. The returned ids are new
-// notification rows for the humans who may decide. The caller publishes them
-// after commit.
+// Open inserts one pending approval and a kind=approval message for a group or
+// direct message when that conversation's ask-before rules include the kind. A
+// duplicate pending payload is ignored. An existing group pause is left as it
+// is. The returned ids are new notification rows for the humans who may decide.
+// The caller publishes them after commit.
 func Open(ctx context.Context, q *db.Queries, card Card) ([]uuid.UUID, error) {
-	group, err := q.GetGroup(ctx, db.GetGroupParams{WorkspaceID: card.WorkspaceID, ID: card.ConversationID})
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
+	conv, askRules, ok, err := askRulesForConversation(ctx, q, card.WorkspaceID, card.ConversationID, card.BotID)
+	if err != nil || !ok {
 		return nil, err
 	}
-	if !ruleListed(group.AskBefore, card.Kind) {
+	if conv.Type == "dm" && card.Kind == kindRaiseBudget {
+		return nil, nil
+	}
+	if !ruleListed(askRules, card.Kind) {
 		return nil, nil
 	}
 	payload, err := json.Marshal(cardPayload{
@@ -118,18 +118,35 @@ func Open(ctx context.Context, q *db.Queries, card Card) ([]uuid.UUID, error) {
 	}); err != nil {
 		return nil, err
 	}
-	if err = q.PauseGroupForApproval(ctx, db.PauseGroupForApprovalParams{
-		WorkspaceID: card.WorkspaceID,
-		ID:          card.ConversationID,
-	}); err != nil {
+	if conv.Type == "group" {
+		if err = q.PauseGroupForApproval(ctx, db.PauseGroupForApprovalParams{
+			WorkspaceID: card.WorkspaceID,
+			ID:          card.ConversationID,
+		}); err != nil {
+			return nil, err
+		}
+		return notify.Approval(ctx, q, card.WorkspaceID, card.ConversationID, message.ID, approvalID)
+	}
+	if !conv.UserID.Valid {
+		return nil, nil
+	}
+	nid, err := q.InsertNotification(ctx, db.InsertNotificationParams{
+		WorkspaceID:    card.WorkspaceID,
+		UserID:         conv.UserID,
+		Kind:           "approval",
+		ConversationID: card.ConversationID,
+		MessageID:      message.ID,
+		ApprovalID:     approvalID,
+	})
+	if err != nil {
 		return nil, err
 	}
-	return notify.Approval(ctx, q, card.WorkspaceID, card.ConversationID, message.ID, approvalID)
+	return []uuid.UUID{uuid.UUID(nid.Bytes)}, nil
 }
 
-// NoteBlockedHost records a new_host card when a group turn is running and
-// the group asked before a new host. An allowed host never reaches here.
-// signal runs after commit and may be nil.
+// NoteBlockedHost records a new_host card when a group or DM turn is running
+// and the group or bot asked before a new host. An allowed host never reaches
+// here. signal runs after commit and may be nil.
 func NoteBlockedHost(ctx context.Context, pool *pgxpool.Pool, workspaceID, botID uuid.UUID, host string, signal notify.Signal) error {
 	host, ok := normalizeHost(host)
 	if !ok {
@@ -199,15 +216,12 @@ func NoteReply(ctx context.Context, q *db.Queries, turn db.BotTurn, text string)
 }
 
 func note(ctx context.Context, q *db.Queries, turn db.BotTurn, match func([]byte) []Card) ([]uuid.UUID, error) {
-	group, err := q.GetGroup(ctx, db.GetGroupParams{WorkspaceID: turn.WorkspaceID, ID: turn.ConversationID})
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
+	_, askRules, ok, err := askRulesForConversation(ctx, q, turn.WorkspaceID, turn.ConversationID, turn.BotID)
+	if err != nil || !ok {
 		return nil, err
 	}
 	var ids []uuid.UUID
-	for _, card := range match(group.AskBefore) {
+	for _, card := range match(askRules) {
 		card.WorkspaceID = turn.WorkspaceID
 		card.ConversationID = turn.ConversationID
 		card.BotID = turn.BotID
@@ -219,6 +233,40 @@ func note(ctx context.Context, q *db.Queries, turn db.BotTurn, match func([]byte
 		ids = append(ids, more...)
 	}
 	return ids, nil
+}
+
+func askRulesForConversation(ctx context.Context, q *db.Queries, workspaceID, conversationID, botID pgtype.UUID) (db.GetApprovalConversationRow, []byte, bool, error) {
+	conv, err := q.GetApprovalConversation(ctx, db.GetApprovalConversationParams{
+		WorkspaceID: workspaceID,
+		ID:          conversationID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return db.GetApprovalConversationRow{}, nil, false, nil
+	}
+	if err != nil {
+		return db.GetApprovalConversationRow{}, nil, false, err
+	}
+	switch conv.Type {
+	case "group":
+		return conv, conv.AskBefore, true, nil
+	case "dm":
+		if !conv.BotID.Valid || (botID.Valid && conv.BotID != botID) {
+			return db.GetApprovalConversationRow{}, nil, false, nil
+		}
+		bot, err := q.GetBotByWorkspaceAndID(ctx, db.GetBotByWorkspaceAndIDParams{
+			WorkspaceID: workspaceID,
+			ID:          conv.BotID,
+		})
+		if errors.Is(err, pgx.ErrNoRows) {
+			return db.GetApprovalConversationRow{}, nil, false, nil
+		}
+		if err != nil {
+			return db.GetApprovalConversationRow{}, nil, false, err
+		}
+		return conv, bot.AskBefore, true, nil
+	default:
+		return db.GetApprovalConversationRow{}, nil, false, nil
+	}
 }
 
 func pushMatchesFor(raw []byte, text string) []Card {
