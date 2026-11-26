@@ -7,7 +7,7 @@
 
 ## Context
 
-The [security invariants](../../AGENTS.md#7-security-invariants-never-break-these) keep real API keys, OAuth refresh tokens, and PATs out of bot sandboxes. Every LLM CLI (`claude`, `codex`, `agy`) must operate normally inside the sandbox without seeing real provider credentials (Issue #2 Spike S2).
+The [security invariants](../../AGENTS.md#7-security-invariants-never-break-these) keep real API keys, OAuth refresh tokens, and PATs out of bot sandboxes. Every LLM CLI (`claude`, `codex`, `agy`) must operate normally inside the sandbox without seeing real provider credentials (Phase 0 Spike S2).
 
 ## Options Considered
 
@@ -43,4 +43,4 @@ Retain **Option 3** strictly as an explicit, disabled-by-default workspace opt-i
 ## Consequences
 
 - The default sandbox configuration keeps real LLM secrets outside the sandbox for `agy`.
-- Phase 4 (#6) will wire `llmproxy.Handler` to workspace-encrypted DB credentials and Postgres-backed OAuth refresh token storage.
+- Phase 4 will wire `llmproxy.Handler` to workspace-encrypted DB credentials and Postgres-backed OAuth refresh token storage.

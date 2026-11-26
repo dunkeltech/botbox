@@ -7,7 +7,7 @@
 
 ## Context
 
-Operators reviewing a bot's egress activity log on the **Secrets & network** page need to allow blocked hosts or block permitted hosts in one click (`Issue #31`), and to maintain an explicit per-bot blocklist that works in both `allowlist` and `open` internet modes.
+Operators reviewing a bot's egress activity log on the **Secrets & network** page need to allow blocked hosts or block permitted hosts in one click, and to maintain an explicit per-bot blocklist that works in both `allowlist` and `open` internet modes.
 
 Implementing this safely introduces four non-trivial requirements:
 1. **Deny precedence and wildcard safety:** Explicit blocks must override `open` mode, `allowed_hosts`, and secret-derived hosts. If a host is blocked by a wildcard rule (such as `*.tracking.example`), one-click Allow or a group `new_host` approval must not silently delete or narrow that wildcard and unintentionally unblock sibling subdomains.

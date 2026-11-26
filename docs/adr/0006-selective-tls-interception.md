@@ -7,7 +7,7 @@
 
 ## Context
 
-Beyond LLM APIs, bots run tools like `git clone`, `gh`, `glab`, and HTTP clients against authenticated upstream endpoints without holding real PATs or OAuth tokens in the sandbox (Issue #2 Spike S5). Unconditional TLS MITM across all traffic breaks certificate pinning on third-party binaries and expands attack surface unnecessarily, while passing plaintext credentials into git credential helpers violates zero-secret sandbox isolation.
+Beyond LLM APIs, bots run tools like `git clone`, `gh`, `glab`, and HTTP clients against authenticated upstream endpoints without holding real PATs or OAuth tokens in the sandbox (Phase 0 Spike S5). Unconditional TLS MITM across all traffic breaks certificate pinning on third-party binaries and expands attack surface unnecessarily, while passing plaintext credentials into git credential helpers violates zero-secret sandbox isolation.
 
 ## Options Considered
 

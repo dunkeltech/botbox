@@ -7,7 +7,7 @@
 
 ## Context
 
-Phase 0 (ADR-0005) spiked one `DesktopService` behind gRPC and a local MCP server. Phase 5 ([#7](https://github.com/dunkeltech/botbox/issues/7)) has to finish that path: API-mode providers, CLI registration, a browser tool, human takeover within one second, an action timeline, and screenshot retention. The control lock already lives in Postgres (`environments.control_holder_user_id`).
+Phase 0 (ADR-0005) spiked one `DesktopService` behind gRPC and a local MCP server. Phase 5 has to finish that path: API-mode providers, CLI registration, a browser tool, human takeover within one second, an action timeline, and screenshot retention. The control lock already lives in Postgres (`environments.control_holder_user_id`).
 
 Secrets must stay out of the sandbox, prompts, logs and API error text. Every timeline query is scoped by `workspace_id`.
 

@@ -7,7 +7,7 @@
 
 ## Context
 
-Phase 8 security hardening (#10) requires reviewing sandbox container isolation
+Phase 8 security hardening requires reviewing sandbox container isolation
 (seccomp, capabilities, read-only root filesystems, and host mounts) and
 evaluating gVisor (`runsc`) alongside the default `runc` + custom seccomp
 runtime adopted in [ADR-0038](0038-split-egress-and-chromium-isolation.md).

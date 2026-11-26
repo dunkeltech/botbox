@@ -71,6 +71,8 @@ See the [role rules](../backend/internal/workspaces/rbac.go), the
 - The [design guide](../design/STYLEGUIDE.md) defines UI and accessibility rules.
 - The [runtime and integrations guide](guides/runtime-and-integrations.md) covers
   provider setup, GitLab access, and runtime checks.
-- [GitHub issues](https://github.com/dunkeltech/botbox/issues) track planned work,
-  including the [Kubernetes driver and Helm chart](https://github.com/dunkeltech/botbox/issues/9)
-  and [release hardening](https://github.com/dunkeltech/botbox/issues/10).
+- [GitHub issues](https://github.com/dunkeltech/botbox/issues) track planned work.
+  The [1.0 milestone](https://github.com/dunkeltech/botbox/milestone/1) collects
+  what a production release needs, including
+  [Kubernetes support and a Helm chart](https://github.com/dunkeltech/botbox/issues/1)
+  and a [supported production Docker deployment](https://github.com/dunkeltech/botbox/issues/2).

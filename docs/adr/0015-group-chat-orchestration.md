@@ -20,8 +20,7 @@ and requires both `bot_id` and `budget_id`. The per-bot JetStream queue, pause,
 and workspace or bot budget approvals must keep working.
 
 Groups need several humans, several bots, a turn limit, a loop guard, and
-approval kinds that are not budgets. Issue #8 and the sub-issues #11–#20 are
-the scope. Threads, reactions, file sharing, and external chat systems are not.
+approval kinds that are not budgets. That is the scope of Phase 6. Threads, reactions, file sharing, and external chat systems are not.
 
 ## Options Considered
 

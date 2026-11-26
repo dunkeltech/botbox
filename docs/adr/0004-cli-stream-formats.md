@@ -7,7 +7,7 @@
 
 ## Context
 
-Each bot runtime wraps one of three headless coding CLIs (`claude -p --output-format stream-json --verbose`, `codex exec --json`, `agy -p --output-format stream-json`), each producing different NDJSON schemas and failure modes (Issue #2 Spike S3). The bot engine, NATS JetStream publisher, team chat UI, and budget tracker require one consistent, deterministic Go event model rather than per-CLI UI branches.
+Each bot runtime wraps one of three headless coding CLIs (`claude -p --output-format stream-json --verbose`, `codex exec --json`, `agy -p --output-format stream-json`), each producing different NDJSON schemas and failure modes (Phase 0 Spike S3). The bot engine, NATS JetStream publisher, team chat UI, and budget tracker require one consistent, deterministic Go event model rather than per-CLI UI branches.
 
 ## Options Considered
 
@@ -92,4 +92,4 @@ agy exits 0 after a failed turn.
 ## Consequences
 
 - Adding or updating a CLI runner only touches `backend/internal/engine/stream.go` and its recorded fixtures in `backend/internal/engine/testdata/`.
-- Phase 5 (#7) can map `engine.Event` directly to chat streaming messages, approvals, and spend ledger accounting without vendor-specific logic.
+- Phase 5 can map `engine.Event` directly to chat streaming messages, approvals, and spend ledger accounting without vendor-specific logic.

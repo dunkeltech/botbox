@@ -197,7 +197,7 @@ Use Option A. It replaces the `agy` part of ADR-0003.
   input format.
 - The agent passes `--dangerously-skip-permissions`, as for claude and codex.
   Headless agy cannot ask for permission and would otherwise deny every tool.
-  Per-bot `permissions.allow` rules (issue #6) are still open.
+  Per-bot `permissions.allow` rules do not exist yet.
 - CONNECT to `googleapis.com`, including `play.googleapis.com`, stays denied.
 - **Guardrails.** The SSE filter reads Gemini text parts
   ([ADR-0035](0035-llm-proxy-guardrails.md)):

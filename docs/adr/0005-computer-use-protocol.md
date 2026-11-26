@@ -7,7 +7,7 @@
 
 ## Context
 
-Bots need reliable GUI desktop interaction (`screenshot`, `click`, `type`, `key`) on `DISPLAY=:0` (1280×800) across the two execution styles tested in Issue #2 Spike S4.
+Bots need reliable GUI desktop interaction (`screenshot`, `click`, `type`, `key`) on `DISPLAY=:0` (1280×800) across the two execution styles tested in Phase 0 Spike S4.
 1. Host-orchestrated API loops (`Anthropic` / `OpenAI` computer-use calls driven by the backend engine).
 2. In-sandbox agent CLIs (`claude` and `agy`) calling desktop tools directly inside the sandbox.
 

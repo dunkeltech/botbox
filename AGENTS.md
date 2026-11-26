@@ -9,7 +9,7 @@ Guidance for coding agents and humans working on this repository.
 bot.Box is a multi-user web app for bot computer agents. Each bot is an LLM plus its own sandboxed Linux desktop; bots work alone or together with humans in a Slack-style team chat.
 
 - **Overview and permissions** in [`docs/overview.md`](docs/overview.md). The HTTP API contract is in [`backend/api/openapi.yaml`](backend/api/openapi.yaml).
-- **Roadmap:** GitHub issues, one per phase ([#2](https://github.com/dunkeltech/botbox/issues/2)–[#10](https://github.com/dunkeltech/botbox/issues/10), design hub [#1](https://github.com/dunkeltech/botbox/issues/1)): https://github.com/dunkeltech/botbox/issues
+- **Roadmap:** GitHub issues; the open work for 1.0 is in the [1.0 milestone](https://github.com/dunkeltech/botbox/milestone/1): https://github.com/dunkeltech/botbox/issues
 - **Design:** [`design/STYLEGUIDE.md`](design/STYLEGUIDE.md), [`design/tokens.json`](design/tokens.json), screens in [`design/README.md`](design/README.md)
 - **Decisions:** ADRs in `docs/adr/`
 
@@ -91,13 +91,11 @@ make lint
 make test
 ```
 
-The Makefile targets and the repository layout below are set up in Phase 0 ([#2](https://github.com/dunkeltech/botbox/issues/2)). Until then, follow the issue.
-
 ```
 backend/            Go module: cmd/api, cmd/agent, cmd/egress-proxy, internal/…, db/, proto/
 frontend/           Next.js app (App Router, Tailwind, next-intl)
 images/sandbox/     bot computer image
-deploy/             Helm chart
+deploy/             monitoring config (Prometheus alerts, Grafana dashboard)
 docs/adr/           architecture decision records
 design/             styleguide, tokens, screens, canvas sources
 ```
