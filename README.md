@@ -6,6 +6,8 @@ bot.Box is a self-hosted web app for running AI agents in shared workspaces.
 Each bot runs an agent CLI in its own isolated Linux desktop. You can watch the
 desktop in your browser, take control, and hand it back to the bot.
 
+Project website: [botbox.dunkel.tech](https://botbox.dunkel.tech)
+
 - Chat with bots in direct messages or bring people and several bots into a
   group chat.
 - Open a bot's desktop, terminal, and files from the browser.
