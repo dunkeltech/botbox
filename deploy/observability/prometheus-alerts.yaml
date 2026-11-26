@@ -1,0 +1,73 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+groups:
+  - name: botbox-api
+    rules:
+      - alert: BotboxAPIHigh5xxRate
+        expr: |
+          (
+            sum(rate(botbox_api_request_duration_seconds_count{status=~"5.."}[5m]))
+            /
+            clamp_min(sum(rate(botbox_api_request_duration_seconds_count[5m])), 1)
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "bot.Box API 5xx rate above 5%"
+          description: "More than 5% of HTTP requests returned 5xx over the last 5 minutes."
+
+      - alert: BotboxAPIHighLatencyP95
+        expr: |
+          histogram_quantile(0.95, sum(rate(botbox_api_request_duration_seconds_bucket[5m])) by (le)) > 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "bot.Box API p95 latency above 2s"
+          description: "The 95th percentile HTTP request latency exceeded 2 seconds for 10 minutes."
+
+  - name: botbox-sandboxes-and-turns
+    rules:
+      - alert: BotboxSandboxesInErrorState
+        expr: sum(botbox_sandboxes_state{state="error"}) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "bot.Box sandboxes stuck in error state"
+          description: "One or more bot sandboxes have been in error state for more than 5 minutes."
+
+      - alert: BotboxTurnFailureRateHigh
+        expr: |
+          (
+            sum(rate(botbox_turns_total{status="failed"}[15m]))
+            /
+            clamp_min(sum(rate(botbox_turns_total[15m])), 1)
+          ) > 0.2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "bot.Box turn failure rate above 20%"
+          description: "More than 20% of bot turns failed over the last 15 minutes."
+
+      - alert: BotboxTurnQueueBacklog
+        expr: sum(botbox_turn_queue_depth) > 25
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "bot.Box turn queue backlog"
+          description: "Queued bot turns remained above 25 for 10 minutes."
+
+  - name: botbox-egress
+    rules:
+      - alert: BotboxEgressDenialSpike
+        expr: sum(rate(botbox_egress_decisions_total{action=~"blocked_host|llm_blocked|llm_guardrail_blocked"}[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Elevated egress proxy denials"
+          description: "Sandboxes are triggering more than 1 blocked egress or guardrail decision per second."

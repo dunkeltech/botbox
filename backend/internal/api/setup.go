@@ -44,7 +44,7 @@ func (s *server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.setupRL.Allow(clientIP(r)) {
+	if !s.setupRL.Allow(s.clientIP(r)) {
 		writeError(w, s.logger, http.StatusTooManyRequests, "rate_limited", "too many setup attempts; try again later")
 		return
 	}

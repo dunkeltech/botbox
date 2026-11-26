@@ -28,11 +28,14 @@ func TestWorkerCAPublishesOnlyStablePublicCertificate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = LoadWorkerCA(rotating, "workspace", "bot-one", privateDir, publicDir); err != nil {
-		t.Fatal(err)
-	}
 	rotated, err := secrets.NewKeyRing("new", map[string][]byte{"new": newKey})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = LoadWorkerCA(rotated, "workspace", "bot-one", privateDir, publicDir); err == nil {
+		t.Fatal("worker started with an unrotated CA after the old key retired")
+	}
+	if _, err = LoadWorkerCA(rotating, "workspace", "bot-one", privateDir, publicDir); err != nil {
 		t.Fatal(err)
 	}
 	restarted, err := LoadWorkerCA(rotated, "workspace", "bot-one", privateDir, publicDir)
@@ -57,5 +60,18 @@ func TestWorkerCAPublishesOnlyStablePublicCertificate(t *testing.T) {
 	}
 	if _, err := LoadWorkerCA(rotated, "workspace", "bot-two", privateDir, publicDir); err == nil {
 		t.Fatal("worker accepted another bot's signing key")
+	}
+	if _, err := LoadWorkerCA(rotated, "other-workspace", "bot-one", privateDir, publicDir); err == nil {
+		t.Fatal("worker accepted another workspace's signing key")
+	}
+	info, err := os.Stat(filepath.Join(privateDir, "ca.envelope"))
+	if err != nil {
+		t.Fatalf("stat ca.envelope: %v", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("ca.envelope permissions = %04o, want 0600", info.Mode().Perm())
+	}
+	if _, err := os.Stat(filepath.Join(publicDir, "ca.envelope")); !os.IsNotExist(err) {
+		t.Fatal("private ca.envelope must not appear in public directory")
 	}
 }

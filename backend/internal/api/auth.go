@@ -57,7 +57,7 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ip := clientIP(r)
+	ip := s.clientIP(r)
 	if !s.loginIPRL.Allow(ip) {
 		writeError(w, s.logger, http.StatusTooManyRequests, "rate_limited", "too many login attempts; try again later")
 		return
@@ -70,7 +70,7 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	email := auth.NormalizeEmail(string(req.Email))
 	if email == "" || req.Password == "" {
-		writeError(w, s.logger, http.StatusUnauthorized, "auth.invalid_credentials", "invalid email or password")
+		s.invalidLogin(w)
 		return
 	}
 
@@ -79,13 +79,43 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	now := s.now().UTC()
+	existingUser, lookupErr := s.queries.GetUserByEmail(r.Context(), email)
+	locked := lookupErr == nil && existingUser.LockedUntil.Valid && existingUser.LockedUntil.Time.After(now)
 	user, err := s.authProvider.Authenticate(r.Context(), auth.Credentials{
 		Email:    email,
 		Password: req.Password,
 	})
+	if locked {
+		s.invalidLogin(w)
+		return
+	}
 	if err != nil {
 		if errors.Is(err, auth.ErrInvalidCredentials) {
-			writeError(w, s.logger, http.StatusUnauthorized, "auth.invalid_credentials", "invalid email or password")
+			if lookupErr == nil {
+				threshold := s.loginLockoutThreshold
+				if threshold < 1 {
+					threshold = 1
+				}
+				// #nosec G115 -- threshold is a small positive config bound
+				res, recErr := s.queries.RecordFailedLogin(r.Context(), db.RecordFailedLoginParams{
+					ID:        existingUser.ID,
+					AsOf:      toPGTimestamptz(now),
+					Threshold: int32(threshold),
+					LockUntil: toPGTimestamptz(now.Add(s.loginLockoutDuration)),
+				})
+				if recErr != nil && !errors.Is(recErr, pgx.ErrNoRows) {
+					s.logger.Error("record failed login attempt", "err", recErr)
+				} else if recErr == nil && res.LockedUntil.Valid {
+					uid := fromPGUUID(existingUser.ID)
+					if auditErr := recordAudit(r.Context(), s.queries, nil, &uid, "auth.login_locked", "user", &uid, map[string]any{
+						"attempts": res.FailedLoginAttempts,
+					}); auditErr != nil {
+						s.logger.Error("record login lockout audit", "err", auditErr)
+					}
+				}
+			}
+			s.invalidLogin(w)
 			return
 		}
 		s.logger.Error("authenticate user", "err", err)
@@ -102,6 +132,20 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	defer rollbackTx(r.Context(), tx)
 
 	txq := s.queries.WithTx(tx)
+	// Serialize session issuance with a concurrent failed attempt that locks the account.
+	cleared, err := txq.ClearFailedLogins(r.Context(), db.ClearFailedLoginsParams{
+		ID:   toPGUUID(user.ID),
+		AsOf: toPGTimestamptz(s.now()),
+	})
+	if err != nil {
+		s.logger.Error("clear failed logins", "err", err)
+		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to create session")
+		return
+	}
+	if cleared == 0 {
+		s.invalidLogin(w)
+		return
+	}
 	plainRefresh, _, err := s.issueRefreshTokenTx(r.Context(), txq, user.ID, nil)
 	if err != nil {
 		s.logger.Error("issue refresh token", "err", err)
@@ -151,12 +195,16 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *server) invalidLogin(w http.ResponseWriter) {
+	writeError(w, s.logger, http.StatusUnauthorized, "auth.invalid_credentials", "invalid email or password")
+}
+
 func (s *server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	if !s.ensureDB(w) {
 		return
 	}
 
-	if !s.refreshRL.Allow(clientIP(r)) {
+	if !s.refreshRL.Allow(s.clientIP(r)) {
 		writeError(w, s.logger, http.StatusTooManyRequests, "rate_limited", "too many refresh attempts; try again later")
 		return
 	}

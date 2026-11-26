@@ -13,7 +13,26 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/bots"
 	"github.com/google/uuid"
 	"github.com/nats-io/nats.go"
+	"go.opentelemetry.io/otel"
 )
+
+type natsHeaderCarrier nats.Header
+
+func (c natsHeaderCarrier) Get(key string) string {
+	return nats.Header(c).Get(key)
+}
+
+func (c natsHeaderCarrier) Set(key, value string) {
+	nats.Header(c).Set(key, value)
+}
+
+func (c natsHeaderCarrier) Keys() []string {
+	keys := make([]string, 0, len(c))
+	for k := range c {
+		keys = append(keys, k)
+	}
+	return keys
+}
 
 // TurnNotification contains identifiers only; private message text stays in Postgres.
 type TurnNotification struct {
@@ -87,7 +106,11 @@ func OpenQueueWithConcurrency(url string, concurrency int, process func(context.
 				_ = msg.Term()
 				return
 			}
-			ctx, cancel := context.WithTimeout(q.ctx, bots.MaxTurnTimeout+5*time.Minute)
+			jobCtx := q.ctx
+			if len(msg.Header) > 0 {
+				jobCtx = otel.GetTextMapPropagator().Extract(jobCtx, natsHeaderCarrier(msg.Header))
+			}
+			ctx, cancel := context.WithTimeout(jobCtx, bots.MaxTurnTimeout+5*time.Minute)
 			// The message may have waited locally for a worker slot.
 			_ = msg.InProgress()
 			progressDone := make(chan struct{})
@@ -149,7 +172,11 @@ func (q *Queue) Enqueue(ctx context.Context, ws, bot, turn uuid.UUID) error {
 	// Secret fulfillment queues the same turn again. A turn-based message ID
 	// would discard that continuation inside JetStream's duplicate window.
 	// The worker's persisted claim makes repeated notifications harmless.
-	_, err = q.js.Publish("turns."+ws.String()+"."+bot.String(), data, nats.Context(ctx))
+	msg := nats.NewMsg("turns." + ws.String() + "." + bot.String())
+	msg.Data = data
+	msg.Header = nats.Header{}
+	otel.GetTextMapPropagator().Inject(ctx, natsHeaderCarrier(msg.Header))
+	_, err = q.js.PublishMsg(msg, nats.Context(ctx))
 	return err
 }
 

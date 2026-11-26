@@ -11,10 +11,13 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dunkeltech/botbox/backend/internal/netguard"
 )
 
 // ErrSecretNotFound indicates no credential is configured for the bot and provider.
@@ -144,8 +147,9 @@ type errorEnvelope struct {
 }
 
 type proxyHandler struct {
-	resolve SecretResolver
-	options Options
+	resolve         SecretResolver
+	options         Options
+	usingSafeClient bool
 
 	mu sync.Mutex
 	// refuseGeminiUntil is set after a guardrail stopped a Gemini stream.
@@ -159,6 +163,32 @@ type proxyRoute struct {
 	path     string
 }
 
+// NewSafeHTTPClient builds an HTTP client that resolves public DNS via netguard,
+// dials literal validated IPs (defeating SSRF and DNS rebinding), and refuses redirects.
+func NewSafeHTTPClient(resolver netguard.Resolver, timeout time.Duration) *http.Client {
+	if resolver == nil {
+		resolver = net.DefaultResolver
+	}
+	if timeout <= 0 {
+		timeout = 10 * time.Minute
+	}
+	dialer := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
+	transport := &http.Transport{
+		Proxy: nil,
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return netguard.DialPublic(ctx, resolver, dialer.DialContext, network, addr)
+		},
+		TLSHandshakeTimeout: 10 * time.Second,
+	}
+	return &http.Client{
+		Timeout:   timeout,
+		Transport: transport,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return errors.New("upstream redirects are disallowed")
+		},
+	}
+}
+
 // NewHandler builds an HTTP handler routing /llm/{provider}/* to the real upstream
 // while stripping placeholder auth headers and injecting real secrets server-side.
 func NewHandler(resolve SecretResolver, opts *Options) http.Handler {
@@ -169,8 +199,10 @@ func NewHandler(resolve SecretResolver, opts *Options) http.Handler {
 	if options.BotIDHeader == "" {
 		options.BotIDHeader = "X-Botbox-Bot-ID"
 	}
+	usingSafeClient := false
 	if options.Client == nil {
-		options.Client = http.DefaultClient
+		options.Client = NewSafeHTTPClient(net.DefaultResolver, 10*time.Minute)
+		usingSafeClient = true
 	}
 	if options.Logger == nil {
 		options.Logger = slog.Default()
@@ -178,7 +210,7 @@ func NewHandler(resolve SecretResolver, opts *Options) http.Handler {
 	if options.Now == nil {
 		options.Now = time.Now
 	}
-	return &proxyHandler{resolve: resolve, options: options}
+	return &proxyHandler{resolve: resolve, options: options, usingSafeClient: usingSafeClient}
 }
 
 func (h *proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {

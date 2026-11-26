@@ -49,7 +49,7 @@ SET control_holder_user_id = $2,
     updated_at = now()
 WHERE bot_id = $1
   AND (control_holder_user_id IS NULL OR control_holder_user_id = $2)
-RETURNING bot_id, driver, env_id, status, image, cpu_millis, memory_mib, volume_ref, control_holder_user_id, control_note, started_at, updated_at
+RETURNING bot_id, driver, env_id, status, image, cpu_millis, memory_mib, volume_ref, control_holder_user_id, control_note, started_at, updated_at, last_activity_at
 `
 
 type ClaimEnvironmentControlParams struct {
@@ -73,8 +73,40 @@ func (q *Queries) ClaimEnvironmentControl(ctx context.Context, arg ClaimEnvironm
 		&i.ControlNote,
 		&i.StartedAt,
 		&i.UpdatedAt,
+		&i.LastActivityAt,
 	)
 	return i, err
+}
+
+const countEnvironmentsByState = `-- name: CountEnvironmentsByState :many
+SELECT status, count(*)::bigint AS total
+FROM environments
+GROUP BY status
+`
+
+type CountEnvironmentsByStateRow struct {
+	Status string `json:"status"`
+	Total  int64  `json:"total"`
+}
+
+func (q *Queries) CountEnvironmentsByState(ctx context.Context) ([]CountEnvironmentsByStateRow, error) {
+	rows, err := q.db.Query(ctx, countEnvironmentsByState)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CountEnvironmentsByStateRow
+	for rows.Next() {
+		var i CountEnvironmentsByStateRow
+		if err := rows.Scan(&i.Status, &i.Total); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getEnvironmentByWorkspaceAndBot = `-- name: GetEnvironmentByWorkspaceAndBot :one
@@ -89,6 +121,7 @@ SELECT e.bot_id,
        e.control_holder_user_id,
        e.control_note,
        e.started_at,
+       e.last_activity_at,
        e.updated_at,
        COALESCE(u.display_name, '')::text AS control_holder_display_name,
        COALESCE(u.email, '')::text AS control_holder_email
@@ -115,6 +148,7 @@ type GetEnvironmentByWorkspaceAndBotRow struct {
 	ControlHolderUserID      pgtype.UUID        `json:"control_holder_user_id"`
 	ControlNote              string             `json:"control_note"`
 	StartedAt                pgtype.Timestamptz `json:"started_at"`
+	LastActivityAt           pgtype.Timestamptz `json:"last_activity_at"`
 	UpdatedAt                pgtype.Timestamptz `json:"updated_at"`
 	ControlHolderDisplayName string             `json:"control_holder_display_name"`
 	ControlHolderEmail       string             `json:"control_holder_email"`
@@ -135,6 +169,7 @@ func (q *Queries) GetEnvironmentByWorkspaceAndBot(ctx context.Context, arg GetEn
 		&i.ControlHolderUserID,
 		&i.ControlNote,
 		&i.StartedAt,
+		&i.LastActivityAt,
 		&i.UpdatedAt,
 		&i.ControlHolderDisplayName,
 		&i.ControlHolderEmail,
@@ -149,7 +184,7 @@ SELECT b.id, $1, '', 'stopped', $2,
 FROM bots b
 WHERE b.workspace_id = $6 AND b.id = $7
 ON CONFLICT (bot_id) DO UPDATE SET bot_id = EXCLUDED.bot_id
-RETURNING bot_id, driver, env_id, status, image, cpu_millis, memory_mib, volume_ref, control_holder_user_id, control_note, started_at, updated_at
+RETURNING bot_id, driver, env_id, status, image, cpu_millis, memory_mib, volume_ref, control_holder_user_id, control_note, started_at, updated_at, last_activity_at
 `
 
 type InitializeEnvironmentParams struct {
@@ -186,12 +221,13 @@ func (q *Queries) InitializeEnvironment(ctx context.Context, arg InitializeEnvir
 		&i.ControlNote,
 		&i.StartedAt,
 		&i.UpdatedAt,
+		&i.LastActivityAt,
 	)
 	return i, err
 }
 
 const listEnvironmentsByWorkspace = `-- name: ListEnvironmentsByWorkspace :many
-SELECT e.bot_id, e.driver, e.env_id, e.status, e.image, e.cpu_millis, e.memory_mib, e.volume_ref, e.control_holder_user_id, e.control_note, e.started_at, e.updated_at
+SELECT e.bot_id, e.driver, e.env_id, e.status, e.image, e.cpu_millis, e.memory_mib, e.volume_ref, e.control_holder_user_id, e.control_note, e.started_at, e.updated_at, e.last_activity_at
 FROM environments e
 JOIN bots b ON b.id = e.bot_id
 WHERE b.workspace_id = $1
@@ -219,6 +255,7 @@ func (q *Queries) ListEnvironmentsByWorkspace(ctx context.Context, workspaceID p
 			&i.ControlNote,
 			&i.StartedAt,
 			&i.UpdatedAt,
+			&i.LastActivityAt,
 		); err != nil {
 			return nil, err
 		}
@@ -231,7 +268,7 @@ func (q *Queries) ListEnvironmentsByWorkspace(ctx context.Context, workspaceID p
 }
 
 const listEnvironmentsForReconcile = `-- name: ListEnvironmentsForReconcile :many
-SELECT e.bot_id, e.driver, e.env_id, e.status, e.image, e.cpu_millis, e.memory_mib, e.volume_ref, e.control_holder_user_id, e.control_note, e.started_at, e.updated_at, b.workspace_id
+SELECT e.bot_id, e.driver, e.env_id, e.status, e.image, e.cpu_millis, e.memory_mib, e.volume_ref, e.control_holder_user_id, e.control_note, e.started_at, e.updated_at, e.last_activity_at, b.workspace_id
 FROM environments e
 JOIN bots b ON b.id = e.bot_id
 `
@@ -249,6 +286,7 @@ type ListEnvironmentsForReconcileRow struct {
 	ControlNote         string             `json:"control_note"`
 	StartedAt           pgtype.Timestamptz `json:"started_at"`
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	LastActivityAt      pgtype.Timestamptz `json:"last_activity_at"`
 	WorkspaceID         pgtype.UUID        `json:"workspace_id"`
 }
 
@@ -274,6 +312,7 @@ func (q *Queries) ListEnvironmentsForReconcile(ctx context.Context) ([]ListEnvir
 			&i.ControlNote,
 			&i.StartedAt,
 			&i.UpdatedAt,
+			&i.LastActivityAt,
 			&i.WorkspaceID,
 		); err != nil {
 			return nil, err
@@ -286,12 +325,81 @@ func (q *Queries) ListEnvironmentsForReconcile(ctx context.Context) ([]ListEnvir
 	return items, nil
 }
 
+const listIdleRunningEnvironments = `-- name: ListIdleRunningEnvironments :many
+SELECT e.bot_id,
+       b.workspace_id,
+       e.env_id,
+       e.last_activity_at,
+       e.started_at,
+       e.control_holder_user_id,
+       w.sandbox_idle_timeout_minutes
+FROM environments e
+JOIN bots b ON b.id = e.bot_id
+JOIN workspaces w ON w.id = b.workspace_id
+WHERE e.status = 'running'
+  AND e.control_holder_user_id IS NULL
+  AND NOT EXISTS (
+      SELECT 1
+      FROM bot_turns bt
+      WHERE bt.workspace_id = b.workspace_id
+        AND bt.bot_id = b.id
+        AND bt.status IN ('queued', 'running', 'waiting_secret')
+  )
+`
+
+type ListIdleRunningEnvironmentsRow struct {
+	BotID                     pgtype.UUID        `json:"bot_id"`
+	WorkspaceID               pgtype.UUID        `json:"workspace_id"`
+	EnvID                     string             `json:"env_id"`
+	LastActivityAt            pgtype.Timestamptz `json:"last_activity_at"`
+	StartedAt                 pgtype.Timestamptz `json:"started_at"`
+	ControlHolderUserID       pgtype.UUID        `json:"control_holder_user_id"`
+	SandboxIdleTimeoutMinutes pgtype.Int4        `json:"sandbox_idle_timeout_minutes"`
+}
+
+func (q *Queries) ListIdleRunningEnvironments(ctx context.Context) ([]ListIdleRunningEnvironmentsRow, error) {
+	rows, err := q.db.Query(ctx, listIdleRunningEnvironments)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListIdleRunningEnvironmentsRow
+	for rows.Next() {
+		var i ListIdleRunningEnvironmentsRow
+		if err := rows.Scan(
+			&i.BotID,
+			&i.WorkspaceID,
+			&i.EnvID,
+			&i.LastActivityAt,
+			&i.StartedAt,
+			&i.ControlHolderUserID,
+			&i.SandboxIdleTimeoutMinutes,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockHostCapacity = `-- name: LockHostCapacity :exec
+SELECT pg_advisory_xact_lock(7428102)
+`
+
+func (q *Queries) LockHostCapacity(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, lockHostCapacity)
+	return err
+}
+
 const markEnvironmentStopped = `-- name: MarkEnvironmentStopped :one
 UPDATE environments e
 SET status = 'stopped', started_at = NULL, control_holder_user_id = NULL, updated_at = now()
 FROM bots b
 WHERE e.bot_id = b.id AND b.workspace_id = $1 AND b.id = $2
-RETURNING e.bot_id, e.driver, e.env_id, e.status, e.image, e.cpu_millis, e.memory_mib, e.volume_ref, e.control_holder_user_id, e.control_note, e.started_at, e.updated_at
+RETURNING e.bot_id, e.driver, e.env_id, e.status, e.image, e.cpu_millis, e.memory_mib, e.volume_ref, e.control_holder_user_id, e.control_note, e.started_at, e.updated_at, e.last_activity_at
 `
 
 type MarkEnvironmentStoppedParams struct {
@@ -315,6 +423,58 @@ func (q *Queries) MarkEnvironmentStopped(ctx context.Context, arg MarkEnvironmen
 		&i.ControlNote,
 		&i.StartedAt,
 		&i.UpdatedAt,
+		&i.LastActivityAt,
+	)
+	return i, err
+}
+
+const markIdleEnvironmentStopped = `-- name: MarkIdleEnvironmentStopped :one
+UPDATE environments e
+SET status = 'stopped', started_at = NULL, updated_at = now()
+FROM bots b
+JOIN workspaces w ON w.id = b.workspace_id
+WHERE e.bot_id = b.id AND b.workspace_id = $1 AND b.id = $2
+  AND e.status = 'running' AND e.env_id <> '' AND e.control_holder_user_id IS NULL
+  AND COALESCE(w.sandbox_idle_timeout_minutes * interval '1 minute', $3::interval) > interval '0'
+  AND e.last_activity_at <= $4::timestamptz
+      - COALESCE(w.sandbox_idle_timeout_minutes * interval '1 minute', $3::interval)
+  AND NOT EXISTS (
+      SELECT 1 FROM bot_turns t
+      WHERE t.workspace_id = b.workspace_id AND t.bot_id = b.id
+        AND t.status IN ('queued', 'running', 'waiting_secret')
+  )
+RETURNING e.bot_id, e.driver, e.env_id, e.status, e.image, e.cpu_millis, e.memory_mib, e.volume_ref, e.control_holder_user_id, e.control_note, e.started_at, e.updated_at, e.last_activity_at
+`
+
+type MarkIdleEnvironmentStoppedParams struct {
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	BotID          pgtype.UUID        `json:"bot_id"`
+	DefaultTimeout pgtype.Interval    `json:"default_timeout"`
+	AsOf           pgtype.Timestamptz `json:"as_of"`
+}
+
+func (q *Queries) MarkIdleEnvironmentStopped(ctx context.Context, arg MarkIdleEnvironmentStoppedParams) (Environment, error) {
+	row := q.db.QueryRow(ctx, markIdleEnvironmentStopped,
+		arg.WorkspaceID,
+		arg.BotID,
+		arg.DefaultTimeout,
+		arg.AsOf,
+	)
+	var i Environment
+	err := row.Scan(
+		&i.BotID,
+		&i.Driver,
+		&i.EnvID,
+		&i.Status,
+		&i.Image,
+		&i.CpuMillis,
+		&i.MemoryMib,
+		&i.VolumeRef,
+		&i.ControlHolderUserID,
+		&i.ControlNote,
+		&i.StartedAt,
+		&i.UpdatedAt,
+		&i.LastActivityAt,
 	)
 	return i, err
 }
@@ -326,7 +486,7 @@ SET control_holder_user_id = NULL,
     updated_at = now()
 WHERE bot_id = $1
   AND (control_holder_user_id = $2 OR $4::boolean = true)
-RETURNING bot_id, driver, env_id, status, image, cpu_millis, memory_mib, volume_ref, control_holder_user_id, control_note, started_at, updated_at
+RETURNING bot_id, driver, env_id, status, image, cpu_millis, memory_mib, volume_ref, control_holder_user_id, control_note, started_at, updated_at, last_activity_at
 `
 
 type ReleaseEnvironmentControlParams struct {
@@ -357,8 +517,49 @@ func (q *Queries) ReleaseEnvironmentControl(ctx context.Context, arg ReleaseEnvi
 		&i.ControlNote,
 		&i.StartedAt,
 		&i.UpdatedAt,
+		&i.LastActivityAt,
 	)
 	return i, err
+}
+
+const runningEnvironmentCapacity = `-- name: RunningEnvironmentCapacity :one
+SELECT count(*)::bigint AS running_count,
+       COALESCE(sum(memory_mib), 0)::bigint AS running_memory_mib
+FROM environments
+WHERE status IN ('starting', 'running')
+  AND bot_id <> $1
+`
+
+type RunningEnvironmentCapacityRow struct {
+	RunningCount     int64 `json:"running_count"`
+	RunningMemoryMib int64 `json:"running_memory_mib"`
+}
+
+func (q *Queries) RunningEnvironmentCapacity(ctx context.Context, excludeBotID pgtype.UUID) (RunningEnvironmentCapacityRow, error) {
+	row := q.db.QueryRow(ctx, runningEnvironmentCapacity, excludeBotID)
+	var i RunningEnvironmentCapacityRow
+	err := row.Scan(&i.RunningCount, &i.RunningMemoryMib)
+	return i, err
+}
+
+const touchEnvironmentActivity = `-- name: TouchEnvironmentActivity :exec
+UPDATE environments e
+SET last_activity_at = $1::timestamptz
+FROM bots b
+WHERE e.bot_id = b.id
+  AND b.workspace_id = $2
+  AND b.id = $3
+`
+
+type TouchEnvironmentActivityParams struct {
+	AsOf        pgtype.Timestamptz `json:"as_of"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	BotID       pgtype.UUID        `json:"bot_id"`
+}
+
+func (q *Queries) TouchEnvironmentActivity(ctx context.Context, arg TouchEnvironmentActivityParams) error {
+	_, err := q.db.Exec(ctx, touchEnvironmentActivity, arg.AsOf, arg.WorkspaceID, arg.BotID)
+	return err
 }
 
 const updateEnvironmentStatus = `-- name: UpdateEnvironmentStatus :one
@@ -367,7 +568,7 @@ SET status = $2,
     started_at = $3,
     updated_at = now()
 WHERE bot_id = $1
-RETURNING bot_id, driver, env_id, status, image, cpu_millis, memory_mib, volume_ref, control_holder_user_id, control_note, started_at, updated_at
+RETURNING bot_id, driver, env_id, status, image, cpu_millis, memory_mib, volume_ref, control_holder_user_id, control_note, started_at, updated_at, last_activity_at
 `
 
 type UpdateEnvironmentStatusParams struct {
@@ -392,6 +593,7 @@ func (q *Queries) UpdateEnvironmentStatus(ctx context.Context, arg UpdateEnviron
 		&i.ControlNote,
 		&i.StartedAt,
 		&i.UpdatedAt,
+		&i.LastActivityAt,
 	)
 	return i, err
 }
@@ -408,9 +610,10 @@ INSERT INTO environments (
     volume_ref,
     control_holder_user_id,
     control_note,
-    started_at
+    started_at,
+    last_activity_at
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, COALESCE($11, now()))
 ON CONFLICT (bot_id) DO UPDATE SET
     driver = EXCLUDED.driver,
     env_id = EXCLUDED.env_id,
@@ -422,8 +625,9 @@ ON CONFLICT (bot_id) DO UPDATE SET
     control_holder_user_id = EXCLUDED.control_holder_user_id,
     control_note = EXCLUDED.control_note,
     started_at = EXCLUDED.started_at,
+    last_activity_at = COALESCE(EXCLUDED.started_at, now()),
     updated_at = now()
-RETURNING bot_id, driver, env_id, status, image, cpu_millis, memory_mib, volume_ref, control_holder_user_id, control_note, started_at, updated_at
+RETURNING bot_id, driver, env_id, status, image, cpu_millis, memory_mib, volume_ref, control_holder_user_id, control_note, started_at, updated_at, last_activity_at
 `
 
 type UpsertEnvironmentParams struct {
@@ -468,6 +672,7 @@ func (q *Queries) UpsertEnvironment(ctx context.Context, arg UpsertEnvironmentPa
 		&i.ControlNote,
 		&i.StartedAt,
 		&i.UpdatedAt,
+		&i.LastActivityAt,
 	)
 	return i, err
 }

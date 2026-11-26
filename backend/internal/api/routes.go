@@ -5,6 +5,7 @@ package api
 import (
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -22,33 +23,39 @@ import (
 )
 
 type server struct {
-	chatRL            *auth.RateLimiter
-	chatEvents        ChatEvents
-	turnQueue         TurnQueue
-	logger            *slog.Logger
-	pool              *pgxpool.Pool
-	queries           *db.Queries
-	jwt               *auth.JWTService
-	authProvider      auth.Provider
-	argon2            auth.Argon2Params
-	setup             *auth.SetupManager
-	setupRL           *auth.RateLimiter
-	loginIPRL         *auth.RateLimiter
-	loginEmailRL      *auth.RateLimiter
-	refreshRL         *auth.RateLimiter
-	compute           compute.Driver
-	authBroker        authbroker.Client
-	ticketSigner      *vncrelay.Signer
-	keyRing           *secrets.KeyRing
-	watchersMu        sync.RWMutex
-	watchers          map[uuid.UUID]map[uuid.UUID]watcherEntry
-	cookieSecure      bool
-	publicBaseURL     string
-	egressAckTimeout  time.Duration
-	mcpUpstreamClient *mcpproxy.UpstreamClient
-	codexPlan         *codexplan.Service
-	codexPairRL       *auth.RateLimiter
-	now               func() time.Time
+	chatRL                    *auth.RateLimiter
+	chatEvents                ChatEvents
+	turnQueue                 TurnQueue
+	logger                    *slog.Logger
+	pool                      *pgxpool.Pool
+	queries                   *db.Queries
+	jwt                       *auth.JWTService
+	authProvider              auth.Provider
+	argon2                    auth.Argon2Params
+	setup                     *auth.SetupManager
+	setupRL                   *auth.RateLimiter
+	loginIPRL                 *auth.RateLimiter
+	loginEmailRL              *auth.RateLimiter
+	refreshRL                 *auth.RateLimiter
+	compute                   compute.Driver
+	authBroker                authbroker.Client
+	ticketSigner              *vncrelay.Signer
+	keyRing                   *secrets.KeyRing
+	watchersMu                sync.RWMutex
+	watchers                  map[uuid.UUID]map[uuid.UUID]watcherEntry
+	cookieSecure              bool
+	publicBaseURL             string
+	trustedProxies            []netip.Prefix
+	loginLockoutThreshold     int
+	loginLockoutDuration      time.Duration
+	egressAckTimeout          time.Duration
+	defaultSandboxIdleTimeout time.Duration
+	maxRunningSandboxes       int
+	maxSandboxMemoryMiB       int
+	mcpUpstreamClient         *mcpproxy.UpstreamClient
+	codexPlan                 *codexplan.Service
+	codexPairRL               *auth.RateLimiter
+	now                       func() time.Time
 }
 
 func newServer(cfg Config, logger *slog.Logger) *server {
@@ -80,7 +87,7 @@ func newServer(cfg Config, logger *slog.Logger) *server {
 
 	authProvider := cfg.AuthProvider
 	if authProvider == nil && queries != nil && jwtSvc != nil {
-		lp, err := auth.NewLocalProvider(&pgUserStore{queries: queries}, jwtSvc, params)
+		lp, err := auth.NewLocalProvider(&pgUserStore{queries: queries, now: now}, jwtSvc, params)
 		if err != nil {
 			logger.Error("failed to initialize local auth provider", "err", err)
 		} else {
@@ -132,33 +139,47 @@ func newServer(cfg Config, logger *slog.Logger) *server {
 	if egressAckTimeout <= 0 {
 		egressAckTimeout = 1500 * time.Millisecond
 	}
+	lockoutThreshold := cfg.LoginLockoutThreshold
+	if lockoutThreshold <= 0 {
+		lockoutThreshold = 5
+	}
+	lockoutDuration := cfg.LoginLockoutDuration
+	if lockoutDuration <= 0 {
+		lockoutDuration = 15 * time.Minute
+	}
 	return &server{
-		chatRL:            chatRL,
-		chatEvents:        cfg.ChatEvents,
-		turnQueue:         cfg.TurnQueue,
-		logger:            logger,
-		pool:              cfg.Pool,
-		queries:           queries,
-		jwt:               jwtSvc,
-		authProvider:      authProvider,
-		argon2:            params,
-		setup:             cfg.Setup,
-		setupRL:           setupRL,
-		loginIPRL:         loginIPRL,
-		loginEmailRL:      loginEmailRL,
-		refreshRL:         refreshRL,
-		compute:           computeDrv,
-		authBroker:        cfg.AuthBroker,
-		ticketSigner:      ticketSigner,
-		keyRing:           keyRing,
-		watchers:          make(map[uuid.UUID]map[uuid.UUID]watcherEntry),
-		cookieSecure:      cfg.CookieSecure,
-		publicBaseURL:     cfg.PublicBaseURL,
-		egressAckTimeout:  egressAckTimeout,
-		mcpUpstreamClient: cfg.MCPUpstream,
-		codexPlan:         codexplan.NewService(cfg.Pool, keyRing, cfg.CodexPlanOAuth, now),
-		codexPairRL:       auth.NewRateLimiter(30, time.Minute, now),
-		now:               now,
+		chatRL:                    chatRL,
+		chatEvents:                cfg.ChatEvents,
+		turnQueue:                 cfg.TurnQueue,
+		logger:                    logger,
+		pool:                      cfg.Pool,
+		queries:                   queries,
+		jwt:                       jwtSvc,
+		authProvider:              authProvider,
+		argon2:                    params,
+		setup:                     cfg.Setup,
+		setupRL:                   setupRL,
+		loginIPRL:                 loginIPRL,
+		loginEmailRL:              loginEmailRL,
+		refreshRL:                 refreshRL,
+		compute:                   computeDrv,
+		authBroker:                cfg.AuthBroker,
+		ticketSigner:              ticketSigner,
+		keyRing:                   keyRing,
+		watchers:                  make(map[uuid.UUID]map[uuid.UUID]watcherEntry),
+		cookieSecure:              cfg.CookieSecure,
+		publicBaseURL:             cfg.PublicBaseURL,
+		trustedProxies:            append([]netip.Prefix(nil), cfg.TrustedProxyCIDRs...),
+		loginLockoutThreshold:     lockoutThreshold,
+		loginLockoutDuration:      lockoutDuration,
+		egressAckTimeout:          egressAckTimeout,
+		defaultSandboxIdleTimeout: cfg.DefaultSandboxIdleTimeout,
+		maxRunningSandboxes:       cfg.MaxRunningSandboxes,
+		maxSandboxMemoryMiB:       cfg.MaxSandboxMemoryMiB,
+		mcpUpstreamClient:         cfg.MCPUpstream,
+		codexPlan:                 codexplan.NewService(cfg.Pool, keyRing, cfg.CodexPlanOAuth, now),
+		codexPairRL:               auth.NewRateLimiter(30, time.Minute, now),
+		now:                       now,
 	}
 }
 
@@ -289,6 +310,8 @@ func (s *server) mountRoutes(r chi.Router) {
 			r.Patch("/mcp-servers/{serverID}", s.handleUpdateMCPServer)
 			r.Delete("/mcp-servers/{serverID}", s.handleDeleteMCPServer)
 			r.Post("/mcp-servers/{serverID}/sync", s.handleSyncMCPServer)
+
+			r.Get("/audit-logs", s.handleListWorkspaceAuditLogs)
 
 			r.Get("/guardrails", s.handleGetWorkspaceGuardrails)
 			r.Put("/guardrails/policy", s.handleUpdateWorkspaceGuardrailPolicy)

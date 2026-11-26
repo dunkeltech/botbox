@@ -216,9 +216,24 @@ func (s *turnEvents) recordUsage(ctx context.Context, ev Event) error {
 	if ev.InputTokens < 0 || ev.OutputTokens < 0 || ev.CacheTokens < 0 {
 		return errors.New("invalid usage")
 	}
-	return s.queries.RecordTurnUsage(ctx, db.RecordTurnUsageParams{
+	err = s.queries.RecordTurnUsage(ctx, db.RecordTurnUsageParams{
 		WorkspaceID: s.turn.WorkspaceID, BotID: s.turn.BotID, TurnID: s.turn.ID, RequestID: pgID(uuid.New()),
 		Source: "cli_result", CreatedAt: pgtype.Timestamptz{Time: s.worker.now(), Valid: true}, Model: s.session.Bot.LlmModel,
 		InputTokens: ev.InputTokens, OutputTokens: ev.OutputTokens, CacheTokens: ev.CacheTokens,
 	})
+	if err == nil && s.worker != nil && s.worker.Metrics != nil {
+		wsLabel := uuidID(s.turn.WorkspaceID).String()
+		botLabel := uuidID(s.turn.BotID).String()
+		provider := s.session.Bot.LlmProvider
+		if ev.InputTokens > 0 {
+			s.worker.Metrics.TokensTotal.WithLabelValues(wsLabel, botLabel, provider, "input").Add(float64(ev.InputTokens))
+		}
+		if ev.OutputTokens > 0 {
+			s.worker.Metrics.TokensTotal.WithLabelValues(wsLabel, botLabel, provider, "output").Add(float64(ev.OutputTokens))
+		}
+		if ev.CacheTokens > 0 {
+			s.worker.Metrics.TokensTotal.WithLabelValues(wsLabel, botLabel, provider, "cache").Add(float64(ev.CacheTokens))
+		}
+	}
+	return err
 }

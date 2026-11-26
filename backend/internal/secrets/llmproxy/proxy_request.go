@@ -58,6 +58,11 @@ func (h *proxyHandler) resolveUpstream(w http.ResponseWriter, r *http.Request, r
 		writeError(w, logger, http.StatusBadGateway, "upstream_error", "invalid upstream configuration")
 		return nil, nil
 	}
+	if h.usingSafeClient && !strings.EqualFold(targetBase.Scheme, "https") {
+		h.audit(route, "blocked")
+		writeError(w, logger, http.StatusForbidden, "forbidden", "upstream URL must use HTTPS")
+		return nil, nil
+	}
 
 	targetURL := *targetBase
 	targetURL.Path = strings.TrimRight(targetBase.Path, "/") + upstreamPath

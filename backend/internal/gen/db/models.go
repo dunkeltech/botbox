@@ -310,6 +310,7 @@ type Environment struct {
 	ControlNote         string             `json:"control_note"`
 	StartedAt           pgtype.Timestamptz `json:"started_at"`
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	LastActivityAt      pgtype.Timestamptz `json:"last_activity_at"`
 }
 
 type GitlabInstance struct {
@@ -570,24 +571,27 @@ type UsageRecord struct {
 }
 
 type User struct {
-	ID           pgtype.UUID        `json:"id"`
-	Email        string             `json:"email"`
-	PasswordHash string             `json:"password_hash"`
-	DisplayName  string             `json:"display_name"`
-	Locale       string             `json:"locale"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	ID                  pgtype.UUID        `json:"id"`
+	Email               string             `json:"email"`
+	PasswordHash        string             `json:"password_hash"`
+	DisplayName         string             `json:"display_name"`
+	Locale              string             `json:"locale"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	FailedLoginAttempts int32              `json:"failed_login_attempts"`
+	LockedUntil         pgtype.Timestamptz `json:"locked_until"`
 }
 
 type Workspace struct {
-	ID                      pgtype.UUID        `json:"id"`
-	Name                    string             `json:"name"`
-	Slug                    string             `json:"slug"`
-	DefaultDriver           string             `json:"default_driver"`
-	DefaultLocale           string             `json:"default_locale"`
-	CreatedAt               pgtype.Timestamptz `json:"created_at"`
-	ScreenshotRetentionDays int32              `json:"screenshot_retention_days"`
-	CountSubscriptionUsage  bool               `json:"count_subscription_usage"`
+	ID                        pgtype.UUID        `json:"id"`
+	Name                      string             `json:"name"`
+	Slug                      string             `json:"slug"`
+	DefaultDriver             string             `json:"default_driver"`
+	DefaultLocale             string             `json:"default_locale"`
+	CreatedAt                 pgtype.Timestamptz `json:"created_at"`
+	ScreenshotRetentionDays   int32              `json:"screenshot_retention_days"`
+	CountSubscriptionUsage    bool               `json:"count_subscription_usage"`
+	SandboxIdleTimeoutMinutes pgtype.Int4        `json:"sandbox_idle_timeout_minutes"`
 }
 
 type WorkspaceGuardrailPolicy struct {

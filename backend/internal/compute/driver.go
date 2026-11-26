@@ -53,6 +53,9 @@ var (
 	// range left for another isolated sandbox network. An operator must free
 	// networks or widen the host's address pools; retrying does not help.
 	ErrNetworkCapacity = errors.New("no free sandbox network address range")
+	// ErrHostCapacity indicates host-wide running sandbox count or memory caps
+	// would be exceeded by starting another sandbox.
+	ErrHostCapacity = errors.New("host sandbox capacity exceeded")
 )
 
 // BotConfig specifies provisioning configuration and resource limits for a bot sandbox.

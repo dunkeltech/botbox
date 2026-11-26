@@ -19,13 +19,17 @@ import (
 	"time"
 
 	"github.com/dunkeltech/botbox/backend/internal/egresslink"
+	"github.com/dunkeltech/botbox/backend/internal/observability"
 	"github.com/dunkeltech/botbox/backend/internal/secrets"
 	"github.com/dunkeltech/botbox/backend/internal/secrets/llmproxy"
 	"github.com/dunkeltech/botbox/backend/internal/secrets/mitmproxy"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logger := slog.New(observability.NewScrubbingHandler(slog.NewJSONHandler(os.Stdout, nil)))
 	if len(os.Args) == 2 && os.Args[1] == "--check-relay" {
 		if err := checkRelay(os.Getenv("EGRESS_PROXY_BOT_SUBNET")); err != nil {
 			os.Exit(1)
@@ -34,6 +38,18 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	shutdownTracing, traceErr := observability.InitTracing(ctx, "botbox-egress-proxy")
+	if traceErr != nil {
+		logger.Error("egress proxy tracing initialization failed", "error", traceErr)
+		os.Exit(1)
+	}
+	defer func() {
+		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = shutdownTracing(shutCtx)
+	}()
+
 	database := strings.TrimSpace(os.Getenv("DATABASE_URL"))
 	mode := os.Getenv("EGRESS_LINK_MODE")
 	var identity egresslink.Identity
@@ -65,6 +81,32 @@ func main() {
 			logger.Error("initialize egress proxy ingress", "error", err)
 			os.Exit(1)
 		}
+	}
+
+	metrics := observability.NewMetrics()
+	metricsAddr := os.Getenv("BOTBOX_METRICS_ADDR")
+	if mode == "worker" {
+		// A worker's bot-facing interface must never serve metrics.
+		metricsAddr = ""
+		if os.Getenv("EGRESS_PROXY_WORKER_METRICS") == "1" {
+			interfaces, metricsErr := net.InterfaceAddrs()
+			if metricsErr == nil {
+				metricsAddr, metricsErr = workerMetricsIngress(botNetwork, interfaces)
+			}
+			if metricsErr != nil {
+				logger.Warn("worker metrics address unavailable", "error", metricsErr)
+			}
+		}
+	}
+	shutdownMetrics, metricsErr := observability.StartMetricsServer(ctx, metricsAddr, metrics, logger)
+	if metricsErr != nil {
+		logger.Warn("egress proxy metrics server failed", "error", metricsErr)
+	} else {
+		defer func() {
+			shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = shutdownMetrics(shutCtx)
+		}()
 	}
 
 	var ca *mitmproxy.BotCA
@@ -142,7 +184,7 @@ func main() {
 
 	var handler http.Handler = rootHandler
 	if database != "" {
-		bound, closeDB, err := openDatabaseProxy(context.Background(), database, ring, os.Getenv("BOTBOX_WORKSPACE_ID"), os.Getenv("BOTBOX_BOT_ID"), os.Getenv("NATS_URL"), ca, logger, os.Getenv("EGRESS_PROXY_AGY_ACP") == "true")
+		bound, closeDB, err := openDatabaseProxy(context.Background(), database, ring, os.Getenv("BOTBOX_WORKSPACE_ID"), os.Getenv("BOTBOX_BOT_ID"), os.Getenv("NATS_URL"), ca, logger, metrics, os.Getenv("EGRESS_PROXY_AGY_ACP") == "true")
 		if err != nil {
 			logger.Error("database proxy initialization failed", "error", err)
 			os.Exit(1)
@@ -150,6 +192,7 @@ func main() {
 		defer closeDB()
 		handler = restrictBotNetwork(botNetwork, bound)
 	}
+	handler = wrapProxyTracing(handler)
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           handler,
@@ -192,4 +235,16 @@ func envOrDefault(key, fallback string) string {
 		return val
 	}
 	return fallback
+}
+
+// wrapProxyTracing attaches an OTel server span to egress proxy HTTP/CONNECT
+// requests without wrapping http.ResponseWriter so CONNECT hijacking stays intact.
+func wrapProxyTracing(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		extracted := otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+		spanCtx, span := observability.Tracer("botbox/egress-proxy").Start(extracted, "proxy."+r.Method)
+		span.SetAttributes(attribute.String("http.request.method", r.Method))
+		defer span.End()
+		next.ServeHTTP(w, r.WithContext(spanCtx))
+	})
 }

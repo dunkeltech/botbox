@@ -66,7 +66,8 @@ UPDATE workspaces
 SET name = $2,
     default_driver = $3,
     default_locale = $4,
-    screenshot_retention_days = $5
+    screenshot_retention_days = $5,
+    sandbox_idle_timeout_minutes = $6
 WHERE id = $1
 RETURNING *;
 

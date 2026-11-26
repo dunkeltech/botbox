@@ -9,8 +9,10 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,10 +22,15 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/compute"
 	"github.com/dunkeltech/botbox/backend/internal/compute/vncrelay"
 	"github.com/dunkeltech/botbox/backend/internal/mcpproxy"
+	"github.com/dunkeltech/botbox/backend/internal/observability"
 	"github.com/dunkeltech/botbox/backend/internal/secrets"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 // ReadinessCheck validates downstream dependencies such as Postgres and NATS.
@@ -31,31 +38,38 @@ type ReadinessCheck func(ctx context.Context) error
 
 // Config configures the HTTP control plane handler.
 type Config struct {
-	ChatRateLimiter       *auth.RateLimiter
-	ChatEvents            ChatEvents
-	TurnQueue             TurnQueue
-	Logger                *slog.Logger
-	ReadinessCheck        ReadinessCheck
-	VNCRelay              http.Handler
-	Compute               compute.Driver
-	AuthBroker            authbroker.Client
-	TicketSigner          *vncrelay.Signer
-	KeyRing               *secrets.KeyRing
-	Pool                  *pgxpool.Pool
-	JWT                   *auth.JWTService
-	AuthProvider          auth.Provider
-	Argon2Params          auth.Argon2Params
-	Setup                 *auth.SetupManager
-	SetupRateLimiter      *auth.RateLimiter
-	LoginIPRateLimiter    *auth.RateLimiter
-	LoginEmailRateLimiter *auth.RateLimiter
-	RefreshRateLimiter    *auth.RateLimiter
-	CookieSecure          bool
-	PublicBaseURL         string
-	EgressAckTimeout      time.Duration
-	MCPUpstream           *mcpproxy.UpstreamClient
-	CodexPlanOAuth        *codexplan.OAuth
-	Now                   func() time.Time
+	ChatRateLimiter           *auth.RateLimiter
+	ChatEvents                ChatEvents
+	TurnQueue                 TurnQueue
+	Logger                    *slog.Logger
+	ReadinessCheck            ReadinessCheck
+	VNCRelay                  http.Handler
+	Compute                   compute.Driver
+	AuthBroker                authbroker.Client
+	TicketSigner              *vncrelay.Signer
+	KeyRing                   *secrets.KeyRing
+	Pool                      *pgxpool.Pool
+	JWT                       *auth.JWTService
+	AuthProvider              auth.Provider
+	Argon2Params              auth.Argon2Params
+	Setup                     *auth.SetupManager
+	SetupRateLimiter          *auth.RateLimiter
+	LoginIPRateLimiter        *auth.RateLimiter
+	LoginEmailRateLimiter     *auth.RateLimiter
+	RefreshRateLimiter        *auth.RateLimiter
+	CookieSecure              bool
+	PublicBaseURL             string
+	TrustedProxyCIDRs         []netip.Prefix
+	LoginLockoutThreshold     int
+	LoginLockoutDuration      time.Duration
+	EgressAckTimeout          time.Duration
+	DefaultSandboxIdleTimeout time.Duration
+	MaxRunningSandboxes       int
+	MaxSandboxMemoryMiB       int
+	MCPUpstream               *mcpproxy.UpstreamClient
+	CodexPlanOAuth            *codexplan.OAuth
+	Metrics                   *observability.Metrics
+	Now                       func() time.Time
 }
 
 type healthResponse struct {
@@ -83,6 +97,13 @@ func NewHandler(logger *slog.Logger, readinessCheck ReadinessCheck) http.Handler
 
 // NewHandlerWithConfig constructs the HTTP handler with optional WebSocket relays.
 func NewHandlerWithConfig(cfg Config) http.Handler {
+	_, handler := NewRuntimeHandler(cfg)
+	return handler
+}
+
+// NewRuntimeHandler constructs the HTTP handler with optional WebSocket relays
+// and returns a Runtime handle for background maintenance operations.
+func NewRuntimeHandler(cfg Config) (*Runtime, http.Handler) {
 	logger := cfg.Logger
 	if logger == nil {
 		logger = slog.Default()
@@ -90,7 +111,9 @@ func NewHandlerWithConfig(cfg Config) http.Handler {
 
 	r := chi.NewRouter()
 	r.Use(middleware.Recoverer)
-	r.Use(securityHeaders)
+	httpsEnabled := strings.HasPrefix(strings.ToLower(strings.TrimSpace(cfg.PublicBaseURL)), "https://")
+	r.Use(securityHeaders(httpsEnabled))
+	r.Use(observabilityMiddleware(cfg.Metrics))
 
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, logger, http.StatusNotFound, "not_found", "resource not found")
@@ -108,8 +131,16 @@ func NewHandlerWithConfig(cfg Config) http.Handler {
 	} else {
 		relayOpts := &vncrelay.RelayOptions{
 			Now:            srv.now,
-			OriginPatterns: vncOriginPatterns(cfg.PublicBaseURL),
+			OriginPatterns: wsOriginPatterns(cfg.PublicBaseURL),
 			Authorize:      srv.authorizeVNC,
+		}
+		if cfg.Metrics != nil {
+			relayOpts.OnSessionStart = func(workspaceID string) {
+				cfg.Metrics.VNCSessionsActive.WithLabelValues(workspaceID).Inc()
+			}
+			relayOpts.OnSessionEnd = func(workspaceID string) {
+				cfg.Metrics.VNCSessionsActive.WithLabelValues(workspaceID).Dec()
+			}
 		}
 		if _, ok := cfg.Compute.(compute.VNCDialer); ok {
 			// The browser reaches this process, not the container bridge.
@@ -134,14 +165,12 @@ func NewHandlerWithConfig(cfg Config) http.Handler {
 	})
 	srv.mountRoutes(r)
 
-	return r
+	return &Runtime{srv: srv}, r
 }
 
-// vncOriginPatterns allows the viewer page when a proxy presents a different
-// Host than the browser's Origin. Loopback covers `devenv up` (Caddy :8000
-// and Next :3000, both as localhost and 127.0.0.1). The public site host is
-// added for a deployment that proxies the socket.
-func vncOriginPatterns(publicBaseURL string) []string {
+// wsOriginPatterns allows browser WebSocket connections from loopback during
+// development and from the configured PublicBaseURL host in deployments.
+func wsOriginPatterns(publicBaseURL string) []string {
 	patterns := []string{"localhost", "localhost:*", "127.0.0.1", "127.0.0.1:*"}
 	parsed, err := url.Parse(strings.TrimSpace(publicBaseURL))
 	if err != nil || parsed.Host == "" {
@@ -157,6 +186,10 @@ func vncOriginPatterns(publicBaseURL string) []string {
 		}
 	}
 	return append(patterns, parsed.Host)
+}
+
+func vncOriginPatterns(publicBaseURL string) []string {
+	return wsOriginPatterns(publicBaseURL)
 }
 
 func healthHandler(logger *slog.Logger, readinessCheck ReadinessCheck) http.HandlerFunc {
@@ -180,12 +213,65 @@ func healthHandler(logger *slog.Logger, readinessCheck ReadinessCheck) http.Hand
 	}
 }
 
-func securityHeaders(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("Cache-Control", "no-store")
-		next.ServeHTTP(w, r)
-	})
+func securityHeaders(httpsEnabled bool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			w.Header().Set("X-Frame-Options", "DENY")
+			w.Header().Set("Referrer-Policy", "no-referrer")
+			w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+			w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+			w.Header().Set("Cache-Control", "no-store")
+			if httpsEnabled {
+				w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func observabilityMiddleware(metrics *observability.Metrics) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			start := time.Now()
+			method := r.Method
+			switch method {
+			case http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodPatch,
+				http.MethodDelete, http.MethodConnect, http.MethodOptions, http.MethodTrace:
+			default:
+				method = "_OTHER"
+			}
+			extracted := otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+			spanCtx, span := observability.Tracer("botbox/api").Start(extracted, method+" HTTP")
+			defer span.End()
+
+			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+			next.ServeHTTP(ww, r.WithContext(spanCtx))
+
+			route := "unmatched"
+			if rctx := chi.RouteContext(spanCtx); rctx != nil {
+				if pattern := rctx.RoutePattern(); pattern != "" {
+					route = pattern
+				}
+			}
+			status := ww.Status()
+			if status == 0 {
+				status = http.StatusOK
+			}
+			span.SetName(method + " " + route)
+			span.SetAttributes(
+				attribute.String("http.request.method", method),
+				attribute.String("http.route", route),
+				attribute.Int("http.response.status_code", status),
+			)
+			if status >= http.StatusInternalServerError {
+				span.SetStatus(codes.Error, http.StatusText(status))
+			}
+			if metrics != nil {
+				metrics.APIRequestDuration.WithLabelValues(method, route, strconv.Itoa(status)).Observe(time.Since(start).Seconds())
+			}
+		})
+	}
 }
 
 func writeError(w http.ResponseWriter, logger *slog.Logger, status int, code, message string) {

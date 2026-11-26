@@ -53,6 +53,7 @@
     "environmentNotFound": "This bot sandbox environment has not been created yet.",
     "environmentModelPriceRequired": "Add a model price in Workspace settings → Budgets & model prices before starting this bot computer.",
     "environmentNetworkCapacity": "The container host has no free network address range for another bot computer. Ask an operator to remove unused Docker networks, then start the computer again.",
+    "environmentCapacityExceeded": "This host has reached its configured running sandbox capacity limit. Stop an idle sandbox or ask an operator to raise host capacity, then try again.",
     "subscriptionUsageNotFound": "This subscription request is already reconciled or is no longer available.",
     "subscriptionModelPriceRequired": "Add a price for this provider and model above, then try again.",
     "fileNotFound": "That file or directory does not exist inside /home/bot.",
@@ -738,7 +739,8 @@
       "budgets": "Budgets & model prices",
       "secrets": "Workspace secrets",
       "integrations": "MCP servers & GitLab",
-      "guardrails": "LLM guardrails"
+      "guardrails": "LLM guardrails",
+      "audit": "Audit log"
     },
     "general": {
       "profileEyebrow": "Identity",
@@ -852,6 +854,39 @@
       "invariant2Body": "Secret values can be replaced or deleted, never read back in responses or logs.",
       "invariant3Title": "Strict workspace scoping",
       "invariant3Body": "Requests to secrets, bots, or groups in another workspace return 404 Not Found."
+    },
+    "audit": {
+      "eyebrow": "Security & compliance ledger",
+      "title": "Workspace audit log",
+      "lead": "Immutable chronological record of authentication, secret lifecycle, RBAC, and sandbox operations.",
+      "adminOnlyBadge": "Owner or admin",
+      "adminOnlyTitle": "Administrator access required",
+      "adminOnlyBody": "Only workspace owners and admins can inspect the workspace audit log.",
+      "actionFilterLabel": "Filter by action",
+      "actionFilterPlaceholder": "e.g. auth.login, secret.created",
+      "targetTypeFilterLabel": "Target type",
+      "targetTypeAll": "All target types",
+      "targetBot": "Bot",
+      "targetEnvironment": "Environment",
+      "targetWorkspaceSecret": "Workspace secret",
+      "targetBotSecret": "Bot secret",
+      "targetUser": "User",
+      "targetWorkspace": "Workspace",
+      "applyFilters": "Apply filters",
+      "resetFilters": "Reset",
+      "totalCount": "{count, plural, =1 {# event} other {# events}}",
+      "loading": "Loading audit log…",
+      "loadError": "Could not load workspace audit log.",
+      "empty": "No audit entries match the current filters.",
+      "colTimestamp": "Timestamp",
+      "colActor": "Actor",
+      "colAction": "Action",
+      "colTarget": "Target",
+      "colMetadata": "Metadata",
+      "systemActor": "System",
+      "previousPage": "Previous",
+      "nextPage": "Next",
+      "pageStatus": "Showing {from}–{to} of {total}"
     }
   },
   "home": {

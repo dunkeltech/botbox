@@ -56,11 +56,23 @@ func TestPrivateChatWebSocketAndRevocation(t *testing.T) {
 	url := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws/chat/" + ws.String() + "/" + conversation.Id.String()
 	for _, tc := range []struct {
 		token  string
+		origin string
 		status int
-	}{{"", 401}, {owner.AccessToken, 404}} {
-		_, response, err := websocket.Dial(ctx, url, &websocket.DialOptions{Subprotocols: []string{"botbox.events", "botbox.auth." + tc.token}})
+	}{
+		{token: "", status: 401},
+		{token: owner.AccessToken, status: 404},
+		{token: member.AccessToken, origin: "https://evil.example", status: 403},
+	} {
+		var hdr http.Header
+		if tc.origin != "" {
+			hdr = http.Header{"Origin": {tc.origin}}
+		}
+		_, response, err := websocket.Dial(ctx, url, &websocket.DialOptions{
+			Subprotocols: []string{"botbox.events", "botbox.auth." + tc.token},
+			HTTPHeader:   hdr,
+		})
 		if err == nil || response == nil || response.StatusCode != tc.status {
-			t.Fatalf("private socket response=%v err=%v", response, err)
+			t.Fatalf("private socket tc=%+v response=%v err=%v", tc, response, err)
 		}
 		if response.Body != nil {
 			_ = response.Body.Close()

@@ -3,6 +3,7 @@
 'use client';
 
 import {
+  ClipboardList,
   Coins,
   KeyRound,
   Plug,
@@ -70,6 +71,11 @@ const SETTINGS_NAV_GROUPS = [
         href: '/settings/guardrails',
         labelKey: 'nav.guardrails',
         icon: Shield,
+      },
+      {
+        href: '/settings/audit',
+        labelKey: 'nav.audit',
+        icon: ClipboardList,
       },
     ],
   },

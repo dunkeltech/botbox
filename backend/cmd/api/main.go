@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -30,13 +31,14 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/events"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
 	"github.com/dunkeltech/botbox/backend/internal/notify"
+	"github.com/dunkeltech/botbox/backend/internal/observability"
 	"github.com/dunkeltech/botbox/backend/internal/secrets"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logger := slog.New(observability.NewScrubbingHandler(slog.NewJSONHandler(os.Stdout, nil)))
 	if err := run(logger); err != nil {
 		logger.Error("api server exited with error", "err", err)
 		os.Exit(1)
@@ -56,10 +58,62 @@ func run(logger *slog.Logger) error {
 		cookieSecure = false
 	}
 
+	trustedProxies, err := api.ParseTrustedProxyCIDRs(os.Getenv("BOTBOX_TRUSTED_PROXY_CIDRS"))
+	if err != nil {
+		return fmt.Errorf("parse BOTBOX_TRUSTED_PROXY_CIDRS: %w", err)
+	}
+
+	shutdownTracing, err := observability.InitTracing(ctx, "botbox-api")
+	if err != nil {
+		return fmt.Errorf("initialize tracing: %w", err)
+	}
+	defer func() {
+		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = shutdownTracing(shutCtx)
+	}()
+
+	metrics := observability.NewMetrics()
+	shutdownMetrics, err := observability.StartMetricsServer(ctx, os.Getenv("BOTBOX_METRICS_ADDR"), metrics, logger)
+	if err != nil {
+		return fmt.Errorf("start metrics server: %w", err)
+	}
+	defer func() {
+		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = shutdownMetrics(shutCtx)
+	}()
+
+	defaultIdleTimeout, err := durationEnvOrDefault("BOTBOX_SANDBOX_IDLE_TIMEOUT", 60*time.Minute)
+	if err != nil {
+		return fmt.Errorf("parse BOTBOX_SANDBOX_IDLE_TIMEOUT: %w", err)
+	}
+	idleReapInterval, err := durationEnvOrDefault("BOTBOX_IDLE_REAP_INTERVAL", time.Minute)
+	if err != nil {
+		return fmt.Errorf("parse BOTBOX_IDLE_REAP_INTERVAL: %w", err)
+	}
+	reconcileInterval, err := durationEnvOrDefault("BOTBOX_RECONCILE_INTERVAL", 5*time.Minute)
+	if err != nil {
+		return fmt.Errorf("parse BOTBOX_RECONCILE_INTERVAL: %w", err)
+	}
+	maxRunningSandboxes, err := nonNegativeIntEnv("BOTBOX_MAX_RUNNING_SANDBOXES")
+	if err != nil {
+		return fmt.Errorf("parse BOTBOX_MAX_RUNNING_SANDBOXES: %w", err)
+	}
+	maxSandboxMemoryMiB, err := nonNegativeIntEnv("BOTBOX_MAX_SANDBOX_MEMORY_MIB")
+	if err != nil {
+		return fmt.Errorf("parse BOTBOX_MAX_SANDBOX_MEMORY_MIB: %w", err)
+	}
+
 	cfg := api.Config{
-		Logger:        logger,
-		CookieSecure:  cookieSecure,
-		PublicBaseURL: publicBaseURL,
+		Logger:                    logger,
+		CookieSecure:              cookieSecure,
+		PublicBaseURL:             publicBaseURL,
+		TrustedProxyCIDRs:         trustedProxies,
+		DefaultSandboxIdleTimeout: defaultIdleTimeout,
+		MaxRunningSandboxes:       maxRunningSandboxes,
+		MaxSandboxMemoryMiB:       maxSandboxMemoryMiB,
+		Metrics:                   metrics,
 	}
 
 	var pool *pgxpool.Pool
@@ -149,7 +203,7 @@ func run(logger *slog.Logger) error {
 		cfg.AuthBroker = authBroker
 		cfg.Compute = computeDrv
 		if natsURL := strings.TrimSpace(os.Getenv("NATS_URL")); natsURL != "" {
-			worker := &engine.Worker{Pool: pool, KeyRing: keyRing, AuthBroker: authBroker, Execute: cliExecutor(pool, queries, keyRing, computeDrv, authBroker != nil)}
+			worker := &engine.Worker{Pool: pool, KeyRing: keyRing, AuthBroker: authBroker, Metrics: metrics, Execute: cliExecutor(pool, queries, keyRing, computeDrv, authBroker != nil)}
 			ready := make(chan struct{})
 			concurrency, err := turnConcurrency(os.Getenv("BOTBOX_TURN_CONCURRENCY"))
 			if err != nil {
@@ -222,11 +276,33 @@ func run(logger *slog.Logger) error {
 		}
 	}
 
+	rt, handler := api.NewRuntimeHandler(cfg)
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           api.NewHandlerWithConfig(cfg),
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
+
+	var bgStop context.CancelFunc
+	bgDone := make(chan struct{})
+	if pool != nil {
+		bgCtx, cancelBg := context.WithCancel(ctx)
+		bgStop = cancelBg
+		queries := db.New(pool)
+		go func() {
+			defer close(bgDone)
+			runMaintenanceLoops(bgCtx, queries, cfg.Compute, rt, metrics, idleReapInterval, reconcileInterval, logger)
+		}()
+	} else {
+		close(bgDone)
+	}
+	stopBackground := func() {
+		if bgStop != nil {
+			bgStop()
+		}
+		<-bgDone
+	}
+	defer stopBackground()
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -242,9 +318,119 @@ func run(logger *slog.Logger) error {
 	case err := <-errCh:
 		return err
 	case <-ctx.Done():
+		// Stop periodic background loops first so in-flight DB queries drain before
+		// HTTP shutdown, deferred queue close, metrics/tracing flush, and pool close.
+		stopBackground()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		return srv.Shutdown(shutdownCtx)
+	}
+}
+
+func runMaintenanceLoops(
+	ctx context.Context,
+	queries *db.Queries,
+	computeDrv compute.Driver,
+	rt *api.Runtime,
+	metrics *observability.Metrics,
+	idleReapInterval, reconcileInterval time.Duration,
+	logger *slog.Logger,
+) {
+	var wg sync.WaitGroup
+	if metrics != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			collectMetricsGauges(ctx, queries, metrics, logger)
+		}()
+	}
+	if rt != nil && idleReapInterval > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			runPeriodicTask(ctx, idleReapInterval, "idle sandbox reap", func(passCtx context.Context) error {
+				stopped, err := rt.ReapIdleEnvironments(passCtx)
+				if err == nil && stopped > 0 && logger != nil {
+					logger.Info("auto-stopped idle sandboxes", "count", stopped)
+				}
+				return err
+			}, logger)
+		}()
+	}
+	if computeDrv != nil && queries != nil && reconcileInterval > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			runPeriodicTask(ctx, reconcileInterval, "periodic environment reconcile", func(passCtx context.Context) error {
+				return rt.ReconcileEnvironments(passCtx)
+			}, logger)
+		}()
+	}
+	<-ctx.Done()
+	wg.Wait()
+}
+
+func runPeriodicTask(ctx context.Context, interval time.Duration, name string, fn func(context.Context) error, logger *slog.Logger) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			passCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			err := fn(passCtx)
+			cancel()
+			if err != nil && ctx.Err() == nil && logger != nil {
+				logger.Warn("periodic task failed", "task", name, "err", err)
+			}
+		}
+	}
+}
+
+func collectMetricsGauges(ctx context.Context, queries *db.Queries, metrics *observability.Metrics, logger *slog.Logger) {
+	if queries == nil || metrics == nil {
+		return
+	}
+	refresh := func() {
+		passCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+
+		for _, state := range []string{"stopped", "starting", "running", "stopping", "error"} {
+			metrics.SandboxesByState.WithLabelValues(state).Set(0)
+		}
+		if rows, err := queries.CountEnvironmentsByState(passCtx); err != nil {
+			if ctx.Err() == nil && logger != nil {
+				logger.Warn("refresh sandbox state metrics failed", "err", err)
+			}
+		} else {
+			for _, row := range rows {
+				metrics.SandboxesByState.WithLabelValues(row.Status).Set(float64(row.Total))
+			}
+		}
+
+		metrics.TurnQueueDepth.Reset()
+		if queued, err := queries.CountQueuedTurnsByWorkspace(passCtx); err != nil {
+			if ctx.Err() == nil && logger != nil {
+				logger.Warn("refresh queue depth metrics failed", "err", err)
+			}
+		} else {
+			for _, row := range queued {
+				metrics.TurnQueueDepth.WithLabelValues(uuid.UUID(row.WorkspaceID.Bytes).String()).Set(float64(row.Total))
+			}
+		}
+	}
+
+	refresh()
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			refresh()
+		}
 	}
 }
 
@@ -308,6 +494,30 @@ func envOrDefault(key, fallback string) string {
 	return fallback
 }
 
+func durationEnvOrDefault(key string, fallback time.Duration) (time.Duration, error) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback, nil
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil || d < 0 {
+		return 0, fmt.Errorf("invalid non-negative duration %q", raw)
+	}
+	return d, nil
+}
+
+func nonNegativeIntEnv(key string) (int, error) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 0 {
+		return 0, fmt.Errorf("invalid non-negative integer %q", raw)
+	}
+	return n, nil
+}
+
 func initComputeDriver(logger *slog.Logger) (compute.Driver, func(), error) {
 	return initComputeDriverWithBroker(logger, false)
 }
@@ -335,6 +545,7 @@ func initComputeDriverWithBroker(logger *slog.Logger, authBrokerEnabled bool) (c
 			proxy = &docker.ProxyOptions{
 				Image:         envOrDefault("BOTBOX_EGRESS_IMAGE", "botbox/egress-proxy:dev"),
 				WorkerNetwork: os.Getenv("BOTBOX_EGRESS_WORKER_NETWORK"),
+				WorkerMetrics: strings.EqualFold(strings.TrimSpace(os.Getenv("BOTBOX_EGRESS_WORKER_METRICS")), "true"),
 				DatabaseURL:   proxyDB,
 				KeySpec:       keySpec,
 				NATSURL:       proxyNATSURL(os.Getenv("NATS_URL"), os.Getenv("BOTBOX_EGRESS_NATS_URL")),
@@ -346,6 +557,7 @@ func initComputeDriverWithBroker(logger *slog.Logger, authBrokerEnabled bool) (c
 		}
 		drv, err := docker.NewDriver(docker.Options{
 			SocketPath:        os.Getenv("DOCKER_SOCKET"),
+			Runtime:           os.Getenv("BOTBOX_DOCKER_RUNTIME"),
 			Proxy:             proxy,
 			AuthBrokerEnabled: authBrokerEnabled,
 			Logger:            logger,

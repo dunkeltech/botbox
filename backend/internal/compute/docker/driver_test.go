@@ -400,6 +400,79 @@ func TestCreateReusesExistingHomeVolume(t *testing.T) {
 	}
 }
 
+func TestValidateRuntimeAndHostBindRejections(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		raw     string
+		want    string
+		wantErr bool
+	}{
+		{raw: "", want: ""},
+		{raw: "runc", want: "runc"},
+		{raw: " RUNSC ", want: "runsc"},
+		{raw: "nvidia", wantErr: true},
+		{raw: "../runsc", wantErr: true},
+	} {
+		got, err := docker.ValidateRuntime(tc.raw)
+		if (err != nil) != tc.wantErr || got != tc.want {
+			t.Fatalf("ValidateRuntime(%q) = (%q, %v), want (%q, err=%v)", tc.raw, got, err, tc.want, tc.wantErr)
+		}
+	}
+
+	if _, err := docker.NewDriver(docker.Options{BaseURL: "http://127.0.0.1:2375", Runtime: "badruntime"}); !errors.Is(err, compute.ErrInvalidConfig) {
+		t.Fatalf("NewDriver invalid runtime = %v, want ErrInvalidConfig", err)
+	}
+
+	var created docker.ContainerCreateSpec
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/v1.45")
+		switch {
+		case r.Method == http.MethodPost && path == "/volumes/create":
+			w.WriteHeader(http.StatusCreated)
+		case r.Method == http.MethodGet && strings.HasPrefix(path, "/networks/"):
+			_, _ = w.Write([]byte(`{"Internal":true}`))
+		case r.Method == http.MethodPost && path == "/containers/create":
+			if err := json.NewDecoder(r.Body).Decode(&created); err != nil {
+				t.Errorf("decode create spec: %v", err)
+			}
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"Id":"cid-runsc"}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	drv, err := docker.NewDriver(docker.Options{BaseURL: srv.URL, Runtime: "runsc"})
+	if err != nil {
+		t.Fatalf("NewDriver(runsc): %v", err)
+	}
+	if _, err := drv.CreateEnvironment(context.Background(), compute.BotConfig{WorkspaceID: "ws-1", BotID: "bot-runsc"}); err != nil {
+		t.Fatalf("CreateEnvironment(runsc): %v", err)
+	}
+	if created.HostConfig.Runtime != "runsc" || created.HostConfig.Privileged || len(created.HostConfig.CapDrop) == 0 {
+		t.Fatalf("unexpected runsc HostConfig: %+v", created.HostConfig)
+	}
+
+	spec, _, _, err := docker.BuildContainerSpec(compute.BotConfig{WorkspaceID: "ws-1", BotID: "bot-1"}, "")
+	if err != nil {
+		t.Fatalf("BuildContainerSpec: %v", err)
+	}
+	for _, badBind := range []string{"/etc:/etc:ro", "./local:/home/bot/x", "~/keys:/keys", "bad/vol:/data"} {
+		bad := spec
+		bad.HostConfig.Binds = []string{badBind}
+		if err := docker.ValidateContainerSpec(bad); !errors.Is(err, compute.ErrSecurityViolation) {
+			t.Fatalf("ValidateContainerSpec(%q) = %v, want ErrSecurityViolation", badBind, err)
+		}
+	}
+	badRuntime := spec
+	badRuntime.HostConfig.Runtime = "kata"
+	if err := docker.ValidateContainerSpec(badRuntime); !errors.Is(err, compute.ErrSecurityViolation) {
+		t.Fatalf("ValidateContainerSpec(runtime=kata) = %v, want ErrSecurityViolation", err)
+	}
+}
+
 func boolString(b bool) string {
 	if b {
 		return "true"

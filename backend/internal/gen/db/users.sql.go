@@ -20,6 +20,27 @@ func (q *Queries) AcquireSetupLock(ctx context.Context) error {
 	return err
 }
 
+const clearFailedLogins = `-- name: ClearFailedLogins :execrows
+UPDATE users
+SET failed_login_attempts = 0,
+    locked_until = NULL,
+    updated_at = CASE WHEN failed_login_attempts <> 0 OR locked_until IS NOT NULL THEN now() ELSE updated_at END
+WHERE id = $1 AND (locked_until IS NULL OR locked_until <= $2::timestamptz)
+`
+
+type ClearFailedLoginsParams struct {
+	ID   pgtype.UUID        `json:"id"`
+	AsOf pgtype.Timestamptz `json:"as_of"`
+}
+
+func (q *Queries) ClearFailedLogins(ctx context.Context, arg ClearFailedLoginsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, clearFailedLogins, arg.ID, arg.AsOf)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const countUsers = `-- name: CountUsers :one
 SELECT count(*)::bigint FROM users
 `
@@ -34,7 +55,7 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (email, password_hash, display_name, locale)
 VALUES ($1, $2, $3, $4)
-RETURNING id, email, password_hash, display_name, locale, created_at, updated_at
+RETURNING id, email, password_hash, display_name, locale, created_at, updated_at, failed_login_attempts, locked_until
 `
 
 type CreateUserParams struct {
@@ -60,12 +81,14 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.Locale,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.FailedLoginAttempts,
+		&i.LockedUntil,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, display_name, locale, created_at, updated_at FROM users
+SELECT id, email, password_hash, display_name, locale, created_at, updated_at, failed_login_attempts, locked_until FROM users
 WHERE email = $1
 `
 
@@ -80,12 +103,14 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.Locale,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.FailedLoginAttempts,
+		&i.LockedUntil,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, password_hash, display_name, locale, created_at, updated_at FROM users
+SELECT id, email, password_hash, display_name, locale, created_at, updated_at, failed_login_attempts, locked_until FROM users
 WHERE id = $1
 `
 
@@ -100,7 +125,48 @@ func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
 		&i.Locale,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.FailedLoginAttempts,
+		&i.LockedUntil,
 	)
+	return i, err
+}
+
+const recordFailedLogin = `-- name: RecordFailedLogin :one
+UPDATE users
+SET failed_login_attempts = CASE
+        WHEN locked_until IS NOT NULL THEN 1
+        ELSE failed_login_attempts + 1
+    END,
+    locked_until = CASE
+        WHEN (CASE WHEN locked_until IS NOT NULL THEN 1 ELSE failed_login_attempts + 1 END) >= $2::int
+            THEN $3::timestamptz
+    END,
+    updated_at = now()
+WHERE id = $1 AND (locked_until IS NULL OR locked_until <= $4::timestamptz)
+RETURNING failed_login_attempts, locked_until
+`
+
+type RecordFailedLoginParams struct {
+	ID        pgtype.UUID        `json:"id"`
+	Threshold int32              `json:"threshold"`
+	LockUntil pgtype.Timestamptz `json:"lock_until"`
+	AsOf      pgtype.Timestamptz `json:"as_of"`
+}
+
+type RecordFailedLoginRow struct {
+	FailedLoginAttempts int32              `json:"failed_login_attempts"`
+	LockedUntil         pgtype.Timestamptz `json:"locked_until"`
+}
+
+func (q *Queries) RecordFailedLogin(ctx context.Context, arg RecordFailedLoginParams) (RecordFailedLoginRow, error) {
+	row := q.db.QueryRow(ctx, recordFailedLogin,
+		arg.ID,
+		arg.Threshold,
+		arg.LockUntil,
+		arg.AsOf,
+	)
+	var i RecordFailedLoginRow
+	err := row.Scan(&i.FailedLoginAttempts, &i.LockedUntil)
 	return i, err
 }
 

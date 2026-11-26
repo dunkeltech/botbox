@@ -49,6 +49,38 @@ func (q *Queries) CountPendingBotTurns(ctx context.Context, arg CountPendingBotT
 	return count, err
 }
 
+const countQueuedTurnsByWorkspace = `-- name: CountQueuedTurnsByWorkspace :many
+SELECT workspace_id, count(*)::bigint AS total
+FROM bot_turns
+WHERE status = 'queued'
+GROUP BY workspace_id
+`
+
+type CountQueuedTurnsByWorkspaceRow struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	Total       int64       `json:"total"`
+}
+
+func (q *Queries) CountQueuedTurnsByWorkspace(ctx context.Context) ([]CountQueuedTurnsByWorkspaceRow, error) {
+	rows, err := q.db.Query(ctx, countQueuedTurnsByWorkspace)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CountQueuedTurnsByWorkspaceRow
+	for rows.Next() {
+		var i CountQueuedTurnsByWorkspaceRow
+		if err := rows.Scan(&i.WorkspaceID, &i.Total); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const createBotTurn = `-- name: CreateBotTurn :one
 INSERT INTO bot_turns(workspace_id,bot_id,conversation_id,message_id) VALUES($1,$2,$3,$4) RETURNING id, position, workspace_id, bot_id, conversation_id, message_id, status, error_code, created_at, updated_at, continuation_prompt, stop_requested, heartbeat_at, run_deadline_at
 `

@@ -105,7 +105,7 @@ func TestPiOpenRouterProxyUsesWorkspaceKeyAndSettlesMessages(t *testing.T) {
 		}
 		config.UpstreamURL = upstream.URL + "/api"
 		return config, nil
-	}, &llmproxy.Options{Admit: budgets.ProxyAdmission(h.pool, ws, bot.Id, h.clock.Now)})
+	}, &llmproxy.Options{Admit: budgets.ProxyAdmission(h.pool, ws, bot.Id, h.clock.Now), Client: upstream.Client()})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -317,6 +317,7 @@ func (s *server) handleTakeBotControl(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.touchWatcher(botUUID, claims.Subject, claims.DisplayName)
+	s.touchEnvironmentActivity(r.Context(), wsRow.ID, botRow.ID)
 	if queue, ok := s.turnQueue.(interface {
 		Interrupt(context.Context, uuid.UUID, uuid.UUID) error
 	}); ok {
@@ -445,6 +446,7 @@ func (s *server) handleReleaseBotControl(w http.ResponseWriter, r *http.Request)
 		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to release control")
 		return
 	}
+	s.touchEnvironmentActivity(r.Context(), wsRow.ID, botRow.ID)
 
 	stats := s.fetchEnvStats(r.Context(), released)
 	writeJSON(w, s.logger, http.StatusOK, s.toAPIEnvironmentState(wsRow.ID, released, "", "", stats))
@@ -492,6 +494,7 @@ func (s *server) handleCreateVNCTicket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.touchWatcher(botUUID, claims.Subject, claims.DisplayName)
+	s.touchEnvironmentActivity(r.Context(), wsRow.ID, botRow.ID)
 	writeJSON(w, s.logger, http.StatusOK, api.StreamTicketResponse{
 		Ticket:     token,
 		WsPath:     fmt.Sprintf("/ws/bots/%s/%s/vnc", wsUUID.String(), botUUID.String()),
@@ -546,6 +549,7 @@ func (s *server) handleExecBotTerminal(w http.ResponseWriter, r *http.Request) {
 		s.writeComputeError(w, err, "terminal command failed")
 		return
 	}
+	s.touchEnvironmentActivity(r.Context(), wsRow.ID, botRow.ID)
 
 	writeJSON(w, s.logger, http.StatusOK, api.TerminalExecResponse{
 		Stdout:   res.Stdout,
@@ -631,6 +635,7 @@ func (s *server) handleReadBotFile(w http.ResponseWriter, r *http.Request) {
 		s.writeComputeError(w, err, "failed to read sandbox file")
 		return
 	}
+	s.touchEnvironmentActivity(r.Context(), wsRow.ID, botRow.ID)
 
 	writeJSON(w, s.logger, http.StatusOK, api.FileContentResponse{
 		Path:      filePath,
@@ -679,6 +684,7 @@ func (s *server) handleWriteBotFile(w http.ResponseWriter, r *http.Request) {
 		s.writeComputeError(w, err, "failed to write sandbox file")
 		return
 	}
+	s.touchEnvironmentActivity(r.Context(), wsRow.ID, botRow.ID)
 
 	writeJSON(w, s.logger, http.StatusOK, api.FileContentResponse{
 		Path:      filePath,
@@ -812,6 +818,21 @@ func (s *server) ensureCreatedAndStarted(ctx context.Context, botRow db.Bot, env
 }
 
 func (s *server) startEnvironment(ctx context.Context, q *db.Queries, bot db.Bot, env db.Environment, actorID uuid.UUID, restart bool, auditAction string) (db.Environment, error) {
+	if s.maxRunningSandboxes > 0 || s.maxSandboxMemoryMiB > 0 {
+		if err := q.LockHostCapacity(ctx); err != nil {
+			return db.Environment{}, fmt.Errorf("lock host capacity: %w", err)
+		}
+		capRow, err := q.RunningEnvironmentCapacity(ctx, bot.ID)
+		if err != nil {
+			return db.Environment{}, fmt.Errorf("query running capacity: %w", err)
+		}
+		if s.maxRunningSandboxes > 0 && capRow.RunningCount+1 > int64(s.maxRunningSandboxes) {
+			return db.Environment{}, compute.ErrHostCapacity
+		}
+		if s.maxSandboxMemoryMiB > 0 && capRow.RunningMemoryMib+int64(env.MemoryMib) > int64(s.maxSandboxMemoryMiB) {
+			return db.Environment{}, compute.ErrHostCapacity
+		}
+	}
 	if restart {
 		if err := stopComputeEnvironment(ctx, s.compute, env.EnvID); err != nil {
 			return db.Environment{}, err
@@ -822,6 +843,7 @@ func (s *server) startEnvironment(ctx context.Context, q *db.Queries, bot db.Bot
 		return db.Environment{}, err
 	}
 
+	now := s.now().UTC()
 	updated, err := q.UpsertEnvironment(ctx, db.UpsertEnvironmentParams{
 		BotID:               bot.ID,
 		Driver:              s.computeDriverName(),
@@ -833,8 +855,17 @@ func (s *server) startEnvironment(ctx context.Context, q *db.Queries, bot db.Bot
 		VolumeRef:           env.VolumeRef,
 		ControlHolderUserID: env.ControlHolderUserID,
 		ControlNote:         env.ControlNote,
-		StartedAt:           toPGTimestamptz(s.now().UTC()),
+		StartedAt:           toPGTimestamptz(now),
 	})
+	if err == nil {
+		if touchErr := q.TouchEnvironmentActivity(ctx, db.TouchEnvironmentActivityParams{
+			WorkspaceID: bot.WorkspaceID,
+			BotID:       bot.ID,
+			AsOf:        toPGTimestamptz(now),
+		}); touchErr != nil {
+			err = touchErr
+		}
+	}
 	if err == nil {
 		wsID, botID := fromPGUUID(bot.WorkspaceID), fromPGUUID(bot.ID)
 		err = recordAudit(ctx, q, &wsID, &actorID, auditAction, "bot", &botID, map[string]any{
@@ -855,14 +886,18 @@ func stopEnvironment(ctx context.Context, q *db.Queries, driver compute.Driver, 
 	if err != nil {
 		return db.Environment{}, err
 	}
-	wsID, botID := fromPGUUID(bot.WorkspaceID), fromPGUUID(bot.ID)
-	if err := recordAudit(ctx, q, &wsID, actorID, auditAction, "bot", &botID, map[string]any{"env_id": envID}); err != nil {
-		return db.Environment{}, err
-	}
-	if err := stopComputeEnvironment(ctx, driver, envID); err != nil {
+	if err := finishEnvironmentStop(ctx, q, driver, bot, envID, actorID, auditAction); err != nil {
 		return db.Environment{}, err
 	}
 	return stopped, nil
+}
+
+func finishEnvironmentStop(ctx context.Context, q *db.Queries, driver compute.Driver, bot db.Bot, envID string, actorID *uuid.UUID, auditAction string) error {
+	wsID, botID := fromPGUUID(bot.WorkspaceID), fromPGUUID(bot.ID)
+	if err := recordAudit(ctx, q, &wsID, actorID, auditAction, "bot", &botID, map[string]any{"env_id": envID}); err != nil {
+		return err
+	}
+	return stopComputeEnvironment(ctx, driver, envID)
 }
 
 func stopComputeEnvironment(ctx context.Context, driver compute.Driver, envID string) error {
@@ -894,6 +929,7 @@ func (s *server) authorizeVNC(ctx context.Context, claims vncrelay.TicketClaims)
 	if !allowed {
 		return vncrelay.ErrAccessRevoked
 	}
+	s.touchEnvironmentActivity(ctx, toPGUUID(wsID), toPGUUID(botID))
 	return nil
 }
 
@@ -1080,6 +1116,23 @@ func (s *server) listWatchers(botID uuid.UUID) []api.WatcherUser {
 	return out
 }
 
+func (s *server) hasActiveWatchers(botID uuid.UUID) bool {
+	return len(s.listWatchers(botID)) > 0
+}
+
+func (s *server) touchEnvironmentActivity(ctx context.Context, workspaceID, botID pgtype.UUID) {
+	if s.queries == nil {
+		return
+	}
+	if err := s.queries.TouchEnvironmentActivity(ctx, db.TouchEnvironmentActivityParams{
+		WorkspaceID: workspaceID,
+		BotID:       botID,
+		AsOf:        toPGTimestamptz(s.now().UTC()),
+	}); err != nil && s.logger != nil {
+		s.logger.Debug("touch environment activity failed", slog.Any("error", err))
+	}
+}
+
 func (s *server) computeDriverName() string {
 	if _, ok := s.compute.(*docker.Driver); ok {
 		return compute.DefaultDriverDocker
@@ -1097,6 +1150,9 @@ func (s *server) writeComputeError(w http.ResponseWriter, err error, fallbackMsg
 		writeError(w, s.logger, http.StatusBadRequest, "validation_error", err.Error())
 	case errors.Is(err, compute.ErrSecurityViolation):
 		writeError(w, s.logger, http.StatusForbidden, "security_violation", err.Error())
+	case errors.Is(err, compute.ErrHostCapacity):
+		writeError(w, s.logger, http.StatusServiceUnavailable, "environment.capacity_exceeded",
+			"the container host has reached its configured running sandbox capacity")
 	case errors.Is(err, compute.ErrNetworkCapacity):
 		// A fixed message: the wrapped Docker error names host networks that
 		// are none of the caller's business.

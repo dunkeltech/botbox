@@ -28,6 +28,7 @@ build:
 	cd backend && go build -o bin/agent ./cmd/agent
 	cd backend && go build -o bin/egress-proxy ./cmd/egress-proxy
 	cd backend && go build -o bin/auth-broker ./cmd/auth-broker
+	cd backend && go build -o bin/kek-rotate ./cmd/kek-rotate
 	npm --prefix frontend run build
 
 GIT_SHA := $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
@@ -93,3 +94,7 @@ test-auth-broker-sandbox:
 		--security-opt seccomp=backend/internal/compute/docker/chromium-seccomp.json --entrypoint /bin/sh botbox/auth-broker:dev \
 		-ec 'printf "%s\n" "#!/bin/sh" "exec chromium --no-sandbox \"\$$@\"" > /tmp/chromium-test; chmod 700 /tmp/chromium-test; AUTH_BROKER_CHROMIUM_BIN=/tmp/chromium-test exec auth-broker --check-sandbox' \
 		|| status=$$?; test "$$status" -eq 1
+
+.PHONY: test-restore-drill
+test-restore-drill:
+	./scripts/test-restore-drill.sh

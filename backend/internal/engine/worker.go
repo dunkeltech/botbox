@@ -17,11 +17,15 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/groups"
 	"github.com/dunkeltech/botbox/backend/internal/memory"
 	"github.com/dunkeltech/botbox/backend/internal/notify"
+	"github.com/dunkeltech/botbox/backend/internal/observability"
 	"github.com/dunkeltech/botbox/backend/internal/secrets"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // ErrTurnWaitingSecret indicates the turn paused on a durable secret_request
@@ -64,14 +68,29 @@ type Worker struct {
 	Enqueue func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) error
 	// Signal publishes notification ids on the conversation channel. Nil skips it.
 	// The payload must not include message text (issue #17).
-	Signal notify.Signal
+	Signal  notify.Signal
+	Metrics *observability.Metrics
 }
 
 func pgID(id uuid.UUID) pgtype.UUID   { return pgtype.UUID{Bytes: id, Valid: true} }
 func uuidID(id pgtype.UUID) uuid.UUID { return uuid.UUID(id.Bytes) }
 
 // Process handles one notification while a transaction lock serializes this bot.
-func (w *Worker) Process(ctx context.Context, job events.TurnNotification) error {
+func (w *Worker) Process(ctx context.Context, job events.TurnNotification) (err error) {
+	ctx, span := observability.Tracer("botbox/engine").Start(ctx, "worker.Process",
+		trace.WithAttributes(
+			attribute.String("workspace_id", job.WorkspaceID.String()),
+			attribute.String("bot_id", job.BotID.String()),
+			attribute.String("turn_id", job.TurnID.String()),
+		),
+	)
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
 	if w.Pool == nil || w.Execute == nil {
 		return errors.New("worker is not configured")
 	}
@@ -143,7 +162,12 @@ func (w *Worker) Process(ctx context.Context, job events.TurnNotification) error
 			return err
 		}
 		if w.Publish != nil {
-			return w.Publish(ctx, Session{WorkspaceID: job.WorkspaceID, BotID: job.BotID, ConversationID: uuidID(turn.ConversationID), TurnID: job.TurnID}, Event{Kind: EventKindStatus, Status: "idle", BotID: job.BotID.String(), TurnID: job.TurnID.String(), RunID: uuid.NewString(), Sequence: 1})
+			if err = w.Publish(ctx, Session{WorkspaceID: job.WorkspaceID, BotID: job.BotID, ConversationID: uuidID(turn.ConversationID), TurnID: job.TurnID}, Event{Kind: EventKindStatus, Status: "idle", BotID: job.BotID.String(), TurnID: job.TurnID.String(), RunID: uuid.NewString(), Sequence: 1}); err != nil {
+				return err
+			}
+		}
+		if w.Metrics != nil {
+			w.Metrics.TurnsTotal.WithLabelValues(job.WorkspaceID.String(), job.BotID.String(), "interrupted").Inc()
 		}
 		return nil
 	}
@@ -162,6 +186,13 @@ func (w *Worker) Process(ctx context.Context, job events.TurnNotification) error
 		ID:            turn.ID,
 		AsOf:          pgtype.Timestamptz{Time: claimedAt, Valid: true},
 		RunDeadlineAt: pgtype.Timestamptz{Time: claimedAt.Add(runTimeout), Valid: true},
+	}); err != nil {
+		return err
+	}
+	if err = q.TouchEnvironmentActivity(runCtx, db.TouchEnvironmentActivityParams{
+		WorkspaceID: turn.WorkspaceID,
+		BotID:       turn.BotID,
+		AsOf:        pgtype.Timestamptz{Time: claimedAt, Valid: true},
 	}); err != nil {
 		return err
 	}

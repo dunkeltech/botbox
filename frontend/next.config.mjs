@@ -37,8 +37,46 @@ const nextConfig = {
  * @param {string} phase
  */
 export default function configureNext(phase) {
+  const isDev = phase === PHASE_DEVELOPMENT_SERVER;
+  const scriptSrc = isDev
+    ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
+    : "script-src 'self' 'unsafe-inline'";
+  const csp = [
+    "default-src 'self'",
+    scriptSrc,
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "font-src 'self' data:",
+    "connect-src 'self' ws: wss:",
+    "frame-ancestors 'none'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+  ].join('; ');
+
   return withNextIntl({
     ...nextConfig,
-    distDir: phase === PHASE_DEVELOPMENT_SERVER ? '.next-dev' : '.next',
+    // eslint-disable-next-line @typescript-eslint/require-await -- NextConfig.headers must return a Promise.
+    async headers() {
+      return [
+        {
+          source: '/:path*',
+          headers: [
+            { key: 'Content-Security-Policy', value: csp },
+            { key: 'X-Content-Type-Options', value: 'nosniff' },
+            { key: 'X-Frame-Options', value: 'DENY' },
+            {
+              key: 'Referrer-Policy',
+              value: 'strict-origin-when-cross-origin',
+            },
+            {
+              key: 'Permissions-Policy',
+              value: 'camera=(), microphone=(), geolocation=()',
+            },
+          ],
+        },
+      ];
+    },
+    distDir: isDev ? '.next-dev' : '.next',
   });
 }

@@ -63,24 +63,28 @@ type testHarness struct {
 	computeDrv *compute.MemoryDriver
 	keyRing    *secrets.KeyRing
 	handler    http.Handler
+	runtime    *api.Runtime
 	jwtKey     []byte
 	secret     string
 }
 
 type harnessOpts struct {
-	chatLimit        int
-	chatEvents       api.ChatEvents
-	turnQueue        api.TurnQueue
-	argon2Iterations uint32
-	setupLimit       int
-	loginIPLimit     int
-	loginEmailLimit  int
-	envSetupSecret   string
-	keyRing          *secrets.KeyRing
-	authBroker       authbroker.Client
-	mcpUpstream      *mcpproxy.UpstreamClient
-	codexPlanOAuth   *codexplan.OAuth
-	decorateCompute  func(*compute.MemoryDriver) compute.Driver
+	chatLimit                 int
+	chatEvents                api.ChatEvents
+	turnQueue                 api.TurnQueue
+	argon2Iterations          uint32
+	setupLimit                int
+	loginIPLimit              int
+	loginEmailLimit           int
+	envSetupSecret            string
+	keyRing                   *secrets.KeyRing
+	authBroker                authbroker.Client
+	mcpUpstream               *mcpproxy.UpstreamClient
+	codexPlanOAuth            *codexplan.OAuth
+	defaultSandboxIdleTimeout time.Duration
+	maxRunningSandboxes       int
+	maxSandboxMemoryMiB       int
+	decorateCompute           func(*compute.MemoryDriver) compute.Driver
 }
 
 func newTestHarness(t *testing.T, existingPool *pgxpool.Pool, opts harnessOpts) *testHarness {
@@ -155,7 +159,7 @@ func newTestHarness(t *testing.T, existingPool *pgxpool.Pool, opts harnessOpts) 
 	if opts.decorateCompute != nil {
 		computeDriver = opts.decorateCompute(computeDrv)
 	}
-	handler := api.NewHandlerWithConfig(api.Config{
+	runtimeHandle, handler := api.NewRuntimeHandler(api.Config{
 		ChatRateLimiter: auth.NewRateLimiter(chatLimit, time.Minute, clock.Now),
 		TurnQueue:       opts.turnQueue,
 		ChatEvents:      opts.chatEvents,
@@ -172,15 +176,18 @@ func newTestHarness(t *testing.T, existingPool *pgxpool.Pool, opts harnessOpts) 
 			SaltLen:     16,
 			KeyLen:      32,
 		},
-		Setup:                 setupMgr,
-		SetupRateLimiter:      auth.NewRateLimiter(opts.setupLimit, 15*time.Minute, clock.Now),
-		LoginIPRateLimiter:    auth.NewRateLimiter(opts.loginIPLimit, time.Minute, clock.Now),
-		LoginEmailRateLimiter: auth.NewRateLimiter(opts.loginEmailLimit, 15*time.Minute, clock.Now),
-		RefreshRateLimiter:    auth.NewRateLimiter(50, time.Minute, clock.Now),
-		PublicBaseURL:         "http://127.0.0.1:3000",
-		MCPUpstream:           opts.mcpUpstream,
-		CodexPlanOAuth:        opts.codexPlanOAuth,
-		Now:                   clock.Now,
+		Setup:                     setupMgr,
+		SetupRateLimiter:          auth.NewRateLimiter(opts.setupLimit, 15*time.Minute, clock.Now),
+		LoginIPRateLimiter:        auth.NewRateLimiter(opts.loginIPLimit, time.Minute, clock.Now),
+		LoginEmailRateLimiter:     auth.NewRateLimiter(opts.loginEmailLimit, 15*time.Minute, clock.Now),
+		RefreshRateLimiter:        auth.NewRateLimiter(50, time.Minute, clock.Now),
+		PublicBaseURL:             "http://127.0.0.1:3000",
+		DefaultSandboxIdleTimeout: opts.defaultSandboxIdleTimeout,
+		MaxRunningSandboxes:       opts.maxRunningSandboxes,
+		MaxSandboxMemoryMiB:       opts.maxSandboxMemoryMiB,
+		MCPUpstream:               opts.mcpUpstream,
+		CodexPlanOAuth:            opts.codexPlanOAuth,
+		Now:                       clock.Now,
 	})
 
 	return &testHarness{
@@ -195,6 +202,7 @@ func newTestHarness(t *testing.T, existingPool *pgxpool.Pool, opts harnessOpts) 
 		computeDrv: computeDrv,
 		keyRing:    keyRing,
 		handler:    handler,
+		runtime:    runtimeHandle,
 		jwtKey:     privKey,
 		secret:     secret,
 	}

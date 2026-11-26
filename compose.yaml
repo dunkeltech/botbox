@@ -74,6 +74,9 @@ services:
     init: true
     restart: "on-failure:3"
     cap_drop: [ALL]
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,nosuid,nodev
     security_opt:
       - no-new-privileges:true
       - seccomp:./backend/internal/compute/docker/chromium-seccomp.json
@@ -130,7 +133,12 @@ services:
       BOTBOX_AUTH_BROKER_URL: http://auth-broker:8085
       BOTBOX_EGRESS_WORKER_NETWORK: ${COMPOSE_PROJECT_NAME}-control
       BOTBOX_SECRETS_KEK_FILE: /var/lib/botbox/secrets.kek
+      BOTBOX_TRUSTED_PROXY_CIDRS: 127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,::1/128
+      BOTBOX_METRICS_ADDR: 0.0.0.0:9095
     cap_drop: [ALL]
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev
     security_opt: [no-new-privileges:true]
     volumes:
       - type: bind

@@ -27,6 +27,7 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
 	"github.com/dunkeltech/botbox/backend/internal/netguard"
 	"github.com/dunkeltech/botbox/backend/internal/notify"
+	"github.com/dunkeltech/botbox/backend/internal/observability"
 	"github.com/dunkeltech/botbox/backend/internal/secrets"
 	"github.com/dunkeltech/botbox/backend/internal/secrets/mitmproxy"
 	"github.com/dunkeltech/botbox/backend/internal/workspaces"
@@ -176,6 +177,9 @@ func validateSecretInput(
 func validateSecretValue(val string) (string, bool) {
 	if strings.TrimSpace(val) == "" || len(val) > maxSecretValueBytes {
 		return "secret value must be non-empty and at most 64 KiB", false
+	}
+	if strings.ContainsAny(val, "\r\n\x00") {
+		return "secret value cannot contain newlines or NUL bytes", false
 	}
 	return "", true
 }
@@ -1182,7 +1186,8 @@ type BotEgressProxyDeps struct {
 	NativeHosts func(context.Context) ([]string, error)
 	// Notify publishes ids after a new host card commits. Nil leaves the row
 	// and the client reloads the list (issue #17).
-	Notify notify.Signal
+	Notify  notify.Signal
+	Metrics *observability.Metrics
 }
 
 // NewBotEgressProxyHandler builds a dynamic per-bot CONNECT egress handler backed by
@@ -1392,6 +1397,9 @@ func NewBotEgressProxyHandler(deps BotEgressProxyDeps) (*mitmproxy.Handler, erro
 				LatencyMs:        latency,
 			}); logErr != nil {
 				logger.Error("persist egress audit log failed", slog.Any("error", logErr))
+			}
+			if deps.Metrics != nil {
+				deps.Metrics.EgressDecisionsTotal.WithLabelValues(deps.WorkspaceID.String(), deps.BotID.String(), string(ev.Action)).Inc()
 			}
 
 			// Only a real host denial on 443 opens a card. A forbidden port uses the

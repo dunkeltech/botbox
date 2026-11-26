@@ -62,6 +62,9 @@ func (w *Worker) finalizeTurn(ctx context.Context, q *db.Queries, events *turnEv
 		}
 	}
 	if outcome.status == "waiting_secret" {
+		if w.Metrics != nil {
+			w.Metrics.TurnsTotal.WithLabelValues(uuidID(turn.WorkspaceID).String(), uuidID(turn.BotID).String(), outcome.status).Inc()
+		}
 		return events.publish(finalCtx, *events.session, Event{Kind: EventKindStatus, Status: "idle"})
 	}
 
@@ -90,6 +93,14 @@ func (w *Worker) finalizeTurn(ctx context.Context, q *db.Queries, events *turnEv
 	}); err != nil {
 		return err
 	}
+	if w.Metrics != nil {
+		w.Metrics.TurnsTotal.WithLabelValues(uuidID(turn.WorkspaceID).String(), uuidID(turn.BotID).String(), outcome.status).Inc()
+	}
+	_ = q.TouchEnvironmentActivity(finalCtx, db.TouchEnvironmentActivityParams{
+		WorkspaceID: turn.WorkspaceID,
+		BotID:       turn.BotID,
+		AsOf:        pgtype.Timestamptz{Time: w.now(), Valid: true},
+	})
 	return events.publish(finalCtx, *events.session, Event{Kind: EventKindStatus, Status: "idle"})
 }
 

@@ -18,14 +18,16 @@ import (
 	"syscall"
 	"time"
 
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 
 	"github.com/dunkeltech/botbox/backend/internal/agent"
 	agentv1 "github.com/dunkeltech/botbox/backend/internal/gen/proto/agent/v1"
+	"github.com/dunkeltech/botbox/backend/internal/observability"
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logger := slog.New(observability.NewScrubbingHandler(slog.NewJSONHandler(os.Stdout, nil)))
 	if len(os.Args) > 1 && os.Args[1] == "--mcp-stdio" {
 		if err := serveMCPStdio(context.Background()); err != nil {
 			logger.Error("desktop mcp stdio failed", slog.Any("error", err))
@@ -40,6 +42,17 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	shutdownTracing, traceErr := observability.InitTracing(ctx, "botbox-agent")
+	if traceErr != nil {
+		logger.Warn("tracing initialization failed", slog.Any("error", traceErr))
+	} else {
+		defer func() {
+			traceCtx, traceCancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer traceCancel()
+			_ = shutdownTracing(traceCtx)
+		}()
+	}
+
 	desktop := newSandboxDesktop()
 
 	var lc net.ListenConfig
@@ -50,6 +63,7 @@ func main() {
 	}
 
 	grpcServer := grpc.NewServer(
+		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 		grpc.UnaryInterceptor(agent.TokenAuthInterceptor(agentToken)),
 		grpc.StreamInterceptor(agent.TokenStreamInterceptor(agentToken)),
 	)

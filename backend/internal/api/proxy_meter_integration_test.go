@@ -70,7 +70,7 @@ func TestPhase4ProxySettlementAndKillSwitch(t *testing.T) {
 			defer upstream.Close()
 			proxy, err := llmproxy.NewScopedHandler(ws.String(), bot.Id.String(), func(context.Context, string, string) (*llmproxy.SecretConfig, error) {
 				return &llmproxy.SecretConfig{UpstreamURL: upstream.URL, AuthKind: llmproxy.AuthKindBearer, SecretValue: "fixture-outside-key"}, nil
-			}, &llmproxy.Options{Admit: budgets.ProxyAdmission(h.pool, ws, bot.Id, h.clock.Now)})
+			}, &llmproxy.Options{Admit: budgets.ProxyAdmission(h.pool, ws, bot.Id, h.clock.Now), Client: upstream.Client()})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -223,7 +223,7 @@ func TestPhase4ClaudeSubscriptionMetersTokensWithoutAPICost(t *testing.T) {
 	defer upstream.Close()
 	handler, err := llmproxy.NewScopedHandler(ws.String(), bot.Id.String(), func(context.Context, string, string) (*llmproxy.SecretConfig, error) {
 		return &llmproxy.SecretConfig{UpstreamURL: upstream.URL, AuthKind: llmproxy.AuthKindClaudeOAuth, SecretValue: "fixture-private-subscription-token"}, nil
-	}, &llmproxy.Options{Admit: budgets.ProxyAdmission(h.pool, ws, bot.Id, h.clock.Now)})
+	}, &llmproxy.Options{Admit: budgets.ProxyAdmission(h.pool, ws, bot.Id, h.clock.Now), Client: upstream.Client()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -288,7 +288,7 @@ func TestPhase4DesktopClaudeMetersWithoutChatTurn(t *testing.T) {
 	defer upstream.Close()
 	handler, err := llmproxy.NewScopedHandler(ws.String(), bot.Id.String(), func(context.Context, string, string) (*llmproxy.SecretConfig, error) {
 		return &llmproxy.SecretConfig{UpstreamURL: upstream.URL, AuthKind: llmproxy.AuthKindClaudeOAuth, SecretValue: secret}, nil
-	}, &llmproxy.Options{Admit: budgets.ProxyAdmission(h.pool, ws, bot.Id, h.clock.Now)})
+	}, &llmproxy.Options{Admit: budgets.ProxyAdmission(h.pool, ws, bot.Id, h.clock.Now), Client: upstream.Client()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -330,7 +330,7 @@ func TestPhase4DesktopClaudeMetersWithoutChatTurn(t *testing.T) {
 	}
 	mismatch, err := llmproxy.NewScopedHandler(ws.String(), other.Id.String(), func(context.Context, string, string) (*llmproxy.SecretConfig, error) {
 		return &llmproxy.SecretConfig{UpstreamURL: upstream.URL, AuthKind: llmproxy.AuthKindClaudeOAuth, SecretValue: secret}, nil
-	}, &llmproxy.Options{Admit: budgets.ProxyAdmission(h.pool, ws, other.Id, h.clock.Now)})
+	}, &llmproxy.Options{Admit: budgets.ProxyAdmission(h.pool, ws, other.Id, h.clock.Now), Client: upstream.Client()})
 	if err != nil {
 		t.Fatal(err)
 	}

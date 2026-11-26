@@ -31,6 +31,25 @@ func botNetworkIngress(subnet string, interfaces []net.Addr) (string, netip.Pref
 	return netip.AddrPortFrom(local, 8081).String(), prefix, nil
 }
 
+func workerMetricsIngress(botNetwork netip.Prefix, interfaces []net.Addr) (string, error) {
+	var controlIP netip.Addr
+	for _, iface := range interfaces {
+		address, err := netip.ParsePrefix(iface.String())
+		ip := address.Addr()
+		if err != nil || !ip.Is4() || !ip.IsGlobalUnicast() || botNetwork.Contains(ip) {
+			continue
+		}
+		if controlIP.IsValid() {
+			return "", errors.New("ambiguous egress control network interface")
+		}
+		controlIP = ip
+	}
+	if !controlIP.IsValid() {
+		return "", errors.New("egress control network interface unavailable")
+	}
+	return netip.AddrPortFrom(controlIP, 9096).String(), nil
+}
+
 func restrictBotNetwork(prefix netip.Prefix, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		peer, err := netip.ParseAddrPort(r.RemoteAddr)

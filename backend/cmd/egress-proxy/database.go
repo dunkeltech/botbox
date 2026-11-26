@@ -28,6 +28,7 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/mcpproxy"
 	"github.com/dunkeltech/botbox/backend/internal/memory"
 	"github.com/dunkeltech/botbox/backend/internal/notify"
+	"github.com/dunkeltech/botbox/backend/internal/observability"
 	"github.com/dunkeltech/botbox/backend/internal/secrets"
 	"github.com/dunkeltech/botbox/backend/internal/secrets/llmproxy"
 	"github.com/dunkeltech/botbox/backend/internal/secrets/mitmproxy"
@@ -67,6 +68,7 @@ func databaseHandlerWithLifecycle(
 	signal notify.Signal,
 	pub *events.Publisher,
 	broker authbroker.Client,
+	metrics *observability.Metrics,
 	nativeOnly bool,
 ) (http.Handler, func(), error) {
 	if pool == nil || ring == nil || workspace == uuid.Nil || bot == uuid.Nil || ca == nil {
@@ -101,6 +103,7 @@ func databaseHandlerWithLifecycle(
 		CA:                 ca,
 		Logger:             logger,
 		Notify:             signal,
+		Metrics:            metrics,
 		PolicyFreshnessMax: time.Second,
 		PublicOnly:         true,
 		NativeHosts:        nativeHosts,
@@ -202,11 +205,17 @@ func databaseHandlerWithLifecycle(
 		}
 	}
 
+	onLLMAudit := func(ev llmproxy.AuditEvent) {
+		if metrics != nil {
+			metrics.EgressDecisionsTotal.WithLabelValues(workspace.String(), bot.String(), "llm_"+ev.Result).Inc()
+		}
+	}
 	llm, err := llmproxy.NewScopedHandler(workspace.String(), bot.String(), resolve, &llmproxy.Options{
 		Logger:     logger,
-		Admit:      budgets.ProxyAdmission(pool, workspace, bot, time.Now),
+		Admit:      budgets.ProxyAdmissionWithMetrics(pool, workspace, bot, time.Now, metrics),
 		Guardrails: guardrailSvc.ForBot(workspace, bot),
-		Client:     &http.Client{Timeout: 10 * time.Minute},
+		OnAudit:    onLLMAudit,
+		Client:     llmproxy.NewSafeHTTPClient(net.DefaultResolver, 10*time.Minute),
 	})
 	if err != nil {
 		guardrailUnsub()
@@ -217,8 +226,9 @@ func databaseHandlerWithLifecycle(
 	var nativeConnect http.Handler
 	if nativeOnly {
 		options := llmproxy.Options{
-			Logger: logger, Admit: budgets.ProxyAdmission(pool, workspace, bot, time.Now),
+			Logger: logger, Admit: budgets.ProxyAdmissionWithMetrics(pool, workspace, bot, time.Now, metrics),
 			Guardrails: guardrailSvc.ForBot(workspace, bot),
+			OnAudit:    onLLMAudit,
 		}
 		if os.Getenv("EGRESS_PROXY_AGY_ACP_TOOLS") == "v1" {
 			options.NativeComputerTools = computermcp.ModelTools()
@@ -528,7 +538,7 @@ func isLLMHost(host string) bool {
 	return false
 }
 
-func openDatabaseProxy(ctx context.Context, dsn string, ring *secrets.KeyRing, workspace, bot, natsURL string, ca *mitmproxy.BotCA, logger *slog.Logger, nativeOnly bool) (http.Handler, func(), error) {
+func openDatabaseProxy(ctx context.Context, dsn string, ring *secrets.KeyRing, workspace, bot, natsURL string, ca *mitmproxy.BotCA, logger *slog.Logger, metrics *observability.Metrics, nativeOnly bool) (http.Handler, func(), error) {
 	ws, err := uuid.Parse(workspace)
 	if err != nil {
 		return nil, nil, errors.New("invalid proxy workspace identity")
@@ -580,7 +590,7 @@ func openDatabaseProxy(ctx context.Context, dsn string, ring *secrets.KeyRing, w
 					logger.Error("publish notification signal", "err", err)
 				}
 			}
-			handler, stopHandler, err := databaseHandlerWithLifecycle(ctx, pool, ring, ws, botID, ca, logger, signal, publisher, brokerClient, nativeOnly)
+			handler, stopHandler, err := databaseHandlerWithLifecycle(ctx, pool, ring, ws, botID, ca, logger, signal, publisher, brokerClient, metrics, nativeOnly)
 			if err != nil {
 				closeAll()
 				return nil, nil, err
@@ -591,7 +601,7 @@ func openDatabaseProxy(ctx context.Context, dsn string, ring *secrets.KeyRing, w
 			}, nil
 		}
 	}
-	handler, stopHandler, err := databaseHandlerWithLifecycle(ctx, pool, ring, ws, botID, ca, logger, signal, nil, brokerClient, nativeOnly)
+	handler, stopHandler, err := databaseHandlerWithLifecycle(ctx, pool, ring, ws, botID, ca, logger, signal, nil, brokerClient, metrics, nativeOnly)
 	if err != nil {
 		closeAll()
 		return nil, nil, err

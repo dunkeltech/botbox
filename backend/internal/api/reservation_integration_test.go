@@ -78,7 +78,7 @@ func testParallelReservation(t *testing.T, scope string) {
 	call := func(bot string) int {
 		handler, err := llmproxy.NewScopedHandler(ws.String(), bot, func(context.Context, string, string) (*llmproxy.SecretConfig, error) {
 			return &llmproxy.SecretConfig{UpstreamURL: upstream.URL, AuthKind: llmproxy.AuthKindBearer, SecretValue: "fixture-key"}, nil
-		}, &llmproxy.Options{Admit: budgets.ProxyAdmission(h.pool, ws, uuid.MustParse(bot), h.clock.Now)})
+		}, &llmproxy.Options{Admit: budgets.ProxyAdmission(h.pool, ws, uuid.MustParse(bot), h.clock.Now), Client: upstream.Client()})
 		if err != nil {
 			t.Error(err)
 			return 0
@@ -146,11 +146,14 @@ func TestUncertainReservedRequestBlocksFurtherSpend(t *testing.T) {
 	admit := budgets.ProxyAdmission(h.pool, ws, bot.Id, h.clock.Now)
 	handler, err := llmproxy.NewScopedHandler(ws.String(), bot.Id.String(), func(context.Context, string, string) (*llmproxy.SecretConfig, error) {
 		return &llmproxy.SecretConfig{UpstreamURL: "http://127.0.0.1:1", AuthKind: llmproxy.AuthKindBearer, SecretValue: "fixture-key"}, nil
-	}, &llmproxy.Options{Admit: func(ctx context.Context, provider, model, path string) (func(llmproxy.Usage) error, error) {
-		settle, err := admit(ctx, provider, model, path)
-		cancel()
-		return settle, err
-	}})
+	}, &llmproxy.Options{
+		Admit: func(ctx context.Context, provider, model, path string) (func(llmproxy.Usage) error, error) {
+			settle, err := admit(ctx, provider, model, path)
+			cancel()
+			return settle, err
+		},
+		Client: &http.Client{},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

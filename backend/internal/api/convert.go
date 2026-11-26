@@ -157,29 +157,41 @@ func toAPIUser(u db.User) api.User {
 
 func toAPIWorkspaceFromRow(w db.Workspace, role string) api.WorkspaceSummary {
 	days := int(w.ScreenshotRetentionDays)
+	var idleMinutes *int
+	if w.SandboxIdleTimeoutMinutes.Valid {
+		v := int(w.SandboxIdleTimeoutMinutes.Int32)
+		idleMinutes = &v
+	}
 	return api.WorkspaceSummary{
-		Id:                      fromPGUUID(w.ID),
-		Name:                    w.Name,
-		Slug:                    w.Slug,
-		DefaultDriver:           api.DriverType(w.DefaultDriver),
-		DefaultLocale:           w.DefaultLocale,
-		Role:                    api.WorkspaceRole(role),
-		CreatedAt:               w.CreatedAt.Time.UTC(),
-		ScreenshotRetentionDays: &days,
+		Id:                        fromPGUUID(w.ID),
+		Name:                      w.Name,
+		Slug:                      w.Slug,
+		DefaultDriver:             api.DriverType(w.DefaultDriver),
+		DefaultLocale:             w.DefaultLocale,
+		Role:                      api.WorkspaceRole(role),
+		CreatedAt:                 w.CreatedAt.Time.UTC(),
+		ScreenshotRetentionDays:   &days,
+		SandboxIdleTimeoutMinutes: idleMinutes,
 	}
 }
 
 func toAPIWorkspaceFromUserRow(w db.GetWorkspaceByIDForUserRow) api.WorkspaceSummary {
 	days := int(w.ScreenshotRetentionDays)
+	var idleMinutes *int
+	if w.SandboxIdleTimeoutMinutes.Valid {
+		v := int(w.SandboxIdleTimeoutMinutes.Int32)
+		idleMinutes = &v
+	}
 	return api.WorkspaceSummary{
-		Id:                      fromPGUUID(w.ID),
-		Name:                    w.Name,
-		Slug:                    w.Slug,
-		DefaultDriver:           api.DriverType(w.DefaultDriver),
-		DefaultLocale:           w.DefaultLocale,
-		Role:                    api.WorkspaceRole(w.Role),
-		CreatedAt:               w.CreatedAt.Time.UTC(),
-		ScreenshotRetentionDays: &days,
+		Id:                        fromPGUUID(w.ID),
+		Name:                      w.Name,
+		Slug:                      w.Slug,
+		DefaultDriver:             api.DriverType(w.DefaultDriver),
+		DefaultLocale:             w.DefaultLocale,
+		Role:                      api.WorkspaceRole(w.Role),
+		CreatedAt:                 w.CreatedAt.Time.UTC(),
+		ScreenshotRetentionDays:   &days,
+		SandboxIdleTimeoutMinutes: idleMinutes,
 	}
 }
 
@@ -187,15 +199,21 @@ func toAPIWorkspaceList(rows []db.ListWorkspacesForUserRow) []api.WorkspaceSumma
 	out := make([]api.WorkspaceSummary, 0, len(rows))
 	for _, r := range rows {
 		days := int(r.ScreenshotRetentionDays)
+		var idleMinutes *int
+		if r.SandboxIdleTimeoutMinutes.Valid {
+			v := int(r.SandboxIdleTimeoutMinutes.Int32)
+			idleMinutes = &v
+		}
 		out = append(out, api.WorkspaceSummary{
-			Id:                      fromPGUUID(r.ID),
-			Name:                    r.Name,
-			Slug:                    r.Slug,
-			DefaultDriver:           api.DriverType(r.DefaultDriver),
-			DefaultLocale:           r.DefaultLocale,
-			Role:                    api.WorkspaceRole(r.Role),
-			CreatedAt:               r.CreatedAt.Time.UTC(),
-			ScreenshotRetentionDays: &days,
+			Id:                        fromPGUUID(r.ID),
+			Name:                      r.Name,
+			Slug:                      r.Slug,
+			DefaultDriver:             api.DriverType(r.DefaultDriver),
+			DefaultLocale:             r.DefaultLocale,
+			Role:                      api.WorkspaceRole(r.Role),
+			CreatedAt:                 r.CreatedAt.Time.UTC(),
+			ScreenshotRetentionDays:   &days,
+			SandboxIdleTimeoutMinutes: idleMinutes,
 		})
 	}
 	return out

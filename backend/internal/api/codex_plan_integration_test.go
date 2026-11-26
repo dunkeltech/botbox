@@ -212,7 +212,7 @@ func TestCodexPlanDesktopAuthorizationAndAccounting(t *testing.T) {
 			return nil, err
 		}
 		return &llmproxy.SecretConfig{UpstreamURL: upstream.URL, AuthKind: llmproxy.AuthKindOpenAIPlan, SecretValue: access, PlanRevision: rev}, nil
-	}, &llmproxy.Options{Admit: budgets.ProxyAdmission(h.pool, ws, bot.Id, h.clock.Now)})
+	}, &llmproxy.Options{Admit: budgets.ProxyAdmission(h.pool, ws, bot.Id, h.clock.Now), Client: upstream.Client()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -402,7 +402,7 @@ func TestCodexPlanSecretSyncWorkspaceAndChatTurn(t *testing.T) {
 		}
 		cfg.UpstreamURL = upstream.URL
 		return cfg, nil
-	}, &llmproxy.Options{Admit: budgets.ProxyAdmission(h.pool, ws, botB.Id, h.clock.Now)})
+	}, &llmproxy.Options{Admit: budgets.ProxyAdmission(h.pool, ws, botB.Id, h.clock.Now), Client: upstream.Client()})
 	if err != nil {
 		t.Fatal(err)
 	}

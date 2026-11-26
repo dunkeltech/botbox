@@ -1459,6 +1459,24 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/workspaces/{workspaceID}/audit-logs': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+      };
+      cookie?: never;
+    };
+    get: operations['listWorkspaceAuditLogs'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1962,12 +1980,15 @@ export interface components {
       /** Format: date-time */
       createdAt: string;
       screenshotRetentionDays?: number;
+      sandboxIdleTimeoutMinutes?: number;
     };
     UpdateWorkspaceRequest: {
       name?: string;
       defaultDriver?: components['schemas']['DriverType'];
       defaultLocale?: string;
       screenshotRetentionDays?: number;
+      /** @description Omit to preserve the current setting, send null to inherit the server default, or send 0 to disable auto-stop. */
+      sandboxIdleTimeoutMinutes?: number | null;
     };
     DesktopAction: {
       /** Format: uuid */
@@ -2700,6 +2721,32 @@ export interface components {
       matchLabels: string[];
       matchCount: number;
       summary: string;
+    };
+    AuditLogEntry: {
+      /** Format: uuid */
+      id: string;
+      /** Format: uuid */
+      workspaceId: string;
+      /** Format: uuid */
+      actorUserId?: string;
+      actorEmail?: string;
+      actorDisplayName?: string;
+      action: string;
+      targetType?: string;
+      /** Format: uuid */
+      targetId?: string;
+      metadata: {
+        [key: string]: unknown;
+      };
+      /** Format: date-time */
+      createdAt: string;
+    };
+    AuditLogListResponse: {
+      entries: components['schemas']['AuditLogEntry'][];
+      /** Format: int64 */
+      total: number;
+      limit: number;
+      offset: number;
     };
   };
   responses: never;
@@ -8947,6 +8994,71 @@ export interface operations {
       };
       /** @description Unauthenticated */
       401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Workspace not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+    };
+  };
+  listWorkspaceAuditLogs: {
+    parameters: {
+      query?: {
+        action?: string;
+        targetType?: string;
+        since?: string;
+        until?: string;
+        limit?: number;
+        offset?: number;
+      };
+      header?: never;
+      path: {
+        workspaceID: components['parameters']['WorkspaceID'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Workspace security and operational audit log entries */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AuditLogListResponse'];
+        };
+      };
+      /** @description Validation error */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorEnvelope'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
         headers: {
           [name: string]: unknown;
         };

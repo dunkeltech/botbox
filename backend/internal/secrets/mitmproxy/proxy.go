@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"net/textproto"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -183,7 +184,15 @@ func NewHandler(cfg Config) (*Handler, error) {
 		if rule.Value == "" {
 			return nil, fmt.Errorf("secret rule for %s requires a value", norm)
 		}
+		if err := validateSecretRuleHeader(rule); err != nil {
+			return nil, fmt.Errorf("secret rule for %s: %w", norm, err)
+		}
 		secrets[norm] = rule
+	}
+	for _, rule := range cfg.Rules {
+		if err := validateSecretRuleHeader(rule); err != nil {
+			return nil, fmt.Errorf("secret rule %q: %w", rule.Name, err)
+		}
 	}
 
 	return &Handler{
@@ -768,9 +777,9 @@ func (h *Handler) forwardMITMRequest(
 		}
 	}
 
-	if (shouldInject && activeRule.AdapterID != "") || (IsGitLabAdapter(rule.AdapterID) && host != "gitlab.com") {
-		origin, _, _, err := CanonicalHTTPSOrigin("https://" + r.Host)
-		if err != nil || origin != "https://"+host+":"+port {
+	if shouldInject || (IsGitLabAdapter(rule.AdapterID) && host != "gitlab.com") {
+		if !requestHostMatchesConnect(r.Host, host, port, h.cfg.AllowCustomPorts) {
+			h.emitAudit(AuditEvent{Host: host, Port: port, Method: r.Method, Path: cleanPath, Action: ActionBlockedHost, Status: http.StatusForbidden})
 			http.Error(w, "request host does not match credential destination", http.StatusForbidden)
 			return
 		}
@@ -780,6 +789,16 @@ func (h *Handler) forwardMITMRequest(
 	var secretID, secretScope, secretName string
 	var activeAdapter *HTTPSAdapter
 	if shouldInject {
+		if err := validateSecretRuleHeader(activeRule); err != nil {
+			h.emitAudit(AuditEvent{Host: host, Port: port, Method: r.Method, Path: cleanPath, Action: ActionBlockedHost, Status: http.StatusForbidden})
+			http.Error(w, "secret header configuration is invalid", http.StatusForbidden)
+			return
+		}
+		if port == "443" {
+			outReq.Host = host
+		} else {
+			outReq.Host = net.JoinHostPort(host, port)
+		}
 		stripPlaceholderAuthHeaders(outReq.Header)
 		headerName, headerVal := formatSecretHeader(activeRule)
 		outReq.Header.Set(headerName, headerVal)
@@ -1067,6 +1086,57 @@ func stripBotboxPlaceholders(h http.Header) {
 			}
 		}
 	}
+}
+
+var mitmHeaderNameRegex = regexp.MustCompile(`^[!#$%&'*+\-.^_` + "`" + `|~0-9A-Za-z]{1,128}$`)
+
+var forbiddenMITMHeaders = map[string]bool{
+	"host":                true,
+	"content-length":      true,
+	"transfer-encoding":   true,
+	"connection":          true,
+	"keep-alive":          true,
+	"upgrade":             true,
+	"te":                  true,
+	"trailer":             true,
+	"proxy-connection":    true,
+	"proxy-authenticate":  true,
+	"proxy-authorization": true,
+}
+
+func validateSecretRuleHeader(rule SecretRule) error {
+	name := strings.TrimSpace(rule.HeaderName)
+	if name == "" {
+		name = "Authorization"
+	}
+	if !mitmHeaderNameRegex.MatchString(name) || forbiddenMITMHeaders[strings.ToLower(name)] {
+		return fmt.Errorf("invalid or reserved secret header name %q", name)
+	}
+	if strings.ContainsAny(rule.Value, "\r\n\x00") || strings.ContainsAny(rule.Username, "\r\n\x00:") {
+		return errors.New("secret header material contains forbidden control characters")
+	}
+	return nil
+}
+
+func requestHostMatchesConnect(rawHost, connectHost, connectPort string, allowCustomPorts bool) bool {
+	trimmed := strings.TrimSpace(rawHost)
+	if trimmed == "" || strings.ContainsAny(trimmed, " \t\r\n/\\?#@") {
+		return false
+	}
+	if !allowCustomPorts {
+		origin, _, _, err := CanonicalHTTPSOrigin("https://" + trimmed)
+		return err == nil && origin == "https://"+connectHost+":"+connectPort
+	}
+	u, err := url.Parse("https://" + trimmed)
+	if err != nil || u.User != nil || u.Path != "" {
+		return false
+	}
+	reqHost := normalizeHostPattern(u.Hostname())
+	reqPort := u.Port()
+	if reqPort == "" {
+		reqPort = "443"
+	}
+	return reqHost != "" && reqHost == connectHost && reqPort == connectPort
 }
 
 func formatSecretHeader(rule SecretRule) (string, string) {

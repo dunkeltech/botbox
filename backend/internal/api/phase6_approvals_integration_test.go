@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sync"
 	"testing"
 
 	"github.com/dunkeltech/botbox/backend/internal/api"
@@ -27,6 +28,16 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+type bodyReadHook struct {
+	io.Reader
+	beforeRead func()
+}
+
+func (r bodyReadHook) Read(p []byte) (int, error) {
+	r.beforeRead()
+	return r.Reader.Read(p)
+}
 
 func TestPhase6ApprovalDecisions(t *testing.T) {
 	queue := &fakeTurnQueue{}
@@ -116,6 +127,23 @@ func TestPhase6ApprovalDecisions(t *testing.T) {
 	}
 	if r := h.request(http.MethodPost, decision, map[string]any{"decision": "maybe"}, member.AccessToken, nil, true); r.status != http.StatusBadRequest || r.errorCode(t) != "validation_error" {
 		t.Fatalf("bad decision=%d %s", r.status, r.body)
+	}
+	req := httptest.NewRequest(http.MethodPost, decision, bodyReadHook{
+		Reader: bytes.NewBufferString(`{"decision":"maybe"}`),
+		beforeRead: sync.OnceFunc(func() {
+			var id uuid.UUID
+			err := h.pool.QueryRow(t.Context(), `SELECT id FROM approvals WHERE workspace_id = $1 AND id = $2 FOR UPDATE NOWAIT`, ws, card.Id).Scan(&id)
+			if err != nil || id != card.Id {
+				t.Errorf("approval locked while reading the request: %v", err)
+			}
+		}),
+	})
+	req.Header.Set("Authorization", "Bearer "+member.AccessToken)
+	req.Header.Set("X-BotBox-CSRF", "1")
+	rec := httptest.NewRecorder()
+	h.handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("invalid streamed decision = %d %s", rec.Code, rec.Body)
 	}
 	if r := h.request(http.MethodPost, decision, map[string]any{"decision": "approved"}, viewer.AccessToken, nil, true); r.status != http.StatusForbidden || r.errorCode(t) != "auth.forbidden" {
 		t.Fatalf("viewer=%d %s", r.status, r.body)

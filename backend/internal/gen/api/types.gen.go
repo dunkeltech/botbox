@@ -4,6 +4,7 @@
 package api
 
 import (
+	"encoding/json"
 	"time"
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
@@ -1242,6 +1243,28 @@ type AskBeforeRule struct {
 // AskBeforeRuleKind defines model for AskBeforeRule.Kind.
 type AskBeforeRuleKind string
 
+// AuditLogEntry defines model for AuditLogEntry.
+type AuditLogEntry struct {
+	Action           string                 `json:"action"`
+	ActorDisplayName *string                `json:"actorDisplayName,omitempty"`
+	ActorEmail       *string                `json:"actorEmail,omitempty"`
+	ActorUserId      *openapi_types.UUID    `json:"actorUserId,omitempty"`
+	CreatedAt        time.Time              `json:"createdAt"`
+	Id               openapi_types.UUID     `json:"id"`
+	Metadata         map[string]interface{} `json:"metadata"`
+	TargetId         *openapi_types.UUID    `json:"targetId,omitempty"`
+	TargetType       *string                `json:"targetType,omitempty"`
+	WorkspaceId      openapi_types.UUID     `json:"workspaceId"`
+}
+
+// AuditLogListResponse defines model for AuditLogListResponse.
+type AuditLogListResponse struct {
+	Entries []AuditLogEntry `json:"entries"`
+	Limit   int             `json:"limit"`
+	Offset  int             `json:"offset"`
+	Total   int64           `json:"total"`
+}
+
 // AuthSessionResponse defines model for AuthSessionResponse.
 type AuthSessionResponse struct {
 	AccessToken     string             `json:"accessToken"`
@@ -2423,10 +2446,13 @@ type UpdateSecretRequest struct {
 
 // UpdateWorkspaceRequest defines model for UpdateWorkspaceRequest.
 type UpdateWorkspaceRequest struct {
-	DefaultDriver           *DriverType `json:"defaultDriver,omitempty"`
-	DefaultLocale           *string     `json:"defaultLocale,omitempty"`
-	Name                    *string     `json:"name,omitempty"`
-	ScreenshotRetentionDays *int        `json:"screenshotRetentionDays,omitempty"`
+	DefaultDriver *DriverType `json:"defaultDriver,omitempty"`
+	DefaultLocale *string     `json:"defaultLocale,omitempty"`
+	Name          *string     `json:"name,omitempty"`
+
+	// SandboxIdleTimeoutMinutes Omit to preserve the current setting, send null to inherit the server default, or send 0 to disable auto-stop.
+	SandboxIdleTimeoutMinutes json.RawMessage `json:"sandboxIdleTimeoutMinutes,omitempty"`
+	ScreenshotRetentionDays   *int            `json:"screenshotRetentionDays,omitempty"`
 }
 
 // User defines model for User.
@@ -2507,14 +2533,15 @@ type WorkspaceRole string
 
 // WorkspaceSummary defines model for WorkspaceSummary.
 type WorkspaceSummary struct {
-	CreatedAt               time.Time          `json:"createdAt"`
-	DefaultDriver           DriverType         `json:"defaultDriver"`
-	DefaultLocale           string             `json:"defaultLocale"`
-	Id                      openapi_types.UUID `json:"id"`
-	Name                    string             `json:"name"`
-	Role                    WorkspaceRole      `json:"role"`
-	ScreenshotRetentionDays *int               `json:"screenshotRetentionDays,omitempty"`
-	Slug                    string             `json:"slug"`
+	CreatedAt                 time.Time          `json:"createdAt"`
+	DefaultDriver             DriverType         `json:"defaultDriver"`
+	DefaultLocale             string             `json:"defaultLocale"`
+	Id                        openapi_types.UUID `json:"id"`
+	Name                      string             `json:"name"`
+	Role                      WorkspaceRole      `json:"role"`
+	SandboxIdleTimeoutMinutes *int               `json:"sandboxIdleTimeoutMinutes,omitempty"`
+	ScreenshotRetentionDays   *int               `json:"screenshotRetentionDays,omitempty"`
+	Slug                      string             `json:"slug"`
 }
 
 // WriteFileContentRequest defines model for WriteFileContentRequest.
@@ -2548,6 +2575,16 @@ type ListApprovalsParams struct {
 
 // ListApprovalsParamsStatus defines parameters for ListApprovals.
 type ListApprovalsParamsStatus string
+
+// ListWorkspaceAuditLogsParams defines parameters for ListWorkspaceAuditLogs.
+type ListWorkspaceAuditLogsParams struct {
+	Action     *string    `form:"action,omitempty" json:"action,omitempty"`
+	TargetType *string    `form:"targetType,omitempty" json:"targetType,omitempty"`
+	Since      *time.Time `form:"since,omitempty" json:"since,omitempty"`
+	Until      *time.Time `form:"until,omitempty" json:"until,omitempty"`
+	Limit      *int       `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset     *int       `form:"offset,omitempty" json:"offset,omitempty"`
+}
 
 // ListBotEgressLogsParams defines parameters for ListBotEgressLogs.
 type ListBotEgressLogsParams struct {

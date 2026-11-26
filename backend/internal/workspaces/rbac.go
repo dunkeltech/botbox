@@ -31,6 +31,8 @@ const (
 	ActionManageMCPServers Action = "manage_mcp_servers"
 	// ActionManageGuardrails allows configuring workspace LLM proxy guardrail policies and rules.
 	ActionManageGuardrails Action = "manage_guardrails"
+	// ActionViewAuditLog allows reading workspace security and operational audit logs.
+	ActionViewAuditLog Action = "view_audit_log"
 	// ActionManageMembers allows changing or removing workspace memberships.
 	ActionManageMembers Action = "manage_members"
 	// ActionManageInvitations allows viewing, creating, and revoking invitations.
@@ -77,7 +79,7 @@ func Can(role Role, action Action, isBotOwner bool) bool {
 		return true
 	case ActionManageWorkspace:
 		return role == RoleOwner
-	case ActionManageMembers, ActionManageInvitations, ActionManageGitLabInstances, ActionManageMCPServers, ActionManageGuardrails:
+	case ActionManageMembers, ActionManageInvitations, ActionManageGitLabInstances, ActionManageMCPServers, ActionManageGuardrails, ActionViewAuditLog:
 		return role == RoleOwner || role == RoleAdmin
 	case ActionCreateBot, ActionFulfillSecretRequest:
 		return role == RoleOwner || role == RoleAdmin || role == RoleMember

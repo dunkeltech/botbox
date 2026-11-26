@@ -44,7 +44,10 @@ func (s *server) handleChatEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer unsubscribe()
-	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{Subprotocols: []string{"botbox.events"}})
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		Subprotocols:   []string{"botbox.events"},
+		OriginPatterns: wsOriginPatterns(s.publicBaseURL),
+	})
 	if err != nil {
 		return
 	}

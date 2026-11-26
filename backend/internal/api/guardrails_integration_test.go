@@ -355,6 +355,7 @@ func TestWorkspaceGuardrailsIntegration(t *testing.T) {
 			SecretValue: "upstream-provider-fixture-key",
 		}, nil
 	}, &llmproxy.Options{
+		Client:     upstream.Client(),
 		Guardrails: guardSvc.ForBot(ws, atlas.Id),
 		Admit: func(context.Context, string, string, string) (func(llmproxy.Usage) error, error) {
 			return func(llmproxy.Usage) error { return nil }, nil

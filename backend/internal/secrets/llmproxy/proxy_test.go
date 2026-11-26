@@ -75,6 +75,7 @@ func TestProxySecretInjectionAndScrubbing(t *testing.T) {
 	logger := slog.New(slog.NewJSONHandler(&logBuf, nil))
 
 	handler := llmproxy.NewHandler(resolve, &llmproxy.Options{
+		Client: upstream.Client(),
 		OAuthExchanger: func(_ context.Context, refreshToken string) (string, error) {
 			if refreshToken != realRefreshToken {
 				return "", errors.New("unexpected refresh token")
@@ -181,6 +182,7 @@ func TestProxySecretInjectionAndScrubbing(t *testing.T) {
 				SecretValue: realRefreshToken,
 			}, nil
 		}, &llmproxy.Options{
+			Client: &http.Client{},
 			OAuthExchanger: func(_ context.Context, _ string) (string, error) {
 				return "", errors.New("oauth error containing " + realRefreshToken)
 			},
@@ -264,5 +266,46 @@ func TestMeteredProxyDoesNotForwardCompressedProviderBody(t *testing.T) {
 	}
 	if rec.Header().Get("Content-Encoding") != "" || strings.Contains(rec.Body.String(), realKey) {
 		t.Fatal("compressed body or credential was forwarded")
+	}
+}
+
+func TestDefaultLLMProxyClientBlocksSSRFAndRedirects(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name        string
+		upstreamURL string
+		wantStatus  int
+	}{
+		{name: "http metadata ip", upstreamURL: "http://169.254.169.254", wantStatus: http.StatusForbidden},
+		{name: "http loopback", upstreamURL: "http://127.0.0.1:8080", wantStatus: http.StatusForbidden},
+		{name: "https metadata ip", upstreamURL: "https://169.254.169.254", wantStatus: http.StatusBadGateway},
+		{name: "https loopback", upstreamURL: "https://127.0.0.1", wantStatus: http.StatusBadGateway},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			handler := llmproxy.NewHandler(func(context.Context, string, string) (*llmproxy.SecretConfig, error) {
+				return &llmproxy.SecretConfig{
+					UpstreamURL: tc.upstreamURL,
+					AuthKind:    llmproxy.AuthKindBearer,
+					SecretValue: "sk-secret-must-not-leak", // #nosec G101 -- test fixture secret value
+				}, nil
+			}, nil)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/llm/openai/v1/responses", strings.NewReader(`{}`)))
+			if rec.Code != tc.wantStatus {
+				t.Fatalf("status=%d want=%d body=%s", rec.Code, tc.wantStatus, rec.Body.String())
+			}
+			if strings.Contains(rec.Body.String(), "sk-secret-must-not-leak") {
+				t.Fatal("secret leaked in error response")
+			}
+		})
+	}
+
+	safeClient := llmproxy.NewSafeHTTPClient(nil, 0)
+	if safeClient.CheckRedirect == nil {
+		t.Fatal("expected CheckRedirect to block redirects")
+	}
+	if err := safeClient.CheckRedirect(httptest.NewRequest(http.MethodPost, "https://example.com", nil), nil); err == nil {
+		t.Fatal("expected CheckRedirect to reject upstream redirect")
 	}
 }

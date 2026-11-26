@@ -11,6 +11,7 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/bots"
 	"github.com/dunkeltech/botbox/backend/internal/codexplan"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
+	"github.com/dunkeltech/botbox/backend/internal/observability"
 	"github.com/dunkeltech/botbox/backend/internal/secrets/llmproxy"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -22,6 +23,12 @@ import (
 // Opaque or unbounded budgeted requests retain per-request serialization. A crash
 // leaves a durable reservation or unknown cost, never free budget capacity.
 func ProxyAdmission(pool *pgxpool.Pool, workspaceID, botID uuid.UUID, now func() time.Time) func(context.Context, string, string, string) (func(llmproxy.Usage) error, error) {
+	return ProxyAdmissionWithMetrics(pool, workspaceID, botID, now, nil)
+}
+
+// ProxyAdmissionWithMetrics reserves cost before a request, settles outside
+// cancellation, and records token and USD cost Prometheus metrics when provided.
+func ProxyAdmissionWithMetrics(pool *pgxpool.Pool, workspaceID, botID uuid.UUID, now func() time.Time, metrics *observability.Metrics) func(context.Context, string, string, string) (func(llmproxy.Usage) error, error) {
 	if now == nil {
 		now = time.Now
 	}
@@ -219,6 +226,21 @@ func ProxyAdmission(pool *pgxpool.Pool, workspaceID, botID uuid.UUID, now func()
 					settleErr = e
 				} else if rows != 1 {
 					settleErr = errors.New("usage record disappeared")
+				} else if metrics != nil && valid {
+					wsLabel := workspaceID.String()
+					botLabel := botID.String()
+					if usage.InputTokens > 0 {
+						metrics.TokensTotal.WithLabelValues(wsLabel, botLabel, priceProvider, "input").Add(float64(usage.InputTokens))
+					}
+					if usage.OutputTokens > 0 {
+						metrics.TokensTotal.WithLabelValues(wsLabel, botLabel, priceProvider, "output").Add(float64(usage.OutputTokens))
+					}
+					if usage.CacheTokens > 0 {
+						metrics.TokensTotal.WithLabelValues(wsLabel, botLabel, priceProvider, "cache").Add(float64(usage.CacheTokens))
+					}
+					if cost.Valid && cost.Int64 > 0 {
+						metrics.CostUSDTotal.WithLabelValues(wsLabel, botLabel, priceProvider).Add(float64(cost.Int64) / 1_000_000.0)
+					}
 				}
 			})
 			return settleErr

@@ -36,6 +36,9 @@ WHERE workspace_id = $1 AND id = $2 AND type = 'group'
 -- name: GetApprovalForUpdate :one
 SELECT * FROM approvals WHERE workspace_id = $1 AND id = $2 FOR UPDATE;
 
+-- name: GetApprovalByWorkspaceAndID :one
+SELECT * FROM approvals WHERE workspace_id = $1 AND id = $2;
+
 -- name: DecideApproval :execrows
 UPDATE approvals
 SET status = $3, decided_by = $4, decided_at = now()

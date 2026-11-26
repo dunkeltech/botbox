@@ -488,3 +488,98 @@ func TestPassthroughTunnelInvalidatedWhenSecretAdded(t *testing.T) {
 		t.Fatalf("expected passthrough upgrade to MITM, got auths=%v", got)
 	}
 }
+
+func TestMITMRejectsHeaderInjectionAndNonAdapterHostSpoofing(t *testing.T) {
+	t.Parallel()
+
+	ca, err := mitmproxy.NewBotCA("bot-hdr-hardening")
+	if err != nil {
+		t.Fatalf("NewBotCA: %v", err)
+	}
+
+	// 1. Static / Dynamic header validation rejects reserved headers and CRLF payloads.
+	for _, bad := range []mitmproxy.SecretRule{
+		{Name: "H1", DomainMatch: "api.example.com", HeaderName: "Host", Scheme: mitmproxy.SchemeRaw, Value: "evil.example"},
+		{Name: "H2", DomainMatch: "api.example.com", HeaderName: "Proxy-Authorization", Scheme: mitmproxy.SchemeRaw, Value: "abc"},
+		{Name: "H3", DomainMatch: "api.example.com", HeaderName: "X-Auth\r\nEvil", Scheme: mitmproxy.SchemeRaw, Value: "abc"},
+		{Name: "H4", DomainMatch: "api.example.com", HeaderName: "X-Auth", Scheme: mitmproxy.SchemeRaw, Value: "abc\r\nX-Injected: 1"},
+		{Name: "H5", DomainMatch: "api.example.com", HeaderName: "Authorization", Scheme: mitmproxy.SchemeBasic, Username: "u:p", Value: "abc"},
+	} {
+		if _, err := mitmproxy.NewHandler(mitmproxy.Config{
+			CA:      ca,
+			Secrets: map[string]mitmproxy.SecretRule{"api.example.com": bad},
+		}); err == nil {
+			t.Fatalf("expected NewHandler to reject unsafe header rule %+v", bad)
+		}
+	}
+
+	// 2. Non-adapter secret rule rejects mismatched Host header inside CONNECT tunnel
+	// and rejects dynamically supplied invalid header rules fail-closed.
+	var upstreamHits atomic.Int32
+	upstream, upstreamRoots := newHostTLSServer(t, "api.example.com", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamHits.Add(1)
+		if r.Host != "api.example.com" {
+			t.Errorf("upstream saw unexpected Host %q", r.Host)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	var dynamicBad atomic.Bool
+	handler, err := mitmproxy.NewHandler(mitmproxy.Config{
+		CA:              ca,
+		UpstreamRootCAs: upstreamRoots,
+		DialContext:     dialLocalTestServer(t, upstream),
+		DynamicPolicy: func(context.Context) (mitmproxy.PolicySnapshot, error) {
+			hdrName := "X-Api-Key"
+			if dynamicBad.Load() {
+				hdrName = "Host"
+			}
+			return mitmproxy.PolicySnapshot{
+				Policy:       mitmproxy.PolicyAllowlist,
+				AllowedHosts: []string{"api.example.com"},
+				Rules: []mitmproxy.SecretRule{{
+					ID:          "sec-non-adapter",
+					Scope:       "workspace",
+					Name:        "API_KEY",
+					DomainMatch: "api.example.com",
+					Port:        "443",
+					HeaderName:  hdrName,
+					Scheme:      mitmproxy.SchemeRaw,
+					Value:       "super-secret-api-key-1234",
+				}},
+			}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewHandler: %v", err)
+	}
+
+	proxySrv := httptest.NewServer(handler)
+	defer proxySrv.Close()
+	client := newProxiedClient(t, proxySrv, ca, upstream)
+
+	// Spoofed Host header inside CONNECT api.example.com:443 must return 403 and never reach upstream.
+	spoofReq, _ := http.NewRequest(http.MethodGet, "https://api.example.com/v1/data", nil)
+	spoofReq.Host = "internal.corp.local"
+	resp, err := client.Do(spoofReq)
+	if err != nil {
+		t.Fatalf("spoofed Host request error: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden || upstreamHits.Load() != 0 {
+		t.Fatalf("expected 403 and 0 upstream hits for spoofed Host, got status=%d hits=%d", resp.StatusCode, upstreamHits.Load())
+	}
+
+	// Dynamic rule attempting to overwrite Host header must fail closed (403).
+	dynamicBad.Store(true)
+	goodReq, _ := http.NewRequest(http.MethodGet, "https://api.example.com/v1/data", nil)
+	resp, err = client.Do(goodReq)
+	if err != nil {
+		t.Fatalf("dynamic bad header request error: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden || upstreamHits.Load() != 0 {
+		t.Fatalf("expected 403 and 0 upstream hits for dynamic reserved header, got status=%d hits=%d", resp.StatusCode, upstreamHits.Load())
+	}
+}

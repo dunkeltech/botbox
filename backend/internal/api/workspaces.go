@@ -3,6 +3,7 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -155,7 +156,7 @@ func (s *server) handleUpdateWorkspace(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, s.logger, &req) {
 		return
 	}
-	if req.Name == nil && req.DefaultDriver == nil && req.DefaultLocale == nil && req.ScreenshotRetentionDays == nil {
+	if req.Name == nil && req.DefaultDriver == nil && req.DefaultLocale == nil && req.ScreenshotRetentionDays == nil && req.SandboxIdleTimeoutMinutes == nil {
 		writeError(w, s.logger, http.StatusBadRequest, "validation_error", "at least one workspace field is required")
 		return
 	}
@@ -192,6 +193,17 @@ func (s *server) handleUpdateWorkspace(w http.ResponseWriter, r *http.Request) {
 		v := int32(days)
 		nextRetention = &v
 	}
+	var nextIdleTimeout pgtype.Int4
+	if req.SandboxIdleTimeoutMinutes != nil {
+		var minutes *int32
+		if err := json.Unmarshal(req.SandboxIdleTimeoutMinutes, &minutes); err != nil || (minutes != nil && (*minutes < 0 || *minutes > 10080)) {
+			writeError(w, s.logger, http.StatusBadRequest, "validation_error", "sandboxIdleTimeoutMinutes must be null or an integer between 0 and 10080")
+			return
+		}
+		if minutes != nil {
+			nextIdleTimeout = pgtype.Int4{Int32: *minutes, Valid: true}
+		}
+	}
 
 	tx, err := s.pool.Begin(r.Context())
 	if err != nil {
@@ -214,11 +226,12 @@ func (s *server) handleUpdateWorkspace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	params := db.UpdateWorkspaceSettingsParams{
-		ID:                      existing.ID,
-		Name:                    existing.Name,
-		DefaultDriver:           existing.DefaultDriver,
-		DefaultLocale:           existing.DefaultLocale,
-		ScreenshotRetentionDays: existing.ScreenshotRetentionDays,
+		ID:                        existing.ID,
+		Name:                      existing.Name,
+		DefaultDriver:             existing.DefaultDriver,
+		DefaultLocale:             existing.DefaultLocale,
+		ScreenshotRetentionDays:   existing.ScreenshotRetentionDays,
+		SandboxIdleTimeoutMinutes: existing.SandboxIdleTimeoutMinutes,
 	}
 	if nextName != nil {
 		params.Name = *nextName
@@ -231,6 +244,9 @@ func (s *server) handleUpdateWorkspace(w http.ResponseWriter, r *http.Request) {
 	}
 	if nextRetention != nil {
 		params.ScreenshotRetentionDays = *nextRetention
+	}
+	if req.SandboxIdleTimeoutMinutes != nil {
+		params.SandboxIdleTimeoutMinutes = nextIdleTimeout
 	}
 
 	updated, err := txq.UpdateWorkspaceSettings(r.Context(), params)

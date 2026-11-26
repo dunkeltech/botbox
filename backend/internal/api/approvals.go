@@ -62,6 +62,10 @@ func (s *server) handleDecideApproval(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.logger, http.StatusBadRequest, "validation_error", "invalid approval identifier")
 		return
 	}
+	row, err := s.queries.GetApprovalByWorkspaceAndID(r.Context(), db.GetApprovalByWorkspaceAndIDParams{WorkspaceID: ws.ID, ID: toPGUUID(approvalID)})
+	if !s.checkApprovalDecisionAccess(w, r, s.queries, role, claims.Subject, row, err) {
+		return
+	}
 	var req apigen.ApprovalDecisionRequest
 	if !decodeJSON(w, r, s.logger, &req) {
 		return
@@ -70,6 +74,7 @@ func (s *server) handleDecideApproval(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.logger, http.StatusBadRequest, "validation_error", "decision must be approved or denied")
 		return
 	}
+
 	tx, err := s.pool.Begin(r.Context())
 	if err != nil {
 		s.logger.Error("begin approval decision", "err", err)
@@ -78,17 +83,13 @@ func (s *server) handleDecideApproval(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rollbackTx(r.Context(), tx)
 	q := s.queries.WithTx(tx)
-	row, err := q.GetApprovalForUpdate(r.Context(), db.GetApprovalForUpdateParams{WorkspaceID: ws.ID, ID: toPGUUID(approvalID)})
-	if errors.Is(err, pgx.ErrNoRows) {
-		writeError(w, s.logger, http.StatusNotFound, "approval.not_found", "approval not found")
+	// Membership and visibility may have changed while the client sent its body.
+	_, _, role, ok = s.workspaceMembership(w, r, q, workspaces.ActionViewWorkspace)
+	if !ok {
 		return
 	}
-	if err != nil {
-		s.logger.Error("load approval", "err", err)
-		s.chatFailure(w)
-		return
-	}
-	if !s.canDecideApproval(w, r, q, role, claims.Subject, row) {
+	row, err = q.GetApprovalForUpdate(r.Context(), db.GetApprovalForUpdateParams{WorkspaceID: ws.ID, ID: toPGUUID(approvalID)})
+	if !s.checkApprovalDecisionAccess(w, r, q, role, claims.Subject, row, err) {
 		return
 	}
 	var applyOpts approvals.ApplyOptions
@@ -174,6 +175,19 @@ func (s *server) handleDecideApproval(w http.ResponseWriter, r *http.Request) {
 // canDecideApproval allows a workspace owner or admin, or a non-viewer member
 // of the group. A workspace budget approval has no group, so only an owner or
 // admin can decide it. Anyone else gets 404, including a member of another group.
+func (s *server) checkApprovalDecisionAccess(w http.ResponseWriter, r *http.Request, q *db.Queries, role workspaces.Role, actor uuid.UUID, row db.Approval, lookupErr error) bool {
+	if errors.Is(lookupErr, pgx.ErrNoRows) {
+		writeError(w, s.logger, http.StatusNotFound, "approval.not_found", "approval not found")
+		return false
+	}
+	if lookupErr != nil {
+		s.logger.Error("load approval", "err", lookupErr)
+		s.chatFailure(w)
+		return false
+	}
+	return s.canDecideApproval(w, r, q, role, actor, row)
+}
+
 func (s *server) canDecideApproval(w http.ResponseWriter, r *http.Request, q *db.Queries, role workspaces.Role, actor uuid.UUID, row db.Approval) bool {
 	if !row.ConversationID.Valid {
 		if role == workspaces.RoleOwner || role == workspaces.RoleAdmin {

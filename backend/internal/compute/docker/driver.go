@@ -51,6 +51,8 @@ type Options struct {
 	BaseURL string
 	// HTTPClient overrides the HTTP transport used to call the Docker Engine API.
 	HTTPClient *http.Client
+	// Runtime optionally selects the OCI container runtime ("" / "runc" / "runsc").
+	Runtime string
 	// SeccompProfile optionally embeds a seccomp JSON string into SecurityOpt.
 	SeccompProfile string
 	// AgentDialer optionally overrides how gRPC connections to a container agent are dialed.
@@ -68,6 +70,7 @@ type Driver struct {
 	proxy             *ProxyOptions
 	client            *http.Client
 	baseURL           string
+	runtime           string
 	seccompProfile    string
 	agentDialer       func(ctx context.Context, addr string) (*grpc.ClientConn, error)
 	authBrokerEnabled bool
@@ -92,6 +95,7 @@ type PortBinding struct {
 
 // ContainerHostConfig captures Docker HostConfig security and resource constraints.
 type ContainerHostConfig struct {
+	Runtime        string                   `json:"Runtime,omitempty"`
 	Privileged     bool                     `json:"Privileged"`
 	CapDrop        []string                 `json:"CapDrop"`
 	CapAdd         []string                 `json:"CapAdd,omitempty"`
@@ -125,9 +129,25 @@ type ContainerCreateSpec struct {
 	NetworkingConfig ContainerNetworkingConfig `json:"NetworkingConfig"`
 }
 
+// ValidateRuntime checks that an OCI runtime selection is empty (daemon default),
+// "runc", or "runsc" (gVisor).
+func ValidateRuntime(raw string) (string, error) {
+	rt := strings.ToLower(strings.TrimSpace(raw))
+	switch rt {
+	case "", "runc", "runsc":
+		return rt, nil
+	default:
+		return "", fmt.Errorf("%w: unsupported docker runtime %q", compute.ErrInvalidConfig, raw)
+	}
+}
+
 // NewDriver creates a Docker ComputeDriver using either opts.BaseURL or opts.SocketPath.
 func NewDriver(opts Options) (*Driver, error) {
 	if err := validateProxyOptions(opts.Proxy); err != nil {
+		return nil, err
+	}
+	runtimeName, err := ValidateRuntime(opts.Runtime)
+	if err != nil {
 		return nil, err
 	}
 	baseURL := strings.TrimRight(strings.TrimSpace(opts.BaseURL), "/")
@@ -196,6 +216,7 @@ func NewDriver(opts Options) (*Driver, error) {
 		proxy:             proxy,
 		client:            client,
 		baseURL:           baseURL,
+		runtime:           runtimeName,
 		seccompProfile:    seccompProfile,
 		agentDialer:       opts.AgentDialer,
 		authBrokerEnabled: opts.AuthBrokerEnabled,
@@ -317,6 +338,11 @@ func BuildContainerSpec(cfg compute.BotConfig, seccompProfile string) (Container
 
 // ValidateContainerSpec verifies mandatory non-privileged container invariants.
 func ValidateContainerSpec(spec ContainerCreateSpec) error {
+	switch strings.ToLower(strings.TrimSpace(spec.HostConfig.Runtime)) {
+	case "", "runc", "runsc":
+	default:
+		return fmt.Errorf("%w: container runtime %q is forbidden", compute.ErrSecurityViolation, spec.HostConfig.Runtime)
+	}
 	if spec.HostConfig.Privileged {
 		return fmt.Errorf("%w: privileged containers are forbidden", compute.ErrSecurityViolation)
 	}
@@ -335,6 +361,11 @@ func ValidateContainerSpec(spec ContainerCreateSpec) error {
 	for _, bind := range spec.HostConfig.Binds {
 		if strings.Contains(strings.ToLower(bind), "docker.sock") {
 			return fmt.Errorf("%w: Docker socket bind mounts are forbidden", compute.ErrSecurityViolation)
+		}
+		src, _, hasSep := strings.Cut(bind, ":")
+		src = strings.TrimSpace(src)
+		if !hasSep || src == "" || strings.HasPrefix(src, "/") || strings.HasPrefix(src, ".") || strings.HasPrefix(src, "~") || strings.ContainsAny(src, `/\`) {
+			return fmt.Errorf("%w: host path bind mounts are forbidden (%q)", compute.ErrSecurityViolation, bind)
 		}
 	}
 	for _, entry := range spec.Env {
@@ -374,6 +405,7 @@ func (d *Driver) CreateEnvironment(ctx context.Context, cfg compute.BotConfig) (
 	if err != nil {
 		return "", err
 	}
+	spec.HostConfig.Runtime = d.runtime
 
 	if err := d.ensureVolume(ctx, volumeName, spec.Labels); err != nil {
 		return "", err
@@ -392,6 +424,9 @@ func (d *Driver) CreateEnvironment(ctx context.Context, cfg compute.BotConfig) (
 	}
 	if d.authBrokerEnabled {
 		spec.Env = append(spec.Env, "BOTBOX_AUTH_BROKER_ENABLED=true")
+	}
+	if err := ValidateContainerSpec(spec); err != nil {
+		return "", err
 	}
 	containerName := "botbox-bot-" + sanitizeIdentifier(cfg.BotID)
 	var createResp struct {

@@ -413,12 +413,12 @@ func (s *server) handleBrokerTakeoverFrame(w http.ResponseWriter, r *http.Reques
 	if !s.ensureDB(w) {
 		return
 	}
-	if s.authBroker == nil {
-		s.writeSecretRequestError(w, secretrequests.ErrUnsupportedCapability)
-		return
-	}
 	ws, claims, role, ok := s.loadWorkspaceMembership(w, r, workspaces.ActionViewWorkspace)
 	if !ok {
+		return
+	}
+	if s.authBroker == nil {
+		s.writeSecretRequestError(w, secretrequests.ErrUnsupportedCapability)
 		return
 	}
 	reqID, err := uuid.Parse(chi.URLParam(r, "requestID"))
@@ -456,12 +456,12 @@ func (s *server) handleBrokerTakeoverInput(w http.ResponseWriter, r *http.Reques
 	if !s.ensureDB(w) {
 		return
 	}
-	if s.authBroker == nil {
-		s.writeSecretRequestError(w, secretrequests.ErrUnsupportedCapability)
+	ws, claims, role, ok := s.loadWorkspaceMembership(w, r, workspaces.ActionFulfillSecretRequest)
+	if !ok {
 		return
 	}
-	ws, claims, role, ok := s.loadWorkspaceMembership(w, r, workspaces.ActionViewWorkspace)
-	if !ok {
+	if s.authBroker == nil {
+		s.writeSecretRequestError(w, secretrequests.ErrUnsupportedCapability)
 		return
 	}
 	reqID, err := uuid.Parse(chi.URLParam(r, "requestID"))

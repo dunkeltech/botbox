@@ -30,6 +30,7 @@ export type ErrorTranslationKey =
   | 'environmentNotFound'
   | 'environmentModelPriceRequired'
   | 'environmentNetworkCapacity'
+  | 'environmentCapacityExceeded'
   | 'subscriptionUsageNotFound'
   | 'subscriptionModelPriceRequired'
   | 'fileNotFound'
@@ -98,6 +99,7 @@ const ERROR_CODE_TO_KEY: Record<string, ErrorTranslationKey> = {
   'environment.not_found': 'environmentNotFound',
   'environment.model_price_required': 'environmentModelPriceRequired',
   'environment.network_capacity': 'environmentNetworkCapacity',
+  'environment.capacity_exceeded': 'environmentCapacityExceeded',
   'budget.usage_not_found': 'subscriptionUsageNotFound',
   'budget.model_price_required': 'subscriptionModelPriceRequired',
   'file.not_found': 'fileNotFound',

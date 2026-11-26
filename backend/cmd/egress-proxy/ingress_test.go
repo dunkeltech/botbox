@@ -6,8 +6,33 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"testing"
 )
+
+func TestWorkerMetricsIngress(t *testing.T) {
+	t.Parallel()
+	botNetwork := netip.MustParsePrefix("172.28.0.0/16")
+	bot := &net.IPNet{IP: net.ParseIP("172.28.0.2"), Mask: net.CIDRMask(16, 32)}
+	control := &net.IPNet{IP: net.ParseIP("172.17.0.3"), Mask: net.CIDRMask(16, 32)}
+	loopback := &net.IPNet{IP: net.ParseIP("127.0.0.1"), Mask: net.CIDRMask(8, 32)}
+	for _, tc := range []struct {
+		name       string
+		interfaces []net.Addr
+		want       string
+	}{
+		{"control only", []net.Addr{bot, control, loopback}, "172.17.0.3:9096"},
+		{"no control", []net.Addr{bot, loopback}, ""},
+		{"ambiguous control", []net.Addr{control, bot, &net.IPNet{IP: net.ParseIP("172.19.0.4"), Mask: net.CIDRMask(16, 32)}}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			addr, err := workerMetricsIngress(botNetwork, tc.interfaces)
+			if addr != tc.want || (err == nil) != (tc.want != "") {
+				t.Fatalf("metrics address = %q, err = %v, want %q", addr, err, tc.want)
+			}
+		})
+	}
+}
 
 func TestBotNetworkIngress(t *testing.T) {
 	t.Parallel()

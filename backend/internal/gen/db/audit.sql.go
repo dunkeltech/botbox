@@ -11,6 +11,37 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countAuditLogsByWorkspaceFiltered = `-- name: CountAuditLogsByWorkspaceFiltered :one
+SELECT count(*)::bigint AS total
+FROM audit_log a
+WHERE a.workspace_id = $1
+  AND ($2::text IS NULL OR a.action = $2::text)
+  AND ($3::text IS NULL OR a.target_type = $3::text)
+  AND ($4::timestamptz IS NULL OR a.created_at >= $4::timestamptz)
+  AND ($5::timestamptz IS NULL OR a.created_at <= $5::timestamptz)
+`
+
+type CountAuditLogsByWorkspaceFilteredParams struct {
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	Action      pgtype.Text        `json:"action"`
+	TargetType  pgtype.Text        `json:"target_type"`
+	Since       pgtype.Timestamptz `json:"since"`
+	Until       pgtype.Timestamptz `json:"until"`
+}
+
+func (q *Queries) CountAuditLogsByWorkspaceFiltered(ctx context.Context, arg CountAuditLogsByWorkspaceFilteredParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countAuditLogsByWorkspaceFiltered,
+		arg.WorkspaceID,
+		arg.Action,
+		arg.TargetType,
+		arg.Since,
+		arg.Until,
+	)
+	var total int64
+	err := row.Scan(&total)
+	return total, err
+}
+
 const createAuditLog = `-- name: CreateAuditLog :one
 INSERT INTO audit_log (workspace_id, actor_user_id, action, target_type, target_id, metadata)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -75,6 +106,91 @@ func (q *Queries) ListAuditLogsByWorkspace(ctx context.Context, arg ListAuditLog
 			&i.ID,
 			&i.WorkspaceID,
 			&i.ActorUserID,
+			&i.Action,
+			&i.TargetType,
+			&i.TargetID,
+			&i.Metadata,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAuditLogsByWorkspaceFiltered = `-- name: ListAuditLogsByWorkspaceFiltered :many
+SELECT a.id,
+       a.workspace_id,
+       a.actor_user_id,
+       COALESCE(u.email, '')::text AS actor_email,
+       COALESCE(u.display_name, '')::text AS actor_display_name,
+       a.action,
+       COALESCE(a.target_type, '')::text AS target_type,
+       a.target_id,
+       a.metadata,
+       a.created_at
+FROM audit_log a
+LEFT JOIN users u ON u.id = a.actor_user_id
+WHERE a.workspace_id = $1
+  AND ($2::text IS NULL OR a.action = $2::text)
+  AND ($3::text IS NULL OR a.target_type = $3::text)
+  AND ($4::timestamptz IS NULL OR a.created_at >= $4::timestamptz)
+  AND ($5::timestamptz IS NULL OR a.created_at <= $5::timestamptz)
+ORDER BY a.created_at DESC, a.id DESC
+LIMIT $7
+OFFSET $6
+`
+
+type ListAuditLogsByWorkspaceFilteredParams struct {
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	Action      pgtype.Text        `json:"action"`
+	TargetType  pgtype.Text        `json:"target_type"`
+	Since       pgtype.Timestamptz `json:"since"`
+	Until       pgtype.Timestamptz `json:"until"`
+	PageOffset  int32              `json:"page_offset"`
+	PageLimit   int32              `json:"page_limit"`
+}
+
+type ListAuditLogsByWorkspaceFilteredRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	WorkspaceID      pgtype.UUID        `json:"workspace_id"`
+	ActorUserID      pgtype.UUID        `json:"actor_user_id"`
+	ActorEmail       string             `json:"actor_email"`
+	ActorDisplayName string             `json:"actor_display_name"`
+	Action           string             `json:"action"`
+	TargetType       string             `json:"target_type"`
+	TargetID         pgtype.UUID        `json:"target_id"`
+	Metadata         []byte             `json:"metadata"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) ListAuditLogsByWorkspaceFiltered(ctx context.Context, arg ListAuditLogsByWorkspaceFilteredParams) ([]ListAuditLogsByWorkspaceFilteredRow, error) {
+	rows, err := q.db.Query(ctx, listAuditLogsByWorkspaceFiltered,
+		arg.WorkspaceID,
+		arg.Action,
+		arg.TargetType,
+		arg.Since,
+		arg.Until,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAuditLogsByWorkspaceFilteredRow
+	for rows.Next() {
+		var i ListAuditLogsByWorkspaceFilteredRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.ActorUserID,
+			&i.ActorEmail,
+			&i.ActorDisplayName,
 			&i.Action,
 			&i.TargetType,
 			&i.TargetID,

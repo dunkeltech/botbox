@@ -89,7 +89,8 @@ func TestProxyProvisioningKeepsCredentialsOutsideSandbox(t *testing.T) {
 				w.WriteHeader(200)
 			}))
 			defer server.Close()
-			opts := docker.Options{BaseURL: server.URL, Proxy: &docker.ProxyOptions{Image: "botbox/egress-proxy:dev", WorkerNetwork: tc.workerNetwork, DatabaseURL: "postgres://fixture-db-password@db/botbox", KeySpec: "fixture-key-must-not-leak"}}
+			metricsEnabled := tc.workerNetwork != ""
+			opts := docker.Options{BaseURL: server.URL, Proxy: &docker.ProxyOptions{Image: "botbox/egress-proxy:dev", WorkerNetwork: tc.workerNetwork, WorkerMetrics: metricsEnabled, DatabaseURL: "postgres://fixture-db-password@db/botbox", KeySpec: "fixture-key-must-not-leak"}}
 			d, err := docker.NewDriver(opts)
 			if err != nil {
 				t.Fatal(err)
@@ -145,6 +146,15 @@ func TestProxyProvisioningKeepsCredentialsOutsideSandbox(t *testing.T) {
 			if worker == nil || worker["HostConfig"].(map[string]any)["NetworkMode"] != wantNetwork {
 				t.Fatal("trusted worker missing external network")
 			}
+			workerEnv, _ := json.Marshal(worker["Env"])
+			workerNetworking, _ := json.Marshal(worker["NetworkingConfig"])
+			if strings.Contains(string(workerEnv), "EGRESS_PROXY_WORKER_METRICS=1") != metricsEnabled ||
+				strings.Contains(string(workerNetworking), "botbox-egress-metrics") != metricsEnabled {
+				t.Fatal("worker metrics flag and control-network alias must match the opt-in")
+			}
+			if strings.Contains(string(proxyEnv), "WORKER_METRICS") || strings.Contains(string(raw), "WORKER_METRICS") {
+				t.Fatal("worker metrics configuration reached the relay or sandbox")
+			}
 			host := proxy["HostConfig"].(map[string]any)
 			if host["NetworkMode"] != "botbox-egress-net-bot" {
 				t.Fatal("relay has a route outside the isolated bot network")
@@ -168,6 +178,9 @@ func TestProxyProvisioningKeepsCredentialsOutsideSandbox(t *testing.T) {
 	}
 	if _, err := docker.NewDriver(docker.Options{Proxy: &docker.ProxyOptions{Image: "proxy"}}); err == nil {
 		t.Fatal("incomplete proxy configuration admitted")
+	}
+	if _, err := docker.NewDriver(docker.Options{Proxy: &docker.ProxyOptions{Image: "proxy", DatabaseURL: "db", KeySpec: "key", WorkerMetrics: true}}); err == nil {
+		t.Fatal("worker metrics enabled without a dedicated control network")
 	}
 }
 

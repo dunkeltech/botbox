@@ -46,6 +46,9 @@ type RelayOptions struct {
 	// Authorize checks the current workspace membership and, for controllers,
 	// the current desktop holder. Errors terminate the connection.
 	Authorize func(ctx context.Context, claims TicketClaims) error
+	// OnSessionStart and OnSessionEnd track active VNC relay connections.
+	OnSessionStart func(workspaceID string)
+	OnSessionEnd   func(workspaceID string)
 }
 
 type jsonErrorEnvelope struct {
@@ -195,6 +198,12 @@ func NewRelayHandler(
 
 		upstreamConn.SetReadLimit(maxVNCMessage)
 		clientConn.SetReadLimit(maxVNCMessage)
+		if opts != nil && opts.OnSessionStart != nil {
+			opts.OnSessionStart(workspaceID)
+		}
+		if opts != nil && opts.OnSessionEnd != nil {
+			defer opts.OnSessionEnd(workspaceID)
+		}
 		pump(ctx, clientConn, upstreamConn, claims.CanControl, authorize, logger)
 	}
 }

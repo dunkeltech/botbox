@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -109,7 +110,11 @@ func (d *Driver) dialAgentGRPC(ctx context.Context, id compute.EnvID, addr strin
 		// socket is the remaining path. The sandbox gains no new route.
 		return d.dialAgentExec(ctx, string(id))
 	}
-	return grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithContextDialer(dialer))
+	return grpc.NewClient(target,
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(dialer),
+	)
 }
 
 // DialVNC returns a stream to websockify inside the sandbox. The API process

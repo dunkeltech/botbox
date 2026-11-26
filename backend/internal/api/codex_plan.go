@@ -63,7 +63,7 @@ func (s *server) handleCompleteCodexPlan(w http.ResponseWriter, r *http.Request)
 		s.chatFailure(w)
 		return
 	}
-	if !s.codexPairRL.Allow("complete:" + clientIP(r)) {
+	if !s.codexPairRL.Allow("complete:" + s.clientIP(r)) {
 		writeError(w, s.logger, 429, "rate_limited", "too many pairing requests")
 		return
 	}

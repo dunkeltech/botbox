@@ -5,9 +5,12 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
+	"time"
 
 	"github.com/dunkeltech/botbox/backend/internal/auth"
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
@@ -27,12 +30,17 @@ const (
 
 type pgUserStore struct {
 	queries *db.Queries
+	now     func() time.Time
 }
 
 func (s *pgUserStore) GetUserByEmail(ctx context.Context, email string) (*auth.StoredUser, error) {
 	u, err := s.queries.GetUserByEmail(ctx, email)
 	if err != nil {
 		return nil, err
+	}
+	// The local provider verifies its dummy hash for both locked and unknown users.
+	if u.LockedUntil.Valid && u.LockedUntil.Time.After(s.now()) {
+		return nil, auth.ErrInvalidCredentials
 	}
 	return &auth.StoredUser{
 		User: auth.User{
@@ -106,9 +114,88 @@ func extractBearerToken(header string) (string, bool) {
 	return tok, tok != ""
 }
 
-// clientIP reads only the socket RemoteAddr so clients cannot spoof X-Forwarded-For
-// headers to evade per-IP rate limits.
-func clientIP(r *http.Request) string {
+// ParseTrustedProxyCIDRs parses a comma-separated list of IP addresses or CIDR
+// prefixes whose X-Forwarded-For headers may be trusted.
+func ParseTrustedProxyCIDRs(raw string) ([]netip.Prefix, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil, nil
+	}
+	parts := strings.Split(trimmed, ",")
+	out := make([]netip.Prefix, 0, len(parts))
+	for _, part := range parts {
+		item := strings.TrimSpace(part)
+		if item == "" {
+			continue
+		}
+		if strings.Contains(item, "/") {
+			pfx, err := netip.ParsePrefix(item)
+			if err != nil {
+				return nil, fmt.Errorf("invalid trusted proxy CIDR %q: %w", item, err)
+			}
+			out = append(out, pfx.Masked())
+			continue
+		}
+		addr, err := netip.ParseAddr(item)
+		if err != nil {
+			return nil, fmt.Errorf("invalid trusted proxy IP %q: %w", item, err)
+		}
+		addr = addr.Unmap()
+		out = append(out, netip.PrefixFrom(addr, addr.BitLen()))
+	}
+	return out, nil
+}
+
+func isTrustedProxyAddr(addr netip.Addr, trusted []netip.Prefix) bool {
+	if !addr.IsValid() || len(trusted) == 0 {
+		return false
+	}
+	unmapped := addr.Unmap()
+	for _, pfx := range trusted {
+		if pfx.Contains(unmapped) {
+			return true
+		}
+	}
+	return false
+}
+
+// clientIP returns the socket peer IP unless the peer belongs to s.trustedProxies,
+// in which case the rightmost untrusted X-Forwarded-For entry is returned.
+func (s *server) clientIP(r *http.Request) string {
+	peer := socketPeerIP(r)
+	if s == nil || len(s.trustedProxies) == 0 {
+		return peer
+	}
+	peerAddr, err := netip.ParseAddr(peer)
+	if err != nil || !isTrustedProxyAddr(peerAddr, s.trustedProxies) {
+		return peer
+	}
+	xffValues := r.Header.Values("X-Forwarded-For")
+	if len(xffValues) == 0 {
+		return peer
+	}
+	var hops []string
+	for _, hdr := range xffValues {
+		for _, part := range strings.Split(hdr, ",") {
+			if clean := strings.TrimSpace(part); clean != "" {
+				hops = append(hops, clean)
+			}
+		}
+	}
+	for i := len(hops) - 1; i >= 0; i-- {
+		addr, parseErr := netip.ParseAddr(hops[i])
+		if parseErr != nil {
+			return peer
+		}
+		unmapped := addr.Unmap()
+		if !isTrustedProxyAddr(unmapped, s.trustedProxies) {
+			return unmapped.String()
+		}
+	}
+	return peer
+}
+
+func socketPeerIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
 	if err == nil && host != "" {
 		return host
@@ -120,6 +207,10 @@ func clientIP(r *http.Request) string {
 }
 
 func (s *server) loadWorkspaceMembership(w http.ResponseWriter, r *http.Request, action workspaces.Action) (db.GetWorkspaceByIDForUserRow, *auth.Claims, workspaces.Role, bool) {
+	return s.workspaceMembership(w, r, s.queries, action)
+}
+
+func (s *server) workspaceMembership(w http.ResponseWriter, r *http.Request, q *db.Queries, action workspaces.Action) (db.GetWorkspaceByIDForUserRow, *auth.Claims, workspaces.Role, bool) {
 	var zero db.GetWorkspaceByIDForUserRow
 	if !s.ensureDB(w) {
 		return zero, nil, "", false
@@ -137,7 +228,7 @@ func (s *server) loadWorkspaceMembership(w http.ResponseWriter, r *http.Request,
 		return zero, nil, "", false
 	}
 
-	wsRow, err := s.queries.GetWorkspaceByIDForUser(r.Context(), db.GetWorkspaceByIDForUserParams{
+	wsRow, err := q.GetWorkspaceByIDForUser(r.Context(), db.GetWorkspaceByIDForUserParams{
 		ID:     toPGUUID(wsID),
 		UserID: toPGUUID(claims.Subject),
 	})

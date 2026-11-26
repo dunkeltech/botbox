@@ -64,7 +64,7 @@ func (q *Queries) CountWorkspacesForUser(ctx context.Context, userID pgtype.UUID
 const createWorkspace = `-- name: CreateWorkspace :one
 INSERT INTO workspaces (name, slug, default_driver, default_locale)
 VALUES ($1, $2, $3, $4)
-RETURNING id, name, slug, default_driver, default_locale, created_at, screenshot_retention_days, count_subscription_usage
+RETURNING id, name, slug, default_driver, default_locale, created_at, screenshot_retention_days, count_subscription_usage, sandbox_idle_timeout_minutes
 `
 
 type CreateWorkspaceParams struct {
@@ -91,6 +91,7 @@ func (q *Queries) CreateWorkspace(ctx context.Context, arg CreateWorkspaceParams
 		&i.CreatedAt,
 		&i.ScreenshotRetentionDays,
 		&i.CountSubscriptionUsage,
+		&i.SandboxIdleTimeoutMinutes,
 	)
 	return i, err
 }
@@ -119,7 +120,7 @@ func (q *Queries) DeleteWorkspaceConversations(ctx context.Context, workspaceID 
 }
 
 const getWorkspaceByIDForUser = `-- name: GetWorkspaceByIDForUser :one
-SELECT w.id, w.name, w.slug, w.default_driver, w.default_locale, w.created_at, w.screenshot_retention_days, w.count_subscription_usage, wm.role
+SELECT w.id, w.name, w.slug, w.default_driver, w.default_locale, w.created_at, w.screenshot_retention_days, w.count_subscription_usage, w.sandbox_idle_timeout_minutes, wm.role
 FROM workspaces w
 JOIN workspace_members wm ON wm.workspace_id = w.id
 WHERE w.id = $1 AND wm.user_id = $2
@@ -131,15 +132,16 @@ type GetWorkspaceByIDForUserParams struct {
 }
 
 type GetWorkspaceByIDForUserRow struct {
-	ID                      pgtype.UUID        `json:"id"`
-	Name                    string             `json:"name"`
-	Slug                    string             `json:"slug"`
-	DefaultDriver           string             `json:"default_driver"`
-	DefaultLocale           string             `json:"default_locale"`
-	CreatedAt               pgtype.Timestamptz `json:"created_at"`
-	ScreenshotRetentionDays int32              `json:"screenshot_retention_days"`
-	CountSubscriptionUsage  bool               `json:"count_subscription_usage"`
-	Role                    string             `json:"role"`
+	ID                        pgtype.UUID        `json:"id"`
+	Name                      string             `json:"name"`
+	Slug                      string             `json:"slug"`
+	DefaultDriver             string             `json:"default_driver"`
+	DefaultLocale             string             `json:"default_locale"`
+	CreatedAt                 pgtype.Timestamptz `json:"created_at"`
+	ScreenshotRetentionDays   int32              `json:"screenshot_retention_days"`
+	CountSubscriptionUsage    bool               `json:"count_subscription_usage"`
+	SandboxIdleTimeoutMinutes pgtype.Int4        `json:"sandbox_idle_timeout_minutes"`
+	Role                      string             `json:"role"`
 }
 
 func (q *Queries) GetWorkspaceByIDForUser(ctx context.Context, arg GetWorkspaceByIDForUserParams) (GetWorkspaceByIDForUserRow, error) {
@@ -154,13 +156,14 @@ func (q *Queries) GetWorkspaceByIDForUser(ctx context.Context, arg GetWorkspaceB
 		&i.CreatedAt,
 		&i.ScreenshotRetentionDays,
 		&i.CountSubscriptionUsage,
+		&i.SandboxIdleTimeoutMinutes,
 		&i.Role,
 	)
 	return i, err
 }
 
 const getWorkspaceBySlugForUser = `-- name: GetWorkspaceBySlugForUser :one
-SELECT w.id, w.name, w.slug, w.default_driver, w.default_locale, w.created_at, w.screenshot_retention_days, w.count_subscription_usage, wm.role
+SELECT w.id, w.name, w.slug, w.default_driver, w.default_locale, w.created_at, w.screenshot_retention_days, w.count_subscription_usage, w.sandbox_idle_timeout_minutes, wm.role
 FROM workspaces w
 JOIN workspace_members wm ON wm.workspace_id = w.id
 WHERE w.slug = $1 AND wm.user_id = $2
@@ -172,15 +175,16 @@ type GetWorkspaceBySlugForUserParams struct {
 }
 
 type GetWorkspaceBySlugForUserRow struct {
-	ID                      pgtype.UUID        `json:"id"`
-	Name                    string             `json:"name"`
-	Slug                    string             `json:"slug"`
-	DefaultDriver           string             `json:"default_driver"`
-	DefaultLocale           string             `json:"default_locale"`
-	CreatedAt               pgtype.Timestamptz `json:"created_at"`
-	ScreenshotRetentionDays int32              `json:"screenshot_retention_days"`
-	CountSubscriptionUsage  bool               `json:"count_subscription_usage"`
-	Role                    string             `json:"role"`
+	ID                        pgtype.UUID        `json:"id"`
+	Name                      string             `json:"name"`
+	Slug                      string             `json:"slug"`
+	DefaultDriver             string             `json:"default_driver"`
+	DefaultLocale             string             `json:"default_locale"`
+	CreatedAt                 pgtype.Timestamptz `json:"created_at"`
+	ScreenshotRetentionDays   int32              `json:"screenshot_retention_days"`
+	CountSubscriptionUsage    bool               `json:"count_subscription_usage"`
+	SandboxIdleTimeoutMinutes pgtype.Int4        `json:"sandbox_idle_timeout_minutes"`
+	Role                      string             `json:"role"`
 }
 
 func (q *Queries) GetWorkspaceBySlugForUser(ctx context.Context, arg GetWorkspaceBySlugForUserParams) (GetWorkspaceBySlugForUserRow, error) {
@@ -195,13 +199,14 @@ func (q *Queries) GetWorkspaceBySlugForUser(ctx context.Context, arg GetWorkspac
 		&i.CreatedAt,
 		&i.ScreenshotRetentionDays,
 		&i.CountSubscriptionUsage,
+		&i.SandboxIdleTimeoutMinutes,
 		&i.Role,
 	)
 	return i, err
 }
 
 const getWorkspaceForUpdate = `-- name: GetWorkspaceForUpdate :one
-SELECT id, name, slug, default_driver, default_locale, created_at, screenshot_retention_days, count_subscription_usage
+SELECT id, name, slug, default_driver, default_locale, created_at, screenshot_retention_days, count_subscription_usage, sandbox_idle_timeout_minutes
 FROM workspaces
 WHERE id = $1
 FOR UPDATE
@@ -219,6 +224,7 @@ func (q *Queries) GetWorkspaceForUpdate(ctx context.Context, id pgtype.UUID) (Wo
 		&i.CreatedAt,
 		&i.ScreenshotRetentionDays,
 		&i.CountSubscriptionUsage,
+		&i.SandboxIdleTimeoutMinutes,
 	)
 	return i, err
 }
@@ -340,7 +346,7 @@ func (q *Queries) ListWorkspaceMembers(ctx context.Context, workspaceID pgtype.U
 }
 
 const listWorkspacesForUser = `-- name: ListWorkspacesForUser :many
-SELECT w.id, w.name, w.slug, w.default_driver, w.default_locale, w.created_at, w.screenshot_retention_days, w.count_subscription_usage, wm.role
+SELECT w.id, w.name, w.slug, w.default_driver, w.default_locale, w.created_at, w.screenshot_retention_days, w.count_subscription_usage, w.sandbox_idle_timeout_minutes, wm.role
 FROM workspaces w
 JOIN workspace_members wm ON wm.workspace_id = w.id
 WHERE wm.user_id = $1
@@ -348,15 +354,16 @@ ORDER BY w.created_at ASC, w.slug ASC
 `
 
 type ListWorkspacesForUserRow struct {
-	ID                      pgtype.UUID        `json:"id"`
-	Name                    string             `json:"name"`
-	Slug                    string             `json:"slug"`
-	DefaultDriver           string             `json:"default_driver"`
-	DefaultLocale           string             `json:"default_locale"`
-	CreatedAt               pgtype.Timestamptz `json:"created_at"`
-	ScreenshotRetentionDays int32              `json:"screenshot_retention_days"`
-	CountSubscriptionUsage  bool               `json:"count_subscription_usage"`
-	Role                    string             `json:"role"`
+	ID                        pgtype.UUID        `json:"id"`
+	Name                      string             `json:"name"`
+	Slug                      string             `json:"slug"`
+	DefaultDriver             string             `json:"default_driver"`
+	DefaultLocale             string             `json:"default_locale"`
+	CreatedAt                 pgtype.Timestamptz `json:"created_at"`
+	ScreenshotRetentionDays   int32              `json:"screenshot_retention_days"`
+	CountSubscriptionUsage    bool               `json:"count_subscription_usage"`
+	SandboxIdleTimeoutMinutes pgtype.Int4        `json:"sandbox_idle_timeout_minutes"`
+	Role                      string             `json:"role"`
 }
 
 func (q *Queries) ListWorkspacesForUser(ctx context.Context, userID pgtype.UUID) ([]ListWorkspacesForUserRow, error) {
@@ -377,6 +384,7 @@ func (q *Queries) ListWorkspacesForUser(ctx context.Context, userID pgtype.UUID)
 			&i.CreatedAt,
 			&i.ScreenshotRetentionDays,
 			&i.CountSubscriptionUsage,
+			&i.SandboxIdleTimeoutMinutes,
 			&i.Role,
 		); err != nil {
 			return nil, err
@@ -437,17 +445,19 @@ UPDATE workspaces
 SET name = $2,
     default_driver = $3,
     default_locale = $4,
-    screenshot_retention_days = $5
+    screenshot_retention_days = $5,
+    sandbox_idle_timeout_minutes = $6
 WHERE id = $1
-RETURNING id, name, slug, default_driver, default_locale, created_at, screenshot_retention_days, count_subscription_usage
+RETURNING id, name, slug, default_driver, default_locale, created_at, screenshot_retention_days, count_subscription_usage, sandbox_idle_timeout_minutes
 `
 
 type UpdateWorkspaceSettingsParams struct {
-	ID                      pgtype.UUID `json:"id"`
-	Name                    string      `json:"name"`
-	DefaultDriver           string      `json:"default_driver"`
-	DefaultLocale           string      `json:"default_locale"`
-	ScreenshotRetentionDays int32       `json:"screenshot_retention_days"`
+	ID                        pgtype.UUID `json:"id"`
+	Name                      string      `json:"name"`
+	DefaultDriver             string      `json:"default_driver"`
+	DefaultLocale             string      `json:"default_locale"`
+	ScreenshotRetentionDays   int32       `json:"screenshot_retention_days"`
+	SandboxIdleTimeoutMinutes pgtype.Int4 `json:"sandbox_idle_timeout_minutes"`
 }
 
 func (q *Queries) UpdateWorkspaceSettings(ctx context.Context, arg UpdateWorkspaceSettingsParams) (Workspace, error) {
@@ -457,6 +467,7 @@ func (q *Queries) UpdateWorkspaceSettings(ctx context.Context, arg UpdateWorkspa
 		arg.DefaultDriver,
 		arg.DefaultLocale,
 		arg.ScreenshotRetentionDays,
+		arg.SandboxIdleTimeoutMinutes,
 	)
 	var i Workspace
 	err := row.Scan(
@@ -468,6 +479,7 @@ func (q *Queries) UpdateWorkspaceSettings(ctx context.Context, arg UpdateWorkspa
 		&i.CreatedAt,
 		&i.ScreenshotRetentionDays,
 		&i.CountSubscriptionUsage,
+		&i.SandboxIdleTimeoutMinutes,
 	)
 	return i, err
 }

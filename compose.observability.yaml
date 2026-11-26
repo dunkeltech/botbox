@@ -1,0 +1,86 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+services:
+  api:
+    environment:
+      BOTBOX_EGRESS_WORKER_METRICS: "true"
+
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    restart: unless-stopped
+    volumes:
+      - ./deploy/observability/prometheus-alerts.yaml:/etc/prometheus/alerts.yaml:ro
+      - prometheus_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+    configs:
+      - source: prometheus_config
+        target: /etc/prometheus/prometheus.yml
+    ports:
+      - "127.0.0.1:9090:9090"
+    networks:
+      - control
+
+  grafana:
+    image: grafana/grafana:11.5.2
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-botbox-dev-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    configs:
+      - source: grafana_datasource
+        target: /etc/grafana/provisioning/datasources/prometheus.yaml
+      - source: grafana_dashboard_provider
+        target: /etc/grafana/provisioning/dashboards/botbox.yaml
+    volumes:
+      - ./deploy/observability/grafana-dashboard.json:/var/lib/grafana/dashboards/botbox.json:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3001:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - control
+
+configs:
+  prometheus_config:
+    content: |
+      global:
+        scrape_interval: 15s
+        evaluation_interval: 15s
+      rule_files:
+        - /etc/prometheus/alerts.yaml
+      scrape_configs:
+        - job_name: botbox-api
+          static_configs:
+            - targets: ["api:9095"]
+        - job_name: botbox-egress-workers
+          dns_sd_configs:
+            - names: ["botbox-egress-metrics"]
+              type: A
+              port: 9096
+              refresh_interval: 15s
+  grafana_datasource:
+    content: |
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          type: prometheus
+          access: proxy
+          url: http://prometheus:9090
+          isDefault: true
+  grafana_dashboard_provider:
+    content: |
+      apiVersion: 1
+      providers:
+        - name: botbox
+          folder: bot.Box
+          type: file
+          disableDeletion: true
+          options:
+            path: /var/lib/grafana/dashboards
+
+volumes:
+  prometheus_data:
+  grafana_data:

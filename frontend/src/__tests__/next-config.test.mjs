@@ -29,3 +29,27 @@ it('proxies desktop websocket paths to the API', async () => {
   const ws = list.find((rule) => rule.source === '/ws/:path*');
   expect(ws?.destination).toMatch(/^https?:\/\/.+\/ws\/:path\*$/);
 });
+
+it('emits strict CSP and security headers in production without unsafe-eval', async () => {
+  const prod = configureNext(PHASE_PRODUCTION_BUILD);
+  const dev = configureNext(PHASE_DEVELOPMENT_SERVER);
+
+  const prodHeaders = await prod.headers();
+  const devHeaders = await dev.headers();
+
+  const prodMap = Object.fromEntries(
+    prodHeaders[0].headers.map((h) => [h.key, h.value]),
+  );
+  const devMap = Object.fromEntries(
+    devHeaders[0].headers.map((h) => [h.key, h.value]),
+  );
+
+  expect(prodMap['Content-Security-Policy']).toContain(
+    "frame-ancestors 'none'",
+  );
+  expect(prodMap['Content-Security-Policy']).toContain("object-src 'none'");
+  expect(prodMap['Content-Security-Policy']).not.toContain("'unsafe-eval'");
+  expect(devMap['Content-Security-Policy']).toContain("'unsafe-eval'");
+  expect(prodMap['X-Frame-Options']).toBe('DENY');
+  expect(prodMap['X-Content-Type-Options']).toBe('nosniff');
+});

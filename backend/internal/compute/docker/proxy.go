@@ -22,7 +22,9 @@ import (
 type ProxyOptions struct {
 	Image string
 	// WorkerNetwork is the Docker bridge that reaches trusted services. Empty uses bridge.
-	WorkerNetwork   string
+	WorkerNetwork string
+	// WorkerMetrics exposes a scrape target on the named control network.
+	WorkerMetrics   bool
 	DatabaseURL     string
 	KeySpec         string
 	NATSURL         string
@@ -151,6 +153,9 @@ func (d *Driver) workerServiceEnv(workspace, bot string) []string {
 	if d.proxy.AuthBrokerURL != "" && d.proxy.AuthBrokerToken != "" {
 		env = append(env, "EGRESS_PROXY_AUTH_BROKER_URL="+d.proxy.AuthBrokerURL, "EGRESS_PROXY_AUTH_BROKER_TOKEN="+d.proxy.AuthBrokerToken)
 	}
+	if d.proxy.WorkerMetrics {
+		env = append(env, "EGRESS_PROXY_WORKER_METRICS=1")
+	}
 	return env
 }
 
@@ -164,7 +169,7 @@ func workerSettingsMatch(actual, expected []string) bool {
 	for _, entry := range actual {
 		key, _, _ := strings.Cut(entry, "=")
 		switch key {
-		case "NATS_URL", "EGRESS_PROXY_AUTH_BROKER_URL", "EGRESS_PROXY_AUTH_BROKER_TOKEN", "EGRESS_PROXY_AGY_ACP", "EGRESS_PROXY_AGY_ACP_TOOLS":
+		case "NATS_URL", "EGRESS_PROXY_AUTH_BROKER_URL", "EGRESS_PROXY_AUTH_BROKER_TOKEN", "EGRESS_PROXY_AGY_ACP", "EGRESS_PROXY_AGY_ACP_TOOLS", "EGRESS_PROXY_WORKER_METRICS":
 			if !slices.Contains(expected, entry) {
 				return false
 			}
@@ -215,6 +220,9 @@ func (d *Driver) createProxyContainer(ctx context.Context, name, role, image, wo
 	aliases := map[string]any{}
 	if role == "relay" {
 		aliases["Aliases"] = []string{"egress"}
+	} else if d.proxy.WorkerMetrics {
+		// Prometheus uses this shared DNS name on the control network.
+		aliases["Aliases"] = []string{"botbox-egress-metrics"}
 	}
 	host := map[string]any{"Privileged": false, "CapDrop": []string{"ALL"},
 		"SecurityOpt": []string{"no-new-privileges:true"}, "ReadonlyRootfs": true, "NetworkMode": network,
@@ -428,6 +436,9 @@ func validateProxyOptions(opts *ProxyOptions) error {
 	}
 	if name := opts.WorkerNetwork; name != "" && (name == "host" || name == "none" || sanitizeIdentifier(name) != name || strings.HasPrefix(name, "botbox-egress-net-")) {
 		return errors.New("egress worker requires a separate Docker bridge network")
+	}
+	if opts.WorkerMetrics && (opts.WorkerNetwork == "" || opts.WorkerNetwork == "bridge") {
+		return errors.New("egress worker metrics require a named control network")
 	}
 	return nil
 }
