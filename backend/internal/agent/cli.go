@@ -51,7 +51,9 @@ func (s *Server) RunCLI(req *agentv1.RunCLIRequest, stream grpc.ServerStreamingS
 	input := []byte(req.Prompt)
 	switch req.Cli {
 	case "claude":
-		args = []string{"-p", "--verbose", "--input-format", "stream-json", "--output-format", "stream-json", "--dangerously-skip-permissions"}
+		// Built-in WebFetch/WebSearch phone home to claude.ai and fail in the sandbox
+		// before ever reaching the per-bot egress proxy; use curl or desktop browser tools.
+		args = []string{"-p", "--verbose", "--input-format", "stream-json", "--output-format", "stream-json", "--dangerously-skip-permissions", "--disallowedTools", "WebFetch,WebSearch"}
 		if req.SessionId != "" {
 			args = append(args, "--resume", req.SessionId)
 		}

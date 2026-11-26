@@ -50,6 +50,12 @@ func TestSandboxResponsibilityReachesEveryTurn(t *testing.T) {
 						t.Errorf("%s: expected responsibility or boundary instruction once: %q", mode, want)
 					}
 				}
+				if mode != "api identity" {
+					wantFetch := "To fetch external websites or APIs, use shell tools (such as curl) or the desktop browser tools so requests go through the egress proxy."
+					if strings.Count(prompt, wantFetch) != 1 {
+						t.Errorf("%s: expected egress fetch guidance once: %q", mode, wantFetch)
+					}
+				}
 			}
 		})
 	}

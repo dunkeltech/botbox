@@ -268,6 +268,18 @@ func TestOtherCLIsGetNoGeminiSettings(t *testing.T) {
 	if strings.Contains(strings.Join(run.args, " "), "modelProvider") {
 		t.Fatal("codex got agy settings")
 	}
+	if strings.Contains(strings.Join(run.args, " "), "WebFetch") {
+		t.Fatal("codex got claude disallowedTools")
+	}
+}
+
+func TestClaudeDisallowsWebFetchAndWebSearch(t *testing.T) {
+	t.Setenv("HTTP_PROXY", "")
+	run := runFakeAgy(t, "claude", &agentv1.RunCLIRequest{Cli: "claude", Prompt: "fetch site"})
+	joined := strings.Join(run.args, " ")
+	if !strings.Contains(joined, "--disallowedTools WebFetch,WebSearch") {
+		t.Fatalf("claude arguments %q missing --disallowedTools WebFetch,WebSearch", joined)
+	}
 }
 
 func TestClaudeSubscriptionUsesOnlyPlaceholderAndNoAPIKey(t *testing.T) {

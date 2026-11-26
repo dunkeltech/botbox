@@ -59,7 +59,7 @@ try:
         result = subprocess.run(
             ["claude", "-p", "--verbose", "--input-format", "stream-json",
              "--output-format", "stream-json", "--dangerously-skip-permissions",
-             "--model", "sonnet"],
+             "--disallowedTools", "WebFetch,WebSearch", "--model", "sonnet"],
             input=json.dumps({"type": "user", "message": {"role": "user", "content": "Fixture greeting"}}) + "\n",
             text=True, capture_output=True, env=env, timeout=30, check=False)
         assert result.returncode == 0, f"CLI contract failed: {result.stderr[:500]} {result.stdout[:500]}"
