@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"path"
 	"sort"
 	"strings"
 	"time"
@@ -526,13 +527,20 @@ func (s *server) handleExecBotTerminal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	workdir := agent.DefaultHomeDir
-	if req.Workdir != nil && strings.TrimSpace(*req.Workdir) != "" {
-		if _, err := agent.ResolveHomePath(agent.DefaultHomeDir, *req.Workdir); err != nil {
-			writeError(w, s.logger, http.StatusBadRequest, "validation_error", "workdir must stay inside /home/bot")
-			return
-		}
+	workdir := ""
+	if req.Workdir != nil {
 		workdir = strings.TrimSpace(*req.Workdir)
+	}
+	if workdir == "" {
+		workdir = agent.DefaultHomeDir
+	}
+	// The working directory belongs to the sandbox. Only the agent can check
+	// existence and resolve symlinks against its filesystem.
+	cleaned := path.Clean(workdir)
+	if cleaned == ".." || strings.HasPrefix(cleaned, "../") ||
+		(path.IsAbs(cleaned) && cleaned != agent.DefaultHomeDir && !strings.HasPrefix(cleaned, agent.DefaultHomeDir+"/")) {
+		writeError(w, s.logger, http.StatusBadRequest, "validation_error", "workdir must stay inside /home/bot")
+		return
 	}
 
 	envRow, _, _, ok := s.loadOrInitEnvironment(w, r, botRow)
