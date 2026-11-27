@@ -2286,7 +2286,9 @@ type TeamBotStatusState string
 
 // TerminalExecRequest defines model for TerminalExecRequest.
 type TerminalExecRequest struct {
-	Command string  `json:"command"`
+	Command string `json:"command"`
+
+	// Workdir Existing directory within the sandbox's /home/bot, which is both the default and the base for relative paths.
 	Workdir *string `json:"workdir,omitempty"`
 }
 

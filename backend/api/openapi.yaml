@@ -4213,6 +4213,7 @@ components:
           type: string
         workdir:
           type: string
+          description: Existing directory within the sandbox's /home/bot, which is both the default and the base for relative paths.
 
     TerminalExecResponse:
       type: object

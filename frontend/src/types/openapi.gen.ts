@@ -2231,6 +2231,7 @@ export interface components {
     };
     TerminalExecRequest: {
       command: string;
+      /** @description Existing directory within the sandbox's /home/bot, which is both the default and the base for relative paths. */
       workdir?: string;
     };
     TerminalExecResponse: {

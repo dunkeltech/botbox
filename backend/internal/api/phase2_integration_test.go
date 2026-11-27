@@ -6,6 +6,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -59,6 +60,9 @@ func TestPhase2EnvironmentLifecycleFilesTerminalControlAndRBAC(t *testing.T) {
 	unauthResp := h.request(http.MethodGet, baseURL+"/environment", nil, "", nil, false)
 	if unauthResp.status != http.StatusUnauthorized {
 		t.Fatalf("unauthenticated GET /environment status = %d, want 401", unauthResp.status)
+	}
+	if r := h.request(http.MethodPost, baseURL+"/terminal/exec", map[string]any{"command": "ls"}, "", nil, true); r.status != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated terminal/exec status=%d, want 401", r.status)
 	}
 
 	// Initial environment state is stopped.
@@ -147,6 +151,29 @@ func TestPhase2EnvironmentLifecycleFilesTerminalControlAndRBAC(t *testing.T) {
 	if termOut.ExitCode != 0 || !strings.Contains(termOut.Stdout, "hello-sandbox") || !strings.Contains(termOut.Stdout, "ship phase 2") {
 		t.Fatalf("unexpected terminal output: %+v", termOut)
 	}
+	for _, tc := range []struct {
+		name    string
+		workdir string
+		output  string
+	}{
+		{name: "terminal tab home", workdir: "/home/bot", output: "notes"},
+		{name: "absolute subdirectory", workdir: "/home/bot/notes", output: "todo.txt"},
+		{name: "relative subdirectory", workdir: "notes", output: "todo.txt"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := h.request(http.MethodPost, baseURL+"/terminal/exec", map[string]any{
+				"command": "ls", "workdir": tc.workdir,
+			}, owner.AccessToken, nil, true)
+			if r.status != http.StatusOK {
+				t.Fatalf("terminal/exec status=%d body=%s", r.status, r.body)
+			}
+			var result apigen.TerminalExecResponse
+			r.decode(t, &result)
+			if result.ExitCode != 0 || result.Cwd != tc.workdir || !slices.Contains(strings.Fields(result.Stdout), tc.output) {
+				t.Fatalf("unexpected terminal output: %+v", result)
+			}
+		})
+	}
 
 	// Path traversal negative checks -> 400.
 	if r := h.request(http.MethodGet, baseURL+"/files?path=../etc", nil, owner.AccessToken, nil, false); r.status != http.StatusBadRequest {
@@ -155,8 +182,25 @@ func TestPhase2EnvironmentLifecycleFilesTerminalControlAndRBAC(t *testing.T) {
 	if r := h.request(http.MethodGet, baseURL+"/files/content?path=/etc/passwd", nil, owner.AccessToken, nil, false); r.status != http.StatusBadRequest {
 		t.Fatalf("read path traversal status=%d, want 400", r.status)
 	}
-	if r := h.request(http.MethodPost, baseURL+"/terminal/exec", map[string]any{"command": "pwd", "workdir": "../etc"}, owner.AccessToken, nil, true); r.status != http.StatusBadRequest {
-		t.Fatalf("terminal workdir escape status=%d, want 400", r.status)
+	for _, tc := range []struct {
+		name string
+		body map[string]any
+	}{
+		{name: "missing command", body: map[string]any{}},
+		{name: "wrong command type", body: map[string]any{"command": 1}},
+		{name: "blank command", body: map[string]any{"command": " "}},
+		{name: "command over limit", body: map[string]any{"command": strings.Repeat("a", 4097)}},
+		{name: "wrong workdir type", body: map[string]any{"command": "ls", "workdir": 1}},
+		{name: "relative escape", body: map[string]any{"command": "ls", "workdir": "../etc"}},
+		{name: "absolute escape", body: map[string]any{"command": "ls", "workdir": "/home/bot/../etc"}},
+		{name: "missing directory", body: map[string]any{"command": "ls", "workdir": "/home/bot/missing"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := h.request(http.MethodPost, baseURL+"/terminal/exec", tc.body, owner.AccessToken, nil, true)
+			if r.status != http.StatusBadRequest {
+				t.Fatalf("terminal/exec status=%d, want 400 (body=%s)", r.status, r.body)
+			}
+		})
 	}
 
 	// Viewer can list/read files, but cannot write files or run terminal commands -> 403.
