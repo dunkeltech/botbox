@@ -1833,14 +1833,16 @@ type Group struct {
 	BudgetLimitMicros *int64             `json:"budgetLimitMicros,omitempty"`
 	Goal              string             `json:"goal"`
 	Id                openapi_types.UUID `json:"id"`
-	LeadBotId         openapi_types.UUID `json:"leadBotId"`
-	Members           []GroupMember      `json:"members"`
-	Name              string             `json:"name"`
-	PauseReason       string             `json:"pauseReason"`
-	Paused            bool               `json:"paused"`
-	TurnLimit         int                `json:"turnLimit"`
-	TurnsSinceHuman   int                `json:"turnsSinceHuman"`
-	Unread            int64              `json:"unread"`
+
+	// LeadBotId Null when the lead bot has been deleted.
+	LeadBotId       *openapi_types.UUID `json:"leadBotId"`
+	Members         []GroupMember       `json:"members"`
+	Name            string              `json:"name"`
+	PauseReason     string              `json:"pauseReason"`
+	Paused          bool                `json:"paused"`
+	TurnLimit       int                 `json:"turnLimit"`
+	TurnsSinceHuman int                 `json:"turnsSinceHuman"`
+	Unread          int64               `json:"unread"`
 }
 
 // GroupAnswerPolicy defines model for Group.AnswerPolicy.
@@ -2387,10 +2389,12 @@ type UpdateGroupRequest struct {
 	BotTalk           bool                           `json:"botTalk"`
 	BudgetLimitMicros *int64                         `json:"budgetLimitMicros,omitempty"`
 	Goal              *string                        `json:"goal,omitempty"`
-	LeadBotId         openapi_types.UUID             `json:"leadBotId"`
-	Members           []GroupMember                  `json:"members"`
-	Name              string                         `json:"name"`
-	TurnLimit         int                            `json:"turnLimit"`
+
+	// LeadBotId Required when the group already has a lead.
+	LeadBotId *openapi_types.UUID `json:"leadBotId,omitempty"`
+	Members   []GroupMember       `json:"members"`
+	Name      string              `json:"name"`
+	TurnLimit int                 `json:"turnLimit"`
 }
 
 // UpdateGroupRequestAnswerPolicy defines model for UpdateGroupRequest.AnswerPolicy.

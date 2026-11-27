@@ -1533,6 +1533,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
     delete:
       operationId: deleteBot
+      description: Deletes the bot and its direct messages. Group chat history is retained, and groups led by the bot are left without a lead.
       parameters:
         - $ref: '#/components/parameters/WorkspaceID'
         - $ref: '#/components/parameters/BotID'
@@ -3490,7 +3491,7 @@ components:
         id: {type: string, format: uuid}
         name: {type: string}
         goal: {type: string}
-        leadBotId: {type: string, format: uuid}
+        leadBotId: {type: string, format: uuid, nullable: true, description: Null when the lead bot has been deleted.}
         botTalk: {type: boolean}
         turnLimit: {type: integer}
         answerPolicy: {type: string, enum: [mentioned_else_lead, lead_first, round_robin]}
@@ -3517,11 +3518,11 @@ components:
         members: {type: array, items: {$ref: '#/components/schemas/GroupMember'}}
     UpdateGroupRequest:
       type: object
-      required: [name, leadBotId, botTalk, turnLimit, answerPolicy, askBefore, members]
+      required: [name, botTalk, turnLimit, answerPolicy, askBefore, members]
       properties:
         name: {type: string, minLength: 1, maxLength: 100}
         goal: {type: string, maxLength: 8192}
-        leadBotId: {type: string, format: uuid}
+        leadBotId: {type: string, format: uuid, nullable: true, description: Required when the group already has a lead.}
         botTalk: {type: boolean}
         turnLimit: {type: integer, minimum: 1, maximum: 100}
         answerPolicy: {type: string, enum: [mentioned_else_lead, lead_first, round_robin]}

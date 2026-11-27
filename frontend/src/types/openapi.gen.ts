@@ -879,6 +879,7 @@ export interface paths {
     get: operations['getBot'];
     put?: never;
     post?: never;
+    /** @description Deletes the bot and its direct messages. Group chat history is retained, and groups led by the bot are left without a lead. */
     delete: operations['deleteBot'];
     options?: never;
     head?: never;
@@ -1871,8 +1872,11 @@ export interface components {
       id: string;
       name: string;
       goal: string;
-      /** Format: uuid */
-      leadBotId: string;
+      /**
+       * Format: uuid
+       * @description Null when the lead bot has been deleted.
+       */
+      leadBotId: string | null;
       botTalk: boolean;
       turnLimit: number;
       /** @enum {string} */
@@ -1906,8 +1910,11 @@ export interface components {
     UpdateGroupRequest: {
       name: string;
       goal?: string;
-      /** Format: uuid */
-      leadBotId: string;
+      /**
+       * Format: uuid
+       * @description Required when the group already has a lead.
+       */
+      leadBotId?: string | null;
       botTalk: boolean;
       turnLimit: number;
       /** @enum {string} */

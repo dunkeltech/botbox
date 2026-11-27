@@ -238,6 +238,7 @@ type ConversationMember struct {
 	RoleText         string      `json:"role_text"`
 	Notify           string      `json:"notify"`
 	WorkspaceUserID  pgtype.UUID `json:"workspace_user_id"`
+	WorkspaceBotID   pgtype.UUID `json:"workspace_bot_id"`
 }
 
 type DesktopAction struct {

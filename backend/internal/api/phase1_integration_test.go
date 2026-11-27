@@ -894,6 +894,7 @@ func TestRBACMatrixAndCrossWorkspaceIsolation(t *testing.T) {
 	}{
 		// Unauthenticated -> 401
 		{name: "unauth list bots", method: http.MethodGet, path: "/api/workspaces/" + wsA.String() + "/bots", token: "", wantStatus: http.StatusUnauthorized},
+		{name: "unauth delete bot", method: http.MethodDelete, path: "/api/workspaces/" + wsA.String() + "/bots/" + botA1.Id.String(), token: "", wantStatus: http.StatusUnauthorized},
 		{name: "unauth create bot", method: http.MethodPost, path: "/api/workspaces/" + wsA.String() + "/bots", body: map[string]any{"name": "x"}, token: "", wantStatus: http.StatusUnauthorized},
 		{name: "unauth update member", method: http.MethodPatch, path: "/api/workspaces/" + wsA.String() + "/members/" + viewerASess.User.Id.String(), body: map[string]any{"role": "member"}, token: "", wantStatus: http.StatusUnauthorized},
 
@@ -913,10 +914,12 @@ func TestRBACMatrixAndCrossWorkspaceIsolation(t *testing.T) {
 		{name: "viewer reads bots", method: http.MethodGet, path: "/api/workspaces/" + wsA.String() + "/bots", token: viewerASess.AccessToken, wantStatus: http.StatusOK},
 		{name: "viewer cannot create bot", method: http.MethodPost, path: "/api/workspaces/" + wsA.String() + "/bots", body: map[string]any{"name": "v", "avatarSeed": "v-seed", "llmMode": "cli", "llmProvider": "anthropic", "llmModel": "claude"}, token: viewerASess.AccessToken, wantStatus: http.StatusForbidden},
 		{name: "viewer cannot update bot", method: http.MethodPatch, path: "/api/workspaces/" + wsA.String() + "/bots/" + botA1.Id.String(), body: map[string]any{"turnTimeoutMinutes": 30}, token: viewerASess.AccessToken, wantStatus: http.StatusForbidden},
+		{name: "viewer cannot delete bot", method: http.MethodDelete, path: "/api/workspaces/" + wsA.String() + "/bots/" + botA1.Id.String(), token: viewerASess.AccessToken, wantStatus: http.StatusForbidden},
 		{name: "viewer cannot list invitations", method: http.MethodGet, path: "/api/workspaces/" + wsA.String() + "/invitations", token: viewerASess.AccessToken, wantStatus: http.StatusForbidden},
 		{name: "viewer cannot change member role", method: http.MethodPatch, path: "/api/workspaces/" + wsA.String() + "/members/" + member1Sess.User.Id.String(), body: map[string]any{"role": "viewer"}, token: viewerASess.AccessToken, wantStatus: http.StatusForbidden},
 
 		// Member permissions (own bot vs others' bots)
+		{name: "member cannot delete another member's bot", method: http.MethodDelete, path: "/api/workspaces/" + wsA.String() + "/bots/" + botA2.Id.String(), token: member1Sess.AccessToken, wantStatus: http.StatusForbidden},
 		{name: "member1 updates own bot", method: http.MethodPatch, path: "/api/workspaces/" + wsA.String() + "/bots/" + botA1.Id.String(), body: map[string]any{"description": "updated by owner", "turnTimeoutMinutes": 30}, token: member1Sess.AccessToken, wantStatus: http.StatusOK},
 		{name: "member2 cannot update member1 bot", method: http.MethodPatch, path: "/api/workspaces/" + wsA.String() + "/bots/" + botA1.Id.String(), body: map[string]any{"turnTimeoutMinutes": 30}, token: member2Sess.AccessToken, wantStatus: http.StatusForbidden},
 		{name: "member2 cannot delete member1 bot", method: http.MethodDelete, path: "/api/workspaces/" + wsA.String() + "/bots/" + botA1.Id.String(), token: member2Sess.AccessToken, wantStatus: http.StatusForbidden},
