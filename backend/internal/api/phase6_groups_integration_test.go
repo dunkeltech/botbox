@@ -56,7 +56,7 @@ func TestPhase6GroupConversationAPI(t *testing.T) {
 	}
 	var group apigen.Group
 	created.decode(t, &group)
-	if group.Id != groupID || group.Name != "Launch" || group.LeadBotId != atlas.Id || group.Unread != 0 || len(group.Members) != 5 {
+	if group.Id != groupID || group.Name != "Launch" || group.LeadBotId == nil || *group.LeadBotId != atlas.Id || group.Unread != 0 || len(group.Members) != 5 {
 		t.Fatalf("created=%s", created.body)
 	}
 	if findGroupMember(t, group.Members, owner.User.Id).RoleText != "" {
@@ -241,13 +241,17 @@ func TestPhase6GroupConversationAPI(t *testing.T) {
 	changed["askBefore"] = []any{map[string]any{"kind": "custom", "label": "Push main"}}
 	changed["budgetLimitMicros"] = 5000
 	changed["members"] = []any{groupUser(owner.User.Id, "owner"), groupUser(member.User.Id, "writer"), groupBot(nova.Id, "lead")}
+	changed["leadBotId"] = nil
+	if r := h.request(http.MethodPatch, path, changed, owner.AccessToken, nil, true); r.status != http.StatusBadRequest {
+		t.Fatalf("clear an existing lead: %d %s", r.status, r.body)
+	}
 	changed["leadBotId"] = nova.Id
 	patched := h.request(http.MethodPatch, path, changed, owner.AccessToken, nil, true)
 	if patched.status != http.StatusOK {
 		t.Fatalf("patch=%d %s", patched.status, patched.body)
 	}
 	patched.decode(t, &group)
-	if !group.BotTalk || group.TurnLimit != 4 || group.AnswerPolicy != "round_robin" || group.Goal != "Ship it" || group.LeadBotId != nova.Id || group.BudgetLimitMicros == nil || *group.BudgetLimitMicros != 5000 {
+	if !group.BotTalk || group.TurnLimit != 4 || group.AnswerPolicy != "round_robin" || group.Goal != "Ship it" || group.LeadBotId == nil || *group.LeadBotId != nova.Id || group.BudgetLimitMicros == nil || *group.BudgetLimitMicros != 5000 {
 		t.Fatalf("patched=%s", patched.body)
 	}
 	if len(group.AskBefore) != 1 || group.AskBefore[0].Kind != "custom" || group.AskBefore[0].Label == nil || *group.AskBefore[0].Label != "Push main" {

@@ -354,7 +354,7 @@
     "saving": "Saving changes…",
     "savedBanner": "Bot configuration saved.",
     "deleteSectionTitle": "Danger zone",
-    "deleteSectionBody": "Deleting a bot removes its workspace configuration.",
+    "deleteSectionBody": "Deleting a bot removes its configuration and direct messages. Group chat history is kept.",
     "deleteButton": "Delete bot",
     "deleteConfirm": "Confirm delete",
     "deleting": "Deleting…",

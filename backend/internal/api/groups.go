@@ -46,7 +46,7 @@ type groupMemberSpec struct {
 type groupSpec struct {
 	name      string
 	goal      string
-	lead      uuid.UUID
+	lead      pgtype.UUID
 	botTalk   bool
 	turnLimit int32
 	policy    string
@@ -96,7 +96,7 @@ func (s *server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	spec, ok := s.parseGroupSpec(w, r, ws.ID, claims.Subject, groupBody{
-		name: req.Name, goal: req.Goal, lead: req.LeadBotId, botTalk: req.BotTalk,
+		name: req.Name, goal: req.Goal, lead: &req.LeadBotId, botTalk: req.BotTalk,
 		turnLimit: req.TurnLimit, policy: string(req.AnswerPolicy), ask: req.AskBefore,
 		budget: req.BudgetLimitMicros, members: req.Members,
 	})
@@ -119,7 +119,7 @@ func (s *server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 		WorkspaceID:       ws.ID,
 		Name:              pgtype.Text{String: spec.name, Valid: true},
 		Goal:              spec.goal,
-		LeadBotID:         toPGUUID(spec.lead),
+		LeadBotID:         spec.lead,
 		BotTalk:           spec.botTalk,
 		TurnLimit:         spec.turnLimit,
 		AnswerPolicy:      spec.policy,
@@ -179,7 +179,7 @@ func (s *server) handleUpdateGroup(w http.ResponseWriter, r *http.Request) {
 	spec, ok := s.parseGroupSpec(w, r, row.WorkspaceID, claims.Subject, groupBody{
 		name: req.Name, goal: req.Goal, lead: req.LeadBotId, botTalk: req.BotTalk,
 		turnLimit: req.TurnLimit, policy: string(req.AnswerPolicy), ask: req.AskBefore,
-		budget: req.BudgetLimitMicros, members: req.Members,
+		budget: req.BudgetLimitMicros, members: req.Members, allowNoLead: !row.LeadBotID.Valid,
 	})
 	if !ok {
 		return
@@ -197,7 +197,7 @@ func (s *server) handleUpdateGroup(w http.ResponseWriter, r *http.Request) {
 		ID:                row.ID,
 		Name:              pgtype.Text{String: spec.name, Valid: true},
 		Goal:              spec.goal,
-		LeadBotID:         toPGUUID(spec.lead),
+		LeadBotID:         spec.lead,
 		BotTalk:           spec.botTalk,
 		TurnLimit:         spec.turnLimit,
 		AnswerPolicy:      spec.policy,
@@ -490,15 +490,16 @@ func (s *server) groupForMember(w http.ResponseWriter, r *http.Request, mutate b
 }
 
 type groupBody struct {
-	name      string
-	goal      *string
-	lead      uuid.UUID
-	botTalk   bool
-	turnLimit int
-	policy    string
-	ask       []apigen.AskBeforeRule
-	budget    *int64
-	members   []apigen.GroupMember
+	name        string
+	goal        *string
+	lead        *uuid.UUID
+	botTalk     bool
+	turnLimit   int
+	policy      string
+	ask         []apigen.AskBeforeRule
+	budget      *int64
+	members     []apigen.GroupMember
+	allowNoLead bool
 }
 
 func (s *server) parseGroupSpec(w http.ResponseWriter, r *http.Request, workspaceID pgtype.UUID, caller uuid.UUID, body groupBody) (groupSpec, bool) {
@@ -540,16 +541,14 @@ func (s *server) parseGroupSpec(w http.ResponseWriter, r *http.Request, workspac
 		writeError(w, s.logger, http.StatusBadRequest, "validation_error", err.Error())
 		return zero, false
 	}
-	leadIsBot := false
-	botCount := 0
+	var lead pgtype.UUID
 	for _, member := range members {
 		switch member.kind {
 		case "user":
 			_, err = s.queries.GetWorkspaceMember(r.Context(), db.GetWorkspaceMemberParams{WorkspaceID: workspaceID, UserID: toPGUUID(member.id)})
 		case "bot":
-			botCount++
-			if member.id == body.lead {
-				leadIsBot = true
+			if body.lead != nil && member.id == *body.lead {
+				lead = toPGUUID(member.id)
 			}
 			_, err = s.queries.GetBotByWorkspaceAndID(r.Context(), db.GetBotByWorkspaceAndIDParams{WorkspaceID: workspaceID, ID: toPGUUID(member.id)})
 		}
@@ -563,12 +562,12 @@ func (s *server) parseGroupSpec(w http.ResponseWriter, r *http.Request, workspac
 			return zero, false
 		}
 	}
-	if botCount < 1 || body.lead == uuid.Nil || !leadIsBot {
+	if !lead.Valid && (!body.allowNoLead || body.lead != nil) {
 		writeError(w, s.logger, http.StatusBadRequest, "validation_error", "the lead must be a bot member")
 		return zero, false
 	}
 	return groupSpec{
-		name: name, goal: goal, lead: body.lead, botTalk: body.botTalk,
+		name: name, goal: goal, lead: lead, botTalk: body.botTalk,
 		turnLimit: int32(body.turnLimit), policy: body.policy, askBefore: ask,
 		budget: body.budget, members: members,
 	}, true
@@ -718,7 +717,7 @@ func (s *server) replayGroup(w http.ResponseWriter, r *http.Request, workspaceID
 }
 
 func sameGroupSpec(row db.GetGroupForMemberRow, stored []db.ListGroupMemberRowsRow, spec groupSpec) bool {
-	if row.Name.String != spec.name || row.Goal != spec.goal || fromPGUUID(row.LeadBotID) != spec.lead {
+	if row.Name.String != spec.name || row.Goal != spec.goal || row.LeadBotID != spec.lead {
 		return false
 	}
 	if row.BotTalk != spec.botTalk || row.TurnLimit != spec.turnLimit || row.AnswerPolicy != spec.policy {
@@ -879,11 +878,16 @@ func (s *server) presentGroup(ctx context.Context, head groupHead) (apigen.Group
 		value := head.budget.Int64
 		budget = &value
 	}
+	var lead *uuid.UUID
+	if head.lead.Valid {
+		id := fromPGUUID(head.lead)
+		lead = &id
+	}
 	return apigen.Group{
 		Id:                fromPGUUID(head.id),
 		Name:              head.name.String,
 		Goal:              head.goal,
-		LeadBotId:         fromPGUUID(head.lead),
+		LeadBotId:         lead,
 		BotTalk:           head.botTalk,
 		TurnLimit:         int(head.turnLimit),
 		AnswerPolicy:      apigen.GroupAnswerPolicy(head.policy),

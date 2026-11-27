@@ -284,7 +284,7 @@ export function GroupConversation({
           key={turn.turnKey}
           turn={turn}
           name={member?.name || t('bot')}
-          avatarSeed={member?.id ?? turn.botId ?? group.leadBotId}
+          avatarSeed={member?.id ?? turn.botId ?? group.leadBotId ?? group.id}
           layout="group"
           selected={selectedToolTurnKey === turn.turnKey}
           onInspect={onInspectToolTurn}
@@ -358,7 +358,12 @@ export function GroupConversation({
       <article data-message-id={message.id} className="flex gap-3 px-5 py-1">
         {who.kind === 'bot' ? (
           <BotAvatar
-            seed={botMember?.id ?? message.senderBotId ?? group.leadBotId}
+            seed={
+              botMember?.id ??
+              message.senderBotId ??
+              group.leadBotId ??
+              group.id
+            }
             size={36}
             decorative
           />
