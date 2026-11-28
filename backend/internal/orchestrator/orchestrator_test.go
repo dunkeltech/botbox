@@ -80,6 +80,32 @@ func TestContextIdentifiesBotAndLead(t *testing.T) {
 	}
 }
 
+func TestContextIncludesHumanRolesAndHandoffGuidance(t *testing.T) {
+	botID, mayaID, liamID := uuid.New(), uuid.New(), uuid.New()
+	text := BuildContext(ContextInput{
+		BotID:     botID,
+		LeadBotID: botID,
+		Members: []Member{
+			{Kind: MemberBot, ID: botID, Name: "Atlas", Instructions: "Draft release notes."},
+			{Kind: MemberUser, ID: mayaID, Name: "Maya", Instructions: "Release Reviewer — Reviews draft release notes."},
+			{Kind: MemberUser, ID: liamID, Name: "Liam", Instructions: "   "},
+		},
+	})
+	for _, want := range []string{
+		"- Maya (user)",
+		"  Role and responsibilities: Release Reviewer — Reviews draft release notes.",
+		"- Liam (user)",
+		"@mention them by their exact roster name",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("missing %q in %s", want, text)
+		}
+	}
+	if strings.Contains(text, "- Liam (user) \n  Role and responsibilities:") {
+		t.Errorf("unexpected role line for empty human role in %s", text)
+	}
+}
+
 func TestParseMentions(t *testing.T) {
 	ann := uuid.New()
 	annie := uuid.New()

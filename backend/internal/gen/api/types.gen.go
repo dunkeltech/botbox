@@ -1871,10 +1871,11 @@ type GroupInputRequestState string
 
 // GroupMember defines model for GroupMember.
 type GroupMember struct {
-	Id       openapi_types.UUID `json:"id"`
-	Name     *string            `json:"name,omitempty"`
-	RoleText string             `json:"roleText"`
-	Type     GroupMemberType    `json:"type"`
+	Id              openapi_types.UUID `json:"id"`
+	Name            *string            `json:"name,omitempty"`
+	RoleDescription *string            `json:"roleDescription,omitempty"`
+	RoleText        string             `json:"roleText"`
+	Type            GroupMemberType    `json:"type"`
 }
 
 // GroupMemberType defines model for GroupMember.Type.
@@ -2435,7 +2436,8 @@ type UpdateMCPServerRequest struct {
 
 // UpdateMemberRoleRequest defines model for UpdateMemberRoleRequest.
 type UpdateMemberRoleRequest struct {
-	Role WorkspaceRole `json:"role"`
+	Role            *WorkspaceRole `json:"role,omitempty"`
+	RoleDescription *string        `json:"roleDescription,omitempty"`
 }
 
 // UpdateSecretRequest defines model for UpdateSecretRequest.
@@ -2520,13 +2522,14 @@ type WorkspaceListResponse struct {
 
 // WorkspaceMember defines model for WorkspaceMember.
 type WorkspaceMember struct {
-	DisplayName string              `json:"displayName"`
-	Email       openapi_types.Email `json:"email"`
-	JoinedAt    time.Time           `json:"joinedAt"`
-	Locale      string              `json:"locale"`
-	Role        WorkspaceRole       `json:"role"`
-	UserId      openapi_types.UUID  `json:"userId"`
-	WorkspaceId openapi_types.UUID  `json:"workspaceId"`
+	DisplayName     string              `json:"displayName"`
+	Email           openapi_types.Email `json:"email"`
+	JoinedAt        time.Time           `json:"joinedAt"`
+	Locale          string              `json:"locale"`
+	Role            WorkspaceRole       `json:"role"`
+	RoleDescription string              `json:"roleDescription"`
+	UserId          openapi_types.UUID  `json:"userId"`
+	WorkspaceId     openapi_types.UUID  `json:"workspaceId"`
 }
 
 // WorkspaceMemberListResponse defines model for WorkspaceMemberListResponse.

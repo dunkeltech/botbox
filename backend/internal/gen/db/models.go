@@ -629,10 +629,11 @@ type WorkspaceGuardrailRule struct {
 }
 
 type WorkspaceMember struct {
-	WorkspaceID pgtype.UUID        `json:"workspace_id"`
-	UserID      pgtype.UUID        `json:"user_id"`
-	Role        string             `json:"role"`
-	JoinedAt    pgtype.Timestamptz `json:"joined_at"`
+	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
+	UserID          pgtype.UUID        `json:"user_id"`
+	Role            string             `json:"role"`
+	JoinedAt        pgtype.Timestamptz `json:"joined_at"`
+	RoleDescription string             `json:"role_description"`
 }
 
 type WorkspaceSecret struct {

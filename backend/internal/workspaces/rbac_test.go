@@ -137,3 +137,50 @@ func TestCanAssignAndModifyMember(t *testing.T) {
 		}
 	}
 }
+
+func TestCanEditMemberRoleDescription(t *testing.T) {
+	cases := []struct {
+		name   string
+		actor  Role
+		target Role
+		isSelf bool
+		want   bool
+	}{
+		// Owner can edit anyone including self.
+		{name: "owner edits self", actor: RoleOwner, target: RoleOwner, isSelf: true, want: true},
+		{name: "owner edits other owner", actor: RoleOwner, target: RoleOwner, isSelf: false, want: true},
+		{name: "owner edits admin", actor: RoleOwner, target: RoleAdmin, isSelf: false, want: true},
+		{name: "owner edits member", actor: RoleOwner, target: RoleMember, isSelf: false, want: true},
+		{name: "owner edits viewer", actor: RoleOwner, target: RoleViewer, isSelf: false, want: true},
+
+		// Admin can edit self, members, and viewers; not owners or other admins.
+		{name: "admin edits self", actor: RoleAdmin, target: RoleAdmin, isSelf: true, want: true},
+		{name: "admin cannot edit other admin", actor: RoleAdmin, target: RoleAdmin, isSelf: false, want: false},
+		{name: "admin cannot edit owner", actor: RoleAdmin, target: RoleOwner, isSelf: false, want: false},
+		{name: "admin edits member", actor: RoleAdmin, target: RoleMember, isSelf: false, want: true},
+		{name: "admin edits viewer", actor: RoleAdmin, target: RoleViewer, isSelf: false, want: true},
+
+		// Member can edit only self.
+		{name: "member edits self", actor: RoleMember, target: RoleMember, isSelf: true, want: true},
+		{name: "member cannot edit other member", actor: RoleMember, target: RoleMember, isSelf: false, want: false},
+		{name: "member cannot edit owner", actor: RoleMember, target: RoleOwner, isSelf: false, want: false},
+		{name: "member cannot edit admin", actor: RoleMember, target: RoleAdmin, isSelf: false, want: false},
+		{name: "member cannot edit viewer", actor: RoleMember, target: RoleViewer, isSelf: false, want: false},
+
+		// Viewer is strictly read-only, even for self.
+		{name: "viewer cannot edit self", actor: RoleViewer, target: RoleViewer, isSelf: true, want: false},
+		{name: "viewer cannot edit other", actor: RoleViewer, target: RoleMember, isSelf: false, want: false},
+
+		// Invalid roles fail closed.
+		{name: "invalid actor denied", actor: Role("ghost"), target: RoleMember, isSelf: true, want: false},
+		{name: "invalid target denied", actor: RoleOwner, target: Role("ghost"), isSelf: false, want: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := CanEditMemberRoleDescription(tc.actor, tc.target, tc.isSelf); got != tc.want {
+				t.Fatalf("CanEditMemberRoleDescription(%q, %q, %v) = %v, want %v", tc.actor, tc.target, tc.isSelf, got, tc.want)
+			}
+		})
+	}
+}

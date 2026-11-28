@@ -866,12 +866,20 @@ func (s *server) presentGroup(ctx context.Context, head groupHead) (apigen.Group
 	members := make([]apigen.GroupMember, 0, len(memberRows))
 	for _, row := range memberRows {
 		name := row.DisplayName
-		members = append(members, apigen.GroupMember{
+		desc := row.UserRoleDescription
+		if row.MemberType == "bot" {
+			desc = row.BotDescription
+		}
+		item := apigen.GroupMember{
 			Type:     apigen.GroupMemberType(row.MemberType),
 			Id:       fromPGUUID(row.MemberID),
 			RoleText: row.RoleText,
 			Name:     &name,
-		})
+		}
+		if desc != "" {
+			item.RoleDescription = &desc
+		}
+		members = append(members, item)
 	}
 	var budget *int64
 	if head.budget.Valid {

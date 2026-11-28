@@ -389,15 +389,17 @@ func rosterFrom(rows []db.ListGroupMemberRowsRow) []orchestrator.Member {
 	out := make([]orchestrator.Member, 0, len(rows))
 	for _, row := range rows {
 		kind := orchestrator.MemberUser
+		instructions := row.UserRoleDescription
 		if row.MemberType == "bot" {
 			kind = orchestrator.MemberBot
+			instructions = row.BotDescription
 		}
 		out = append(out, orchestrator.Member{
 			Kind:         kind,
 			ID:           uuid.UUID(row.MemberID.Bytes),
 			Name:         row.DisplayName,
 			Role:         row.RoleText,
-			Instructions: row.BotDescription,
+			Instructions: instructions,
 		})
 	}
 	return out

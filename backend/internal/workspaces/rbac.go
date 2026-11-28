@@ -124,3 +124,23 @@ func CanModifyMember(actorRole, currentTargetRole Role) bool {
 		return false
 	}
 }
+
+// CanEditMemberRoleDescription reports whether an actor may set, edit, or remove
+// a human member's free-form role description. Owners may edit any member, admins
+// may edit members, viewers, and themselves, members may edit their own role, and
+// viewers are strictly read-only.
+func CanEditMemberRoleDescription(actorRole, currentTargetRole Role, isSelf bool) bool {
+	if !ValidRole(string(actorRole)) || !ValidRole(string(currentTargetRole)) {
+		return false
+	}
+	switch actorRole {
+	case RoleOwner:
+		return true
+	case RoleAdmin:
+		return isSelf || currentTargetRole == RoleMember || currentTargetRole == RoleViewer
+	case RoleMember:
+		return isSelf
+	default:
+		return false
+	}
+}

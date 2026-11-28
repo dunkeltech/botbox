@@ -283,8 +283,12 @@ func BuildContext(in ContextInput) string {
 	b.WriteString("Roster:\n")
 	for _, member := range in.Members {
 		fmt.Fprintf(&b, "- %s (%s) %s\n", member.Name, member.Kind, member.Role)
-		if member.Kind == MemberBot && strings.TrimSpace(member.Instructions) != "" {
-			fmt.Fprintf(&b, "  Global role and responsibilities: %s\n", strings.TrimSpace(member.Instructions))
+		if strings.TrimSpace(member.Instructions) != "" {
+			label := "Role and responsibilities"
+			if member.Kind == MemberBot {
+				label = "Global role and responsibilities"
+			}
+			fmt.Fprintf(&b, "  %s: %s\n", label, strings.TrimSpace(member.Instructions))
 		}
 	}
 	return boundedContext(b.String(), in.Summary, in.Recent)

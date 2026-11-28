@@ -14,7 +14,7 @@ import (
 const addWorkspaceMember = `-- name: AddWorkspaceMember :one
 INSERT INTO workspace_members (workspace_id, user_id, role)
 VALUES ($1, $2, $3)
-RETURNING workspace_id, user_id, role, joined_at
+RETURNING workspace_id, user_id, role, joined_at, role_description
 `
 
 type AddWorkspaceMemberParams struct {
@@ -31,6 +31,7 @@ func (q *Queries) AddWorkspaceMember(ctx context.Context, arg AddWorkspaceMember
 		&i.UserID,
 		&i.Role,
 		&i.JoinedAt,
+		&i.RoleDescription,
 	)
 	return i, err
 }
@@ -230,7 +231,7 @@ func (q *Queries) GetWorkspaceForUpdate(ctx context.Context, id pgtype.UUID) (Wo
 }
 
 const getWorkspaceMember = `-- name: GetWorkspaceMember :one
-SELECT wm.workspace_id, wm.user_id, wm.role, wm.joined_at, u.email, u.display_name, u.locale
+SELECT wm.workspace_id, wm.user_id, wm.role, wm.role_description, wm.joined_at, u.email, u.display_name, u.locale
 FROM workspace_members wm
 JOIN users u ON u.id = wm.user_id
 WHERE wm.workspace_id = $1 AND wm.user_id = $2
@@ -242,13 +243,14 @@ type GetWorkspaceMemberParams struct {
 }
 
 type GetWorkspaceMemberRow struct {
-	WorkspaceID pgtype.UUID        `json:"workspace_id"`
-	UserID      pgtype.UUID        `json:"user_id"`
-	Role        string             `json:"role"`
-	JoinedAt    pgtype.Timestamptz `json:"joined_at"`
-	Email       string             `json:"email"`
-	DisplayName string             `json:"display_name"`
-	Locale      string             `json:"locale"`
+	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
+	UserID          pgtype.UUID        `json:"user_id"`
+	Role            string             `json:"role"`
+	RoleDescription string             `json:"role_description"`
+	JoinedAt        pgtype.Timestamptz `json:"joined_at"`
+	Email           string             `json:"email"`
+	DisplayName     string             `json:"display_name"`
+	Locale          string             `json:"locale"`
 }
 
 func (q *Queries) GetWorkspaceMember(ctx context.Context, arg GetWorkspaceMemberParams) (GetWorkspaceMemberRow, error) {
@@ -258,6 +260,7 @@ func (q *Queries) GetWorkspaceMember(ctx context.Context, arg GetWorkspaceMember
 		&i.WorkspaceID,
 		&i.UserID,
 		&i.Role,
+		&i.RoleDescription,
 		&i.JoinedAt,
 		&i.Email,
 		&i.DisplayName,
@@ -300,7 +303,7 @@ func (q *Queries) HasActiveWorkspaceWork(ctx context.Context, id pgtype.UUID) (b
 }
 
 const listWorkspaceMembers = `-- name: ListWorkspaceMembers :many
-SELECT wm.workspace_id, wm.user_id, wm.role, wm.joined_at, u.email, u.display_name, u.locale
+SELECT wm.workspace_id, wm.user_id, wm.role, wm.role_description, wm.joined_at, u.email, u.display_name, u.locale
 FROM workspace_members wm
 JOIN users u ON u.id = wm.user_id
 WHERE wm.workspace_id = $1
@@ -308,13 +311,14 @@ ORDER BY wm.joined_at ASC, u.email ASC
 `
 
 type ListWorkspaceMembersRow struct {
-	WorkspaceID pgtype.UUID        `json:"workspace_id"`
-	UserID      pgtype.UUID        `json:"user_id"`
-	Role        string             `json:"role"`
-	JoinedAt    pgtype.Timestamptz `json:"joined_at"`
-	Email       string             `json:"email"`
-	DisplayName string             `json:"display_name"`
-	Locale      string             `json:"locale"`
+	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
+	UserID          pgtype.UUID        `json:"user_id"`
+	Role            string             `json:"role"`
+	RoleDescription string             `json:"role_description"`
+	JoinedAt        pgtype.Timestamptz `json:"joined_at"`
+	Email           string             `json:"email"`
+	DisplayName     string             `json:"display_name"`
+	Locale          string             `json:"locale"`
 }
 
 func (q *Queries) ListWorkspaceMembers(ctx context.Context, workspaceID pgtype.UUID) ([]ListWorkspaceMembersRow, error) {
@@ -330,6 +334,7 @@ func (q *Queries) ListWorkspaceMembers(ctx context.Context, workspaceID pgtype.U
 			&i.WorkspaceID,
 			&i.UserID,
 			&i.Role,
+			&i.RoleDescription,
 			&i.JoinedAt,
 			&i.Email,
 			&i.DisplayName,
@@ -419,7 +424,7 @@ const updateWorkspaceMemberRole = `-- name: UpdateWorkspaceMemberRole :one
 UPDATE workspace_members
 SET role = $3
 WHERE workspace_id = $1 AND user_id = $2
-RETURNING workspace_id, user_id, role, joined_at
+RETURNING workspace_id, user_id, role, joined_at, role_description
 `
 
 type UpdateWorkspaceMemberRoleParams struct {
@@ -436,6 +441,33 @@ func (q *Queries) UpdateWorkspaceMemberRole(ctx context.Context, arg UpdateWorks
 		&i.UserID,
 		&i.Role,
 		&i.JoinedAt,
+		&i.RoleDescription,
+	)
+	return i, err
+}
+
+const updateWorkspaceMemberRoleDescription = `-- name: UpdateWorkspaceMemberRoleDescription :one
+UPDATE workspace_members
+SET role_description = $3
+WHERE workspace_id = $1 AND user_id = $2
+RETURNING workspace_id, user_id, role, joined_at, role_description
+`
+
+type UpdateWorkspaceMemberRoleDescriptionParams struct {
+	WorkspaceID     pgtype.UUID `json:"workspace_id"`
+	UserID          pgtype.UUID `json:"user_id"`
+	RoleDescription string      `json:"role_description"`
+}
+
+func (q *Queries) UpdateWorkspaceMemberRoleDescription(ctx context.Context, arg UpdateWorkspaceMemberRoleDescriptionParams) (WorkspaceMember, error) {
+	row := q.db.QueryRow(ctx, updateWorkspaceMemberRoleDescription, arg.WorkspaceID, arg.UserID, arg.RoleDescription)
+	var i WorkspaceMember
+	err := row.Scan(
+		&i.WorkspaceID,
+		&i.UserID,
+		&i.Role,
+		&i.JoinedAt,
+		&i.RoleDescription,
 	)
 	return i, err
 }
