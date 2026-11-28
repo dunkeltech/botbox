@@ -297,10 +297,11 @@ func TestBuildContextPreservesRosterIDsWithLargeAskBeforeAndInputProgress(t *tes
 		progress.WriteString(": waiting\n")
 	}
 
+	goal := strings.Repeat("g", 4096)
 	text := BuildContext(ContextInput{
 		BotID:         botID,
 		LeadBotID:     botID,
-		Goal:          strings.Repeat("g", 4096),
+		Goal:          goal,
 		InputProgress: progress.String(),
 		AskBefore:     askBefore,
 		Members:       members,
@@ -314,10 +315,73 @@ func TestBuildContextPreservesRosterIDsWithLargeAskBeforeAndInputProgress(t *tes
 		}
 	}
 	for _, want := range []string{
+		"Group goal: " + goal,
 		"- Maya (user, id=" + mayaID.String() + ")",
 		"Release Reviewer — Checks release notes.",
 		"Ask before:",
 		"You have an open group input request.",
+		contextOmission,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %q in context (len=%d)", want, len(text))
+		}
+	}
+}
+
+func TestBuildContextPrioritizesGroupGoalOverRoleDescriptions(t *testing.T) {
+	botID := uuid.New()
+	mayaID := uuid.New()
+	members := []Member{
+		{
+			Kind:         MemberBot,
+			ID:           botID,
+			Name:         "Atlas",
+			Role:         "lead",
+			Instructions: strings.Repeat("b", 2000),
+		},
+	}
+	userIDs := make([]uuid.UUID, 0, 19)
+	for i := range 18 {
+		id := uuid.New()
+		userIDs = append(userIDs, id)
+		members = append(members, Member{
+			Kind:         MemberUser,
+			ID:           id,
+			Name:         "Reviewer" + string(rune('A'+i)),
+			Role:         "reviewer",
+			Instructions: strings.Repeat("r", 2000),
+		})
+	}
+	userIDs = append(userIDs, mayaID)
+	members = append(members, Member{
+		Kind:         MemberUser,
+		ID:           mayaID,
+		Name:         "Maya",
+		Role:         "release-reviewer",
+		Instructions: "Release Reviewer — Checks release notes.",
+	})
+
+	finalInstruction := "Obtain sign-off from the release reviewer before publishing."
+	goal := strings.Repeat("g", 4035-len(finalInstruction)) + finalInstruction
+	text := BuildContext(ContextInput{
+		BotID:     botID,
+		LeadBotID: botID,
+		Goal:      goal,
+		Members:   members,
+	})
+	if len(text) > groupContextBytes {
+		t.Fatalf("context length %d exceeds limit %d", len(text), groupContextBytes)
+	}
+	for _, id := range userIDs {
+		if !strings.Contains(text, "id="+id.String()) {
+			t.Fatalf("missing member id %s in context", id)
+		}
+	}
+	for _, want := range []string{
+		"Group goal: " + goal,
+		finalInstruction,
+		"- Maya (user, id=" + mayaID.String() + ") release-reviewer",
+		"Release Reviewer — Checks release notes.",
 		contextOmission,
 	} {
 		if !strings.Contains(text, want) {

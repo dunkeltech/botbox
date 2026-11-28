@@ -312,11 +312,7 @@ func buildRosterHeader(identity, rulesLine string, in ContextInput) (string, boo
 		fixedBytes += len(askPrefix) + len(askSuffix)
 	}
 
-	goalIdx := -1
-	if goal := strings.TrimSpace(in.Goal); goal != "" {
-		goalIdx = len(items)
-		items = append(items, budgetItem{text: goal})
-	}
+	goal := strings.TrimSpace(in.Goal)
 
 	progressIdx := -1
 	if progress := strings.TrimRight(in.InputProgress, "\r\n"); progress != "" {
@@ -372,19 +368,29 @@ func buildRosterHeader(identity, rulesLine string, in ContextInput) (string, boo
 		}
 	}
 
-	// Reserve all member names, IDs, and fixed structural lines before fitting
-	// variable content (goal, open input progress, ask-before labels, group
-	// role labels, and role descriptions).
+	// Reserve all member names, IDs, and fixed structural lines first, then
+	// prioritize the group goal before fitting remaining variable sections
+	// (open input progress, ask-before labels, group role labels, descriptions).
 	remaining := groupContextBytes/2 - fixedBytes
-	renderedItems, trimmed := fitBudgetedItems(items, remaining)
+	fittedGoal := ""
+	goalTrimmed := false
+	if goal != "" {
+		if remaining <= 0 {
+			goalTrimmed = true
+		} else {
+			fittedGoal = fitClippedText(goal, remaining)
+			goalTrimmed = len(fittedGoal) < len(goal)
+			remaining -= len(fittedGoal)
+		}
+	}
+	renderedItems, itemsTrimmed := fitBudgetedItems(items, remaining)
+	trimmed := goalTrimmed || itemsTrimmed
 
 	var out strings.Builder
-	out.Grow(min(groupContextBytes/2, fixedBytes+max(remaining, 0)))
+	out.Grow(min(groupContextBytes/2, fixedBytes+len(fittedGoal)+max(remaining, 0)))
 	out.WriteString(identity)
 	out.WriteString(goalPrefix)
-	if goalIdx >= 0 {
-		out.WriteString(renderedItems[goalIdx])
-	}
+	out.WriteString(fittedGoal)
 	out.WriteString(goalSuffix)
 	out.WriteString(rulesLine)
 	if progressIdx >= 0 {
