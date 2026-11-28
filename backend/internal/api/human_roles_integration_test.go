@@ -267,6 +267,8 @@ func TestHumanHandoffDisambiguatesSharedNames(t *testing.T) {
 
 	alex1, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "alex1@dunkel.tech", "member", "Alex", "CorrectHorse123!")
 	alex2, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "alex2@dunkel.tech", "member", "Alex", "CorrectHorse123!")
+	sigmaUpper, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "sigma1@dunkel.tech", "member", "Σ", "CorrectHorse123!")
+	sigmaFinal, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "sigma2@dunkel.tech", "member", "ς", "CorrectHorse123!")
 	botAlex := createPiBot(t, h, base, owner.AccessToken, "Alex", "alex")
 
 	group := createGroup(t, h, base, owner.AccessToken, groupSettings{
@@ -274,7 +276,14 @@ func TestHumanHandoffDisambiguatesSharedNames(t *testing.T) {
 		lead:      botAlex.Id,
 		botTalk:   false,
 		turnLimit: 20,
-		members:   []any{groupBot(botAlex.Id, ""), groupUser(owner.User.Id, ""), groupUser(alex1.User.Id, ""), groupUser(alex2.User.Id, "")},
+		members: []any{
+			groupBot(botAlex.Id, ""),
+			groupUser(owner.User.Id, ""),
+			groupUser(alex1.User.Id, ""),
+			groupUser(alex2.User.Id, ""),
+			groupUser(sigmaUpper.User.Id, ""),
+			groupUser(sigmaFinal.User.Id, ""),
+		},
 	})
 
 	turn := 0
@@ -292,14 +301,28 @@ func TestHumanHandoffDisambiguatesSharedNames(t *testing.T) {
 			if !strings.Contains(s.Preface, "id="+alex1.User.Id.String()) || !strings.Contains(s.Preface, "id="+alex2.User.Id.String()) {
 				t.Errorf("missing stable human ids in preface:\n%s", s.Preface)
 			}
-			if turn == 1 {
+			switch turn {
+			case 1:
 				// Even when a bot shares the name "Alex", @Alex must still reach human Alex members.
 				return emit(engine.Event{Kind: engine.EventKindTextDelta, Text: "@Alex please review."})
+			case 2:
+				return emit(engine.Event{
+					Kind: engine.EventKindTextDelta,
+					Text: "@Alex please review the release notes.\nHandoff to human: [\"" + alex1.User.Id.String() + "\"]",
+				})
+			case 3:
+				// Greek sigma Σ and ς fold equal under strings.EqualFold; handoff to Σ must not notify ς.
+				return emit(engine.Event{
+					Kind: engine.EventKindTextDelta,
+					Text: "@Σ please verify.\nHandoff to human: [\"" + sigmaUpper.User.Id.String() + "\"]",
+				})
+			default:
+				// Broadcast @all with an explicit handoff to alex1 must still reach alex2.
+				return emit(engine.Event{
+					Kind: engine.EventKindTextDelta,
+					Text: "@all update; @Alex please sign off.\nHandoff to human: [\"" + alex1.User.Id.String() + "\"]",
+				})
 			}
-			return emit(engine.Event{
-				Kind: engine.EventKindTextDelta,
-				Text: "@Alex please review the release notes.\nHandoff to human: [\"" + alex1.User.Id.String() + "\"]",
-			})
 		},
 	}
 
@@ -322,6 +345,26 @@ func TestHumanHandoffDisambiguatesSharedNames(t *testing.T) {
 	}
 	if got := len(notesOf(listNotes(t, h, notesURL, alex2.AccessToken), apigen.NotificationKindMention, &group.Id)); got != 1 {
 		t.Fatalf("alex2 mentions after explicit handoff=%d want 1 (should not be notified again)", got)
+	}
+
+	postGroup(t, h, base, owner.AccessToken, group.Id, "Hand off to Greek Sigma.")
+	drainTurns(t, worker, queue, 2)
+
+	if got := len(notesOf(listNotes(t, h, notesURL, sigmaUpper.AccessToken), apigen.NotificationKindMention, &group.Id)); got != 1 {
+		t.Fatalf("sigmaUpper mentions after explicit handoff=%d want 1", got)
+	}
+	if got := len(notesOf(listNotes(t, h, notesURL, sigmaFinal.AccessToken), apigen.NotificationKindMention, &group.Id)); got != 0 {
+		t.Fatalf("sigmaFinal mentions after explicit handoff=%d want 0", got)
+	}
+
+	postGroup(t, h, base, owner.AccessToken, group.Id, "Broadcast with explicit handoff.")
+	drainTurns(t, worker, queue, 2)
+
+	if got := len(notesOf(listNotes(t, h, notesURL, alex1.AccessToken), apigen.NotificationKindMention, &group.Id)); got != 3 {
+		t.Fatalf("alex1 mentions after @all+handoff=%d want 3", got)
+	}
+	if got := len(notesOf(listNotes(t, h, notesURL, alex2.AccessToken), apigen.NotificationKindMention, &group.Id)); got != 2 {
+		t.Fatalf("alex2 mentions after @all+handoff=%d want 2", got)
 	}
 
 	historyResp := h.request(http.MethodGet, base+"/groups/"+group.Id.String()+"/messages", nil, owner.AccessToken, nil, false)

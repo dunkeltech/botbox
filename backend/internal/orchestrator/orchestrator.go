@@ -122,6 +122,12 @@ func ParseMentions(content string, members []Member) (bots, humans []uuid.UUID) 
 	return bots, humans
 }
 
+// ParseMentionsWithBroadcast behaves like ParseMentions and also reports whether
+// the reserved @all broadcast token appeared in content.
+func ParseMentionsWithBroadcast(content string, members []Member) (bots, humans []uuid.UUID, broadcast bool) {
+	return parseMentions(content, members)
+}
+
 func parseMentions(content string, members []Member) (bots, humans []uuid.UUID, broadcast bool) {
 	ordered := append([]Member(nil), members...)
 	sort.SliceStable(ordered, func(i, j int) bool {
@@ -261,86 +267,158 @@ func Route(req Request) Plan {
 
 // BuildContext renders the group brief prepended to one bot turn.
 func BuildContext(in ContextInput) string {
-	var b strings.Builder
+	var before strings.Builder
 	for _, member := range in.Members {
 		if member.Kind != MemberBot {
 			continue
 		}
 		if member.ID == in.BotID {
-			fmt.Fprintf(&b, "You are %s, the bot responding in this turn.\n", member.Name)
+			fmt.Fprintf(&before, "You are %s, the bot responding in this turn.\n", member.Name)
 		}
 		if member.ID == in.LeadBotID {
-			fmt.Fprintf(&b, "Group lead: %s.\n", member.Name)
+			fmt.Fprintf(&before, "Group lead: %s.\n", member.Name)
 		}
 	}
-	b.WriteString("Group goal: ")
-	b.WriteString(strings.TrimSpace(in.Goal))
-	b.WriteString("\n")
-	fmt.Fprintf(&b, "Rules: bot_talk=%t turn_limit=%d answer_policy=%s\n", in.BotTalk, in.TurnLimit, in.Policy)
-	b.WriteString(in.InputProgress)
+	var after strings.Builder
+	fmt.Fprintf(&after, "Rules: bot_talk=%t turn_limit=%d answer_policy=%s\n", in.BotTalk, in.TurnLimit, in.Policy)
+	after.WriteString(in.InputProgress)
 	if len(in.AskBefore) > 0 {
-		b.WriteString("Ask before:")
+		after.WriteString("Ask before:")
 		for _, rule := range in.AskBefore {
 			label := rule.Label
 			if label == "" {
 				label = rule.Kind
 			}
-			fmt.Fprintf(&b, " %s", label)
+			fmt.Fprintf(&after, " %s", label)
 		}
-		b.WriteString("\n")
+		after.WriteString("\n")
 	}
-	b.WriteString("Roster:\n")
-	header, headerTrimmed := buildRosterHeader(b.String(), in.Members)
+	after.WriteString("Roster:\n")
+	header, headerTrimmed := buildRosterHeader(before.String(), strings.TrimSpace(in.Goal), after.String(), in.Members)
 	return boundedContext(header, headerTrimmed, in.Summary, in.Recent)
 }
 
-type rosterEntry struct {
-	baseLine string
-	prefix   string
-	desc     string
+type budgetItem struct {
+	prefix string
+	text   string
+	suffix string
 }
 
-func buildRosterHeader(preamble string, members []Member) (string, bool) {
-	entries := make([]rosterEntry, len(members))
-	baseBytes := 0
-	var withDesc []int
+type rosterMemberLayout struct {
+	basePrefix string
+	roleIdx    int
+	descIdx    int
+}
+
+func buildRosterHeader(beforeGoal, goal, afterGoal string, members []Member) (string, bool) {
+	const goalPrefix = "Group goal: "
+	const goalSuffix = "\n"
+
+	layouts := make([]rosterMemberLayout, len(members))
+	var items []budgetItem
+	fixedBytes := len(beforeGoal) + len(goalPrefix) + len(goalSuffix) + len(afterGoal)
+
 	for i, member := range members {
-		var baseLine string
+		var basePrefix string
 		if member.Kind == MemberUser {
-			baseLine = fmt.Sprintf("- %s (user, id=%s) %s\n", member.Name, member.ID, member.Role)
+			basePrefix = fmt.Sprintf("- %s (user, id=%s)", member.Name, member.ID)
 		} else {
-			baseLine = fmt.Sprintf("- %s (%s) %s\n", member.Name, member.Kind, member.Role)
+			basePrefix = fmt.Sprintf("- %s (%s)", member.Name, member.Kind)
 		}
-		baseBytes += len(baseLine)
-		desc := strings.TrimSpace(member.Instructions)
-		var prefix string
-		if desc != "" {
+		fixedBytes += len(basePrefix) + len(" \n")
+
+		roleIdx := -1
+		if role := member.Role; role != "" {
+			roleIdx = len(items)
+			items = append(items, budgetItem{text: role})
+		}
+
+		descIdx := -1
+		if desc := strings.TrimSpace(member.Instructions); desc != "" {
 			label := "Role and responsibilities"
 			if member.Kind == MemberBot {
 				label = "Global role and responsibilities"
 			}
-			prefix = fmt.Sprintf("  %s: ", label)
-			withDesc = append(withDesc, i)
+			descIdx = len(items)
+			items = append(items, budgetItem{
+				prefix: fmt.Sprintf("  %s: ", label),
+				text:   desc,
+				suffix: "\n",
+			})
 		}
-		entries[i] = rosterEntry{baseLine: baseLine, prefix: prefix, desc: desc}
+		layouts[i] = rosterMemberLayout{
+			basePrefix: basePrefix,
+			roleIdx:    roleIdx,
+			descIdx:    descIdx,
+		}
 	}
 
-	remaining := groupContextBytes/2 - len(preamble) - baseBytes
-	renderedDesc, trimmed := fitRosterDescriptions(entries, withDesc, remaining)
+	remaining := groupContextBytes/2 - fixedBytes
+	totalItemBytes := 0
+	for _, item := range items {
+		totalItemBytes += len(item.prefix) + len(item.text) + len(item.suffix)
+	}
+
+	trimmed := false
+	fittedGoal := goal
+	if len(goal)+totalItemBytes > remaining {
+		trimmed = true
+		if remaining <= 0 {
+			fittedGoal = ""
+		} else {
+			goalBudget := max(remaining/2, remaining-totalItemBytes)
+			if goalBudget > remaining {
+				goalBudget = remaining
+			}
+			fittedGoal = fitClippedText(goal, goalBudget)
+			remaining -= len(fittedGoal)
+		}
+	} else {
+		remaining -= len(fittedGoal)
+	}
+
+	renderedItems, itemsTrimmed := fitBudgetedItems(items, remaining)
+	trimmed = trimmed || itemsTrimmed
 
 	var out strings.Builder
-	out.Grow(len(preamble) + baseBytes + max(remaining, 0))
-	out.WriteString(preamble)
-	for i, entry := range entries {
-		out.WriteString(entry.baseLine)
-		out.WriteString(renderedDesc[i])
+	out.Grow(min(groupContextBytes/2, fixedBytes+len(fittedGoal)+max(remaining, 0)))
+	out.WriteString(beforeGoal)
+	out.WriteString(goalPrefix)
+	out.WriteString(fittedGoal)
+	out.WriteString(goalSuffix)
+	out.WriteString(afterGoal)
+	for _, layout := range layouts {
+		out.WriteString(layout.basePrefix)
+		out.WriteByte(' ')
+		if layout.roleIdx >= 0 {
+			out.WriteString(renderedItems[layout.roleIdx])
+		}
+		out.WriteByte('\n')
+		if layout.descIdx >= 0 {
+			out.WriteString(renderedItems[layout.descIdx])
+		}
 	}
 	return out.String(), trimmed
 }
 
-func fitRosterDescriptions(entries []rosterEntry, indices []int, remaining int) ([]string, bool) {
-	rendered := make([]string, len(entries))
-	if len(indices) == 0 {
+func fitClippedText(text string, budget int) string {
+	if len(text) <= budget {
+		return text
+	}
+	const ellipsis = "…"
+	if budget <= len(ellipsis) {
+		return ""
+	}
+	clipped := contextPrefix(text, budget-len(ellipsis))
+	if clipped == "" {
+		return ""
+	}
+	return clipped + ellipsis
+}
+
+func fitBudgetedItems(items []budgetItem, remaining int) ([]string, bool) {
+	rendered := make([]string, len(items))
+	if len(items) == 0 {
 		return rendered, false
 	}
 	if remaining <= 0 {
@@ -348,28 +426,33 @@ func fitRosterDescriptions(entries []rosterEntry, indices []int, remaining int) 
 	}
 
 	fullTotal := 0
-	for _, idx := range indices {
-		fullTotal += len(entries[idx].prefix) + len(entries[idx].desc) + 1
+	for _, item := range items {
+		fullTotal += len(item.prefix) + len(item.text) + len(item.suffix)
 	}
 	if fullTotal <= remaining {
-		for _, idx := range indices {
-			rendered[idx] = entries[idx].prefix + entries[idx].desc + "\n"
+		for i, item := range items {
+			rendered[i] = item.prefix + item.text + item.suffix
 		}
 		return rendered, false
 	}
 
-	// Water-fill remaining header space so short descriptions stay intact while
-	// oversized descriptions are trimmed without evicting later roster members.
-	pending := append([]int(nil), indices...)
+	// Water-fill remaining header space so short roles stay intact while
+	// oversized group goals, role labels, or descriptions are trimmed without
+	// evicting later roster members or their IDs.
+	pending := make([]int, len(items))
+	for i := range items {
+		pending[i] = i
+	}
 	avail := remaining
 	for len(pending) > 0 {
 		share := avail / len(pending)
 		var next []int
 		progressed := false
 		for _, idx := range pending {
-			lineLen := len(entries[idx].prefix) + len(entries[idx].desc) + 1
+			item := items[idx]
+			lineLen := len(item.prefix) + len(item.text) + len(item.suffix)
 			if lineLen <= share {
-				rendered[idx] = entries[idx].prefix + entries[idx].desc + "\n"
+				rendered[idx] = item.prefix + item.text + item.suffix
 				avail -= lineLen
 				progressed = true
 			} else {
@@ -386,21 +469,18 @@ func fitRosterDescriptions(entries []rosterEntry, indices []int, remaining int) 
 	if len(pending) > 0 {
 		share := avail / len(pending)
 		extra := avail % len(pending)
-		const ellipsis = "…"
 		for pos, idx := range pending {
 			budget := share
 			if pos < extra {
 				budget++
 			}
-			maxDesc := budget - len(entries[idx].prefix) - len(ellipsis) - 1
-			if maxDesc <= 0 {
-				continue
-			}
-			clipped := contextPrefix(entries[idx].desc, maxDesc)
+			item := items[idx]
+			maxText := budget - len(item.prefix) - len(item.suffix)
+			clipped := fitClippedText(item.text, maxText)
 			if clipped == "" {
 				continue
 			}
-			rendered[idx] = entries[idx].prefix + clipped + ellipsis + "\n"
+			rendered[idx] = item.prefix + clipped + item.suffix
 		}
 	}
 	return rendered, true

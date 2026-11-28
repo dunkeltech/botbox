@@ -54,39 +54,50 @@ func HumanMentions(ctx context.Context, q *db.Queries, workspaceID, conversation
 }
 
 // HumanMentionsWithHandoff resolves explicit handoffUserIDs alongside @mentions
-// in content. When handoffUserIDs identifies a group member, text @mentions
-// matching that member's display name do not also notify other members sharing
-// the same display name. Non-members and muted members are still ignored.
+// in content. When handoffUserIDs identifies a group member, individual text
+// @mentions matching that member's display name (under Unicode case folding) do
+// not also notify other members sharing the same name. An explicit @all
+// broadcast still reaches every non-muted group member.
 func HumanMentionsWithHandoff(ctx context.Context, q *db.Queries, workspaceID, conversationID, messageID pgtype.UUID, content string, handoffUserIDs []uuid.UUID) ([]uuid.UUID, error) {
 	rows, err := q.ListConversationNotify(ctx, db.ListConversationNotifyParams{WorkspaceID: workspaceID, ConversationID: conversationID})
 	if err != nil {
 		return nil, err
 	}
-	_, mentionedHumans := orchestrator.ParseMentions(content, roster(rows))
-	targets := mentionedHumans
-	if len(handoffUserIDs) > 0 {
-		namesByID := make(map[uuid.UUID]string, len(rows))
-		disambiguatedNames := make(map[string]bool, len(handoffUserIDs))
-		for _, row := range rows {
-			if row.MemberType != "user" {
-				continue
-			}
-			id := uuid.UUID(row.MemberID.Bytes)
-			key := strings.ToLower(strings.TrimSpace(row.DisplayName))
-			namesByID[id] = key
-			if slices.Contains(handoffUserIDs, id) && key != "" {
-				disambiguatedNames[key] = true
-			}
+	targets := resolveHumanMentionTargets(content, roster(rows), handoffUserIDs)
+	return insertEach(ctx, q, workspaceID, conversationID, messageID, pgtype.UUID{}, kindMention, mentionIDs(targets, people(rows)))
+}
+
+func resolveHumanMentionTargets(content string, members []orchestrator.Member, handoffUserIDs []uuid.UUID) []uuid.UUID {
+	_, mentionedHumans, broadcast := orchestrator.ParseMentionsWithBroadcast(content, members)
+	if broadcast {
+		return append(append([]uuid.UUID(nil), handoffUserIDs...), mentionedHumans...)
+	}
+	if len(handoffUserIDs) == 0 {
+		return mentionedHumans
+	}
+	namesByID := make(map[uuid.UUID]string, len(members))
+	var disambiguatedNames []string
+	for _, member := range members {
+		if member.Kind != orchestrator.MemberUser {
+			continue
 		}
-		targets = append(append([]uuid.UUID(nil), handoffUserIDs...), make([]uuid.UUID, 0, len(mentionedHumans))...)
-		for _, id := range mentionedHumans {
-			if disambiguatedNames[namesByID[id]] {
-				continue
-			}
-			targets = append(targets, id)
+		name := strings.TrimSpace(member.Name)
+		namesByID[member.ID] = name
+		if name != "" && slices.Contains(handoffUserIDs, member.ID) {
+			disambiguatedNames = append(disambiguatedNames, name)
 		}
 	}
-	return insertEach(ctx, q, workspaceID, conversationID, messageID, pgtype.UUID{}, kindMention, mentionIDs(targets, people(rows)))
+	targets := append(append([]uuid.UUID(nil), handoffUserIDs...), make([]uuid.UUID, 0, len(mentionedHumans))...)
+	for _, id := range mentionedHumans {
+		name := namesByID[id]
+		if name != "" && slices.ContainsFunc(disambiguatedNames, func(other string) bool {
+			return strings.EqualFold(name, other)
+		}) {
+			continue
+		}
+		targets = append(targets, id)
+	}
+	return targets
 }
 
 // Approval notifies humans who may decide this group card. notify=mentions and
