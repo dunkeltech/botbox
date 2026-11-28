@@ -647,7 +647,6 @@ function MembersContent() {
                 name: editingMember.displayName,
               })}
               value={roleDraft}
-              maxLength={4000}
               disabled={savingRoleDesc}
               warning={modalValidationError ?? undefined}
               onChange={(event) => {

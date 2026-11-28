@@ -395,6 +395,52 @@ describe('human member roles settings', () => {
     const alert = await within(errorDialog).findByRole('alert');
     expect(alert).toHaveTextContent(enMessages.errors.authForbidden);
   });
+
+  it('validates role length by Unicode code points rather than UTF-16 maxLength', async () => {
+    const { patchBodies } = installMembersFetch('member-1', 'member');
+    renderWithProviders(<MembersSettingsPage />);
+
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: 'Edit role and responsibilities for Maya Lin',
+      }),
+    );
+
+    const dialog = screen.getByRole('dialog');
+    const textarea = within(dialog).getByLabelText<HTMLTextAreaElement>(
+      enMessages.members.roleModalLabel,
+    );
+    expect(textarea).not.toHaveAttribute('maxLength');
+
+    // 4,001 code points fails validation.
+    const tooLong = '😀'.repeat(4001);
+    fireEvent.change(textarea, { target: { value: tooLong } });
+    fireEvent.click(
+      within(dialog).getByRole('button', {
+        name: enMessages.members.roleModalSave,
+      }),
+    );
+    expect(within(dialog).getByRole('alert')).toHaveTextContent(
+      enMessages.members.roleModalTooLong,
+    );
+    expect(patchBodies).toHaveLength(0);
+
+    // 2,001 emoji (4,002 UTF-16 code units, 2,001 Unicode code points) succeeds.
+    const validEmoji = '😀'.repeat(2001);
+    fireEvent.change(textarea, { target: { value: validEmoji } });
+    fireEvent.click(
+      within(dialog).getByRole('button', {
+        name: enMessages.members.roleModalSave,
+      }),
+    );
+    await waitFor(() => {
+      expect(patchBodies).toHaveLength(1);
+    });
+    expect(patchBodies[0]).toEqual({
+      url: '/api/workspaces/ws-1/members/member-1',
+      body: { roleDescription: validEmoji },
+    });
+  });
 });
 
 describe('human roles in group details and @mention composer', () => {
