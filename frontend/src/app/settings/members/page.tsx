@@ -20,8 +20,10 @@ import {
   Card,
   Eyebrow,
   Input,
+  ModalDialog,
   RoleBadge,
   Select,
+  Textarea,
 } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
 import {
@@ -33,7 +35,7 @@ import {
   updateMemberRole,
 } from '@/lib/api-client';
 import { type ErrorTranslationKey, resolveErrorKey } from '@/lib/errors';
-import { canManageMembers } from '@/lib/rbac';
+import { canEditMemberRoleDescription, canManageMembers } from '@/lib/rbac';
 import type {
   CreatedInvitationResponse,
   InvitationSummary,
@@ -76,6 +78,17 @@ function MembersContent() {
   const [createdInvite, setCreatedInvite] =
     useState<CreatedInvitationResponse | null>(null);
   const [copied, setCopied] = useState(false);
+
+  const [editingMember, setEditingMember] = useState<WorkspaceMember | null>(
+    null,
+  );
+  const [roleDraft, setRoleDraft] = useState('');
+  const [savingRoleDesc, setSavingRoleDesc] = useState(false);
+  const [modalErrorKey, setModalErrorKey] =
+    useState<ErrorTranslationKey | null>(null);
+  const [modalValidationError, setModalValidationError] = useState<
+    string | null
+  >(null);
 
   const loadData = useCallback(async () => {
     if (!activeWorkspace) {
@@ -214,6 +227,55 @@ function MembersContent() {
     }
   }
 
+  function openRoleModal(member: WorkspaceMember) {
+    setEditingMember(member);
+    setRoleDraft(member.roleDescription ?? '');
+    setModalErrorKey(null);
+    setModalValidationError(null);
+  }
+
+  function closeRoleModal() {
+    if (savingRoleDesc) {
+      return;
+    }
+    setEditingMember(null);
+    setModalErrorKey(null);
+    setModalValidationError(null);
+  }
+
+  async function saveRoleDescription(nextDescription: string) {
+    if (!activeWorkspace || !editingMember || savingRoleDesc) {
+      return;
+    }
+    const trimmed = nextDescription.trim();
+    if ([...trimmed].length > 4000) {
+      setModalValidationError(t('roleModalTooLong'));
+      return;
+    }
+    setModalErrorKey(null);
+    setModalValidationError(null);
+    setSavingRoleDesc(true);
+    try {
+      const updated = await updateMemberRole(
+        activeWorkspace.id,
+        editingMember.userId,
+        {
+          roleDescription: trimmed,
+        },
+      );
+      setMembers((prev) =>
+        prev.map((member) =>
+          member.userId === editingMember.userId ? updated : member,
+        ),
+      );
+      setEditingMember(null);
+    } catch (err) {
+      setModalErrorKey(resolveErrorKey(err));
+    } finally {
+      setSavingRoleDesc(false);
+    }
+  }
+
   const pendingInvitations = invitations.filter((inv) => !inv.acceptedAt);
 
   function renderMatrixCell(cell: 'yes' | 'no' | 'view' | 'own') {
@@ -268,6 +330,7 @@ function MembersContent() {
                   <th className="px-3 py-3">{t('colMember')}</th>
                   <th className="px-3 py-3">{t('colEmail')}</th>
                   <th className="px-3 py-3">{t('colRole')}</th>
+                  <th className="px-3 py-3">{t('colRoleDescription')}</th>
                   {canManage ? (
                     <th className="px-3 py-3 text-right">{t('colActions')}</th>
                   ) : null}
@@ -277,6 +340,12 @@ function MembersContent() {
                 {members.map((member) => {
                   const isSelf = user?.id === member.userId;
                   const rowBusy = busyUserId === member.userId;
+                  const roleDesc = member.roleDescription?.trim() ?? '';
+                  const canEditRoleDesc = canEditMemberRoleDescription(
+                    activeWorkspace?.role,
+                    member.role,
+                    isSelf,
+                  );
                   return (
                     <tr key={member.userId}>
                       <td className="px-3 py-3 text-[15px] font-bold text-ink">
@@ -322,6 +391,39 @@ function MembersContent() {
                           <RoleBadge role={member.role} />
                         )}
                       </td>
+                      <td className="px-3 py-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <span
+                            className={
+                              roleDesc
+                                ? 'line-clamp-2 max-w-[320px] text-[13px] leading-[1.45] text-ink-2'
+                                : 'text-[13px] italic text-muted'
+                            }
+                          >
+                            {roleDesc || t('noRoleSet')}
+                          </span>
+                          {canEditRoleDesc ? (
+                            <Button
+                              variant="secondary"
+                              type="button"
+                              aria-label={t(
+                                roleDesc
+                                  ? 'editRoleDescriptionAria'
+                                  : 'setRoleDescriptionAria',
+                                { name: member.displayName },
+                              )}
+                              onClick={() => openRoleModal(member)}
+                              className="shrink-0"
+                            >
+                              {t(
+                                roleDesc
+                                  ? 'editRoleDescription'
+                                  : 'setRoleDescription',
+                              )}
+                            </Button>
+                          ) : null}
+                        </div>
+                      </td>
                       {canManage ? (
                         <td className="px-3 py-3 text-right">
                           <Button
@@ -343,6 +445,8 @@ function MembersContent() {
             </table>
           </div>
         )}
+
+        <Alert tone="info">{t('rolePermissionsHint')}</Alert>
 
         {canManage ? (
           <div className="flex flex-col gap-3 border-t border-line pt-4">
@@ -498,6 +602,97 @@ function MembersContent() {
           </div>
         </div>
       </Card>
+
+      <ModalDialog
+        open={editingMember !== null}
+        onClose={closeRoleModal}
+        title={
+          editingMember
+            ? t('roleModalTitle', { name: editingMember.displayName })
+            : ''
+        }
+        closeLabel={tActions('close')}
+      >
+        {editingMember ? (
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void saveRoleDescription(roleDraft);
+            }}
+            className="flex flex-col gap-4"
+          >
+            <Eyebrow>{t('roleModalEyebrow')}</Eyebrow>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-sm border border-line bg-paper-2 px-3.5 py-2.5">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-sm bg-hex-2 text-[12px] font-black text-paper">
+                  {initials(editingMember.displayName)}
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate text-[14px] font-bold text-ink">
+                    {editingMember.displayName}
+                  </p>
+                  <p className="truncate font-mono text-[12px] text-muted">
+                    {editingMember.email}
+                  </p>
+                </div>
+              </div>
+              <RoleBadge role={editingMember.role} />
+            </div>
+
+            <Textarea
+              label={t('roleModalLabel')}
+              placeholder={t('roleModalPlaceholder')}
+              helperText={t('roleModalHelper', {
+                name: editingMember.displayName,
+              })}
+              value={roleDraft}
+              maxLength={4000}
+              disabled={savingRoleDesc}
+              warning={modalValidationError ?? undefined}
+              onChange={(event) => {
+                setRoleDraft(event.target.value);
+                setModalValidationError(null);
+              }}
+            />
+
+            {modalErrorKey ? (
+              <Alert tone="warning">{tErrors(modalErrorKey)}</Alert>
+            ) : null}
+
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+              <div>
+                {(editingMember.roleDescription ?? '').trim() !== '' ? (
+                  <Button
+                    variant="secondary"
+                    type="button"
+                    disabled={savingRoleDesc}
+                    onClick={() => void saveRoleDescription('')}
+                    className="border-dashed border-amber-line text-amber hover:border-amber-line hover:bg-amber-tint"
+                  >
+                    {savingRoleDesc
+                      ? t('roleModalRemoving')
+                      : t('roleModalRemove')}
+                  </Button>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant="secondary"
+                  type="button"
+                  disabled={savingRoleDesc}
+                  onClick={closeRoleModal}
+                >
+                  {tActions('cancel')}
+                </Button>
+                <Button type="submit" disabled={savingRoleDesc}>
+                  {savingRoleDesc ? t('roleModalSaving') : t('roleModalSave')}
+                </Button>
+              </div>
+            </div>
+          </form>
+        ) : null}
+      </ModalDialog>
     </div>
   );
 }

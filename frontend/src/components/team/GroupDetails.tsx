@@ -94,8 +94,10 @@ export function GroupDetails({
                 ? t('lead')
                 : member.roleText.trim() ||
                   (member.type === 'bot' ? t('bot') : t('human'));
+            const humanRole =
+              member.type === 'user' ? member.roleDescription?.trim() : '';
             return (
-              <li key={member.id} className="flex items-center gap-2.5">
+              <li key={member.id} className="flex items-start gap-2.5">
                 {member.type === 'bot' ? (
                   <BotAvatar
                     seed={bot?.avatarSeed || member.id}
@@ -109,12 +111,21 @@ export function GroupDetails({
                     {initials(name)}
                   </span>
                 )}
-                <span className="min-w-0">
+                <span className="min-w-0 flex-1">
                   <span className="block font-black">{name}</span>
                   <span className="block text-[13px] text-muted">
                     {line}
                     {bot ? ` · ${t(statusKey(bot.status))}` : ''}
                   </span>
+                  {humanRole ? (
+                    <div className="mt-1">
+                      <BotRoleDescription
+                        key={`${member.id}:${humanRole}`}
+                        content={humanRole}
+                        label={t('humanRoleLabel')}
+                      />
+                    </div>
+                  ) : null}
                 </span>
               </li>
             );

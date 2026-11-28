@@ -42,3 +42,25 @@ export function canTakeDesktopControl(
 export function canManageMembers(role: WorkspaceRole | undefined): boolean {
   return role === 'owner' || role === 'admin';
 }
+
+/**
+ * Mirrors backend workspaces.CanEditMemberRoleDescription:
+ * owners edit any member; admins edit members, viewers, and themselves;
+ * members edit their own role; viewers are read-only.
+ */
+export function canEditMemberRoleDescription(
+  actorRole: WorkspaceRole | undefined,
+  targetRole: WorkspaceRole,
+  isSelf: boolean,
+): boolean {
+  if (actorRole === 'owner') {
+    return true;
+  }
+  if (actorRole === 'admin') {
+    return isSelf || targetRole === 'member' || targetRole === 'viewer';
+  }
+  if (actorRole === 'member') {
+    return isSelf;
+  }
+  return false;
+}

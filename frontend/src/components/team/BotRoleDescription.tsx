@@ -7,7 +7,13 @@ import { useTranslations } from 'next-intl';
 import { MarkdownMessage } from '@/components/chat/MarkdownMessage';
 
 /** Shows a bounded Markdown role preview that expands to the full instructions. */
-export function BotRoleDescription({ content }: { content: string }) {
+export function BotRoleDescription({
+  content,
+  label,
+}: {
+  content: string;
+  label?: string;
+}) {
   const t = useTranslations();
   const id = useId();
   const preview = useRef<HTMLDivElement>(null);
@@ -36,7 +42,7 @@ export function BotRoleDescription({ content }: { content: string }) {
   return (
     <div
       role="region"
-      aria-label={t('builder.descriptionLabel')}
+      aria-label={label ?? t('builder.descriptionLabel')}
       className="w-full min-w-0 text-[15px] leading-[1.55]"
     >
       <div

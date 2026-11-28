@@ -9,6 +9,7 @@ export interface MentionTarget {
   id: string;
   name: string;
   kind: 'user' | 'bot' | 'all';
+  roleDescription?: string;
 }
 
 /** The @ being typed at the caret, if it is not inside a word. */
