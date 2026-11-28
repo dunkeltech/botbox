@@ -248,6 +248,84 @@ func TestBuildContextPreservesRosterIDsWithLargeGoalAndRoleLabels(t *testing.T) 
 	}
 }
 
+func TestBuildContextPreservesRosterIDsWithLargeAskBeforeAndInputProgress(t *testing.T) {
+	botID := uuid.New()
+	mayaID := uuid.New()
+	members := []Member{
+		{
+			Kind:         MemberBot,
+			ID:           botID,
+			Name:         "Atlas",
+			Role:         "lead",
+			Instructions: "Coordinate release checks.",
+		},
+	}
+	userIDs := make([]uuid.UUID, 0, 49)
+	for i := range 48 {
+		id := uuid.New()
+		userIDs = append(userIDs, id)
+		members = append(members, Member{
+			Kind:         MemberUser,
+			ID:           id,
+			Name:         "Member" + string(rune('A'+i%26)) + string(rune('0'+i/26)),
+			Role:         "engineer",
+			Instructions: strings.Repeat("r", 200),
+		})
+	}
+	userIDs = append(userIDs, mayaID)
+	members = append(members, Member{
+		Kind:         MemberUser,
+		ID:           mayaID,
+		Name:         "Maya",
+		Role:         "reviewer",
+		Instructions: "Release Reviewer — Checks release notes.",
+	})
+
+	askBefore := make([]AskRule, 20)
+	for i := range askBefore {
+		askBefore[i] = AskRule{
+			Kind:  "custom",
+			Label: strings.Repeat("🚀", 200),
+		}
+	}
+
+	var progress strings.Builder
+	progress.WriteString("You have an open group input request. It will resume automatically when collection finishes.\n")
+	for i := range 8 {
+		progress.WriteString("- SpecialistBot")
+		progress.WriteByte(byte('1' + i))
+		progress.WriteString(": waiting\n")
+	}
+
+	text := BuildContext(ContextInput{
+		BotID:         botID,
+		LeadBotID:     botID,
+		Goal:          strings.Repeat("g", 4096),
+		InputProgress: progress.String(),
+		AskBefore:     askBefore,
+		Members:       members,
+	})
+	if len(text) > groupContextBytes {
+		t.Fatalf("context length %d exceeds limit %d", len(text), groupContextBytes)
+	}
+	for _, id := range userIDs {
+		if !strings.Contains(text, "id="+id.String()) {
+			t.Fatalf("missing member id %s in context", id)
+		}
+	}
+	for _, want := range []string{
+		"- Maya (user, id=" + mayaID.String() + ")",
+		"Release Reviewer — Checks release notes.",
+		"Ask before:",
+		"You have an open group input request.",
+		contextOmission,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %q in context (len=%d)", want, len(text))
+		}
+	}
+}
+
 func TestParseMentions(t *testing.T) {
 	ann := uuid.New()
 	annie := uuid.New()

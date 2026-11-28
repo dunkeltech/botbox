@@ -267,34 +267,20 @@ func Route(req Request) Plan {
 
 // BuildContext renders the group brief prepended to one bot turn.
 func BuildContext(in ContextInput) string {
-	var before strings.Builder
+	var identity strings.Builder
 	for _, member := range in.Members {
 		if member.Kind != MemberBot {
 			continue
 		}
 		if member.ID == in.BotID {
-			fmt.Fprintf(&before, "You are %s, the bot responding in this turn.\n", member.Name)
+			fmt.Fprintf(&identity, "You are %s, the bot responding in this turn.\n", member.Name)
 		}
 		if member.ID == in.LeadBotID {
-			fmt.Fprintf(&before, "Group lead: %s.\n", member.Name)
+			fmt.Fprintf(&identity, "Group lead: %s.\n", member.Name)
 		}
 	}
-	var after strings.Builder
-	fmt.Fprintf(&after, "Rules: bot_talk=%t turn_limit=%d answer_policy=%s\n", in.BotTalk, in.TurnLimit, in.Policy)
-	after.WriteString(in.InputProgress)
-	if len(in.AskBefore) > 0 {
-		after.WriteString("Ask before:")
-		for _, rule := range in.AskBefore {
-			label := rule.Label
-			if label == "" {
-				label = rule.Kind
-			}
-			fmt.Fprintf(&after, " %s", label)
-		}
-		after.WriteString("\n")
-	}
-	after.WriteString("Roster:\n")
-	header, headerTrimmed := buildRosterHeader(before.String(), strings.TrimSpace(in.Goal), after.String(), in.Members)
+	rulesLine := fmt.Sprintf("Rules: bot_talk=%t turn_limit=%d answer_policy=%s\n", in.BotTalk, in.TurnLimit, in.Policy)
+	header, headerTrimmed := buildRosterHeader(identity.String(), rulesLine, in)
 	return boundedContext(header, headerTrimmed, in.Summary, in.Recent)
 }
 
@@ -310,15 +296,48 @@ type rosterMemberLayout struct {
 	descIdx    int
 }
 
-func buildRosterHeader(beforeGoal, goal, afterGoal string, members []Member) (string, bool) {
-	const goalPrefix = "Group goal: "
-	const goalSuffix = "\n"
+func buildRosterHeader(identity, rulesLine string, in ContextInput) (string, bool) {
+	const (
+		goalPrefix = "Group goal: "
+		goalSuffix = "\n"
+		askPrefix  = "Ask before:"
+		askSuffix  = "\n"
+		rosterHead = "Roster:\n"
+	)
 
-	layouts := make([]rosterMemberLayout, len(members))
+	layouts := make([]rosterMemberLayout, len(in.Members))
 	var items []budgetItem
-	fixedBytes := len(beforeGoal) + len(goalPrefix) + len(goalSuffix) + len(afterGoal)
+	fixedBytes := len(identity) + len(goalPrefix) + len(goalSuffix) + len(rulesLine) + len(rosterHead)
+	if len(in.AskBefore) > 0 {
+		fixedBytes += len(askPrefix) + len(askSuffix)
+	}
 
-	for i, member := range members {
+	goalIdx := -1
+	if goal := strings.TrimSpace(in.Goal); goal != "" {
+		goalIdx = len(items)
+		items = append(items, budgetItem{text: goal})
+	}
+
+	progressIdx := -1
+	if progress := strings.TrimRight(in.InputProgress, "\r\n"); progress != "" {
+		progressIdx = len(items)
+		items = append(items, budgetItem{text: progress, suffix: "\n"})
+	}
+
+	askIndices := make([]int, 0, len(in.AskBefore))
+	for _, rule := range in.AskBefore {
+		label := rule.Label
+		if label == "" {
+			label = rule.Kind
+		}
+		if label == "" {
+			continue
+		}
+		askIndices = append(askIndices, len(items))
+		items = append(items, budgetItem{prefix: " ", text: label})
+	}
+
+	for i, member := range in.Members {
 		var basePrefix string
 		if member.Kind == MemberUser {
 			basePrefix = fmt.Sprintf("- %s (user, id=%s)", member.Name, member.ID)
@@ -353,40 +372,32 @@ func buildRosterHeader(beforeGoal, goal, afterGoal string, members []Member) (st
 		}
 	}
 
+	// Reserve all member names, IDs, and fixed structural lines before fitting
+	// variable content (goal, open input progress, ask-before labels, group
+	// role labels, and role descriptions).
 	remaining := groupContextBytes/2 - fixedBytes
-	totalItemBytes := 0
-	for _, item := range items {
-		totalItemBytes += len(item.prefix) + len(item.text) + len(item.suffix)
-	}
-
-	trimmed := false
-	fittedGoal := goal
-	if len(goal)+totalItemBytes > remaining {
-		trimmed = true
-		if remaining <= 0 {
-			fittedGoal = ""
-		} else {
-			goalBudget := max(remaining/2, remaining-totalItemBytes)
-			if goalBudget > remaining {
-				goalBudget = remaining
-			}
-			fittedGoal = fitClippedText(goal, goalBudget)
-			remaining -= len(fittedGoal)
-		}
-	} else {
-		remaining -= len(fittedGoal)
-	}
-
-	renderedItems, itemsTrimmed := fitBudgetedItems(items, remaining)
-	trimmed = trimmed || itemsTrimmed
+	renderedItems, trimmed := fitBudgetedItems(items, remaining)
 
 	var out strings.Builder
-	out.Grow(min(groupContextBytes/2, fixedBytes+len(fittedGoal)+max(remaining, 0)))
-	out.WriteString(beforeGoal)
+	out.Grow(min(groupContextBytes/2, fixedBytes+max(remaining, 0)))
+	out.WriteString(identity)
 	out.WriteString(goalPrefix)
-	out.WriteString(fittedGoal)
+	if goalIdx >= 0 {
+		out.WriteString(renderedItems[goalIdx])
+	}
 	out.WriteString(goalSuffix)
-	out.WriteString(afterGoal)
+	out.WriteString(rulesLine)
+	if progressIdx >= 0 {
+		out.WriteString(renderedItems[progressIdx])
+	}
+	if len(in.AskBefore) > 0 {
+		out.WriteString(askPrefix)
+		for _, idx := range askIndices {
+			out.WriteString(renderedItems[idx])
+		}
+		out.WriteString(askSuffix)
+	}
+	out.WriteString(rosterHead)
 	for _, layout := range layouts {
 		out.WriteString(layout.basePrefix)
 		out.WriteByte(' ')
