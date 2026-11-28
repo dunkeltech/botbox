@@ -13,12 +13,12 @@ import (
 const groupContextBytes = 48 * 1024
 
 const contextOmission = "[Earlier context omitted to fit the input limit.]\n"
-const contextHandoff = "When bot_talk is true and you need input from other bots, write the actual question in your reply, then put a control line at the very end: Request input: [\"Exact Bot Name\", \"Another Bot Name\"]. Use Request required input: with the same list if missing input must block the task. Use up to eight other bots. The list [\"@all\"] requests input from all other bots if they fit within the limit. Chat mentions are references. After requesting input, end your turn. The group will bring replies back together. If you are answering an input request, give your own answer and finish that turn. Once you receive the collected replies, synthesize them for the human. Request more input only for a concrete unresolved question. Check human members' roles in the roster when a task needs human review or action. To assign work or request a review from a human member of this group, @mention them by their exact roster name with a clear request and end your turn so they can respond.\n"
+const contextHandoff = "When bot_talk is true and you need input from other bots, write the actual question in your reply, then put a control line at the very end: Request input: [\"Exact Bot Name\", \"Another Bot Name\"]. Use Request required input: with the same list if missing input must block the task. Use up to eight other bots. The list [\"@all\"] requests input from all other bots if they fit within the limit. Chat mentions are references. After requesting input, end your turn. The group will bring replies back together. If you are answering an input request, give your own answer and finish that turn. Once you receive the collected replies, synthesize them for the human. Request more input only for a concrete unresolved question. Check human members' roles in the roster when a task needs human review or action. To assign work or request a review from a human member of this group, @mention them by name with a clear request, put a control line at the very end: Handoff to human: [\"<exact-user-id>\"] using their roster id, and end your turn so they can respond.\n"
 
-func boundedContext(header, summary string, recent []ContextMessage) string {
+func boundedContext(header string, headerTrimmed bool, summary string, recent []ContextMessage) string {
 	// Very large rosters must not consume the entire context. The responding
 	// bot's full responsibility is also sent separately with its identity.
-	omitted := len(header) > groupContextBytes/2
+	omitted := headerTrimmed || len(header) > groupContextBytes/2
 	header = contextPrefix(header, groupContextBytes/2)
 	remaining := groupContextBytes - len(header) - len(contextHandoff) - len(contextOmission) - len("Recent messages:\n")
 	var selected []string

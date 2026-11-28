@@ -51,7 +51,7 @@ func (w *Worker) finalizeTurn(ctx context.Context, q *db.Queries, events *turnEv
 	if events.text.Len() > 0 {
 		content := events.text.String()
 		if kind == "group" {
-			content, _, _ = orchestrator.SplitInputDirective(content)
+			content, _, _, _ = orchestrator.ExtractControlDirectives(content)
 		}
 		reply, err = q.CreateChatMessage(finalCtx, db.CreateChatMessageParams{
 			ID: pgID(uuid.New()), WorkspaceID: turn.WorkspaceID, ConversationID: turn.ConversationID,

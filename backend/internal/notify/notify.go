@@ -8,6 +8,8 @@ package notify
 import (
 	"context"
 	"encoding/json"
+	"slices"
+	"strings"
 
 	"github.com/dunkeltech/botbox/backend/internal/gen/db"
 	"github.com/dunkeltech/botbox/backend/internal/orchestrator"
@@ -48,12 +50,43 @@ func MarshalSignal(conversationID uuid.UUID, ids []uuid.UUID) ([]byte, error) {
 // group. The same name twice is one row. The notice commits with the post or
 // bot turn completion that caused it.
 func HumanMentions(ctx context.Context, q *db.Queries, workspaceID, conversationID, messageID pgtype.UUID, content string) ([]uuid.UUID, error) {
+	return HumanMentionsWithHandoff(ctx, q, workspaceID, conversationID, messageID, content, nil)
+}
+
+// HumanMentionsWithHandoff resolves explicit handoffUserIDs alongside @mentions
+// in content. When handoffUserIDs identifies a group member, text @mentions
+// matching that member's display name do not also notify other members sharing
+// the same display name. Non-members and muted members are still ignored.
+func HumanMentionsWithHandoff(ctx context.Context, q *db.Queries, workspaceID, conversationID, messageID pgtype.UUID, content string, handoffUserIDs []uuid.UUID) ([]uuid.UUID, error) {
 	rows, err := q.ListConversationNotify(ctx, db.ListConversationNotifyParams{WorkspaceID: workspaceID, ConversationID: conversationID})
 	if err != nil {
 		return nil, err
 	}
-	_, humans := orchestrator.ParseMentions(content, roster(rows))
-	return insertEach(ctx, q, workspaceID, conversationID, messageID, pgtype.UUID{}, kindMention, mentionIDs(humans, people(rows)))
+	_, mentionedHumans := orchestrator.ParseMentions(content, roster(rows))
+	targets := mentionedHumans
+	if len(handoffUserIDs) > 0 {
+		namesByID := make(map[uuid.UUID]string, len(rows))
+		disambiguatedNames := make(map[string]bool, len(handoffUserIDs))
+		for _, row := range rows {
+			if row.MemberType != "user" {
+				continue
+			}
+			id := uuid.UUID(row.MemberID.Bytes)
+			key := strings.ToLower(strings.TrimSpace(row.DisplayName))
+			namesByID[id] = key
+			if slices.Contains(handoffUserIDs, id) && key != "" {
+				disambiguatedNames[key] = true
+			}
+		}
+		targets = append(append([]uuid.UUID(nil), handoffUserIDs...), make([]uuid.UUID, 0, len(mentionedHumans))...)
+		for _, id := range mentionedHumans {
+			if disambiguatedNames[namesByID[id]] {
+				continue
+			}
+			targets = append(targets, id)
+		}
+	}
+	return insertEach(ctx, q, workspaceID, conversationID, messageID, pgtype.UUID{}, kindMention, mentionIDs(targets, people(rows)))
 }
 
 // Approval notifies humans who may decide this group card. notify=mentions and

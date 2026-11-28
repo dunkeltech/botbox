@@ -50,6 +50,7 @@ func TestHumanMemberRoleDescriptionsRBACAndValidation(t *testing.T) {
 	}{
 		{name: "unauthenticated", token: "", wsID: ws, targetID: member1.User.Id, body: map[string]any{"roleDescription": "Reviewer"}, wantStatus: http.StatusUnauthorized},
 		{name: "empty body", token: owner.AccessToken, wsID: ws, targetID: member1.User.Id, body: map[string]any{}, wantStatus: http.StatusBadRequest},
+		{name: "roleDescription containing NUL returns 400", token: owner.AccessToken, wsID: ws, targetID: member1.User.Id, body: map[string]any{"roleDescription": "Release\x00Reviewer"}, wantStatus: http.StatusBadRequest},
 		{name: "roleDescription exceeds 4000 chars", token: owner.AccessToken, wsID: ws, targetID: member1.User.Id, body: map[string]any{"roleDescription": strings.Repeat("a", 4001)}, wantStatus: http.StatusBadRequest},
 		{name: "cross-workspace returns 404", token: owner.AccessToken, wsID: otherWS.Id, targetID: member1.User.Id, body: map[string]any{"roleDescription": "Reviewer"}, wantStatus: http.StatusNotFound},
 		{name: "non-member target returns 404", token: owner.AccessToken, wsID: ws, targetID: outsider.User.Id, body: map[string]any{"roleDescription": "Reviewer"}, wantStatus: http.StatusNotFound},
@@ -254,5 +255,84 @@ func TestHumanRolesGroupVisibilityHandoffAndNotifications(t *testing.T) {
 	}
 	if strings.Contains(seenPrefaces[2], "Principal Release Approver") {
 		t.Fatalf("cleared role still present on next turn:\n%s", seenPrefaces[2])
+	}
+}
+
+func TestHumanHandoffDisambiguatesSharedNames(t *testing.T) {
+	queue := &fakeTurnQueue{}
+	h := newTestHarness(t, nil, harnessOpts{turnQueue: queue, chatLimit: 50})
+	owner, _ := h.completeSetup("owner@dunkel.tech", "CorrectHorse123!", "Owner", "Alpha", "alpha")
+	ws := owner.ActiveWorkspace.Id
+	base := "/api/workspaces/" + ws.String()
+
+	alex1, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "alex1@dunkel.tech", "member", "Alex", "CorrectHorse123!")
+	alex2, _ := h.inviteAndAcceptNewUser(owner.AccessToken, ws, "alex2@dunkel.tech", "member", "Alex", "CorrectHorse123!")
+	botAlex := createPiBot(t, h, base, owner.AccessToken, "Alex", "alex")
+
+	group := createGroup(t, h, base, owner.AccessToken, groupSettings{
+		name:      "Release",
+		lead:      botAlex.Id,
+		botTalk:   false,
+		turnLimit: 20,
+		members:   []any{groupBot(botAlex.Id, ""), groupUser(owner.User.Id, ""), groupUser(alex1.User.Id, ""), groupUser(alex2.User.Id, "")},
+	})
+
+	turn := 0
+	worker := &engine.Worker{
+		Pool: h.pool,
+		Now:  h.clock.Now,
+		Signal: func(ctx context.Context, wsID, conv uuid.UUID, ids []uuid.UUID) {
+			data, err := notify.MarshalSignal(conv, ids)
+			if err == nil {
+				_ = queue.PublishConversation(ctx, wsID, conv, data)
+			}
+		},
+		Execute: func(_ context.Context, s engine.Session, emit func(engine.Event) error) error {
+			turn++
+			if !strings.Contains(s.Preface, "id="+alex1.User.Id.String()) || !strings.Contains(s.Preface, "id="+alex2.User.Id.String()) {
+				t.Errorf("missing stable human ids in preface:\n%s", s.Preface)
+			}
+			if turn == 1 {
+				// Even when a bot shares the name "Alex", @Alex must still reach human Alex members.
+				return emit(engine.Event{Kind: engine.EventKindTextDelta, Text: "@Alex please review."})
+			}
+			return emit(engine.Event{
+				Kind: engine.EventKindTextDelta,
+				Text: "@Alex please review the release notes.\nHandoff to human: [\"" + alex1.User.Id.String() + "\"]",
+			})
+		},
+	}
+
+	postGroup(t, h, base, owner.AccessToken, group.Id, "Who can review?")
+	drainTurns(t, worker, queue, 2)
+
+	notesURL := base + "/notifications"
+	if got := len(notesOf(listNotes(t, h, notesURL, alex1.AccessToken), apigen.NotificationKindMention, &group.Id)); got != 1 {
+		t.Fatalf("alex1 mentions after @Alex=%d want 1", got)
+	}
+	if got := len(notesOf(listNotes(t, h, notesURL, alex2.AccessToken), apigen.NotificationKindMention, &group.Id)); got != 1 {
+		t.Fatalf("alex2 mentions after @Alex=%d want 1", got)
+	}
+
+	postGroup(t, h, base, owner.AccessToken, group.Id, "Hand off only to release reviewer Alex.")
+	drainTurns(t, worker, queue, 2)
+
+	if got := len(notesOf(listNotes(t, h, notesURL, alex1.AccessToken), apigen.NotificationKindMention, &group.Id)); got != 2 {
+		t.Fatalf("alex1 mentions after explicit handoff=%d want 2", got)
+	}
+	if got := len(notesOf(listNotes(t, h, notesURL, alex2.AccessToken), apigen.NotificationKindMention, &group.Id)); got != 1 {
+		t.Fatalf("alex2 mentions after explicit handoff=%d want 1 (should not be notified again)", got)
+	}
+
+	historyResp := h.request(http.MethodGet, base+"/groups/"+group.Id.String()+"/messages", nil, owner.AccessToken, nil, false)
+	if historyResp.status != http.StatusOK {
+		t.Fatalf("get messages=%d %s", historyResp.status, historyResp.body)
+	}
+	var history apigen.ChatHistory
+	historyResp.decode(t, &history)
+	for _, msg := range history.Messages {
+		if strings.Contains(msg.Content, "Handoff to human:") {
+			t.Fatalf("control directive leaked into stored transcript: %q", msg.Content)
+		}
 	}
 }

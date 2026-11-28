@@ -92,17 +92,102 @@ func TestContextIncludesHumanRolesAndHandoffGuidance(t *testing.T) {
 		},
 	})
 	for _, want := range []string{
-		"- Maya (user)",
+		"- Maya (user, id=" + mayaID.String() + ")",
 		"  Role and responsibilities: Release Reviewer — Reviews draft release notes.",
-		"- Liam (user)",
-		"@mention them by their exact roster name",
+		"- Liam (user, id=" + liamID.String() + ")",
+		"Handoff to human:",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("missing %q in %s", want, text)
 		}
 	}
-	if strings.Contains(text, "- Liam (user) \n  Role and responsibilities:") {
+	if strings.Contains(text, "- Liam (user, id="+liamID.String()+") \n  Role and responsibilities:") {
 		t.Errorf("unexpected role line for empty human role in %s", text)
+	}
+}
+
+func TestParseMentionsSameNameBotAndHuman(t *testing.T) {
+	botAlex, humanAlex1, humanAlex2 := uuid.New(), uuid.New(), uuid.New()
+	members := []Member{
+		{Kind: MemberBot, ID: botAlex, Name: "Alex"},
+		{Kind: MemberUser, ID: humanAlex1, Name: "Alex"},
+		{Kind: MemberUser, ID: humanAlex2, Name: "alex"},
+	}
+	bots, humans := ParseMentions("@Alex please review", members)
+	if !slices.Equal(bots, []uuid.UUID{botAlex}) {
+		t.Fatalf("bots=%v want [%s]", bots, botAlex)
+	}
+	if !slices.Equal(humans, []uuid.UUID{humanAlex1, humanAlex2}) {
+		t.Fatalf("humans=%v want [%s %s]", humans, humanAlex1, humanAlex2)
+	}
+}
+
+func TestSplitHumanHandoffAndControlDirectives(t *testing.T) {
+	u1, u2 := uuid.New(), uuid.New()
+
+	body, ids := SplitHumanHandoffDirective("Please review this.\nHandoff to human: [\"" + u1.String() + "\", \"" + u1.String() + "\", \"" + u2.String() + "\"]")
+	if body != "Please review this." || !slices.Equal(ids, []uuid.UUID{u1, u2}) {
+		t.Fatalf("valid handoff: body=%q ids=%v", body, ids)
+	}
+
+	for _, bad := range []string{
+		"Handoff to human: [\"" + u1.String() + "\"]",
+		"Body\nHandoff to human: []",
+		"Body\nHandoff to human: [\"not-a-uuid\"]",
+		"Body\nHandoff to human: [\"" + uuid.Nil.String() + "\"]",
+		"Body\nHandoff to human: [\"a\",\"b\",\"c\",\"d\",\"e\",\"f\",\"g\",\"h\",\"i\"]",
+	} {
+		if gotBody, gotIDs := SplitHumanHandoffDirective(bad); gotBody != bad || len(gotIDs) != 0 {
+			t.Fatalf("expected invalid handoff %q to stay untouched, got body=%q ids=%v", bad, gotBody, gotIDs)
+		}
+	}
+
+	combined := "Draft ready.\nRequest input: [\"Nova\"]\nHandoff to human: [\"" + u1.String() + "\"]"
+	gotBody, names, required, handoffIDs := ExtractControlDirectives(combined)
+	if gotBody != "Draft ready." || !slices.Equal(names, []string{"Nova"}) || required || !slices.Equal(handoffIDs, []uuid.UUID{u1}) {
+		t.Fatalf("combined=%q names=%v req=%v ids=%v", gotBody, names, required, handoffIDs)
+	}
+
+	reversed := "Draft ready.\nHandoff to human: [\"" + u1.String() + "\"]\nRequest required input: [\"Nova\"]"
+	gotBody, names, required, handoffIDs = ExtractControlDirectives(reversed)
+	if gotBody != "Draft ready." || !slices.Equal(names, []string{"Nova"}) || !required || !slices.Equal(handoffIDs, []uuid.UUID{u1}) {
+		t.Fatalf("reversed=%q names=%v req=%v ids=%v", gotBody, names, required, handoffIDs)
+	}
+}
+
+func TestBuildContextKeepsFullRosterWhenTrimmingDescriptions(t *testing.T) {
+	botID := uuid.New()
+	members := []Member{
+		{Kind: MemberBot, ID: botID, Name: "Atlas", Instructions: strings.Repeat("x", 4000)},
+	}
+	for i := range 6 {
+		members = append(members, Member{
+			Kind:         MemberUser,
+			ID:           uuid.New(),
+			Name:         "Member" + string(rune('A'+i)),
+			Instructions: strings.Repeat("y", 4000),
+		})
+	}
+	mayaID := uuid.New()
+	members = append(members, Member{
+		Kind:         MemberUser,
+		ID:           mayaID,
+		Name:         "Maya",
+		Instructions: "Release Reviewer — Checks release notes.",
+	})
+
+	text := BuildContext(ContextInput{BotID: botID, LeadBotID: botID, Members: members})
+	if len(text) > groupContextBytes {
+		t.Fatalf("context length %d exceeds limit %d", len(text), groupContextBytes)
+	}
+	for _, want := range []string{
+		"- Maya (user, id=" + mayaID.String() + ")",
+		"Release Reviewer — Checks release notes.",
+		contextOmission,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %q in context (len=%d)", want, len(text))
+		}
 	}
 }
 

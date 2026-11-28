@@ -497,6 +497,10 @@ func (s *server) handleUpdateMemberRole(w http.ResponseWriter, r *http.Request) 
 
 	var roleDesc string
 	if req.RoleDescription != nil {
+		if strings.ContainsRune(*req.RoleDescription, '\x00') {
+			writeError(w, s.logger, http.StatusBadRequest, "validation_error", "roleDescription cannot contain NUL characters")
+			return
+		}
 		roleDesc = strings.TrimSpace(*req.RoleDescription)
 		if utf8.RuneCountInString(roleDesc) > 4000 {
 			writeError(w, s.logger, http.StatusBadRequest, "validation_error", "roleDescription must be at most 4000 characters")
