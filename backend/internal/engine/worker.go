@@ -18,6 +18,7 @@ import (
 	"github.com/dunkeltech/botbox/backend/internal/memory"
 	"github.com/dunkeltech/botbox/backend/internal/notify"
 	"github.com/dunkeltech/botbox/backend/internal/observability"
+	"github.com/dunkeltech/botbox/backend/internal/orchestrator"
 	"github.com/dunkeltech/botbox/backend/internal/secrets"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -393,7 +394,8 @@ func (w *Worker) routeGroupReply(ctx context.Context, turn db.BotTurn, reply db.
 		if err != nil {
 			return err
 		}
-		mentions, err := notify.HumanMentions(ctx, q, turn.WorkspaceID, turn.ConversationID, reply.ID, reply.Content)
+		_, _, _, handoffIDs := orchestrator.ExtractControlDirectives(content)
+		mentions, err := notify.HumanMentionsWithHandoff(ctx, q, turn.WorkspaceID, turn.ConversationID, reply.ID, reply.Content, handoffIDs)
 		if err != nil {
 			return err
 		}

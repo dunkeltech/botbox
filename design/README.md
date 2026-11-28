@@ -20,6 +20,7 @@ The interactive canvas (clickable prototype with live avatars) lives in Claude: 
 | Sign in, invitation & workspace switcher | [`auth-login-invite.png`](screens/auth-login-invite.png) | Phase 1 |
 | Workspace settings: general, runtime & danger zone | [`workspace-settings-general.png`](screens/workspace-settings-general.png) | Phase 1, 5, 7 |
 | Workspace settings: members, roles & RBAC | [`workspace-settings.png`](screens/workspace-settings.png) | Phase 1 |
+| Workspace settings: human member roles & responsibilities | [`workspace-settings-member-roles.png`](screens/workspace-settings-member-roles.png) | #10 |
 | Workspace settings: budgets & model pricing | [`workspace-settings-budgets.png`](screens/workspace-settings-budgets.png) | Phase 4 |
 | Workspace settings: shared workspace secrets | [`workspace-settings-secrets.png`](screens/workspace-settings-secrets.png) | Phase 3 |
 | Workspace settings: MCP servers & self-hosted GitLab | [`workspace-settings-integrations.png`](screens/workspace-settings-integrations.png) | #18, ADR-0029 |
@@ -40,6 +41,7 @@ The interactive canvas (clickable prototype with live avatars) lives in Claude: 
 | Secret input modal (isolated browser broker) | [`secret-input-modal-browser.png`](screens/secret-input-modal-browser.png) | #30 |
 | Secret input modal (CLI / HTTPS adapter) | [`secret-input-modal-cli.png`](screens/secret-input-modal-cli.png) | #30 |
 | Team chat: group with humans, mentions & approvals | [`team-group-chat.png`](screens/team-group-chat.png) | Phase 6 |
+| Team chat: human roles & `@mention` task handoff | [`team-group-chat-human-roles.png`](screens/team-group-chat-human-roles.png) | #10 |
 | Team chat: approvals inbox | [`team-approvals-inbox.png`](screens/team-approvals-inbox.png) | Phase 6 |
 | Team chat: direct message | [`team-direct-message.png`](screens/team-direct-message.png) | Phase 4, 6 |
 | Team chat: new group (bots & humans) | [`team-new-group.png`](screens/team-new-group.png) | Phase 6 |
@@ -66,6 +68,7 @@ Reorganized into a two-column workspace settings shell (`256 px` grouped left su
 
 - **General, runtime & danger zone** (`screens/50d579be537840b3b5eca818c9416cf1`): workspace profile (`name`, read-only `slug`, `defaultLocale`), default sandbox driver (`docker` / `kubernetes`), `desktop_actions` screenshot retention (`1–30 days`), ownership transfer, and dashed amber **Danger zone** workspace deletion.
 - **Members, roles & RBAC** (`screens/e7cd130d743c4b93923be92c7b73216b`): active member roster and role selector, pending invitations with amber `Revoke`, single-use invitation link generator, and the §4.1 RBAC permission matrix.
+- **Human member roles & responsibilities** (`screens/d4c9d12b98164dc3a7eaf48e11d561bb`): extends the workspace members table with free-form `Role & responsibilities` descriptions and a modal editor (`Remove role` in dashed amber, `Save role` in `green-600`) respecting workspace RBAC plus self-service editing for non-viewers.
 - **Budgets & model pricing** (`screens/5671deebdace4986b4f745a6004d89c0`): monthly workspace budget cap with 80 % / 100 % threshold markers, bot daily caps, and the `model_prices` rate table + edit form.
 - **Workspace secrets** (`screens/073343dcb2c84976be78ed2208434a38`): write-only workspace-scoped secrets inherited by workspace bots alongside the dark `terminal` zero-plaintext & `404` isolation invariant card.
 - **Integrations (MCP servers & GitLab)** (`screens/9bcf5e8139344e838174fbf3539a5756`): central workspace MCP server registry (`Sync tools` / `Remove`) and approved self-hosted GitLab HTTPS origins with revocation notice.
@@ -73,6 +76,8 @@ Reorganized into a two-column workspace settings shell (`256 px` grouped left su
 ![Workspace settings — general, runtime and danger zone](screens/workspace-settings-general.png)
 
 ![Workspace settings — members, roles and RBAC](screens/workspace-settings.png)
+
+![Workspace settings — human member roles and responsibilities](screens/workspace-settings-member-roles.png)
 
 ![Workspace settings — budgets and model pricing](screens/workspace-settings-budgets.png)
 
@@ -146,9 +151,11 @@ Inline `secret_request` cards inside bot DMs and group chats paired with write-o
 ![Secret input modal, CLI HTTPS adapter](screens/secret-input-modal-cli.png)
 
 ### Team chat
-Bots and humans (`Owner`, `Reviewer`, `Viewer`) appear as colleagues in a Slack-style sidebar next to direct messages, `@` mention autocomplete, group chats with inline approval cards (`new_host`), bot-to-bot turn limits, the Approvals inbox (`Pending`, `Approved`, `Denied`) and the new-group dialog for both bots and humans. The dedicated `Tool calls` inspector sidebar with expandable parameters and output tails is captured in Stitch screen `7f699aa9a10d4328ab2400328536a591`.
+Bots and humans (`Owner`, `Reviewer`, `Viewer`) appear as colleagues in a Slack-style sidebar next to direct messages, `@` mention autocomplete, group chats with inline approval cards (`new_host`), bot-to-bot turn limits, the Approvals inbox (`Pending`, `Approved`, `Denied`) and the new-group dialog for both bots and humans. Human members can also hold free-form roles (`screens/9cbbbe8fae9c443f90bae3d563468aa7`) surfaced in the group `Details` inspector, `@mention` autocomplete, and sidebar so bots can `@mention` the responsible person for lightweight task handoffs. The dedicated `Tool calls` inspector sidebar with expandable parameters and output tails is captured in Stitch screen `7f699aa9a10d4328ab2400328536a591`.
 
 ![Team chat, group](screens/team-group-chat.png)
+
+![Team chat, human roles and @mention handoff](screens/team-group-chat-human-roles.png)
 
 ![Team chat, approvals inbox](screens/team-approvals-inbox.png)
 

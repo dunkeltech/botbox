@@ -44,6 +44,7 @@ Roles apply within a single workspace. This table covers common operations.
 | View workspace audit logs | Yes | Yes | No | No |
 | Reconcile unresolved subscription usage | Yes | Yes | No | No |
 | Manage members and invitations | All roles | Member and viewer roles | No | No |
+| Set or edit human member role descriptions | Any member | Member, viewer, and self | Self | No |
 | Change workspace settings or delete the workspace | Yes | No | No | No |
 
 - Sending a message still requires access to the conversation. Direct messages

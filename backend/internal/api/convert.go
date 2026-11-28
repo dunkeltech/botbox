@@ -221,25 +221,27 @@ func toAPIWorkspaceList(rows []db.ListWorkspacesForUserRow) []api.WorkspaceSumma
 
 func toAPIWorkspaceMember(m db.ListWorkspaceMembersRow) api.WorkspaceMember {
 	return api.WorkspaceMember{
-		WorkspaceId: fromPGUUID(m.WorkspaceID),
-		UserId:      fromPGUUID(m.UserID),
-		Email:       openapi_types.Email(m.Email),
-		DisplayName: m.DisplayName,
-		Locale:      m.Locale,
-		Role:        api.WorkspaceRole(m.Role),
-		JoinedAt:    m.JoinedAt.Time.UTC(),
+		WorkspaceId:     fromPGUUID(m.WorkspaceID),
+		UserId:          fromPGUUID(m.UserID),
+		Email:           openapi_types.Email(m.Email),
+		DisplayName:     m.DisplayName,
+		Locale:          m.Locale,
+		Role:            api.WorkspaceRole(m.Role),
+		RoleDescription: m.RoleDescription,
+		JoinedAt:        m.JoinedAt.Time.UTC(),
 	}
 }
 
 func toAPIWorkspaceMemberGet(m db.GetWorkspaceMemberRow) api.WorkspaceMember {
 	return api.WorkspaceMember{
-		WorkspaceId: fromPGUUID(m.WorkspaceID),
-		UserId:      fromPGUUID(m.UserID),
-		Email:       openapi_types.Email(m.Email),
-		DisplayName: m.DisplayName,
-		Locale:      m.Locale,
-		Role:        api.WorkspaceRole(m.Role),
-		JoinedAt:    m.JoinedAt.Time.UTC(),
+		WorkspaceId:     fromPGUUID(m.WorkspaceID),
+		UserId:          fromPGUUID(m.UserID),
+		Email:           openapi_types.Email(m.Email),
+		DisplayName:     m.DisplayName,
+		Locale:          m.Locale,
+		Role:            api.WorkspaceRole(m.Role),
+		RoleDescription: m.RoleDescription,
+		JoinedAt:        m.JoinedAt.Time.UTC(),
 	}
 }
 

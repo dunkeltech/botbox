@@ -1865,6 +1865,7 @@ export interface components {
       /** Format: uuid */
       id: string;
       roleText: string;
+      roleDescription?: string;
       name?: string;
     };
     Group: {
@@ -2054,6 +2055,7 @@ export interface components {
       displayName: string;
       locale: string;
       role: components['schemas']['WorkspaceRole'];
+      roleDescription: string;
       /** Format: date-time */
       joinedAt: string;
     };
@@ -2061,7 +2063,8 @@ export interface components {
       members: components['schemas']['WorkspaceMember'][];
     };
     UpdateMemberRoleRequest: {
-      role: components['schemas']['WorkspaceRole'];
+      role?: components['schemas']['WorkspaceRole'];
+      roleDescription?: string;
     };
     InvitationSummary: {
       /** Format: uuid */

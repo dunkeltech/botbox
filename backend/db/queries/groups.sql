@@ -49,9 +49,11 @@ WHERE workspace_id = $1 AND conversation_id = $2
 -- name: ListGroupMemberRows :many
 SELECT m.member_type, m.member_id, m.role_text,
        COALESCE(u.display_name, b.name, '') AS display_name,
-       COALESCE(b.description, '') AS bot_description
+       COALESCE(b.description, '') AS bot_description,
+       COALESCE(wm.role_description, '') AS user_role_description
 FROM conversation_members m
 LEFT JOIN users u ON m.member_type = 'user' AND u.id = m.member_id
+LEFT JOIN workspace_members wm ON m.member_type = 'user' AND wm.workspace_id = m.workspace_id AND wm.user_id = m.member_id
 LEFT JOIN bots b ON m.member_type = 'bot' AND b.workspace_id = m.workspace_id AND b.id = m.member_id
 WHERE m.workspace_id = $1 AND m.conversation_id = $2
 ORDER BY m.member_type, display_name;

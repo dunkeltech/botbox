@@ -341,8 +341,8 @@ export function TeamSidebar({
               <span className="block truncate text-[14px] font-bold text-paper">
                 {human.displayName}
               </span>
-              <span className="block text-[12px] text-on-dark-muted">
-                {roles(human.role)}
+              <span className="block truncate text-[12px] text-on-dark-muted">
+                {human.roleDescription?.trim() || roles(human.role)}
               </span>
             </span>
           </div>

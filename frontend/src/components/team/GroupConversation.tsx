@@ -67,7 +67,8 @@ function targets(members: Group['members']): MentionTarget[] {
   const named: MentionTarget[] = members.flatMap((member) => {
     const name = member.name?.trim();
     if (!name) return [];
-    return [{ id: member.id, name, kind: member.type }];
+    const roleDescription = member.roleDescription?.trim() || undefined;
+    return [{ id: member.id, name, kind: member.type, roleDescription }];
   });
   return [...named, { id: 'all', name: 'all', kind: 'all' }];
 }

@@ -80,6 +80,316 @@ func TestContextIdentifiesBotAndLead(t *testing.T) {
 	}
 }
 
+func TestContextIncludesHumanRolesAndHandoffGuidance(t *testing.T) {
+	botID, mayaID, liamID := uuid.New(), uuid.New(), uuid.New()
+	text := BuildContext(ContextInput{
+		BotID:     botID,
+		LeadBotID: botID,
+		Members: []Member{
+			{Kind: MemberBot, ID: botID, Name: "Atlas", Instructions: "Draft release notes."},
+			{Kind: MemberUser, ID: mayaID, Name: "Maya", Instructions: "Release Reviewer — Reviews draft release notes."},
+			{Kind: MemberUser, ID: liamID, Name: "Liam", Instructions: "   "},
+		},
+	})
+	for _, want := range []string{
+		"- Maya (user, id=" + mayaID.String() + ")",
+		"  Role and responsibilities: Release Reviewer — Reviews draft release notes.",
+		"- Liam (user, id=" + liamID.String() + ")",
+		"Handoff to human:",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("missing %q in %s", want, text)
+		}
+	}
+	if strings.Contains(text, "- Liam (user, id="+liamID.String()+") \n  Role and responsibilities:") {
+		t.Errorf("unexpected role line for empty human role in %s", text)
+	}
+}
+
+func TestParseMentionsSameNameBotAndHuman(t *testing.T) {
+	botAlex, humanAlex1, humanAlex2 := uuid.New(), uuid.New(), uuid.New()
+	members := []Member{
+		{Kind: MemberBot, ID: botAlex, Name: "Alex"},
+		{Kind: MemberUser, ID: humanAlex1, Name: "Alex"},
+		{Kind: MemberUser, ID: humanAlex2, Name: "alex"},
+	}
+	bots, humans := ParseMentions("@Alex please review", members)
+	if !slices.Equal(bots, []uuid.UUID{botAlex}) {
+		t.Fatalf("bots=%v want [%s]", bots, botAlex)
+	}
+	if !slices.Equal(humans, []uuid.UUID{humanAlex1, humanAlex2}) {
+		t.Fatalf("humans=%v want [%s %s]", humans, humanAlex1, humanAlex2)
+	}
+}
+
+func TestSplitHumanHandoffAndControlDirectives(t *testing.T) {
+	u1, u2 := uuid.New(), uuid.New()
+
+	body, ids := SplitHumanHandoffDirective("Please review this.\nHandoff to human: [\"" + u1.String() + "\", \"" + u1.String() + "\", \"" + u2.String() + "\"]")
+	if body != "Please review this." || !slices.Equal(ids, []uuid.UUID{u1, u2}) {
+		t.Fatalf("valid handoff: body=%q ids=%v", body, ids)
+	}
+
+	for _, bad := range []string{
+		"Handoff to human: [\"" + u1.String() + "\"]",
+		"Body\nHandoff to human: []",
+		"Body\nHandoff to human: [\"not-a-uuid\"]",
+		"Body\nHandoff to human: [\"" + uuid.Nil.String() + "\"]",
+		"Body\nHandoff to human: [\"a\",\"b\",\"c\",\"d\",\"e\",\"f\",\"g\",\"h\",\"i\"]",
+	} {
+		if gotBody, gotIDs := SplitHumanHandoffDirective(bad); gotBody != bad || len(gotIDs) != 0 {
+			t.Fatalf("expected invalid handoff %q to stay untouched, got body=%q ids=%v", bad, gotBody, gotIDs)
+		}
+	}
+
+	combined := "Draft ready.\nRequest input: [\"Nova\"]\nHandoff to human: [\"" + u1.String() + "\"]"
+	gotBody, names, required, handoffIDs := ExtractControlDirectives(combined)
+	if gotBody != "Draft ready." || !slices.Equal(names, []string{"Nova"}) || required || !slices.Equal(handoffIDs, []uuid.UUID{u1}) {
+		t.Fatalf("combined=%q names=%v req=%v ids=%v", gotBody, names, required, handoffIDs)
+	}
+
+	reversed := "Draft ready.\nHandoff to human: [\"" + u1.String() + "\"]\nRequest required input: [\"Nova\"]"
+	gotBody, names, required, handoffIDs = ExtractControlDirectives(reversed)
+	if gotBody != "Draft ready." || !slices.Equal(names, []string{"Nova"}) || !required || !slices.Equal(handoffIDs, []uuid.UUID{u1}) {
+		t.Fatalf("reversed=%q names=%v req=%v ids=%v", gotBody, names, required, handoffIDs)
+	}
+}
+
+func TestBuildContextKeepsFullRosterWhenTrimmingDescriptions(t *testing.T) {
+	botID := uuid.New()
+	members := []Member{
+		{Kind: MemberBot, ID: botID, Name: "Atlas", Instructions: strings.Repeat("x", 4000)},
+	}
+	for i := range 6 {
+		members = append(members, Member{
+			Kind:         MemberUser,
+			ID:           uuid.New(),
+			Name:         "Member" + string(rune('A'+i)),
+			Instructions: strings.Repeat("y", 4000),
+		})
+	}
+	mayaID := uuid.New()
+	members = append(members, Member{
+		Kind:         MemberUser,
+		ID:           mayaID,
+		Name:         "Maya",
+		Instructions: "Release Reviewer — Checks release notes.",
+	})
+
+	text := BuildContext(ContextInput{BotID: botID, LeadBotID: botID, Members: members})
+	if len(text) > groupContextBytes {
+		t.Fatalf("context length %d exceeds limit %d", len(text), groupContextBytes)
+	}
+	for _, want := range []string{
+		"- Maya (user, id=" + mayaID.String() + ")",
+		"Release Reviewer — Checks release notes.",
+		contextOmission,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %q in context (len=%d)", want, len(text))
+		}
+	}
+}
+
+func TestBuildContextPreservesRosterIDsWithLargeGoalAndRoleLabels(t *testing.T) {
+	botID := uuid.New()
+	mayaID := uuid.New()
+	var members []Member
+	members = append(members, Member{
+		Kind:         MemberBot,
+		ID:           botID,
+		Name:         "Atlas",
+		Role:         strings.Repeat("🚀", 100),
+		Instructions: strings.Repeat("b", 4000),
+	})
+	userIDs := make([]uuid.UUID, 0, 49)
+	for i := range 48 {
+		id := uuid.New()
+		userIDs = append(userIDs, id)
+		members = append(members, Member{
+			Kind:         MemberUser,
+			ID:           id,
+			Name:         "User" + string(rune('A'+i%26)) + string(rune('0'+i/26)),
+			Role:         strings.Repeat("ä", 100),
+			Instructions: strings.Repeat("d", 400),
+		})
+	}
+	userIDs = append(userIDs, mayaID)
+	members = append(members, Member{
+		Kind:         MemberUser,
+		ID:           mayaID,
+		Name:         "Maya",
+		Role:         "reviewer",
+		Instructions: "Release Reviewer — Checks release notes.",
+	})
+
+	text := BuildContext(ContextInput{
+		BotID:     botID,
+		LeadBotID: botID,
+		Goal:      strings.Repeat("g", 8192),
+		Members:   members,
+	})
+	if len(text) > groupContextBytes {
+		t.Fatalf("context length %d exceeds limit %d", len(text), groupContextBytes)
+	}
+	for _, id := range userIDs {
+		if !strings.Contains(text, "id="+id.String()) {
+			t.Fatalf("missing member id %s in context", id)
+		}
+	}
+	for _, want := range []string{
+		"- Maya (user, id=" + mayaID.String() + ")",
+		"Release Reviewer — Checks release notes.",
+		contextOmission,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %q in context (len=%d)", want, len(text))
+		}
+	}
+}
+
+func TestBuildContextPreservesRosterIDsWithLargeAskBeforeAndInputProgress(t *testing.T) {
+	botID := uuid.New()
+	mayaID := uuid.New()
+	members := []Member{
+		{
+			Kind:         MemberBot,
+			ID:           botID,
+			Name:         "Atlas",
+			Role:         "lead",
+			Instructions: "Coordinate release checks.",
+		},
+	}
+	userIDs := make([]uuid.UUID, 0, 49)
+	for i := range 48 {
+		id := uuid.New()
+		userIDs = append(userIDs, id)
+		members = append(members, Member{
+			Kind:         MemberUser,
+			ID:           id,
+			Name:         "Member" + string(rune('A'+i%26)) + string(rune('0'+i/26)),
+			Role:         "engineer",
+			Instructions: strings.Repeat("r", 200),
+		})
+	}
+	userIDs = append(userIDs, mayaID)
+	members = append(members, Member{
+		Kind:         MemberUser,
+		ID:           mayaID,
+		Name:         "Maya",
+		Role:         "reviewer",
+		Instructions: "Release Reviewer — Checks release notes.",
+	})
+
+	askBefore := make([]AskRule, 20)
+	for i := range askBefore {
+		askBefore[i] = AskRule{
+			Kind:  "custom",
+			Label: strings.Repeat("🚀", 200),
+		}
+	}
+
+	var progress strings.Builder
+	progress.WriteString("You have an open group input request. It will resume automatically when collection finishes.\n")
+	for i := range 8 {
+		progress.WriteString("- SpecialistBot")
+		progress.WriteByte(byte('1' + i))
+		progress.WriteString(": waiting\n")
+	}
+
+	goal := strings.Repeat("g", 4096)
+	text := BuildContext(ContextInput{
+		BotID:         botID,
+		LeadBotID:     botID,
+		Goal:          goal,
+		InputProgress: progress.String(),
+		AskBefore:     askBefore,
+		Members:       members,
+	})
+	if len(text) > groupContextBytes {
+		t.Fatalf("context length %d exceeds limit %d", len(text), groupContextBytes)
+	}
+	for _, id := range userIDs {
+		if !strings.Contains(text, "id="+id.String()) {
+			t.Fatalf("missing member id %s in context", id)
+		}
+	}
+	for _, want := range []string{
+		"Group goal: " + goal,
+		"- Maya (user, id=" + mayaID.String() + ")",
+		"Release Reviewer — Checks release notes.",
+		"Ask before:",
+		"You have an open group input request.",
+		contextOmission,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %q in context (len=%d)", want, len(text))
+		}
+	}
+}
+
+func TestBuildContextPrioritizesGroupGoalOverRoleDescriptions(t *testing.T) {
+	botID := uuid.New()
+	mayaID := uuid.New()
+	members := []Member{
+		{
+			Kind:         MemberBot,
+			ID:           botID,
+			Name:         "Atlas",
+			Role:         "lead",
+			Instructions: strings.Repeat("b", 2000),
+		},
+	}
+	userIDs := make([]uuid.UUID, 0, 19)
+	for i := range 18 {
+		id := uuid.New()
+		userIDs = append(userIDs, id)
+		members = append(members, Member{
+			Kind:         MemberUser,
+			ID:           id,
+			Name:         "Reviewer" + string(rune('A'+i)),
+			Role:         "reviewer",
+			Instructions: strings.Repeat("r", 2000),
+		})
+	}
+	userIDs = append(userIDs, mayaID)
+	members = append(members, Member{
+		Kind:         MemberUser,
+		ID:           mayaID,
+		Name:         "Maya",
+		Role:         "release-reviewer",
+		Instructions: "Release Reviewer — Checks release notes.",
+	})
+
+	finalInstruction := "Obtain sign-off from the release reviewer before publishing."
+	goal := strings.Repeat("g", 4035-len(finalInstruction)) + finalInstruction
+	text := BuildContext(ContextInput{
+		BotID:     botID,
+		LeadBotID: botID,
+		Goal:      goal,
+		Members:   members,
+	})
+	if len(text) > groupContextBytes {
+		t.Fatalf("context length %d exceeds limit %d", len(text), groupContextBytes)
+	}
+	for _, id := range userIDs {
+		if !strings.Contains(text, "id="+id.String()) {
+			t.Fatalf("missing member id %s in context", id)
+		}
+	}
+	for _, want := range []string{
+		"Group goal: " + goal,
+		finalInstruction,
+		"- Maya (user, id=" + mayaID.String() + ") release-reviewer",
+		"Release Reviewer — Checks release notes.",
+		contextOmission,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %q in context (len=%d)", want, len(text))
+		}
+	}
+}
+
 func TestParseMentions(t *testing.T) {
 	ann := uuid.New()
 	annie := uuid.New()

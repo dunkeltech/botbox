@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/dunkeltech/botbox/backend/internal/auth"
 	"github.com/dunkeltech/botbox/backend/internal/compute"
@@ -453,7 +454,7 @@ func (s *server) checkLockedActor(w http.ResponseWriter, r *http.Request, q *db.
 }
 
 func (s *server) handleUpdateMemberRole(w http.ResponseWriter, r *http.Request) {
-	wsRow, claims, _, ok := s.loadWorkspaceMembership(w, r, workspaces.ActionManageMembers)
+	wsRow, claims, callerRole, ok := s.loadWorkspaceMembership(w, r, workspaces.ActionViewWorkspace)
 	if !ok {
 		return
 	}
@@ -464,14 +465,47 @@ func (s *server) handleUpdateMemberRole(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Enforce caller authorization before body validation so viewers and
+	// non-self member targets receive 403 even on malformed or empty payloads.
+	if callerRole == workspaces.RoleViewer {
+		writeError(w, s.logger, http.StatusForbidden, "auth.forbidden", "viewers cannot modify workspace members")
+		return
+	}
+	if callerRole == workspaces.RoleMember && targetUserID != claims.Subject {
+		writeError(w, s.logger, http.StatusForbidden, "auth.forbidden", "members can only update their own role description")
+		return
+	}
+
 	var req api.UpdateMemberRoleRequest
 	if !decodeJSON(w, r, s.logger, &req) {
 		return
 	}
-	newRole, valid := workspaces.ParseRole(string(req.Role))
-	if !valid {
-		writeError(w, s.logger, http.StatusBadRequest, "validation_error", "invalid workspace role")
+	if req.Role == nil && req.RoleDescription == nil {
+		writeError(w, s.logger, http.StatusBadRequest, "validation_error", "at least one of role or roleDescription is required")
 		return
+	}
+
+	var newRole workspaces.Role
+	if req.Role != nil {
+		var valid bool
+		newRole, valid = workspaces.ParseRole(string(*req.Role))
+		if !valid {
+			writeError(w, s.logger, http.StatusBadRequest, "validation_error", "invalid workspace role")
+			return
+		}
+	}
+
+	var roleDesc string
+	if req.RoleDescription != nil {
+		if strings.ContainsRune(*req.RoleDescription, '\x00') {
+			writeError(w, s.logger, http.StatusBadRequest, "validation_error", "roleDescription cannot contain NUL characters")
+			return
+		}
+		roleDesc = strings.TrimSpace(*req.RoleDescription)
+		if utf8.RuneCountInString(roleDesc) > 4000 {
+			writeError(w, s.logger, http.StatusBadRequest, "validation_error", "roleDescription must be at most 4000 characters")
+			return
+		}
 	}
 
 	tx, err := s.pool.Begin(r.Context())
@@ -486,7 +520,7 @@ func (s *server) handleUpdateMemberRole(w http.ResponseWriter, r *http.Request) 
 	if !s.lockMemberships(w, r, txq, wsRow.ID) {
 		return
 	}
-	actorRole, ok := s.checkLockedActor(w, r, txq, wsRow.ID, claims.Subject, workspaces.ActionManageMembers)
+	actorRole, ok := s.checkLockedActor(w, r, txq, wsRow.ID, claims.Subject, "")
 	if !ok {
 		return
 	}
@@ -505,32 +539,76 @@ func (s *server) handleUpdateMemberRole(w http.ResponseWriter, r *http.Request) 
 	}
 
 	currentRole := workspaces.Role(target.Role)
-	if !workspaces.CanModifyMember(actorRole, currentRole) || !workspaces.CanAssignRole(actorRole, newRole) {
-		writeError(w, s.logger, http.StatusForbidden, "auth.forbidden", "cannot assign or modify this workspace role")
+	isSelf := targetUserID == claims.Subject
+
+	if req.Role != nil {
+		if !workspaces.Can(actorRole, workspaces.ActionManageMembers, false) ||
+			!workspaces.CanModifyMember(actorRole, currentRole) ||
+			!workspaces.CanAssignRole(actorRole, newRole) {
+			writeError(w, s.logger, http.StatusForbidden, "auth.forbidden", "cannot assign or modify this workspace role")
+			return
+		}
+
+		if currentRole == workspaces.RoleOwner && newRole != workspaces.RoleOwner {
+			owners, countErr := txq.CountWorkspaceOwners(r.Context(), wsRow.ID)
+			if countErr != nil {
+				s.logger.Error("count workspace owners", "err", countErr)
+				writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to validate workspace owners")
+				return
+			}
+			if owners <= 1 {
+				writeError(w, s.logger, http.StatusBadRequest, "workspace.last_owner", "workspace must retain at least one owner")
+				return
+			}
+		}
+	}
+
+	if req.RoleDescription != nil && !workspaces.CanEditMemberRoleDescription(actorRole, currentRole, isSelf) {
+		writeError(w, s.logger, http.StatusForbidden, "auth.forbidden", "cannot modify this member's role description")
 		return
 	}
 
-	if currentRole == workspaces.RoleOwner && newRole != workspaces.RoleOwner {
-		owners, countErr := txq.CountWorkspaceOwners(r.Context(), wsRow.ID)
-		if countErr != nil {
-			s.logger.Error("count workspace owners", "err", countErr)
-			writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to validate workspace owners")
+	wsUUID := fromPGUUID(wsRow.ID)
+	actorUUID := claims.Subject
+
+	if req.Role != nil {
+		if _, err := txq.UpdateWorkspaceMemberRole(r.Context(), db.UpdateWorkspaceMemberRoleParams{
+			WorkspaceID: wsRow.ID,
+			UserID:      toPGUUID(targetUserID),
+			Role:        string(newRole),
+		}); err != nil {
+			s.logger.Error("update member role", "err", err)
+			writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to update member role")
 			return
 		}
-		if owners <= 1 {
-			writeError(w, s.logger, http.StatusBadRequest, "workspace.last_owner", "workspace must retain at least one owner")
+		if err := recordAudit(r.Context(), txq, &wsUUID, &actorUUID, "member.role_updated", "user", &targetUserID, map[string]any{
+			"fromRole": string(currentRole),
+			"toRole":   string(newRole),
+		}); err != nil {
+			s.logger.Error("audit member role update", "err", err)
+			writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to record audit log")
 			return
 		}
 	}
 
-	if _, err := txq.UpdateWorkspaceMemberRole(r.Context(), db.UpdateWorkspaceMemberRoleParams{
-		WorkspaceID: wsRow.ID,
-		UserID:      toPGUUID(targetUserID),
-		Role:        string(newRole),
-	}); err != nil {
-		s.logger.Error("update member role", "err", err)
-		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to update member role")
-		return
+	if req.RoleDescription != nil {
+		if _, err := txq.UpdateWorkspaceMemberRoleDescription(r.Context(), db.UpdateWorkspaceMemberRoleDescriptionParams{
+			WorkspaceID:     wsRow.ID,
+			UserID:          toPGUUID(targetUserID),
+			RoleDescription: roleDesc,
+		}); err != nil {
+			s.logger.Error("update member role description", "err", err)
+			writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to update member role description")
+			return
+		}
+		if err := recordAudit(r.Context(), txq, &wsUUID, &actorUUID, "member.role_description_updated", "user", &targetUserID, map[string]any{
+			"hasRole": roleDesc != "",
+			"length":  utf8.RuneCountInString(roleDesc),
+		}); err != nil {
+			s.logger.Error("audit member role description update", "err", err)
+			writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to record audit log")
+			return
+		}
 	}
 
 	updated, err := txq.GetWorkspaceMember(r.Context(), db.GetWorkspaceMemberParams{
@@ -540,17 +618,6 @@ func (s *server) handleUpdateMemberRole(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		s.logger.Error("reload updated member", "err", err)
 		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to reload workspace member")
-		return
-	}
-
-	wsUUID := fromPGUUID(wsRow.ID)
-	actorUUID := claims.Subject
-	if err := recordAudit(r.Context(), txq, &wsUUID, &actorUUID, "member.role_updated", "user", &targetUserID, map[string]any{
-		"fromRole": string(currentRole),
-		"toRole":   string(newRole),
-	}); err != nil {
-		s.logger.Error("audit member role update", "err", err)
-		writeError(w, s.logger, http.StatusInternalServerError, "internal_error", "failed to record audit log")
 		return
 	}
 

@@ -130,14 +130,19 @@ export function GroupMessageComposer({
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => apply(choice.name)}
             >
-              <span className="font-black">@{choice.name}</span>
-              <span className="rounded-xs bg-blue-tint px-1.5 text-[11px] font-black uppercase text-blue">
+              <span className="shrink-0 font-black">@{choice.name}</span>
+              <span className="shrink-0 rounded-xs bg-blue-tint px-1.5 text-[11px] font-black uppercase text-blue">
                 {choice.kind === 'all'
                   ? t('allMembers')
                   : choice.kind === 'bot'
                     ? t('botBadge')
                     : t('humanBadge')}
               </span>
+              {choice.roleDescription ? (
+                <span className="min-w-0 truncate text-[12px] text-muted">
+                  {choice.roleDescription}
+                </span>
+              ) : null}
             </button>
           ))}
         </div>

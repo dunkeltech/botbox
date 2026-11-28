@@ -234,8 +234,11 @@ export function NewGroupDialog({
                     <span className="block truncate font-black text-ink">
                       {human.displayName}
                     </span>
-                    <span className="block text-[12px] text-muted">
+                    <span className="block truncate text-[12px] text-muted">
                       {t('humanBadge')} · {roles(human.role)}
+                      {human.roleDescription?.trim()
+                        ? ` · ${human.roleDescription.trim()}`
+                        : ''}
                     </span>
                   </span>
                   <span

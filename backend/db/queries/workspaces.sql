@@ -28,13 +28,13 @@ VALUES ($1, $2, $3)
 RETURNING *;
 
 -- name: GetWorkspaceMember :one
-SELECT wm.workspace_id, wm.user_id, wm.role, wm.joined_at, u.email, u.display_name, u.locale
+SELECT wm.workspace_id, wm.user_id, wm.role, wm.role_description, wm.joined_at, u.email, u.display_name, u.locale
 FROM workspace_members wm
 JOIN users u ON u.id = wm.user_id
 WHERE wm.workspace_id = $1 AND wm.user_id = $2;
 
 -- name: ListWorkspaceMembers :many
-SELECT wm.workspace_id, wm.user_id, wm.role, wm.joined_at, u.email, u.display_name, u.locale
+SELECT wm.workspace_id, wm.user_id, wm.role, wm.role_description, wm.joined_at, u.email, u.display_name, u.locale
 FROM workspace_members wm
 JOIN users u ON u.id = wm.user_id
 WHERE wm.workspace_id = $1
@@ -43,6 +43,12 @@ ORDER BY wm.joined_at ASC, u.email ASC;
 -- name: UpdateWorkspaceMemberRole :one
 UPDATE workspace_members
 SET role = $3
+WHERE workspace_id = $1 AND user_id = $2
+RETURNING *;
+
+-- name: UpdateWorkspaceMemberRoleDescription :one
+UPDATE workspace_members
+SET role_description = $3
 WHERE workspace_id = $1 AND user_id = $2
 RETURNING *;
 

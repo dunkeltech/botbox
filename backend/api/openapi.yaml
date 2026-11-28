@@ -3483,6 +3483,7 @@ components:
         type: {type: string, enum: [user, bot]}
         id: {type: string, format: uuid}
         roleText: {type: string, maxLength: 100}
+        roleDescription: {type: string, maxLength: 4000}
         name: {type: string}
     Group:
       type: object
@@ -3800,7 +3801,7 @@ components:
 
     WorkspaceMember:
       type: object
-      required: [workspaceId, userId, email, displayName, locale, role, joinedAt]
+      required: [workspaceId, userId, email, displayName, locale, role, roleDescription, joinedAt]
       properties:
         workspaceId:
           type: string
@@ -3817,6 +3818,9 @@ components:
           type: string
         role:
           $ref: '#/components/schemas/WorkspaceRole'
+        roleDescription:
+          type: string
+          maxLength: 4000
         joinedAt:
           type: string
           format: date-time
@@ -3832,10 +3836,12 @@ components:
 
     UpdateMemberRoleRequest:
       type: object
-      required: [role]
       properties:
         role:
           $ref: '#/components/schemas/WorkspaceRole'
+        roleDescription:
+          type: string
+          maxLength: 4000
 
     InvitationSummary:
       type: object

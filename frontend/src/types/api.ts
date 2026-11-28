@@ -127,6 +127,7 @@ export interface WorkspaceMember {
   displayName: string;
   locale: string;
   role: WorkspaceRole;
+  roleDescription?: string;
   joinedAt: string;
 }
 
@@ -135,7 +136,8 @@ export interface WorkspaceMemberListResponse {
 }
 
 export interface UpdateMemberRoleRequest {
-  role: WorkspaceRole;
+  role?: WorkspaceRole;
+  roleDescription?: string;
 }
 
 export interface InvitationSummary {
